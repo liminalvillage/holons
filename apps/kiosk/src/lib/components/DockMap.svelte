@@ -29,7 +29,12 @@
   } from "$lib/holosphere";
   import { resolveAppName, setGeo } from "$lib/config";
   import { showNotice } from "$lib/stores";
-  import { dockEntries, type DockEntry, type Vec } from "$lib/dock";
+  import {
+    dockEntries,
+    requestOpen,
+    type DockEntry,
+    type Vec,
+  } from "$lib/dock";
   import { holonColor, holonColors, resolveCssColor } from "$lib/palette";
   import { activeTheme } from "$lib/theme";
   import {
@@ -50,6 +55,9 @@
     type PresenceEntry,
     type ViewBox,
   } from "$lib/maplens";
+  import { hubRows, lensRows, type LensRow } from "$lib/maplist";
+  import type { PlaceHit } from "$lib/placesearch";
+  import MapList from "./MapList.svelte";
   import { prettyField } from "$lib/lensform";
   import { geoMessage, requestPosition } from "$lib/geolocate";
   import { locale, t, tr, type MessageKey } from "$lib/i18n";
@@ -501,6 +509,7 @@
    * one with no place at all moves nothing (its orb floats free).
    */
   export async function showBoard(id: string): Promise<void> {
+    showMap(); // the fly is the answer — it has to be seen
     if (!hexCache.get(id)) {
       try {
         await lookupHex(await getHolosphere(), id);
@@ -521,6 +530,38 @@
       zoom: resolutionToZoom(getResolution(hex)),
       essential: true,
     });
+  }
+
+  /** Where the earth is looking — the search ranks nearby places first. */
+  export function center(): { lat: number; lng: number } | null {
+    const c = map?.getCenter();
+    return c ? { lat: c.lat, lng: c.lng } : null;
+  }
+
+  /**
+   * Fly to a place the search box found. A place with an extent (a town, a
+   * region, a country) is framed whole; an address or a spot is flown to at
+   * street scale. An extent that wraps the antimeridian reads west > east,
+   * which the camera would frame the long way round — those get the centre.
+   */
+  export function showPlace(place: PlaceHit) {
+    if (!map) return;
+    showMap();
+    const box = place.bbox;
+    if (box && box[0] < box[2])
+      map.fitBounds(
+        [
+          [box[0], box[1]],
+          [box[2], box[3]],
+        ],
+        { padding: 60, maxZoom: 15, essential: true },
+      );
+    else
+      map.flyTo({
+        center: [place.lng, place.lat],
+        zoom: box ? 3 : 14,
+        essential: true,
+      });
   }
 
   // ── Lens layer (dashboard-aligned) ───────────────────────────────────────--
@@ -657,6 +698,7 @@
             if (!held) liveItems.set(cell, (held = new Map()));
             if (item._deleted === true) held.delete(id);
             else held.set(id, item);
+            touchList();
             if (selectedCell === cell) panelIngest?.(item, key);
           },
         ),
@@ -668,12 +710,59 @@
         lensSubs.delete(cell);
       }
     }
+    touchList(); // the cells in view changed, so what is listed did too
   }
 
   function teardownLensSubs() {
     for (const sub of lensSubs.values()) sub.unsubscribe();
     lensSubs = new Map();
     liveItems.clear(); // the held records belong to the outgoing lens
+    touchList();
+  }
+
+  // ── List view ────────────────────────────────────────────────────────────--
+  //
+  // The map read as a list (MapList): the dock's hubs, and the selected
+  // lens's records in the cells on screen. Nothing new is fetched for it —
+  // the rows are the records the presence channel has already heard for the
+  // cells it is subscribed to right now, so the list and the lit hexagons
+  // are the same answer. The earth stays mounted beneath, still following
+  // lens changes, which is what keeps the list live.
+
+  /** Whether the list lies over the earth — the dock's view switch says. */
+  export let listOpen = false;
+  /** The map has somewhere to fly: the dock turns the pane back to the earth. */
+  export let onshowmap: () => void = () => {};
+  function showMap() {
+    if (listOpen) onshowmap();
+  }
+  let listTick = 0;
+  let listQueued = false;
+  /** What the list shows changed. Records arrive in bursts — one repaint a
+   *  frame is plenty — and a closed list rebuilds when it opens anyway. */
+  function touchList() {
+    if (!listOpen || listQueued) return;
+    listQueued = true;
+    requestAnimationFrame(() => {
+      listQueued = false;
+      listTick += 1;
+    });
+  }
+  const NO_ROWS = { rows: [] as LensRow[], total: 0 };
+  $: listed =
+    listOpen && selectedLens
+      ? (void listTick, lensRows(selectedLens, liveItems, lensSubs.keys()))
+      : NO_ROWS;
+  $: listHubs = listOpen
+    ? (void located, hubRows($dockEntries, (id) => hexCache.get(id)))
+    : [];
+
+  /** A lens row: back to the earth, onto its cell, with its details open. */
+  function showRow(row: LensRow) {
+    showMap();
+    selectCell(row.cell);
+    detailId = row.id;
+    flyToCell(row.cell);
   }
 
   /** Pick a lens chip; tapping the active one stands the lens layer down. */
@@ -908,6 +997,7 @@
   export let locating = false;
   export async function locate() {
     if (locating) return;
+    showMap();
     locating = true;
     try {
       const res = await requestPosition();
@@ -983,7 +1073,7 @@
 
     <!-- What lives in the tapped cell, for the selected lens — the
          dashboard sidebar's job, sized for a kiosk. -->
-    {#if selectedCell}
+    {#if selectedCell && !listOpen}
       <aside class="cellpanel">
         <header>
           {#if detailItem}
@@ -1068,6 +1158,20 @@
     {/if}
   {:else}
     <p class="empty">{$t("dock.mapUnavailable")}</p>
+  {/if}
+
+  <!-- The pane turned over (the dock's List view). Outside the token check:
+       the dock's hubs can be listed with no earth to show them on. -->
+  {#if listOpen}
+    <MapList
+      hubs={listHubs}
+      lens={selectedLens}
+      rows={listed.rows}
+      total={listed.total}
+      onopen={requestOpen}
+      onshowhub={(id) => void showBoard(id)}
+      onshowrow={showRow}
+    />
   {/if}
 </div>
 

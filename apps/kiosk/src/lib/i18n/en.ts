@@ -412,11 +412,14 @@ export const en = {
   "dock.add": "Add a hub",
   "dock.addPlaceholder": "Holon id, name, npub, address, or link",
   "dock.addInvalid": "That doesn't name a holon.",
-  // The map's search box: hubs from the registry and this deploy's labels,
-  // or anything pasted whole. A hub already docked is flown to, not re-added.
-  "dock.searchPlaceholder": "Find a hub to add…",
+  // The map's search box: hubs — the dock's own, this deploy's labels, the
+  // registry, or anything pasted whole — and places by name. A hub already
+  // docked is flown to, not re-added; a place is flown to.
+  "dock.searchPlaceholder": "Find a hub or a place…",
+  "dock.searchHubs": "Hubs",
+  "dock.searchPlaces": "Places",
   "dock.searchDocked": "on your dock",
-  "dock.searchNone": "No hub by that name.",
+  "dock.searchNone": "Nothing by that name.",
   // The tray's "+" on the map: with a cell and a lens in hand it writes into
   // that pair; with a cell alone the hub it names comes to live there.
   "dock.addTo": "Add {lens} here",
@@ -430,6 +433,7 @@ export const en = {
     "Tap a circle to open its hub, hold one to remove it — drag one onto another to open their flows.",
   "dock.deck": "Holosphere",
   "dock.map": "Geosphere",
+  "dock.list": "List",
   // The front door is the map: a bare sky says so and points at /about.
   "dock.about": "About hubs",
   "dock.emptyTitle": "No hubs here yet",
@@ -454,6 +458,14 @@ export const en = {
   "map.closePanel": "Close",
   "map.back": "Back",
   "map.detailEmpty": "No further details.",
+  // The map read as a list: the dock's hubs, then the lens's records in view.
+  "map.listShow": "Show {name} on the map",
+  "map.listNoPlace": "no place yet",
+  "map.listInView": "{lens} in view",
+  "map.listInViewBare": "In view",
+  "map.listPickLens": "Pick a lens below to list what is in view.",
+  "map.listEmpty": "Nothing in view for this lens.",
+  "map.listMore": "Showing the first {n} — zoom in to narrow it down.",
   "map.field.status": "Status",
   // `id` is only ever asked for by the library, where the id IS the name.
   "map.field.id": "Name",

@@ -75,7 +75,8 @@
   import AddHubSheet from "./AddHubSheet.svelte";
   import FederationLens from "./FederationLens.svelte";
   import DockMap from "./DockMap.svelte";
-  import HolonSearch from "./HolonSearch.svelte";
+  import MapSearch from "./MapSearch.svelte";
+  import type { PlaceHit } from "$lib/placesearch";
   import { showHomePage } from "$lib/home";
   import { holonId } from "$lib/stores";
 
@@ -90,12 +91,16 @@
     return ink ? `--c: ${c}; --on-c: ${ink}` : `--c: ${c}`;
   }
 
-  // The earth, when it's showing beneath the sky — the bar's hub search
-  // docks onto it, its My-location button asks it to locate, and every
-  // frame the sky asks it where each placed board's hexagon sits.
+  // The earth, when it's showing beneath the sky — the bar's search docks
+  // hubs onto it and flies it to places, its My-location button asks it to
+  // locate, and every frame the sky asks it where each placed board's
+  // hexagon sits.
   let dockMap: DockMap | undefined;
   let locating = false;
-  $: mapOn = $dockView === "map";
+  // The earth is up for the list too: the list is the earth's pane turned
+  // over, and what it lists is what the map beneath is looking at.
+  $: mapOn = $dockView !== "deck";
+  $: listOn = $dockView === "list";
 
   /**
    * What the earth has selected, when it is showing: the tapped cell and the
@@ -103,8 +108,9 @@
    * one of these, here" — see `addHub`.
    */
   let mapSel: { cell: string; lens: LensId | null } | null = null;
-  /** The cell an add would land in, or null when the earth is off/unselected. */
-  $: addCell = mapOn ? (mapSel?.cell ?? null) : null;
+  /** The cell an add would land in, or null when the earth is off/unselected
+   *  — or turned over into the list, where no cell is there to be seen. */
+  $: addCell = mapOn && !listOn ? (mapSel?.cell ?? null) : null;
   /**
    * The lens an add would write into that cell. The `holons` lens is NOT one
    * of these: adding a holon is adding a hub, and the cell becomes its home
@@ -659,6 +665,10 @@
     if (hit.docked) void dockMap?.showBoard(hit.id);
     else void addHub({ id: hit.id, name: hit.name }, { stay: true });
   }
+  /** The search box picked a place: the earth flies there. */
+  function pickPlace(place: PlaceHit) {
+    dockMap?.showPlace(place);
+  }
 
   // Back from Telegram: with a claim token out, the Telegram step picks the
   // wait back up (the bot's answer docks the hub by itself). With nothing
@@ -722,6 +732,8 @@
       <DockMap
         bind:this={dockMap}
         bind:locating
+        listOpen={listOn}
+        onshowmap={() => setDockView("map")}
         bind:selection={mapSel}
         onbackdrop={standDown}
         onmove={() => (mapTick += 1)}
@@ -940,14 +952,18 @@
     {/if}
   </div>
 
-  <!-- The top bar hovers over the sky, in three slots: the sky/earth switch
-       always in the middle; with the earth on, the hub search to its left
-       and the My-location button at the right edge — all inside the earth's
-       pane. -->
+  <!-- The top bar hovers over the sky, in three slots: the sky/earth/list
+       switch always in the middle; with the earth on, the search (hubs and
+       places) to its left and the My-location button at the right edge —
+       all inside the earth's pane. -->
   <div class="topbar" class:onmap={mapOn}>
     <div class="topbar__left">
       {#if mapOn}
-        <HolonSearch onpick={pickHub} />
+        <MapSearch
+          onpick={pickHub}
+          onplace={pickPlace}
+          near={() => dockMap?.center() ?? null}
+        />
       {/if}
     </div>
     <div class="viewtoggle" role="radiogroup" aria-label={$t("dock.boards")}>
@@ -970,6 +986,16 @@
         on:click={() => setDockView("map")}
       >
         <span aria-hidden="true"><Icon name="hexagon" /></span>{$t("dock.map")}
+      </button>
+      <button
+        type="button"
+        class="viewopt"
+        class:on={$dockView === "list"}
+        role="radio"
+        aria-checked={$dockView === "list"}
+        on:click={() => setDockView("list")}
+      >
+        <span aria-hidden="true"><Icon name="list" /></span>{$t("dock.list")}
       </button>
     </div>
     <div class="topbar__right">
@@ -1630,16 +1656,16 @@
     .topbar.onmap .topbar__right {
       grid-area: right;
     }
-    .topbar.onmap :global(.hubsearch) {
+    .topbar.onmap :global(.mapsearch) {
       flex: 1 1 auto;
     }
   }
   .topbar :global(.viewtoggle),
-  .topbar :global(.hubsearch),
+  .topbar :global(.mapsearch),
   .topbar :global(.locate) {
     pointer-events: auto;
   }
-  .topbar :global(.hubsearch) {
+  .topbar :global(.mapsearch) {
     flex: 0 1 24rem;
   }
   .locate {

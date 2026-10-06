@@ -792,16 +792,19 @@ export function isForgotten(id: string): boolean {
 /**
  * What lies beneath the orbs: "deck" is the sky alone, "map" shows the earth
  * under it — each placed orb then hovers over its hexagon, tied to it by a
- * beacon. The orbs themselves are always there. The earth is the default:
- * the map is the kiosk's front door, the first thing a bare visit shows.
+ * beacon — and "list" turns the earth's pane over into a list of the same
+ * things, by name. The orbs themselves are always there. The earth is the
+ * default: the map is the kiosk's front door, the first thing a bare visit
+ * shows.
  */
-export type DockViewMode = "deck" | "map";
+export type DockViewMode = "deck" | "map" | "list";
 
 const VIEW_KEY = "kiosk_dock_view";
 
 function loadView(): DockViewMode {
   try {
-    return localStorage.getItem(VIEW_KEY) === "deck" ? "deck" : "map";
+    const kept = localStorage.getItem(VIEW_KEY);
+    return kept === "deck" || kept === "list" ? kept : "map";
   } catch {
     return "map";
   }

@@ -19,6 +19,7 @@
   import { getHolosphere, getWriter } from "$lib/holosphere";
   import { setGeo } from "$lib/config";
   import { geoMessage, requestPosition } from "$lib/geolocate";
+  import { searchPlaces as geocode, type PlaceHit } from "$lib/placesearch";
   import { t, tr } from "$lib/i18n";
 
   /** The holon whose `settings.hex` is being claimed. */
@@ -252,11 +253,6 @@
   }
 
   // ── address search (Mapbox Geocoding API, same token as the basemap) ──
-  interface PlaceHit {
-    label: string;
-    lat: number;
-    lng: number;
-  }
   let searchQuery = "";
   let searchHits: PlaceHit[] = [];
   let searching = false;
@@ -276,16 +272,12 @@
     if (!MAPBOX_TOKEN) return;
     searching = true;
     try {
-      const res = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${MAPBOX_TOKEN}&limit=5&types=address,poi,place,locality,neighborhood`,
-      );
-      const data = await res.json();
+      // A claimed cell is a doorstep: nothing coarser than a neighbourhood.
+      const found = await geocode(q, MAPBOX_TOKEN, {
+        types: "address,poi,place,locality,neighborhood",
+      });
       if (searchQuery.trim() !== q) return; // stale response
-      searchHits = (data?.features ?? []).map((f: any) => ({
-        label: f.place_name as string,
-        lng: f.center?.[0],
-        lat: f.center?.[1],
-      }));
+      searchHits = found;
     } catch {
       searchHits = [];
     } finally {
