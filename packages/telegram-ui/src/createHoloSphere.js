@@ -429,6 +429,12 @@ export function createTrustCache(
       } catch {
         /* no admin key */
       }
+      // The keys the admin linked to themselves admin too (the same rule the
+      // bootstrap applies): an admin on their own Nostr key seats people from
+      // a screen without passing through Telegram.
+      for (const k of keys)
+        if (k !== holonPubkey && String(byPubkey.get(k)) === adminId)
+          desired.set(k, 'admin');
     }
     // Admins of linked dashboard hubs keep their seat (a prune would
     // otherwise unseat them: they are not in the `users` lens).
@@ -475,6 +481,9 @@ export function createTrustCache(
 
   return {
     async trustedAuthors(holon) {
+      // An address (`<holon>/settings`) is not a holon: refreshing it would
+      // read lenses that do not exist and found a membership log for it.
+      if (holon == null || String(holon).includes('/')) return [holonPubkey];
       const cached = perHolon.get(String(holon));
       if (cached && Date.now() - cached.at < ttlMs) return cached.list;
       const list = await refresh(holon);

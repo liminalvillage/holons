@@ -185,7 +185,7 @@
   }
   .viewswitch button.active {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .viewswitch button:active {

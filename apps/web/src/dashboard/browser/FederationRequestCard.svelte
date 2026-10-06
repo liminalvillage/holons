@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { shortId } from '@holons/core/identity';
 	import { createEventDispatcher } from 'svelte';
 	import { Check, X, RefreshCw } from 'svelte-feathers';
 
@@ -21,7 +22,7 @@
 	}
 
 	// Format public key for display
-	$: displayPubKey = senderPubKey ? `${senderPubKey.slice(0, 8)}...${senderPubKey.slice(-4)}` : '';
+	$: displayPubKey = senderPubKey ? shortId(senderPubKey) : '';
 </script>
 
 <div class="request-card" class:request-card--update={type === 'lens_update'}>

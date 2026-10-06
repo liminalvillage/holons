@@ -81,7 +81,7 @@
   .ini {
     font-size: calc(var(--sz) * 0.42);
     font-weight: 800;
-    color: #fff;
+    color: var(--on-teal);
   }
   .av img {
     position: absolute;
@@ -92,6 +92,9 @@
   }
   .av.more {
     background: var(--paper-deep);
+  }
+  .av.more .ini {
+    color: var(--ink-soft);
   }
   .av.more .ini {
     color: var(--ink-soft);

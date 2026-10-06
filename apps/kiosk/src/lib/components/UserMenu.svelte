@@ -1,6 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import Icon from "$lib/components/Icon.svelte";
+  import { shortId } from "@holons/core/identity";
   // The single entry point behind the header account chip: identity, the
   // dashboard link, and Settings — everything that used to clutter the
   // header, now in one menu. (Federated visibility lives in each view's Show
@@ -23,7 +24,7 @@
   import { forgetRememberedKey } from "$lib/rememberKey";
   import { installMode, promptInstall } from "$lib/install";
   import { askToJoin, leave } from "$lib/hubmembers";
-  import { isHolonId } from "@holons/core/protocol";
+  import { isHolonId, isTelegramChatId } from "@holons/core/protocol";
   import { t, tr } from "$lib/i18n";
 
   $: who = $brandName || $holonName;
@@ -61,15 +62,20 @@
     close();
     loginOpen.set(true);
   }
-  // Key-founded hubs take members by key: ask to be seated, or say goodbye.
+  // Hubs with a signed roster take members by key — founded from a screen
+  // or born in Telegram (its bot founds the log): ask to be seated, or say
+  // goodbye. The fuller story, and the same ask, live in Settings.
   let joinBusy = false;
-  $: keyHub = !!$holonId && isHolonId($holonId) && !!$sessionKeyPub;
+  $: keyHub =
+    !!$holonId &&
+    (isHolonId($holonId) || isTelegramChatId($holonId)) &&
+    !!$sessionKeyPub;
   async function joinHub() {
     if (!$holonId || !$currentUser || joinBusy) return;
     joinBusy = true;
     try {
       if (await askToJoin($holonId, displayName($currentUser)))
-        showNotice(tr("menu.joinRequested"));
+        showNotice(tr("menu.linkAsked"));
     } finally {
       joinBusy = false;
     }
@@ -78,7 +84,7 @@
     if (!$holonId || joinBusy) return;
     joinBusy = true;
     try {
-      if (await leave($holonId)) showNotice(tr("menu.leftHub"));
+      if (await leave($holonId)) showNotice(tr("menu.unlinked"));
     } finally {
       joinBusy = false;
     }
@@ -199,40 +205,51 @@
   {/if}
 
   {#if $currentUser}
-    {#if $sessionKeyPub}
+    {#if $sessionKeyPub && $currentUser.provider === "telegram"}
+      <!-- The key a Telegram login brings along: it goes with the login. -->
+      <div class="row standing" role="status">
+        <span class="ico"><Icon name="key" /></span>
+        <span class="label"
+          >{$t("menu.signingAs", {
+            key: shortId($sessionKeyPub),
+          })}</span
+        >
+      </div>
+    {:else if $sessionKeyPub}
       <button class="row" on:click={unlinkKey}>
         <span class="ico"><Icon name="key" /></span>
         <span class="label"
           >{$t("menu.signingAs", {
-            key: `${$sessionKeyPub.slice(0, 8)}…`,
+            key: shortId($sessionKeyPub),
           })}</span
         >
         <span class="chev"><Icon name="close" /></span>
       </button>
     {/if}
-    <!-- Where this key stands with the hub: reads are enforced, so a key the
-         hub has not accepted writes only for itself. Said here, where the
-         identity is, rather than on every card. -->
+    <!-- Whether this key is linked to the hub: reads are enforced, so a key
+         the hub has not linked writes only for itself. Said here, where the
+         identity is, rather than on every card; Settings → Members has the
+         full story. -->
     {#if $writeStanding === "held"}
       <div class="row standing held" role="status">
         <span class="ico"><Icon name="lock" /></span>
-        <span class="label">{$t("menu.held")}</span>
+        <span class="label">{$t("menu.notLinked")}</span>
       </div>
       {#if keyHub}
         <button class="row" disabled={joinBusy} on:click={joinHub}>
           <span class="ico"><Icon name="key" /></span>
-          <span class="label">{$t("menu.joinHub")}</span>
+          <span class="label">{$t("menu.linkMe")}</span>
         </button>
       {/if}
     {:else if $writeStanding === "accepted"}
       <div class="row standing" role="status">
         <span class="ico"><Icon name="check" /></span>
-        <span class="label">{$t("menu.accepted")}</span>
+        <span class="label">{$t("menu.linked")}</span>
       </div>
       {#if keyHub}
         <button class="row" disabled={joinBusy} on:click={leaveHub}>
           <span class="ico"><Icon name="close" /></span>
-          <span class="label">{$t("menu.leaveHub")}</span>
+          <span class="label">{$t("menu.unlinkMe")}</span>
         </button>
       {/if}
     {/if}
@@ -271,7 +288,7 @@
     place-items: center;
     object-fit: cover;
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     font-size: 1.1rem;
     font-weight: 800;
   }
@@ -322,7 +339,7 @@
     width: 1.5rem;
     text-align: center;
     font-size: 1.15rem;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .row .label {
     flex: 1;
@@ -377,17 +394,17 @@
     display: grid;
     place-items: center;
     background: var(--paper);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-size: 1.15rem;
   }
 
   .row.primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .row.primary .ico {
-    color: #fff;
+    color: var(--on-teal);
   }
   .row.standing {
     cursor: default;
@@ -403,9 +420,9 @@
     opacity: 1;
   }
   .row.standing.held .ico {
-    color: #b45309;
+    color: var(--caution);
   }
   .row.danger .ico {
-    color: #9a3b2f;
+    color: var(--danger);
   }
 </style>

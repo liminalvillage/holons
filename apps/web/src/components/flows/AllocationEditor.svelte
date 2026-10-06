@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nameMap, resolvedName } from "$lib/stores/nameResolver";
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
   // The allocation split, made editable where it is read.
@@ -39,6 +40,9 @@
     bundlesSameChain,
     chainStanding,
     describeChain,
+    addBundleToken,
+    formatHolding,
+    holdingLines,
     loadBundleRecord,
     normalizeInteriorShares,
     resolveInteriorMembers,
@@ -52,6 +56,8 @@
     WrongNetworkError,
     type BundleBindings,
   } from "../../lib/holons/bindings";
+  import { describeToken, readHoldings } from "../../lib/holons/holdings";
+  import type { BundleHoldings } from "@holons/core/flows";
   import { ZONE_COLORS } from "../flow/types";
   import type {
     CascadeResult,
@@ -62,6 +68,8 @@
 
   export let holonId = "";
   export let holosphere: HoloSphere | null = null;
+  /** The person looking, so the panel can say what the contract holds for them. */
+  export let selfId: string | null = null;
 
   /** The live draft. Bound, so the diagram above moves with the sliders. */
   export let interiorPercent = 50;
@@ -467,6 +475,7 @@
         say("Bound on chain.", "success");
         bindFor = "";
         bindingsKey = "";
+        holdingsKey = "";
         void loadBindings(bundle.address, partyIds);
       } else {
         say("The transaction failed on chain.", "error");
@@ -496,6 +505,56 @@
     shareText = {};
     say("");
     dispatch("reset");
+  }
+
+  // ── What the contract holds ─────────────────────────────────────────
+  // Read whenever a Bundle is known: the wallet's provider when it is on
+  // the Bundle's chain, else the chain's public endpoint, so the panel
+  // shows the litres without a wallet. Re-read after a bind (it pays out
+  // what was held) and after a token is listed.
+  let holdings: BundleHoldings | null = null;
+  let holdingsLoading = false;
+  let holdingsKey = "";
+  $: holdingsWant = bundle
+    ? `${bundle.address}#${bundle.chainId ?? ""}#${(bundle.tokens ?? [])
+        .map((t) => t.address)
+        .join(",")}#${selfId ?? ""}#${!!provider}`
+    : "";
+  $: if (open && bundle) void loadHoldings(bundle, holdingsWant);
+  async function loadHoldings(record: HolonBundleRecord, want: string) {
+    if (want === holdingsKey) return;
+    holdingsKey = want;
+    holdingsLoading = true;
+    try {
+      const read = await readHoldings(provider, record, selfId);
+      if (holdingsKey === want) holdings = read;
+    } catch (err) {
+      console.warn("[flows] holdings read failed", err);
+      if (holdingsKey === want) holdings = null;
+    } finally {
+      if (holdingsKey === want) holdingsLoading = false;
+    }
+  }
+  $: holdingRows = holdingLines(holdings);
+
+  let tokenAddress = "";
+  let tokenBusy = false;
+  let tokenError = "";
+  /** List an ERC-20 on the record: from then on the fund is read in it too. */
+  async function trackToken() {
+    if (!bundle || !holosphere || tokenBusy) return;
+    tokenBusy = true;
+    tokenError = "";
+    try {
+      const token = await describeToken(provider, bundle.chainId ?? null, tokenAddress);
+      bundle = await addBundleToken(holosphere, holonId, token);
+      tokenAddress = "";
+      holdingsKey = "";
+    } catch (err: any) {
+      tokenError = err?.message ?? "Couldn't add that token.";
+    } finally {
+      tokenBusy = false;
+    }
   }
 
   // The bundle address is a plain settings read — no wallet, so the panel can
@@ -848,7 +907,7 @@
                           <p class="bind-warn">
                             {#if w === "loop"}
                               Part of it loops back: {bindPreflight.loops[0]
-                                .map((id) => nameOf.get(id) ?? id)
+                                .map((id) => nameOf.get(id) ?? resolvedName(id, $nameMap))
                                 .join(" → ")}. That part rests where the loop closes.
                             {:else if w === "large"}
                               {bindPreflight.nodes} holons in one push — a large transaction.
@@ -900,6 +959,48 @@
                 >explorer ↗</a
               >
             {/if}
+            <!-- The contract's own books: per unit, what it holds, how much
+                 waits for members who have not bound a wallet, and what
+                 waits for the person looking. -->
+            <div class="holds">
+              {#if holdingRows.length}
+                {#each holdingRows as line (line.unit + (line.address ?? ""))}
+                  <div class="hold-row">
+                    <span class="hold-total">{formatHolding(line.total, line.unit)}</span>
+                    <span class="muted">
+                      {#if line.held > 0}{formatHolding(line.held, line.unit)} waiting for members to bind{/if}
+                      {#if line.held > 0 && line.free > 0} · {/if}
+                      {#if line.free > 0}{formatHolding(line.free, line.unit)} not divided yet{/if}
+                    </span>
+                    {#if (line.mine ?? 0) > 0}
+                      <span class="hold-mine">{formatHolding(line.mine ?? 0, line.unit)} waiting for you</span>
+                    {/if}
+                  </div>
+                {/each}
+              {:else if holdingsLoading}
+                <span class="muted">Reading the contract…</span>
+              {:else if holdings}
+                <span class="muted">Holds nothing yet.</span>
+              {:else}
+                <span class="muted">Couldn't read the contract from here.</span>
+              {/if}
+              <div class="token-form">
+                <input
+                  type="text"
+                  spellcheck="false"
+                  placeholder="Token address (0x…) to read the fund in"
+                  bind:value={tokenAddress}
+                  disabled={tokenBusy || !holosphere}
+                />
+                <button
+                  type="button"
+                  class="btn ghost"
+                  disabled={tokenBusy || !holosphere || !/^0x[0-9a-fA-F]{40}$/.test(tokenAddress.trim())}
+                  on:click={trackToken}>{tokenBusy ? "Reading…" : "Track token"}</button
+                >
+              </div>
+              {#if tokenError}<span class="chain-warn">{tokenError}</span>{/if}
+            </div>
             {#if standing.kind === "elsewhere"}
               <span class="chain-warn"
                 >Your wallet is on {standing.wallet.name}; this Bundle is on {standing
@@ -1430,6 +1531,43 @@
   .chain-warn {
     flex-basis: 100%;
     color: #fbbf24;
+  }
+  .holds {
+    flex-basis: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin-top: 0.3rem;
+  }
+  .hold-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.2rem 0.6rem;
+  }
+  .hold-total {
+    font-weight: 700;
+    color: #f1f5f9;
+  }
+  .hold-mine {
+    flex-basis: 100%;
+    color: #5eead4;
+  }
+  .token-form {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.2rem;
+  }
+  .token-form input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid #334155;
+    border-radius: 0.4rem;
+    background: #0f172a;
+    color: #e2e8f0;
+    font: inherit;
+    font-size: 0.78rem;
   }
 
   /* ── Bindings ───────────────────────────────────────────────────────── */

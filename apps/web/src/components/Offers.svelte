@@ -26,7 +26,7 @@
   import { telegramUser } from "$lib/stores/telegram";
   import { nostrPublicKey } from "$lib/stores/nostr";
   import { showFederated } from "$lib/stores/lensFilters";
-  import { awaitName } from "$lib/stores/nameResolver";
+  import { awaitName, nameMap, resolvedName } from "$lib/stores/nameResolver";
   import { loadFilters, saveFilters } from "$lib/util/persistedFilters";
   import { notifyWriteDenied } from "$lib/stores/writeNotifications";
   import { getSelfInitiator, mergeSelfIntoUsers } from "$lib/util/usersWithSelf";
@@ -266,7 +266,7 @@
   $: supplyGroups = board ? groupByCategory(board.supply) : [];
   $: autoCards = board ? board.supply.filter((c) => c.own && c.auto) : [];
   $: handoffConfirmations = foldHandoffConfirmations(quests as never[]);
-  $: nameOf = (id: string) => (id === holonID ? "here" : (partnerNames[id] ?? id));
+  $: nameOf = (id: string) => (id === holonID ? "here" : (partnerNames[id] ?? resolvedName(id, $nameMap)));
   $: matchGroups = board
     ? (["provider", "requester", "observer"] as const)
         .map((role) => ({ role, cards: board!.matches.filter((m) => m.role === role) }))
@@ -288,7 +288,7 @@
   $: initiator = self
     ? { id: self.id, username: self.username, firstName: self.firstName, lastName: self.lastName }
     : $nostrPublicKey
-      ? { id: String($nostrPublicKey), username: String($nostrPublicKey).slice(0, 8) }
+      ? { id: String($nostrPublicKey) }
       : null;
 
   // ── Feedback ────────────────────────────────────────────────────────────

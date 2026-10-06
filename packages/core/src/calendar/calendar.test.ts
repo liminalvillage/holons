@@ -7,8 +7,8 @@ import {
     toggleRSVP,
     isAttending,
     buildRSVPList,
+    type RSVPUser,
     countAttendees,
-    rsvpDisplayName,
 } from './index.js';
 
 describe('iCal generation', () => {
@@ -102,7 +102,7 @@ describe('iCal generation', () => {
         ).replace(/\r?\n /g, '');
         expect(ical).toContain('UID:23@h1.holons.io');
         expect(ical).toContain('CN=Roberto');
-        expect(ical).toContain('CN=42');
+        expect(ical).toContain('CN=#42');
         expect(ical).toContain('mailto:235114395@holons.io');
     });
 
@@ -162,9 +162,11 @@ describe('RSVP', () => {
         expect(countAttendees(users, 'm1')).toBe(1);
     });
 
-    it('falls back through display name fields', () => {
-        expect(rsvpDisplayName({ id: 'x', first_name: 'A', second_name: 'B' })).toBe('A B');
-        expect(rsvpDisplayName({ id: 'x', username: 'bob' })).toBe('bob');
-        expect(rsvpDisplayName({ id: '42' })).toBe('42');
+    it('falls back through display name fields with the shared rule', () => {
+        const name = (u: RSVPUser) => buildRSVPList([u], 'm')[0].name;
+        expect(name({ id: 'x', first_name: 'A', second_name: 'B' })).toBe('A B');
+        expect(name({ id: 'x', username: 'bob' })).toBe('bob');
+        expect(name({ id: '42' })).toBe('#42');
+        expect(name({ id: '42', username: '42' })).toBe('#42');
     });
 });

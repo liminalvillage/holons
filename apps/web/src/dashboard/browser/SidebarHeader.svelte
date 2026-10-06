@@ -2,7 +2,8 @@
 	import { createEventDispatcher, getContext } from 'svelte';
 	import { Copy, Check, Grid } from 'svelte-feathers';
 	import { ID } from '../store';
-	import { nameMap, resolveName } from '$lib/stores/nameResolver';
+	import { nameMap, resolveName, resolvedName } from '$lib/stores/nameResolver';
+	import { shortId } from '@holons/core/identity';
 
 	const dispatch = createEventDispatcher();
 	let idCopied: boolean = false;
@@ -11,15 +12,11 @@
 	// Current holon from store
 	$: currentHolonId = $ID;
 	// Only shorten ID if longer than 20 characters
-	$: displayId = currentHolonId
-		? (currentHolonId.length > 20
-			? `${currentHolonId.slice(0, 8)}...${currentHolonId.slice(-6)}`
-			: currentHolonId)
-		: '';
+	$: displayId = currentHolonId ? shortId(currentHolonId) : '';
 
 	// Resolve holon name reactively
 	$: if (currentHolonId) resolveName(currentHolonId);
-	$: holonName = currentHolonId ? ($nameMap[currentHolonId] || 'Unnamed Holon') : 'No Holon Selected';
+	$: holonName = currentHolonId ? resolvedName(currentHolonId, $nameMap) : 'No Holon Selected';
 
 	async function copyHolonId() {
 		if (currentHolonId) {

@@ -49,7 +49,6 @@ export {
 } from './operations.js';
 
 export {
-  actorDisplayName,
   actorMatchesBooking,
   dayKey,
   findOverlappingBooking,

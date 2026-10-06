@@ -13,7 +13,7 @@
 	import DisplayName from './shared/DisplayName.svelte';
 	import { getColorFromCategory } from '@holons/core/categories';
 	import { toggleParticipant as coreToggleParticipant } from '@holons/core/tasks';
-	import { reflectMembership } from '../utils/reflectMembership';
+	import { refreshMemberDm } from '../utils/refreshMemberDm';
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -219,17 +219,12 @@
 
 		await holosphere.put(holonID, "quests", quest);
 
-		// Mirror into the member's personal holon + (re)send the linked DM.
+		// Core mirrored the change into the member's personal holon with the
+		// write; refresh their linked DM when they left.
 		const joined = (updated.participants || []).some(
 			(p) => String(p?.id) === String(userId)
 		);
-		void reflectMembership({
-			holosphere,
-			holonId: holonID,
-			questId: String(quest.id ?? questId),
-			userId,
-			joined,
-		});
+		refreshMemberDm({ questId: String(quest.id ?? questId), userId, joined });
 
 		showDropdown = null;
 	}

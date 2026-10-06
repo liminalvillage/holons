@@ -250,3 +250,116 @@ export function createLinkedKeysResolver(
     },
   };
 }
+
+// ── Proof from the key's own screen ────────────────────────────────────────
+//
+// The challenge above starts in Telegram and needs a Nostr client to post
+// the note. A screen that already holds the key (the kiosk, the web) can do
+// the posting itself, so the flow is turned around: the screen mints the
+// code, signs the proof note and publishes it, then hands Telegram a deep
+// link carrying the code and a prefix of the key. The bot finds the note by
+// its tag, checks the author matches the prefix and the note is fresh, and
+// links that key to whoever tapped. The bot never signs anything here —
+// the signature that proves control is the screen's, as it must be.
+
+/** The `/start` payload prefix the bot answers to. */
+export const KEY_LINK_DEEPLINK_PREFIX = 'keylink_';
+/** The topic tag every proof note carries, so a relay can find it by code. */
+export const KEY_LINK_TAG = 'holons-key-link';
+
+/** A proof the key's holder is about to publish. */
+export interface KeyLinkOffer {
+  /** The key being linked, 64-hex. */
+  pubkey: string;
+  /** The code the note carries, `holons-link-xxxxxxxx`. */
+  code: string;
+  /** Unix seconds the offer was minted. */
+  issuedAt: number;
+}
+
+/** Mint an offer for `pubkey` (hex or npub); throws on an unparsable key. */
+export function buildKeyLinkOffer(
+  pubkey: string,
+  opts: { now?: number; random?: () => number } = {},
+): KeyLinkOffer {
+  const pk = normalizePubkey(pubkey);
+  if (!pk) throw new Error('buildKeyLinkOffer: expected a 64-char hex pubkey or an npub');
+  return {
+    pubkey: pk,
+    code: KEY_LINK_CODE_PREFIX + randomCode(opts.random ?? Math.random),
+    issuedAt: opts.now ?? Math.floor(Date.now() / 1000),
+  };
+}
+
+/** The unsigned note the key's holder signs and publishes: the code, tagged so it can be found. */
+export function keyLinkProofTemplate(
+  offer: KeyLinkOffer,
+  opts: { now?: number } = {},
+): { kind: number; created_at: number; content: string; tags: string[][] } {
+  return {
+    kind: 1,
+    created_at: opts.now ?? offer.issuedAt,
+    content: offer.code,
+    tags: [
+      ['t', KEY_LINK_TAG],
+      ['t', offer.code],
+    ],
+  };
+}
+
+const PAYLOAD = /^keylink_([a-z2-9]{8})_([0-9a-f]{16})$/;
+
+/**
+ * What the deep link carries: the random part of the code and the first 16
+ * hex of the key. Short enough for Telegram's 64-character `start` payload,
+ * and enough that a note posted by a stranger with a guessed code is not
+ * taken for the screen's.
+ */
+export function keyLinkDeepLinkPayload(offer: KeyLinkOffer): string {
+  return `${KEY_LINK_DEEPLINK_PREFIX}${offer.code.slice(KEY_LINK_CODE_PREFIX.length)}_${offer.pubkey.slice(0, 16)}`;
+}
+
+/** The code and key prefix a `/start keylink_…` payload names; null for anything else. */
+export function parseKeyLinkPayload(payload: string | null | undefined): { code: string; pubkeyPrefix: string } | null {
+  const m = PAYLOAD.exec(String(payload ?? '').trim());
+  if (!m) return null;
+  return { code: KEY_LINK_CODE_PREFIX + m[1], pubkeyPrefix: m[2] };
+}
+
+/** The relay filter that fetches the proof notes carrying `code`. */
+export function keyLinkProofByCodeFilter(
+  code: string,
+  opts: { now?: number; ttlSec?: number } = {},
+): { kinds: number[]; '#t': string[]; since: number; limit: number } {
+  const now = opts.now ?? Math.floor(Date.now() / 1000);
+  return { kinds: [1], '#t': [code], since: now - (opts.ttlSec ?? KEY_LINK_TTL_SEC), limit: 20 };
+}
+
+/** The minimal event shape a by-code proof check needs. */
+export interface TaggedProofEventLike extends ProofEventLike {
+  tags?: string[][];
+}
+
+/**
+ * The key a fresh proof note proves, or null. The note must carry the code
+ * in its content, be signed by a key starting with the payload's prefix, and
+ * be no older than the TTL (and not from the future). Signature validity is
+ * the relay client's job. With several candidates the newest wins.
+ */
+export function keyLinkProofPubkey(
+  events: Iterable<TaggedProofEventLike>,
+  parsed: { code: string; pubkeyPrefix: string },
+  opts: { now?: number; ttlSec?: number } = {},
+): string | null {
+  const now = opts.now ?? Math.floor(Date.now() / 1000);
+  const ttl = opts.ttlSec ?? KEY_LINK_TTL_SEC;
+  let best: TaggedProofEventLike | null = null;
+  for (const ev of events) {
+    const pk = String(ev.pubkey ?? '').toLowerCase();
+    if (!HEX64.test(pk) || !pk.startsWith(parsed.pubkeyPrefix)) continue;
+    if (typeof ev.content !== 'string' || !ev.content.includes(parsed.code)) continue;
+    if (ev.created_at < now - ttl || ev.created_at > now + 300) continue;
+    if (!best || ev.created_at > best.created_at) best = ev;
+  }
+  return best ? String(best.pubkey).toLowerCase() : null;
+}

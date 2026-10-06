@@ -22,11 +22,18 @@
 // key + `actingAs` after a reload, same as everyone else.
 
 import { writable, derived, get } from "svelte/store";
-import { personName } from "./data";
+import { shortId, userName } from "@holons/core/identity";
 import { signAuthEvent } from "@holons/core/auth";
 import type { ProviderLogin } from "./login/types";
-import { importNostrKey, npubLabel } from "./login/nostrKey";
+import { importNostrKey } from "./login/nostrKey";
 import { forgetRememberedKey } from "./rememberKey";
+import {
+  isShortName,
+  nameFor,
+  profileFor,
+  resolveNames,
+  setNamesSelf,
+} from "./names";
 
 /** The signed-in editor: a Telegram profile, or a bare key identity whose
  *  id (= personal holon id) is the Nostr pubkey hex. */
@@ -44,6 +51,7 @@ export type TelegramUser = KioskUser;
 
 export const currentUser = writable<KioskUser | null>(null);
 export const isLoggedIn = derived(currentUser, (u) => u != null);
+setNamesSelf(() => get(currentUser));
 
 /** Whether a login overlay is currently requested. */
 export const loginOpen = writable<boolean>(false);
@@ -68,10 +76,33 @@ function keyUser(
   return {
     id: pubkey,
     provider,
-    // The session cookie stores no profile for key users; the shortened npub
-    // is the durable label (a wallet address label survives only until reload).
-    first_name: label || npubLabel(pubkey),
+    // No stand-in: a key user's name is READ — their kind 0 on the relays,
+    // their record in a hub they are seated in (`hydrateKeyUser`). Until it
+    // arrives the screen shows the short npub through `displayName`.
+    first_name: label && !isShortName(label, pubkey) ? label : "",
   };
+}
+
+/**
+ * Fill a key user's name and picture from what names them — kind 0 first
+ * (the person's own profile, set on any Nostr client), else a hub record —
+ * once the identity is set. Nothing is persisted here.
+ */
+async function hydrateKeyUser(pubkey: string): Promise<void> {
+  try {
+    const found = (await resolveNames([pubkey])).get(pubkey) ?? "";
+    const profile = profileFor(pubkey);
+    currentUser.update((u) => {
+      if (!u || String(u.id) !== pubkey) return u;
+      const next = { ...u };
+      if (!next.first_name && !isShortName(found, pubkey))
+        next.first_name = found;
+      if (!next.photo_url && profile?.picture) next.photo_url = profile.picture;
+      return next;
+    });
+  } catch {
+    /* offline: the short form stands until the relays answer */
+  }
 }
 
 /**
@@ -83,10 +114,19 @@ export async function initAuth(): Promise<void> {
   try {
     const res = await fetch("/api/auth/session");
     if (res.ok) {
-      const { user, key } = await res.json();
+      const { user, key, nostrPrivateKey } = await res.json();
       currentUser.set(
         key ? keyUser(key.pubkey, key.provider) : normalize(user),
       );
+      if (key) void hydrateKeyUser(key.pubkey);
+      // A Telegram login brings its derived key when the server has the
+      // secret: adopted in memory, so the person signs as the member the
+      // bot already linked to their chats — the same key as on the web.
+      // Nothing is persisted here; the cookie re-derives it on every load.
+      if (!key && typeof nostrPrivateKey === "string" && nostrPrivateKey) {
+        const { adoptSessionKey } = await import("./sessionKey");
+        await adoptSessionKey(nostrPrivateKey);
+      }
       return;
     }
   } catch {
@@ -144,6 +184,7 @@ export async function loginWithKey(
   );
   const { adoptSessionKey } = await import("./sessionKey");
   await adoptSessionKey(providerLogin.privateKey);
+  void hydrateKeyUser(providerLogin.publicKey);
   loginOpen.set(false);
 }
 
@@ -183,7 +224,11 @@ export async function logout(): Promise<void> {
 
 /** Friendly display name for the logged-in user — the kiosk's one name rule. */
 export function displayName(u: KioskUser): string {
-  return personName(u);
+  return (
+    userName(u, { lastName: "initial", idFallback: false, unknown: "" }) ||
+    nameFor(u.id) ||
+    shortId(u.id)
+  );
 }
 
 /**
@@ -201,13 +246,20 @@ export function borrowActor(): {
   username?: string;
   first_name?: string;
   last_name?: string;
+  display_name?: string;
 } | null {
   const u = get(currentUser);
   if (!u) return null;
+  // A key user with no record yet is named by the resolver; a short form is
+  // not a name and is left out so the booking never stores a placeholder.
+  const resolved = nameFor(u.id);
   return {
     id: u.id,
     username: u.username,
     first_name: u.first_name,
     last_name: u.last_name,
+    ...(!u.first_name && !isShortName(resolved, u.id)
+      ? { display_name: resolved }
+      : {}),
   };
 }

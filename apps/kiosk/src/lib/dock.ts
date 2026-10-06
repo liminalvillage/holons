@@ -8,6 +8,7 @@
 // animation between window and dock lives in the layout, which watches
 // `dockState` for the two transitional frames.
 
+import { shortId } from "@holons/core/identity";
 import { get, writable } from "svelte/store";
 import { colorHash } from "@holons/core/settings";
 import { SUBDOMAIN_HOLONS } from "./holons";
@@ -37,6 +38,7 @@ export type DockEntry = {
 export type DockState = "window" | "closing" | "dock" | "opening";
 
 const DOCK_KEY = "kiosk_dock";
+const FORGOTTEN_KEY = "kiosk_dock_forgotten";
 
 // ── Pure list operations (exported for tests) ────────────────────────────--
 
@@ -146,12 +148,41 @@ export function removeEntry(
   id: string,
   opts: { withDependents?: boolean } = {},
 ): DockEntry[] {
-  const gone = new Set([id]);
-  if (opts.withDependents)
-    for (const e of broughtInBy(list, id)) gone.add(e.id);
+  const gone = new Set(forgottenBy(list, id, opts));
   return list.some((e) => gone.has(e.id))
     ? list.filter((e) => !gone.has(e.id))
     : list;
+}
+
+/**
+ * The ids a removal forgets: the board itself and, with `withDependents`,
+ * the boards its federation brought in. These are what the implicit docking
+ * paths — a shown hub's partners (dockfed.ts), a key login's own hubs
+ * (myhubs.ts) — must leave alone from then on, or every reload would put the
+ * removed circle straight back.
+ */
+export function forgottenBy(
+  list: DockEntry[],
+  id: string,
+  opts: { withDependents?: boolean } = {},
+): string[] {
+  const ids = [id];
+  if (opts.withDependents)
+    for (const e of broughtInBy(list, id)) ids.push(e.id);
+  return ids;
+}
+
+/** Parse the persisted forgotten list, dropping anything malformed. */
+export function parseForgotten(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const list = JSON.parse(raw);
+    return Array.isArray(list)
+      ? [...new Set(list.filter((v) => typeof v === "string" && v.trim()))]
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -160,7 +191,7 @@ export function removeEntry(
  */
 export function labelFor(id: string): string {
   const label = segmentFor(id);
-  if (label === id) return id;
+  if (label === id) return shortId(id);
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
@@ -730,6 +761,32 @@ function save(list: DockEntry[]): void {
 /** Every board this device has opened, in first-opened order. */
 export const dockEntries = writable<DockEntry[]>(load());
 
+// The boards this device removed. A removal is final until the person adds
+// or opens the board again themselves: the folds that dock boards on their
+// own — a shown hub's partners, a key login's hubs — ask `isForgotten` first.
+function loadForgotten(): Set<string> {
+  try {
+    return new Set(parseForgotten(localStorage.getItem(FORGOTTEN_KEY)));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveForgotten(set: Set<string>): void {
+  try {
+    localStorage.setItem(FORGOTTEN_KEY, JSON.stringify([...set]));
+  } catch {
+    /* private mode / quota — a removal just won't survive a reload */
+  }
+}
+
+const forgotten: Set<string> = loadForgotten();
+
+/** Was this board removed from the dock, and never re-added since? */
+export function isForgotten(id: string): boolean {
+  return forgotten.has(id);
+}
+
 // ── Sky ⇄ earth ──────────────────────────────────────────────────────────--
 
 /**
@@ -777,6 +834,9 @@ export function rememberBoard(
   name: string,
   origin: DockOrigin = {},
 ): void {
+  // Docking is wanted again, whoever asks: the implicit folds that must
+  // honour a removal check `isForgotten` before they ever get here.
+  if (forgotten.delete(id)) saveForgotten(forgotten);
   const cur = get(dockEntries);
   const next = upsertEntry(
     cur,
@@ -810,6 +870,7 @@ export function nameBoard(id: string, name: string): void {
  * is the person's own act, so a partner-docked board becomes theirs here.
  */
 export function touchBoard(id: string): void {
+  if (forgotten.delete(id)) saveForgotten(forgotten);
   const next = upsertEntry(get(dockEntries), id, "");
   dockEntries.set(next);
   save(next);
@@ -817,13 +878,17 @@ export function touchBoard(id: string): void {
 
 /**
  * Delete a circle, and with `withDependents` the circles its federation
- * brought in. Forgetting is local — the holon and its links are untouched.
+ * brought in. Forgetting is local — the holon and its links are untouched —
+ * and it sticks: the removed ids stay forgotten (see `isForgotten`) until
+ * the person docks them again themselves.
  */
 export function forgetBoard(
   id: string,
   opts: { withDependents?: boolean } = {},
 ): void {
   const cur = get(dockEntries);
+  for (const gone of forgottenBy(cur, id, opts)) forgotten.add(gone);
+  saveForgotten(forgotten);
   const next = removeEntry(cur, id, opts);
   if (next !== cur) {
     dockEntries.set(next);

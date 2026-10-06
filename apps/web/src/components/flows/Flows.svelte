@@ -123,6 +123,7 @@
   } from "@holons/core/protocol";
   import { attestationsFrom, SHIFT_IDENTITY_LENS, type IdentityAttestation } from "@holons/core/shifts";
   import { buildNameMap } from "@holons/core/identity";
+  import { nameMap as knownNames, resolvedName } from "$lib/stores/nameResolver";
   import {
     expenseCurrencies,
     normalizeCurrency,
@@ -467,8 +468,13 @@
     settled: "Paid",
     rejected: "Not counted",
   };
-  const partyName = (id: string) =>
-    usersById[id]?.first_name || usersById[id]?.username || partners.find((p) => p.id === id)?.name || id;
+  // A person from the roster, a partner from the federation record, anyone
+  // else through the app's resolver — never a raw id.
+  const partyName = (id: string) => {
+    const mapped = nameMap.get(id);
+    if (mapped && mapped !== `#${id}`) return mapped;
+    return partners.find((p) => p.id === id)?.name || resolvedName(id, $knownNames);
+  };
   async function submitClaim() {
     if (!holonID || !selfId || claimBusy) return;
     const amount = Number(String(claimAmount).replace(",", "."));
@@ -630,7 +636,7 @@
     ids.delete(holonID);
     const list = [...ids]
       .filter(Boolean)
-      .map((id) => ({ id, name: nameMap.get(id) ?? usersById[id]?.first_name ?? id }))
+      .map((id) => ({ id, name: partyName(id) }))
       .sort((a, b) => a.name.localeCompare(b.name));
     return list;
   })();
@@ -1502,7 +1508,7 @@
         .filter((s) => s.percentage > 0)
         .map((s) => ({
           id: String(s.userId),
-          name: nameMap.get(String(s.userId)) ?? String(s.userId),
+          name: partyName(String(s.userId)),
           percentage: s.percentage,
         }));
     } catch (err) {
@@ -1753,6 +1759,7 @@
           <AllocationEditor
             holonId={holonID}
             {holosphere}
+            {selfId}
             bind:interiorPercent={allocationConfig.interiorPercent}
             bind:steepness={allocationConfig.steepness}
             bind:nzones={allocationConfig.nzones}

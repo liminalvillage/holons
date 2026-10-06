@@ -1,6 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import Icon from "$lib/components/Icon.svelte";
+  import { nameOf as resolvedName } from "$lib/names";
   //
   // The Flows board's Balances layout: the holon's mutual credit, read the
   // way a phone reads it.
@@ -74,7 +75,8 @@
   $: selfId = $currentUser ? String($currentUser.id) : null;
   $: nameById = new Map(people.map((p) => [p.id, p.name]));
   // Reactive closures, so a late-arriving name re-labels the rows in place.
-  $: nameOf = (id: unknown) => nameById.get(String(id)) ?? String(id ?? "");
+  $: nameOf = (id: unknown) =>
+    nameById.get(String(id)) ?? (id == null ? "" : $resolvedName(String(id)));
   $: isMe = (id: unknown) => !!selfId && String(id) === selfId;
   /** A name, or "You" for the viewer. */
   $: who = (id: unknown) => (isMe(id) ? $t("balances.you") : nameOf(id));
@@ -154,12 +156,19 @@
   $: members = people.map((p) => p.id);
   $: sharers = (e: Expense): string[] => expenseSharers(e, members).map(String);
 
-  /** Paid by the viewer, or shared with them. */
-  function involvesMe(e: Expense): boolean {
+  /**
+   * Paid by the viewer, or shared with them. A reactive closure like its
+   * siblings above, NOT a plain function: `inCurrency` filters through it,
+   * and Svelte orders `$:` blocks only by the names it can see in them. As a
+   * function its reads of `selfId`, `isMe` and `sharers` were invisible, so
+   * with records already in hand at mount the list ran before `sharers`
+   * existed (and never re-filtered when the viewer or the roster changed).
+   */
+  $: involvesMe = (e: Expense): boolean => {
     if (!selfId) return false;
     if (isMe(e.paidBy)) return true;
     return sharers(e).includes(selfId);
-  }
+  };
 
   /** Older records carried the bot's `date` or a `timestamp`; read all three. */
   function stamp(e: any): number {
@@ -1048,15 +1057,11 @@
   }
 
   .in {
-    color: var(--teal);
+    color: var(--teal-ink);
   }
 
   .out {
-    color: #c0392b;
-  }
-
-  :global(:root[data-theme="dark"]) .out {
-    color: #ff8a7a;
+    color: var(--danger);
   }
 
   .card {
@@ -1156,7 +1161,7 @@
   }
 
   .pair-amount.in {
-    color: var(--teal);
+    color: var(--teal-ink);
   }
 
   .settle {
@@ -1164,7 +1169,7 @@
     padding: 0 0.9rem;
     border-radius: 999px;
     background: var(--paper);
-    color: var(--teal);
+    color: var(--teal-ink);
     font-size: 0.85rem;
     font-weight: 700;
     white-space: nowrap;
@@ -1334,11 +1339,11 @@
   }
 
   .hint.in {
-    color: var(--teal);
+    color: var(--teal-ink);
   }
 
   .hint.out {
-    color: #c0392b;
+    color: var(--danger);
   }
 
   .plan {
@@ -1357,7 +1362,7 @@
   }
 
   .link {
-    color: var(--teal);
+    color: var(--teal-ink);
     font-size: 0.85rem;
     font-weight: 700;
     min-height: 2.5rem;
@@ -1395,7 +1400,7 @@
 
   .pick.on {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
   }
 
   .more {
@@ -1430,7 +1435,7 @@
   }
 
   .error {
-    color: #c0392b;
+    color: var(--danger);
     font-size: 0.88rem;
     margin: 0.6rem 0 0;
   }
@@ -1445,7 +1450,7 @@
     border-radius: 50%;
     font-size: 2rem;
     line-height: 1;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     box-shadow: 0 10px 24px rgba(14, 107, 102, 0.4);
     display: grid;
@@ -1475,7 +1480,7 @@
   .amount {
     margin: 0;
     font-size: 1.6rem;
-    color: var(--teal);
+    color: var(--teal-ink);
   }
 
   .receipt {
@@ -1574,12 +1579,12 @@
 
   .primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
 
   .ghost {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--ghost);
     color: var(--ink);
   }
 

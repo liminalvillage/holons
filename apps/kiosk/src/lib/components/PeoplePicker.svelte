@@ -179,7 +179,7 @@
     display: grid;
     place-items: center;
     border: 1.5px dashed var(--teal-deep);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-size: 1.25rem;
   }
   .add select {
@@ -193,6 +193,6 @@
   }
   .add:active .add-face {
     background: var(--teal-deep);
-    color: #fff;
+    color: var(--on-teal);
   }
 </style>

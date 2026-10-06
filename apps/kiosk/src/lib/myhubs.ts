@@ -4,12 +4,13 @@
 // so a key user signing in on another screen would start from an empty sky.
 // With a session key up, every board shown is also remembered in the
 // person's OWN holon (`<pubkey>/holons`, @holons/core/holons), where only
-// their key writes — and on key login the list is folded into the dock.
+// their key writes — and on key login the list is folded into the dock,
+// minus the hubs this device removed (dock.ts `isForgotten`).
 
 import { get } from "svelte/store";
 import { myHolons, rememberHolon } from "@holons/core/holons";
 import { getHolosphere } from "./holosphere";
-import { dockEntries, rememberBoard } from "./dock";
+import { dockEntries, isForgotten, rememberBoard } from "./dock";
 import { sessionKeyPub } from "./sessionKey";
 
 /** Remember `id` in the signed-in person's own list (a no-op without a session key). */
@@ -34,7 +35,7 @@ export async function loadMyHubs(): Promise<number> {
     const docked = new Set(get(dockEntries).map((e) => e.id));
     let added = 0;
     for (const h of mine) {
-      if (docked.has(h.id)) continue;
+      if (docked.has(h.id) || isForgotten(h.id)) continue;
       rememberBoard(h.id, h.name ?? "");
       added += 1;
     }

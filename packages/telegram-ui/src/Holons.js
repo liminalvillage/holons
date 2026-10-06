@@ -2,6 +2,8 @@ import { ethers } from 'ethers';
 import * as fs from 'fs';
 import { Scenes } from 'telegraf';
 import * as utils from './utilities.js';
+import { memberDisplayName, memberNames } from './protocolContext.js';
+import { shortId } from '@holons/core/identity';
 import { createPaddedCaption } from './utilities.js';
 
 import * as appreciative from '../contracts/Appreciative.json' with { type: 'json' };
@@ -773,14 +775,9 @@ export default class Holons {
       const holonIdNormalized = `chat_${Math.abs(holonId)}`;
       let memberDisplay = memberId;
 
-      // Try to get a display name for the member
+      // The member's name, by the one rule every surface shares.
       try {
-        const users = await this.db.getAll(holonId.toString(), 'users');
-        const userMap = users.reduce((map, user) => {
-          map[user.id.toString()] = user.username || user.id.toString();
-          return map;
-        }, {});
-        memberDisplay = `@${userMap[memberId] || memberId}`;
+        memberDisplay = await memberDisplayName(this.db, holonId, memberId);
       } catch {}
 
       try {
@@ -1394,8 +1391,13 @@ export default class Holons {
           console.log('CBQ Error in member_confirm_remove:', e.message)
         );
       const memberId = ctx.match[1];
+      const removing = await memberDisplayName(
+        this.db,
+        utils.getholonId(ctx),
+        memberId
+      ).catch(() => String(memberId));
       await ctx
-        .editMessageText(`➖ Removing member ${memberId}...`)
+        .editMessageText(`➖ Removing member ${removing}...`)
         .catch(e => console.log('Edit error:', e.message));
 
       try {
@@ -2881,12 +2883,8 @@ export default class Holons {
       //   return ctx.reply(`This holon is of type "${flavor}" and does not support zones. Only "Zoned" holons have zone functionality.`);
       // }
 
-      // Retrieve all users from the database for the given holonId
-      const users = await this.db.getAll(holonId.toString(), 'users');
-      const userMap = users.reduce((map, user) => {
-        map[user.id] = user.username; // Assuming user.id is the address and user.username is the tag
-        return map;
-      }, {});
+      // Members by name — the one rule every surface shares.
+      const memberLabels = await memberNames(this.db, holonId);
 
       // Get zones from the Zoned holon
       try {
@@ -2900,7 +2898,9 @@ export default class Holons {
             zone: this.invertZone(i),
             members: [...members]
               .reverse()
-              .map(member => userMap[member] || member), // Map to user tags
+              .map(
+                member => memberLabels.get(String(member)) || shortId(member)
+              ),
           });
         }
 
@@ -3760,7 +3760,7 @@ export default class Holons {
                   `Could not get holon name for ${memberId}:`,
                   error.message
                 );
-                holonName = `Holon ${memberId}`; // Fallback name
+                holonName = String(memberId); // the id stands until a name is known
               }
 
               // Only show ID in brackets if the name is different from the ID
@@ -3822,10 +3822,8 @@ export default class Holons {
               holonName = null; // No name found
             }
 
-            // Always show ID - either with name or just ID
-            const displayName = holonName
-              ? `${holonName} (${federatedHolonId})`
-              : federatedHolonId.toString();
+            // The name when one is known; the id only when nothing names it.
+            const displayName = holonName || federatedHolonId.toString();
 
             let buttonText = displayName;
             let callbackData = `federated_holon_${federatedHolonId}`;
@@ -3963,10 +3961,8 @@ export default class Holons {
         }
 
         const usersFromDB = await this.db.getAll(holonId.toString(), 'users');
-        const userMap = usersFromDB.reduce((map, user) => {
-          map[user.id.toString()] = user.username; // Ensure DB user ID is string for map key
-          return map;
-        }, {});
+        const namesById = await memberNames(this.db, holonId);
+        const memberLabel = id => namesById.get(String(id)) || shortId(id);
 
         if (members.length === 0) {
           message += 'No members in internal yet.';
@@ -4071,7 +4067,7 @@ export default class Holons {
 
             if (mode === 'prepare_remove') {
               // Simple display for remove mode
-              const buttonText = `@${userMap[member.id] || member.id} ➖`;
+              const buttonText = `${memberLabel(member.id)} ➖`;
               const callbackData = `member_confirm_remove_${member.id}`;
               keyboard.push([
                 { text: buttonText, callback_data: callbackData },
@@ -4089,7 +4085,7 @@ export default class Holons {
               // Member name with both percentages
               keyboard.push([
                 {
-                  text: `@${userMap[member.id] || member.id} (local ${percentage}%, contract ${contractPercentage}%)`,
+                  text: `${memberLabel(member.id)} (local ${percentage}%, contract ${contractPercentage}%)`,
                   callback_data: 'noop',
                 },
               ]);
@@ -4390,13 +4386,8 @@ export default class Holons {
         memberDisplay = memberId.toString();
       }
     } else {
-      // For local members, use the existing user lookup logic
-      const users = await this.db.getAll(holonId.toString(), 'users');
-      const userMap = users.reduce((map, user) => {
-        map[user.id.toString()] = user.username || user.id.toString();
-        return map;
-      }, {});
-      memberDisplay = `@${userMap[memberId] || memberId}`;
+      // A local member, by the one rule every surface shares.
+      memberDisplay = await memberDisplayName(this.db, holonId, memberId);
     }
 
     let message;
@@ -4569,13 +4560,8 @@ Select the TARGET zone:`;
         memberDisplay = memberId.toString();
       }
     } else {
-      // For local members, use the existing user lookup logic
-      const users = await this.db.getAll(holonId.toString(), 'users');
-      const userMap = users.reduce((map, user) => {
-        map[user.id.toString()] = user.username || user.id.toString();
-        return map;
-      }, {});
-      memberDisplay = `@${userMap[memberId] || memberId}`;
+      // A local member, by the one rule every surface shares.
+      memberDisplay = await memberDisplayName(this.db, holonId, memberId);
     }
 
     let moveMessage;

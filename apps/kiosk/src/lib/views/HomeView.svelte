@@ -480,7 +480,7 @@
     text-decoration: none;
   }
   .back:hover {
-    color: var(--teal);
+    color: var(--teal-ink);
   }
   .wordmark {
     font-family: var(--font-logo);
@@ -488,7 +488,7 @@
     font-weight: 500;
     letter-spacing: 0.22em;
     text-transform: lowercase;
-    color: var(--teal);
+    color: var(--teal-ink);
     margin-bottom: 1.6rem;
   }
   .hero h1 {
@@ -536,7 +536,7 @@
     font-weight: 800;
     letter-spacing: 0.15em;
     text-transform: uppercase;
-    color: var(--teal);
+    color: var(--teal-ink);
     margin: 0;
   }
   .path h2 {
@@ -638,7 +638,7 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.95rem;
     font-weight: 700;
-    color: var(--teal);
+    color: var(--teal-ink);
     background: color-mix(in srgb, var(--teal) 10%, transparent);
     border: 1px solid color-mix(in srgb, var(--teal) 30%, transparent);
     border-radius: 8px;
@@ -666,7 +666,7 @@
   }
   .btn.primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-note);
   }
   .btn.compact {
@@ -698,7 +698,7 @@
     font-weight: 800;
     letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--teal);
+    color: var(--teal-ink);
     margin-bottom: 0.6rem;
   }
   .section > h2 {
@@ -764,7 +764,7 @@
   .tools li:last-child {
     border-style: solid;
     border-color: var(--teal);
-    color: var(--teal);
+    color: var(--teal-ink);
     font-weight: 700;
   }
 
@@ -826,7 +826,7 @@
     margin: 0.75rem 0 0;
     font-size: 0.94rem;
     line-height: 1.5;
-    color: #c0567a;
+    color: var(--danger);
   }
 
   /* ── Footer ────────────────────────────────────────────────────────────── */
@@ -856,7 +856,7 @@
   }
   .foot nav a:hover,
   .foot nav button:hover {
-    color: var(--teal);
+    color: var(--teal-ink);
   }
   .caretaker,
   .license {

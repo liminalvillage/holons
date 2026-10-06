@@ -27,8 +27,6 @@ import {
     toggleParticipant,
     toggleAppreciation,
     toggleStopper,
-    reflectJoin,
-    reflectLeave,
     type Quest as CoreQuest,
 } from '@holons/core/tasks';
 import { DEFAULT_EQUATION } from '@holons/core/scoring';
@@ -524,30 +522,16 @@ export default class Quests {
             quest.participants = toggled.participants;
             quest.appreciation = toggled.appreciation;
 
-            // Mirror a quest join/leave into the member's personal holon as a
-            // {id,soul} hologram (holograms are opt-in) so the joined quest
-            // surfaces under "my holon" across UIs. Appreciation never mirrors.
+            // Core mirrors a join/leave into the member's personal holon as a
+            // {id,soul} hologram when the quest is saved below (the roster
+            // mirror on every put), so the joined quest surfaces under "my
+            // holon" across UIs. Here only the DM: drop it on leave.
             let joined = false;
             if (action === 'join') {
                 joined = (quest.participants || []).some(
                     (p) => String(p?.id) === String(sender.id)
                 );
-                const reflectCtx = {
-                    holosphere: holonDB,
-                    homeHolonId: holonId,
-                    quest: { id: String(quest.id ?? messageId) },
-                    user: sender,
-                };
-                try {
-                    if (joined) {
-                        await reflectJoin(reflectCtx);
-                    } else {
-                        await reflectLeave(reflectCtx);
-                        await this.removeTelegramHologramMessage(ctx, quest, sender.id);
-                    }
-                } catch (err) {
-                    log.warn(`reflect membership failed: ${err?.message || err}`);
-                }
+                if (!joined) await this.removeTelegramHologramMessage(ctx, quest, sender.id);
             }
 
             // Unified save and update — only (re)send the personal DM when they

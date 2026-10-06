@@ -16,6 +16,7 @@
  */
 
 import { buildTimeline, type MembershipEnvelope } from 'holosphere/signing.js';
+import { eventToItem } from 'holosphere/nostr-events.js';
 import type { HoloSphere } from 'holosphere';
 import { MEMBERS_LENS } from './events.js';
 import type { AcceptedActors, Role } from './types.js';
@@ -111,11 +112,14 @@ export interface MembersSyncResult {
 
 export interface MembersSyncOptions {
   /**
-   * Unseat keys that are in the log but not in `desired` (default true).
-   * Pass false when `desired` may be incomplete — a roster read that came
-   * back empty on a cold start must never be taken as "nobody is a member":
-   * removal is as-of-time, so every write those keys make until they are
-   * re-added would be lost to every reader.
+   * Unseat keys that are in the log but not in `desired` (default true) —
+   * only the keys THIS instance seated: a seat another admin granted (a
+   * person approved by key from a screen, say) is theirs to keep, and the
+   * instance's roster never knew about it. Pass false when `desired` may be
+   * incomplete — a roster read that came back empty on a cold start must
+   * never be taken as "nobody is a member": removal is as-of-time, so every
+   * write those keys make until they are re-added would be lost to every
+   * reader.
    */
   prune?: boolean;
   /**
@@ -136,7 +140,11 @@ export interface MembersSyncOptions {
  */
 export async function syncMembersLog(hs: HoloSphere, holon: string, desired: Map<string, Role>, opts: MembersSyncOptions = {}): Promise<MembersSyncResult> {
   const result: MembersSyncResult = { founded: false, added: [], removed: [], changed: [] };
-  const h = String(holon);
+  const h = String(holon ?? '').trim();
+  // An address (`holon/lens`, `holon/lens/id`) is not a holon. A caller that
+  // slips one through would FOUND a membership log for it on the relays — a
+  // signed genesis nobody can un-publish — so refuse here, at the one door.
+  if (!h || h.includes('/')) throw new Error(`syncMembersLog: '${h}' is not a holon id`);
   const want = new Map<string, Role>();
   for (const [k, r] of desired) want.set(k.toLowerCase(), r === 'admin' ? 'admin' : 'member');
   const me = hs.currentPubkey.toLowerCase();
@@ -169,10 +177,42 @@ export async function syncMembersLog(hs: HoloSphere, holon: string, desired: Map
     }
   }
   if (opts.prune === false) return result;
+  const seatedBy = seatAuthors(await readMembersLog(hs, h));
   for (const pub of current.keys()) {
-    if (pub === me || want.has(pub)) continue;
+    if (pub === me || want.has(pub) || seatedBy.get(pub) !== me) continue;
     await hs.removeMember(h, pub, { at: now });
     result.removed.push(pub);
   }
   return result;
+}
+
+/**
+ * Who seated each currently seated key: the author of the add that holds,
+ * folded the way the timeline folds (genesis first, admin-gated, by time
+ * then id). Lowercase keys.
+ */
+export function seatAuthors(events: MembershipEnvelope[]): Map<string, string> {
+  type Op = { author: string; at: number; id: string; op: string; pubkey?: string; role?: string };
+  const parsed: Op[] = [];
+  for (const e of events ?? []) {
+    const item = eventToItem(e as never) as { op?: string; pubkey?: string; role?: string } | null;
+    if (!item?.op) continue;
+    parsed.push({ author: String(e.pubkey).toLowerCase(), at: e.created_at, id: e.id, op: item.op, pubkey: item.pubkey ? String(item.pubkey).toLowerCase() : undefined, role: item.role });
+  }
+  const byTime = (a: Op, b: Op) => a.at - b.at || (a.id < b.id ? -1 : 1);
+  const genesis = parsed.filter((x) => x.op === 'genesis').sort(byTime)[0];
+  const out = new Map<string, string>();
+  if (!genesis) return out;
+  const roles = new Map<string, Role>([[genesis.author, 'admin']]);
+  for (const op of parsed.filter((x) => x.op === 'add' || x.op === 'remove').sort(byTime)) {
+    if (roles.get(op.author) !== 'admin' || !op.pubkey) continue;
+    if (op.op === 'add') {
+      roles.set(op.pubkey, op.role === 'admin' ? 'admin' : 'member');
+      out.set(op.pubkey, op.author);
+    } else {
+      roles.delete(op.pubkey);
+      out.delete(op.pubkey);
+    }
+  }
+  return out;
 }

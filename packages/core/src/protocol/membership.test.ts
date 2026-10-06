@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { bytesToHex } from '@noble/hashes/utils';
 import { createHoloSphere } from '../holosphere/factory.js';
-import { actorsFromMembersLog, bootstrapActors, readMembersLog, resolveAcceptedActors, syncMembersLog } from './membership.js';
+import { actorsFromMembersLog, bootstrapActors, nextMembersAt, readMembersLog, resolveAcceptedActors, syncMembersLog } from './membership.js';
 import { membershipOp, shuffled, testKey } from './testing.js';
 
 const T0 = 1_760_000_000;
@@ -111,7 +111,39 @@ describe('syncMembersLog', () => {
   });
 });
 
+describe('syncMembersLog and seats another admin granted', () => {
+  it('prunes only the keys this instance seated; a screen admin\'s seat survives the bot\'s refresh', async () => {
+    const carol = testKey();
+    const hs = createHoloSphere({ appName: 'members-others-test', privateKey: bytesToHex(holon.sk), store: { adapter: 'memory' } });
+    const H = 'h-others';
+    // The holon key founds and seats alice as an admin (a linked dashboard admin, say).
+    await syncMembersLog(hs, H, new Map([[alice.pk, 'admin'], [bob.pk, 'member']]));
+    // Alice, from her screen, approves carol by key.
+    await hs.login(bytesToHex(alice.sk));
+    await hs.addMember(H, carol.pk, 'member', { at: await nextMembersAt(hs, H) });
+    expect((await hs.getMembers(H)).get(carol.pk)).toBe('member');
+    // The holon key's roster never heard of carol: its prune leaves her seated,
+    // while bob — its own seat, now gone from the roster — is unseated.
+    await hs.login(bytesToHex(holon.sk));
+    const r = await syncMembersLog(hs, H, new Map([[alice.pk, 'admin']]));
+    expect(r.removed).toEqual([bob.pk]);
+    const now = await hs.getMembers(H);
+    expect(now.get(carol.pk)).toBe('member');
+    expect(now.has(bob.pk)).toBe(false);
+    // A seat the holon key itself later takes over is its own again.
+    await syncMembersLog(hs, H, new Map([[alice.pk, 'admin'], [carol.pk, 'admin']]));
+    expect((await syncMembersLog(hs, H, new Map([[alice.pk, 'admin']]))).removed).toEqual([carol.pk]);
+  });
+});
+
 describe('syncMembersLog founding guard', () => {
+  it('refuses an address passed as a holon id — nothing is founded for `<holon>/settings`', async () => {
+    const hs = createHoloSphere({ appName: 'members-test', privateKey: bytesToHex(holon.sk), store: { adapter: 'memory' } });
+    await expect(syncMembersLog(hs, '-1004318065568/settings', new Map([[alice.pk, 'member']]))).rejects.toThrow(/not a holon id/);
+    await expect(syncMembersLog(hs, '', new Map())).rejects.toThrow(/not a holon id/);
+    expect(await readMembersLog(hs, '-1004318065568/settings')).toEqual([]);
+    await hs.close();
+  });
   it('with founding:false an empty log is left alone — no genesis, no ops', async () => {
     const hs = createHoloSphere({ appName: 'members-test', privateKey: bytesToHex(holon.sk), store: { adapter: 'memory' } });
     const r = await syncMembersLog(hs, 'h-unfounded', new Map([[alice.pk, 'member']]), { founding: false });

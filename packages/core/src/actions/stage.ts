@@ -23,7 +23,8 @@ import { addHost, creditedMembers, hostsOf, isHost, removeHost } from '../tasks/
 import { isEventQuest } from '../tasks/kind.js';
 import { sourceRef } from '../holosphere/provenance.js';
 import { toLocalDateField, toLocalTimeField } from '../datetime/index.js';
-import { personLabel } from './match.js';
+import { userName } from '../identity/index.js';
+const personLabel = (p: Parameters<typeof userName>[0]) => userName(p, { at: true });
 import type { HolonLike, ResolvedAction } from './resolve.js';
 
 export type ChangeKind = 'create' | 'update' | 'participants' | 'hosts' | 'complete' | 'privacy';

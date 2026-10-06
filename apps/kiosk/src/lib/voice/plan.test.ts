@@ -8,7 +8,7 @@ import { get } from "svelte/store";
 import type { Quest } from "@holons/core/tasks";
 import { localFieldsToStored, toLocalTimeField } from "@holons/core/datetime";
 
-const { db, put, reflect, complete } = vi.hoisted(() => {
+const { db, put, refresh, complete } = vi.hoisted(() => {
   const db: Record<string, Quest> = {};
   return {
     db,
@@ -16,7 +16,7 @@ const { db, put, reflect, complete } = vi.hoisted(() => {
       db[String(rec.id)] = rec;
       return true;
     }),
-    reflect: vi.fn(async (..._args: unknown[]) => {}),
+    refresh: vi.fn(async (..._args: unknown[]) => {}),
     complete: vi.fn(async () => ({ ok: true, actions: 1, expenses: 0 })),
   };
 });
@@ -38,7 +38,7 @@ vi.mock("$lib/membership", () => ({
     id: u.id,
     first_name: u.first_name,
   }),
-  reflectMembership: reflect,
+  refreshOwnDm: refresh,
 }));
 vi.mock("$lib/complete", () => ({ recordCompletion: complete }));
 
@@ -77,7 +77,7 @@ describe("voice plan", () => {
     db.k1 = kitchen;
     db.v1 = van;
     put.mockClear();
-    reflect.mockClear();
+    refresh.mockClear();
     complete.mockClear();
     holonId.set("h");
     rawQuests.set([kitchen, van]);
@@ -175,9 +175,12 @@ describe("voice plan", () => {
     expect(put).toHaveBeenCalledTimes(1);
     expect(db.v1.participants.map((p) => p.id)).toEqual(["1", 3]);
     expect(db.v1.title).toBe("Wash the van");
-    // The speaker's own join is mirrored (hologram reflection); Marco's is not.
-    expect(reflect).toHaveBeenCalledTimes(1);
-    expect(reflect.mock.calls[0][2]).toMatchObject({ id: 3 });
+    // Only the speaker's own DM is refreshed; the holograms are core's write.
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh.mock.calls[0]).toEqual([
+      "v1",
+      expect.objectContaining({ id: 3 }),
+    ]);
     // The unticked rename stays in the drawer.
     expect(get(pendingPlan)!.changeset.changes.map((c) => c.id)).toEqual([
       rename.id,

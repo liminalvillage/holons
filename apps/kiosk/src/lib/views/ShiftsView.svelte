@@ -262,7 +262,7 @@
     padding: 0.5rem 1rem;
     border-radius: 999px;
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     font-weight: 700;
   }
   .head h2 {
@@ -336,7 +336,7 @@
     padding: 0.12rem 0.5rem;
     border-radius: 999px;
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     font-size: 0.68rem;
     font-weight: 700;
     text-transform: capitalize;

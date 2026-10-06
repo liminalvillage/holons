@@ -214,7 +214,7 @@ describe('borrowItem / returnItem', () => {
     expect(wrongReturner.ok).toBe(false);
     expect(wrongReturner.reason).toBe('forbidden');
     // Snapshot is preserved on forbidden so callers can show the borrower.
-    expect(wrongReturner.item?.borrower).toBe('bob');
+    expect(wrongReturner.item?.borrower).toBe('Bob');
 
     const returned = await returnItem(db, 'h', 'drill', { id: 20, username: 'bob' });
     expect(returned.ok).toBe(true);

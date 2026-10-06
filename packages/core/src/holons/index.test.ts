@@ -141,7 +141,34 @@ describe('seating and group state', () => {
   });
 });
 
+describe('approveJoin seeds the joiner from their request', () => {
+  it('writes their record with the name they gave, once, never a placeholder, and the joiner can replace it', async () => {
+    const { hs } = instance();
+    const { holon: H } = await createHolon(hs, signer(founder.sk), { appName: APP });
+    await approveJoin(hs, H, alice.pk, signer(founder.sk), { appName: APP, name: '  Alice  ' });
+    expect(await hs.get(H, 'users', alice.pk)).toMatchObject({ id: alice.pk, first_name: 'Alice' });
+    await approveJoin(hs, H, bob.pk, signer(founder.sk), { appName: APP, name: `${'npub1'}${'q'.repeat(58)}` });
+    expect(await hs.get(H, 'users', bob.pk)).toBeNull();
+    await hs.login(bytesToHex(alice.sk));
+    await hs.put(H, 'users', { id: alice.pk, first_name: 'Alicia' });
+    expect((await hs.get(H, 'users', alice.pk)).first_name).toBe('Alicia');
+    await hs.close();
+  });
+});
+
 describe('ensureProfile', () => {
+  it('never persists a placeholder name', async () => {
+    const { hs } = instance();
+    const { holon: H } = await createHolon(hs, signer(founder.sk), { appName: APP });
+    await approveJoin(hs, H, alice.pk, signer(founder.sk), { appName: APP });
+    await hs.login(bytesToHex(alice.sk));
+    const { shortId } = await import('../identity/ids.js');
+    expect(await ensureProfile(hs, H, { first_name: shortId(alice.pk), picture: 'https://x/a.png' })).toBe(true);
+    expect(await hs.get(H, 'users', alice.pk)).toEqual(expect.objectContaining({ id: alice.pk, picture: 'https://x/a.png' }));
+    expect((await hs.get(H, 'users', alice.pk)).first_name).toBeUndefined();
+    await hs.close();
+  });
+
   it('writes once, only for a seated key, and never counts a pre-seat record', async () => {
     const { hs } = instance();
     const { holon: H } = await createHolon(hs, signer(founder.sk), { appName: APP });

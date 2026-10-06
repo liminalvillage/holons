@@ -22,9 +22,9 @@
     brandLogo,
     accent,
     statusEnabled,
-    flowsEnabled,
     settingsOpen,
     showNotice,
+    writeStanding,
   } from "$lib/stores";
   import { showHomePage } from "$lib/home";
   import {
@@ -61,12 +61,12 @@
     resolveCssColor,
     setHolonColor,
   } from "$lib/palette";
-  import { readCollectiveSlug, saveCollectiveSlug } from "@holons/core/flows";
-  import AudienceEditor from "$lib/components/AudienceEditor.svelte";
-  import { isLoggedIn, loginOpen } from "$lib/auth";
+  import { currentUser, displayName, isLoggedIn, loginOpen } from "$lib/auth";
   import { sessionKeyPub } from "$lib/sessionKey";
-  import { npubLabel } from "$lib/login/nostrKey";
+  import { nameOf } from "$lib/names";
+  import { shortId } from "@holons/core/identity";
   import {
+    askToJoin,
     dismissJoin,
     seat,
     unseat,
@@ -74,14 +74,17 @@
     type JoinRequest,
   } from "$lib/hubmembers";
   import { segmentFor } from "$lib/dock";
-  import { isHolonId } from "@holons/core/protocol";
+  import { isHolonId, isTelegramChatId } from "@holons/core/protocol";
+  import { keyLoginOffered } from "$lib/login/providers";
   import { linkedTelegramChats, type LinkRecord } from "@holons/core/linking";
   import { telegramLinkOpen, unlinkTelegramChat } from "$lib/tglink";
+  import { offerKeyLink } from "$lib/keylink";
   import LinkTelegramSheet from "./LinkTelegramSheet.svelte";
   import { onDestroy } from "svelte";
   import { getHolosphere } from "$lib/holosphere";
   import {
     resolveHolonAuthority,
+    writeAcceptance,
     type HolonAuthority,
   } from "@holons/core/holosphere";
   import {
@@ -124,20 +127,10 @@
     }
   }
 
-  // ── Private lenses ────────────────────────────────────────────────────
-  // A locked lens keeps its content sealed on the relays; who may read it
-  // is a list of holons kept by core (this hub's members always). The
-  // editor below owns the lock and the list; nothing here handles a key.
+  // ── Members ───────────────────────────────────────────────────────────
   // Who speaks for this hub — the authority the reads enforce — decides
-  // whether it can be founded from here.
-  const PRIVACY_LENSES = ["quests", "library", "roles", "checklists", "stock"];
-  const LENS_LABEL_KEYS: Record<string, MessageKey> = {
-    quests: "tabs.tasks",
-    library: "tabs.library",
-    roles: "tabs.roles",
-    checklists: "tabs.checklists",
-    stock: "tabs.stock",
-  };
+  // whether it can be founded from here. (A lens is locked from its own
+  // board, a card from its own view: see AudienceEditor.)
   let hubAuthority: HolonAuthority | null = null;
   // Who may found this hub when nobody speaks for it yet (core's rule): a
   // Telegram chat is its bot's; anything else a signed-in key may found from
@@ -155,6 +148,49 @@
   let joinRequests: JoinRequest[] = [];
   let stopRequests: (() => void) | null = null;
   let inviteCopied = false;
+  // Hubs that seat members by key: founded from a screen, or born in
+  // Telegram (its bot founds the signed log). A person's own holon and a
+  // cell seat nobody.
+  const keyed = (id: string | null | undefined) =>
+    !!id && (isHolonId(id) || isTelegramChatId(id));
+  // Whether the signed-in key is linked here (`writeAcceptance`, the rule
+  // every read applies): re-read on every open of this panel, so a link made
+  // since the layout last asked shows without a reload. The ask is a
+  // kind-9021 signed by the key — that signature is the proof of holding
+  // it; nothing else is challenged.
+  let askBusy = false;
+  let asked = new Set<string>();
+  async function askSeat() {
+    if (!$holonId || !$currentUser || !$sessionKeyPub || askBusy) return;
+    askBusy = true;
+    try {
+      if (await askToJoin($holonId, displayName($currentUser))) {
+        asked = new Set(asked).add(`${$holonId}|${$sessionKeyPub}`);
+        showNotice(tr("menu.linkAsked"));
+      }
+    } finally {
+      askBusy = false;
+    }
+  }
+  $: askedHere = !!$holonId && asked.has(`${$holonId}|${$sessionKeyPub ?? ""}`);
+
+  // Linking this key to the person's Telegram account: the proof is signed
+  // and published here, Telegram only taps. The link stays shown until the
+  // key changes, so a return from Telegram finds it where it was.
+  let keyLinkUrl = "";
+  let keyLinkBusy = false;
+  $: if ($sessionKeyPub === null) keyLinkUrl = "";
+  async function linkViaTelegram() {
+    if (!$sessionKeyPub || keyLinkBusy) return;
+    keyLinkBusy = true;
+    try {
+      keyLinkUrl = (await offerKeyLink()).url;
+    } catch (err) {
+      showNotice(tr("members.linkTelegramFailed", { reason: reasonOf(err) }));
+    } finally {
+      keyLinkBusy = false;
+    }
+  }
   // Telegram chats linked to this hub (@holons/core/linking), and the sheet
   // that links a new one; `telegramLinkOpen` is raised by the layout when a
   // pending link is found on return from Telegram.
@@ -178,7 +214,7 @@
       const hs = await getHolosphere();
       if (await unlinkTelegramChat(hs, $holonId, link)) {
         telegramLinks = telegramLinks.filter((l) => l.id !== link.id);
-        showNotice(tr("settings.telegramUnlinked"));
+        showNotice(tr("members.chatUnlinked"));
         await loadPrivacy($holonId, $isLoggedIn, $sessionKeyPub);
       }
     } catch (err) {
@@ -217,6 +253,13 @@
           founding = null;
         }
         await loadHubKeys(hs, id, sessionKey);
+        try {
+          const { status } = await writeAcceptance(hs, id);
+          if (id === $holonId && sessionKey === $sessionKeyPub)
+            writeStanding.set(status);
+        } catch {
+          /* the layout's reading stands */
+        }
       }
     } catch {
       if (id === $holonId) {
@@ -244,6 +287,7 @@
         hubKeys = keys;
         watchJoins(id, role);
         if (isHolonId(id)) void loadTelegramLinks(id);
+        else telegramLinks = [];
       }
     } catch {
       if (id === $holonId) {
@@ -258,7 +302,7 @@
     stopRequests?.();
     stopRequests = null;
     joinRequests = [];
-    if (role !== "admin" || !isHolonId(id)) return;
+    if (role !== "admin" || !keyed(id)) return;
     stopRequests = watchRequests(id, (r) => {
       if (id === $holonId) joinRequests = r;
     });
@@ -268,11 +312,11 @@
     if (!$holonId || keyBusy) return;
     keyBusy = true;
     try {
-      const pub = await seat($holonId, req.pubkey, "member");
+      const pub = await seat($holonId, req.pubkey, "member", req.reason);
       hubKeys = new Map(hubKeys).set(pub, "member");
       joinRequests = joinRequests.filter((r) => r.pubkey !== pub);
     } catch (err) {
-      showNotice(tr("settings.hubKeyFailed", { reason: reasonOf(err) }));
+      showNotice(tr("members.failed", { reason: reasonOf(err) }));
     } finally {
       keyBusy = false;
     }
@@ -304,11 +348,11 @@
     try {
       const hs = await getHolosphere();
       await foundHolon(hs, $holonId, { name: $holonName || undefined });
-      showNotice(tr("settings.hubFounded"));
+      showNotice(tr("members.started"));
       await loadPrivacy($holonId, $isLoggedIn, $sessionKeyPub);
     } catch (err) {
       console.error("[kiosk] founding failed", err);
-      showNotice(tr("settings.hubFoundFailed", { reason: reasonOf(err) }));
+      showNotice(tr("members.startFailed", { reason: reasonOf(err) }));
     } finally {
       foundBusy = false;
     }
@@ -323,7 +367,7 @@
       hubKeys = new Map(hubKeys).set(pub, role);
       keyDraft = "";
     } catch (err) {
-      showNotice(tr("settings.hubKeyFailed", { reason: reasonOf(err) }));
+      showNotice(tr("members.failed", { reason: reasonOf(err) }));
     } finally {
       keyBusy = false;
     }
@@ -338,7 +382,7 @@
       next.delete(pub);
       hubKeys = next;
     } catch (err) {
-      showNotice(tr("settings.hubKeyFailed", { reason: reasonOf(err) }));
+      showNotice(tr("members.failed", { reason: reasonOf(err) }));
     } finally {
       keyBusy = false;
     }
@@ -568,15 +612,6 @@
   // read from the graph once someone actually opens it.
   let eqOpen = false;
 
-  // ---- Flows board -------------------------------------------------------
-  // The collective slug is per-holon (it lives on the settings lens, not this
-  // device), so a hub that switches holons shows the right collective without
-  // anyone re-pasting anything. Written through the core helper, which merges
-  // over the existing settings document rather than replacing it.
-  let ocSlug = "";
-  let ocLoadedFor: string | null = null;
-  let ocSaving = false;
-
   // ---- Holon colour ------------------------------------------------------
   // Per-holon too: the colour its board is washed with, its dock orb and map
   // hexagon are painted in, and its mirrored cards glow with. Blank means the
@@ -588,19 +623,20 @@
   // The picker needs a literal: resolve the note variable against the theme.
   $: colorDraft = colorShown ? resolveCssColor(colorShown) : "#000000";
 
+  // Per-holon settings read once per holon (the colour lives on the
+  // settings lens, not this device).
+  let colorLoadedFor: string | null = null;
   $: void loadHolonSettings($holonId);
 
   async function loadHolonSettings(holon: string | null) {
-    if (holon === ocLoadedFor) return;
-    ocLoadedFor = holon;
-    ocSlug = "";
+    if (holon === colorLoadedFor) return;
+    colorLoadedFor = holon;
     colorOverride = "";
     if (!holon) return;
     try {
       const hs = await getHolosphere();
       const doc = await loadSettings(hs, holon);
-      if (ocLoadedFor !== holon) return; // holon changed while reading
-      ocSlug = readCollectiveSlug(doc);
+      if (colorLoadedFor !== holon) return; // holon changed while reading
       colorOverride = readHolonColor(doc);
       setHolonColor(holon, colorOverride);
     } catch (err) {
@@ -622,24 +658,6 @@
       showNotice(tr("settings.holonColorFailed"));
     } finally {
       colorSaving = false;
-    }
-  }
-
-  /** Commit on blur/Enter, the same as the other text fields here. */
-  async function commitCollective() {
-    const holon = $holonId;
-    if (!holon) return;
-    ocSaving = true;
-    try {
-      const hs = await getHolosphere();
-      // Accepts a pasted collective URL as readily as a bare slug, and hands
-      // back what was actually stored so the field shows the truth.
-      ocSlug = await saveCollectiveSlug(hs, holon, ocSlug);
-    } catch (err) {
-      console.error("[kiosk] settings: collective slug save failed", err);
-      showNotice(tr("settings.collectiveFailed"));
-    } finally {
-      ocSaving = false;
     }
   }
 
@@ -849,205 +867,267 @@
       {/if}
     </div>
 
-    <!-- Private lenses: sealed on the relays, read by the holons they are shared with. -->
-    <div class="field">
-      {$t("settings.privacy")}
-      <span class="sub">{$t("settings.privacySub")}</span>
-      {#if !$isLoggedIn || !$holonId}
-        <p class="hex-note">{$t("settings.privacyLogin")}</p>
-      {:else}
-        {#each PRIVACY_LENSES as lens (lens)}
-          <div class="lens-block">
-            <AudienceEditor
-              scope={{ holon: $holonId, lens }}
-              title={$t(LENS_LABEL_KEYS[lens])}
-              compact
-            />
-          </div>
-        {/each}
-        <p class="hex-note">{$t("settings.privacyHint")}</p>
+    {#if $isLoggedIn && keyed($holonId)}
+      <!-- Members: who is linked to this hub. One word for the whole story —
+           a Telegram chat is linked to the hub (a hub born in a chat stays
+           linked to it), a person's key is linked to the hub directly or
+           through that chat, admins link and unlink. Underneath: the signed
+           `_members` log and kind-9021 asks of @holons/core/holons. -->
+      <div class="field">
+        {$t("members.title")}
+        <span class="sub">{$t("members.sub")}</span>
+
         {#if !hubAuthority?.anchor}
           <p class="hex-note warn">
             {#if founding?.kind === "bot"}
-              {$t("settings.hubKeyBot")}
+              {$t("members.noKeyBot")}
             {:else if founding?.kind === "open" && $sessionKeyPub}
-              {$t("settings.hubKeyOpen")}
+              {$t("members.noKeyOpen")}
             {:else if founding?.kind === "open"}
-              {$t("settings.hubKeyNeedsKey")}
+              {$t("members.noKeyNeedsKey")}
             {:else}
-              {$t("settings.hubKeyNone")}
+              {$t("members.noKey")}
             {/if}
           </p>
-        {/if}
-        {#if !hubAuthority?.anchor && founding?.kind === "open"}
-          {#if $sessionKeyPub}
-            <button
-              type="button"
-              class="found"
-              disabled={foundBusy}
-              on:click={foundThisHub}
-            >
-              <Icon name="key" />
-              {$t("settings.hubFound")}
-            </button>
-          {:else}
+          {#if founding?.kind === "open"}
+            {#if $sessionKeyPub}
+              <button
+                type="button"
+                class="found"
+                disabled={foundBusy}
+                on:click={foundThisHub}
+              >
+                <Icon name="key" />
+                {$t("members.start")}
+              </button>
+            {:else}
+              <button
+                type="button"
+                class="found"
+                on:click={() => loginOpen.set(true)}
+              >
+                <Icon name="key" />
+                {$t("members.signIn")}
+              </button>
+            {/if}
+          {/if}
+        {:else}
+          <!-- You. -->
+          {#if $writeStanding === "accepted"}
+            <p class="hex-note">
+              {$t("members.youLinked", {
+                key: $nameOf($sessionKeyPub ?? ""),
+              })}
+            </p>
+          {:else if $writeStanding === "held" && $sessionKeyPub}
+            <p class="hex-note warn">
+              {$t("members.youNotLinked", { key: $nameOf($sessionKeyPub) })}
+            </p>
+            {#if isTelegramChatId($holonId ?? "")}
+              <p class="hex-note">{$t("members.youNotLinkedTelegram")}</p>
+              {#if keyLinkUrl}
+                <a
+                  class="found link"
+                  href={keyLinkUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Icon name="key" />
+                  {$t("members.linkTelegramOpen")}
+                </a>
+                <p class="hex-note">{$t("members.linkTelegramHint")}</p>
+              {:else}
+                <button
+                  type="button"
+                  class="found"
+                  disabled={keyLinkBusy}
+                  on:click={linkViaTelegram}
+                >
+                  <Icon name="key" />
+                  {$t("members.linkTelegram")}
+                </button>
+              {/if}
+            {/if}
+            {#if askedHere}
+              <p class="hex-note">{$t("members.asked")}</p>
+            {:else}
+              <button
+                type="button"
+                class="found"
+                disabled={askBusy}
+                on:click={askSeat}
+              >
+                <Icon name="key" />
+                {$t("members.linkMe")}
+              </button>
+            {/if}
+          {:else if $writeStanding === "held" && keyLoginOffered()}
+            <p class="hex-note warn">{$t("members.youNoKey")}</p>
             <button
               type="button"
               class="found"
               on:click={() => loginOpen.set(true)}
             >
               <Icon name="key" />
-              {$t("settings.hubFoundLogin")}
+              {$t("members.signIn")}
             </button>
+          {:else if $writeStanding === "held"}
+            <!-- Telegram-only logins, and this one brought no key: the server
+                 lacks NOSTR_DERIVATION_SECRET — a setup gap, not the person's. -->
+            <p class="hex-note warn">{$t("members.youNoKeyTelegram")}</p>
           {/if}
-        {/if}
-      {/if}
-    </div>
 
-    {#if hubRole === "admin"}
-      <!-- The hub's signed roster: seating people by public key, no Telegram. -->
-      <div class="field">
-        {$t("settings.hubKeys")}
-        <span class="sub">{$t("settings.hubKeysSub")}</span>
-        {#if joinRequests.length}
-          <p class="hex-note">
-            {$t("settings.hubJoinPending", { n: joinRequests.length })}
-          </p>
-          {#each joinRequests as req (req.pubkey)}
-            <div class="map-row">
-              <span class="map-lens key-label" title={req.pubkey}
-                >{req.reason.trim() || npubLabel(req.pubkey)}<span
-                  class="shared">{npubLabel(req.pubkey)}</span
-                ></span
+          <!-- The Telegram chat: the one this hub was born in, or the ones an admin linked. -->
+          {#if isTelegramChatId($holonId ?? "")}
+            <p class="hex-note">
+              <strong>{$t("members.chat")}</strong> · {$t("members.chatBorn")}
+            </p>
+          {:else if hubRole === "admin"}
+            <p class="hex-note">
+              <strong>{$t("members.chat")}</strong> · {$t(
+                "members.chatLinkedHint",
+              )}
+            </p>
+            {#each telegramLinks as link (link.id)}
+              <div class="map-row">
+                <span class="map-lens key-label" title={link.peer}
+                  >{link.name || $nameOf(link.peer)}</span
+                >
+                <div class="map-lanes">
+                  <button
+                    type="button"
+                    class="lane"
+                    aria-label={$t("members.chatUnlink")}
+                    title={$t("members.chatUnlink")}
+                    disabled={keyBusy}
+                    on:click={() => unlinkChat(link)}
+                    ><Icon name="close" /></button
+                  >
+                </div>
+              </div>
+            {/each}
+            {#if linkOpen && $holonId}
+              <LinkTelegramSheet
+                hub={$holonId}
+                on:linked={() => {
+                  linkOpen = false;
+                  showNotice(tr("tglink.done"));
+                  if ($holonId) void loadTelegramLinks($holonId);
+                }}
+                on:close={() => (linkOpen = false)}
+              />
+            {:else}
+              <button
+                type="button"
+                class="found ghost"
+                on:click={() => (linkOpen = true)}
               >
-              <div class="map-lanes">
-                <button
-                  type="button"
-                  class="lane on"
-                  aria-label={$t("settings.hubApprove")}
-                  title={$t("settings.hubApprove")}
-                  disabled={keyBusy}
-                  on:click={() => approve(req)}><Icon name="check" /></button
-                >
-                <button
-                  type="button"
-                  class="lane"
-                  aria-label={$t("settings.hubDecline")}
-                  title={$t("settings.hubDecline")}
-                  disabled={keyBusy}
-                  on:click={() => decline(req)}><Icon name="close" /></button
-                >
-              </div>
-            </div>
-          {/each}
-        {/if}
-        {#each [...hubKeys] as [pub, role] (pub)}
-          <div class="map-row">
-            <span class="map-lens key-label" title={pub}
-              >{npubLabel(pub)}<span class="shared"
-                >{$t(
-                  role === "admin"
-                    ? "settings.hubKeyRoleAdmin"
-                    : "settings.hubKeyRoleMember",
-                )}{#if pub === $sessionKeyPub}{" · "}{$t(
-                    "settings.hubKeyYou",
-                  )}{/if}</span
-              ></span
-            >
-            {#if pub !== $sessionKeyPub}
-              <div class="map-lanes">
-                <button
-                  type="button"
-                  class="lane"
-                  aria-label={$t("settings.hubKeyRemove", {
-                    key: npubLabel(pub),
-                  })}
-                  disabled={keyBusy}
-                  on:click={() => removeKey(pub)}><Icon name="trash" /></button
-                >
-              </div>
+                {$t("members.chatLink")}
+              </button>
             {/if}
-          </div>
-        {/each}
-        <form class="key-add" on:submit|preventDefault={() => addKey("member")}>
-          <input
-            type="text"
-            bind:value={keyDraft}
-            placeholder={$t("settings.hubKeyAddPlaceholder")}
-            aria-label={$t("settings.hubKeyAddPlaceholder")}
-            autocomplete="off"
-            autocorrect="off"
-            autocapitalize="off"
-            spellcheck="false"
-          />
-          <div class="key-actions">
-            <button type="submit" class="found" disabled={keyBusy || !keyDraft}
-              >{$t("settings.hubKeyAdd")}</button
+          {/if}
+
+          <!-- Admins: who asked, who is linked, link one more. -->
+          {#if hubRole === "admin"}
+            {#if joinRequests.length}
+              <p class="hex-note">
+                {$t("members.pending", { n: joinRequests.length })}
+              </p>
+              {#each joinRequests as req (req.pubkey)}
+                <div class="map-row">
+                  <span class="map-lens key-label" title={req.pubkey}
+                    >{req.reason.trim() || $nameOf(req.pubkey)}<span
+                      class="shared">{shortId(req.pubkey)}</span
+                    ></span
+                  >
+                  <div class="map-lanes">
+                    <button
+                      type="button"
+                      class="lane on"
+                      aria-label={$t("members.approve")}
+                      title={$t("members.approve")}
+                      disabled={keyBusy}
+                      on:click={() => approve(req)}
+                      ><Icon name="check" /></button
+                    >
+                    <button
+                      type="button"
+                      class="lane"
+                      aria-label={$t("members.decline")}
+                      title={$t("members.decline")}
+                      disabled={keyBusy}
+                      on:click={() => decline(req)}
+                      ><Icon name="close" /></button
+                    >
+                  </div>
+                </div>
+              {/each}
+            {/if}
+            {#each [...hubKeys] as [pub, role] (pub)}
+              <div class="map-row">
+                <span class="map-lens key-label" title={pub}
+                  >{$nameOf(pub)}<span class="shared"
+                    >{$t(
+                      role === "admin"
+                        ? "members.roleAdmin"
+                        : "members.roleMember",
+                    )}{#if pub === $sessionKeyPub}{" · "}{$t(
+                        "members.you",
+                      )}{/if}</span
+                  ></span
+                >
+                {#if pub !== $sessionKeyPub}
+                  <div class="map-lanes">
+                    <button
+                      type="button"
+                      class="lane"
+                      aria-label={$t("members.remove", { key: $nameOf(pub) })}
+                      disabled={keyBusy}
+                      on:click={() => removeKey(pub)}
+                      ><Icon name="trash" /></button
+                    >
+                  </div>
+                {/if}
+              </div>
+            {/each}
+            <form
+              class="key-add"
+              on:submit|preventDefault={() => addKey("member")}
             >
-            <button
-              type="button"
-              class="found ghost"
-              disabled={keyBusy || !keyDraft}
-              on:click={() => addKey("admin")}
-              >{$t("settings.hubKeyAddAdmin")}</button
-            >
-          </div>
-        </form>
-        {#if isHolonId($holonId ?? "")}
-          <p class="hex-note">
-            {$t("settings.hubInvite")}
-            <button type="button" class="hex-pick" on:click={copyInvite}>
-              {inviteCopied ? $t("login.copied") : $t("settings.hubInviteCopy")}
-            </button>
-          </p>
+              <input
+                type="text"
+                bind:value={keyDraft}
+                placeholder={$t("members.addPlaceholder")}
+                aria-label={$t("members.addPlaceholder")}
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+              />
+              <div class="key-actions">
+                <button
+                  type="submit"
+                  class="found"
+                  disabled={keyBusy || !keyDraft}>{$t("members.add")}</button
+                >
+                <button
+                  type="button"
+                  class="found ghost"
+                  disabled={keyBusy || !keyDraft}
+                  on:click={() => addKey("admin")}
+                  >{$t("members.addAdmin")}</button
+                >
+              </div>
+            </form>
+            <p class="hex-note">
+              {$t("members.invite")}
+              <button type="button" class="hex-pick" on:click={copyInvite}>
+                {inviteCopied ? $t("login.copied") : $t("members.inviteCopy")}
+              </button>
+            </p>
+          {/if}
         {/if}
       </div>
-
-      {#if isHolonId($holonId ?? "")}
-        <!-- Telegram: a chat linked to this hub shares members and boards. -->
-        <div class="field">
-          {$t("settings.telegram")}
-          <span class="sub">{$t("settings.telegramSub")}</span>
-          {#each telegramLinks as link (link.id)}
-            <div class="map-row">
-              <span class="map-lens key-label" title={link.peer}
-                >{link.name || link.peer}<span class="shared">{link.peer}</span
-                ></span
-              >
-              <div class="map-lanes">
-                <button
-                  type="button"
-                  class="lane"
-                  aria-label={$t("settings.telegramUnlink")}
-                  title={$t("settings.telegramUnlink")}
-                  disabled={keyBusy}
-                  on:click={() => unlinkChat(link)}
-                  ><Icon name="close" /></button
-                >
-              </div>
-            </div>
-          {/each}
-          {#if linkOpen && $holonId}
-            <LinkTelegramSheet
-              hub={$holonId}
-              on:linked={() => {
-                linkOpen = false;
-                showNotice(tr("tglink.done"));
-                if ($holonId) void loadTelegramLinks($holonId);
-              }}
-              on:close={() => (linkOpen = false)}
-            />
-          {:else}
-            <button
-              type="button"
-              class="found"
-              on:click={() => (linkOpen = true)}
-            >
-              {$t("settings.telegramLink")}
-            </button>
-          {/if}
-        </div>
-      {/if}
     {/if}
 
     <!--
@@ -1172,28 +1252,6 @@
     </div>
   {/if}
 
-  <!--
-    Per-holon, not per-device: the slug lives on the settings lens so every
-    surface reading this holon finds the same collective.
-  -->
-  {#if $flowsEnabled && $holonId}
-    <div class="field">
-      {$t("settings.collective")}
-      <span class="sub">{$t("settings.collectiveSub")}</span>
-      <input
-        type="text"
-        inputmode="url"
-        autocomplete="off"
-        spellcheck="false"
-        placeholder={$t("settings.collectivePlaceholder")}
-        bind:value={ocSlug}
-        disabled={ocSaving}
-        on:change={commitCollective}
-        on:keydown={blurOnEnter}
-      />
-    </div>
-  {/if}
-
   <!-- Federation moved to the dock: close the board and drag one circle onto
        another to link, or tap an intersection to tune its lenses. -->
 
@@ -1214,18 +1272,13 @@
 {/if}
 
 <style>
-  .lens-block {
-    margin-top: 0.55rem;
-    padding-bottom: 0.55rem;
-    border-bottom: 1.5px dashed var(--line);
-  }
   .settings {
     text-align: center;
     padding: 0.5rem 0.25rem;
   }
   .glyph {
     font-size: 2rem;
-    color: var(--teal);
+    color: var(--teal-ink);
   }
   h3 {
     margin: 0.4rem 0 1rem;
@@ -1238,7 +1291,7 @@
     padding: 0.4rem 0;
     font-size: 0.9rem;
     font-weight: 700;
-    color: var(--teal);
+    color: var(--teal-ink);
     text-align: left;
   }
   .unpin:active {
@@ -1254,7 +1307,7 @@
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.12em;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .group:first-of-type {
     margin-top: 0.4rem;
@@ -1316,7 +1369,7 @@
   .logo-preview.empty .wm {
     font-size: 0.8rem;
     font-weight: 700;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     padding: 0 0.3rem;
     max-width: 100%;
     overflow: hidden;
@@ -1340,7 +1393,7 @@
     padding: 0.5rem 0.9rem;
     border-radius: 10px;
     background: var(--paper);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-size: 0.85rem;
     font-weight: 700;
     text-transform: none;
@@ -1360,7 +1413,7 @@
     text-align: left;
     margin: 0.4rem 0 0;
     font-size: 0.82rem;
-    color: #9a3b2f;
+    color: var(--danger);
     text-transform: none;
     letter-spacing: 0;
   }
@@ -1387,7 +1440,7 @@
     opacity: 0.7;
   }
   .hex-note.warn {
-    color: #b45309;
+    color: var(--caution);
   }
   .hex-note {
     margin: 0.4rem 0 0;
@@ -1418,7 +1471,7 @@
   .chev {
     flex: 0 0 auto;
     font-size: 1rem;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     transform: rotate(-90deg);
     transition: transform 0.15s ease;
   }
@@ -1445,7 +1498,7 @@
     border-radius: 12px;
     background: var(--card);
     border: 1.5px solid var(--line);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-size: 0.9rem;
     font-weight: 700;
     text-transform: none;
@@ -1474,7 +1527,7 @@
     letter-spacing: 0;
   }
   .reach-head strong {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-weight: 700;
   }
   .reach input[type="range"] {
@@ -1520,13 +1573,13 @@
   .lane.on {
     background: var(--teal-deep);
     border-color: var(--teal-deep);
-    color: #fff;
+    color: var(--on-teal);
   }
   .lane:disabled {
     opacity: 0.5;
   }
   .unlink-map {
-    color: #9a3b2f;
+    color: var(--danger);
   }
 
   .accent-row {
@@ -1605,7 +1658,7 @@
   }
   .theme-opt.sel {
     border-color: var(--teal);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .theme-glyph {
     font-size: 1.3rem;
@@ -1627,7 +1680,7 @@
     font-weight: 700;
     transition: transform 0.1s ease;
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .primary:active {
@@ -1644,7 +1697,7 @@
     padding: 0.6rem 1rem;
     border-radius: 999px;
     background: var(--teal);
-    color: var(--paper);
+    color: var(--on-teal);
     font: inherit;
     font-size: 0.9rem;
     font-weight: 700;
@@ -1656,9 +1709,12 @@
     opacity: 0.55;
     cursor: default;
   }
+  .found.link {
+    text-decoration: none;
+  }
   .found.ghost {
     background: transparent;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     border: 1.5px solid var(--teal);
   }
   .key-label {

@@ -5,16 +5,18 @@
 // Seed a harvest collective on Flows — docs/flows-harvest-collective.md.
 //
 //   node --env-file=.env scripts/seed-harvest-collective.mjs \
-//     --mother <chat id> --collectors <chat id> \
-//     [--location <id>=<weight>]... [--collectors-weight 50] \
+//     --grove <grove id>=<location id> [--grove <grove id>=<location id>]... \
+//     --collectors <chat id> \
+//     [--location-weight 50] [--collectors-weight 50] \
 //     [--hour 10] [--euro 1] [--interior 80] [--dry-run]
 //
-// Writes, through the same core the MCP and the bot use (HOLONS_APP,
-// HOLOSPHERE_RELAYS, HOLOSPHERE_NSEC from .env):
-//   mother      federation links to every location and to the collectors;
-//               a custom contributors split with the given weights
-//   collectors  the value equation (hours, euros) and an equation-mode split
-// Nothing is minted: the harvest is recorded when the oil is back.
+// A GROVE is the holon that owns a location's trees and mints its oil; it is
+// what the location and the pickers share. Writes, through the same core the
+// MCP and the bot use (HOLONS_APP, HOLOSPHERE_RELAYS, HOLOSPHERE_NSEC):
+//   each grove   federation links to its location and to the collectors;
+//                a custom contributors split: location / collectors
+//   collectors   the value equation (hours, euros) and an equation-mode split
+// Nothing is minted: a lot is recorded in its grove when the oil is back.
 // Everything is idempotent — run it again to change the weights.
 
 import { resolve } from "node:path";
@@ -45,29 +47,28 @@ const many = (name) =>
   args.flatMap((a, i) => (a === `--${name}` ? [args[i + 1]] : []));
 const dry = args.includes("--dry-run");
 
-const mother = opt("mother");
 const collectors = opt("collectors");
-if (!mother || !collectors) {
+const groves = many("grove")
+  .map((s) => s.split("="))
+  .filter(([grove, location]) => grove && location);
+if (!collectors || !groves.length) {
   console.error(
-    "usage: --mother <id> --collectors <id> [--location <id>=<weight>]...",
+    "usage: --grove <grove id>=<location id> [--grove ...] --collectors <id>",
   );
   process.exit(2);
 }
-// Defaults: Liminal and Casa Selva, a quarter each; the collectors take half.
-const locations = many("location").length
-  ? Object.fromEntries(
-      many("location")
-        .map((s) => s.split("="))
-        .map(([id, w]) => [id, Number(w ?? 25)]),
-    )
-  : { "-1003864542239": 25, "-1002964866719": 25 };
+const locationWeight = Number(opt("location-weight", 50));
 const collectorsWeight = Number(opt("collectors-weight", 50));
 const hour = Number(opt("hour", 10));
 const euro = Number(opt("euro", 1));
 const interior = Number(opt("interior", 80));
 
-const shares = { ...locations, [collectors]: collectorsWeight };
-console.log("mother", mother, "shares", shares);
+for (const [grove, location] of groves) {
+  console.log("grove", grove, "shares", {
+    [location]: locationWeight,
+    [collectors]: collectorsWeight,
+  });
+}
 console.log(
   "collectors",
   collectors,
@@ -76,35 +77,42 @@ console.log(
 );
 if (dry) process.exit(0);
 
-const hs = await getHoloSphere();
-try {
-  const names = { [collectors]: "Collectors" };
-  for (const id of Object.keys(locations)) {
-    const doc = await hs.get(id, "settings", id).catch(() => null);
-    names[id] = doc?.name || id;
-  }
-  // Links first: a seat only pays a partner the federation record lists.
-  const before = await getFederationSnapshot(hs, mother).catch(() => ({
+const nameOf = async (hs, id, fallback) => {
+  const doc = await hs.get(id, "settings", id).catch(() => null);
+  return doc?.name || fallback || id;
+};
+
+// Links first: a seat only pays a partner the federation record lists.
+const link = async (hs, holon, partner, partnerName) => {
+  const before = await getFederationSnapshot(hs, holon).catch(() => ({
     federated: [],
   }));
-  for (const [id, name] of Object.entries(names)) {
-    if (before.federated.includes(id)) continue;
-    await setFederationPartner(hs, mother, id, {
-      partnerName: name,
-      inbound: [],
-      outbound: [],
-    });
-    console.log("linked", mother, "↔", id, `(${name})`);
+  if (before.federated.includes(partner)) return;
+  await setFederationPartner(hs, holon, partner, {
+    partnerName,
+    inbound: [],
+    outbound: [],
+  });
+  console.log("linked", holon, "↔", partner, `(${partnerName})`);
+};
+
+const hs = await getHoloSphere();
+try {
+  const collectorsName = await nameOf(hs, collectors, "Collectors");
+  for (const [grove, location] of groves) {
+    const locationName = await nameOf(hs, location);
+    await link(hs, grove, location, locationName);
+    await link(hs, grove, collectors, collectorsName);
+    await saveAllocationConfig(
+      hs,
+      grove,
+      { interiorPercent: 100, interiorMode: "custom", nzones: 3, steepness: 50 },
+      undefined,
+      undefined,
+      { [location]: locationWeight, [collectors]: collectorsWeight },
+    );
+    console.log("grove split saved", grove, `→ ${locationName} / ${collectorsName}`);
   }
-  await saveAllocationConfig(
-    hs,
-    mother,
-    { interiorPercent: 100, interiorMode: "custom", nzones: 3, steepness: 50 },
-    undefined,
-    undefined,
-    shares,
-  );
-  console.log("mother split saved");
 
   const eq = await loadEquation(hs, collectors);
   await saveEquation(hs, collectors, {
@@ -119,8 +127,8 @@ try {
   });
   console.log("collectors equation and split saved");
   console.log(
-    "\nNext, in the mother group: /fundpolicy pin <id> for each of",
-    Object.keys(names).join(", "),
+    "\nNext, in each grove group: /fundpolicy pin <location id> and /fundpolicy pin",
+    collectors,
   );
   console.log(
     "Then place the cook and the tool lenders on the collectors' rings (kiosk Flows → gear → Zones).",

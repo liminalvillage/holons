@@ -392,7 +392,7 @@
     width: 44px;
     height: 44px;
     border-radius: 50%;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-size: 0.95rem;
     line-height: 1;
   }
@@ -427,7 +427,7 @@
     border-radius: 11px;
     background: var(--paper);
     border: 1.5px solid var(--line);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-size: 1.1rem;
     font-weight: 700;
     line-height: 1;
@@ -447,7 +447,6 @@
   /* A zeroed weight is a real choice, so it reads as "off", not as an error. */
   .eq-val.off {
     color: var(--muted);
-    opacity: 0.7;
   }
   .eq-link {
     /* A text link is still a touch target: give it a finger's worth of height
@@ -487,7 +486,7 @@
     border-radius: 12px;
     background: var(--paper);
     border: 1.5px solid var(--line);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-size: 0.9rem;
     font-weight: 700;
   }

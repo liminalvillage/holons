@@ -15,31 +15,47 @@ anything, or a grant divided across a federation.
 ## The shape
 
 ```
-Olive Collective  (the mother — a Telegram group with the bot)
-│  fund   = the season's oil, minted in L by an attester
-│  split  = Contributors share 100 %, divided by hand-set weights:
-│           Liminal 25 · Casa Selva 25 · Collectors 50
-│
-├─▶ Liminal       ─ its own split ─▶ its members and rings        (cascade)
-├─▶ Casa Selva    ─ its own split ─▶ its members                  (cascade)
-└─▶ Collectors    (the pickers — a Telegram group with the bot)
-       fund   = what reaches it from the mother (its 50 %)
+Liminal grove                              Casa Selva grove
+│  fund  = the oil from these trees,       │  (the same, for its own trees)
+│          minted in L per pressed lot     │
+│  split = Contributors 100 %, custom:     │
+│          Liminal 50 · Collectors 50      │  Casa Selva 50 · Collectors 50
+│                                          │
+├─▶ Liminal  ─ its own split ─▶ members and rings          (cascade)
+│                                          ├─▶ Casa Selva ─ its own split ─▶ members
+└─▶ Collectors (the pickers — a Telegram group with the bot)  ◀──────────┘
+       fund   = what reaches it from every grove (its halves, added up)
        split  = Contributors ~80 %, by the value equation
                  (hours weigh most; euros paid for the press weigh too)
                 Reciprocity zones ~20 %, people on rings: the cook, the tool lenders
 ```
 
+The two locations are independent: nobody sits above them. Each has a
+**grove** — the holon that owns its trees and mints its oil. The oil from
+Liminal's trees is Liminal's; the grove's split is the deal with the pickers,
+half to the house and half to whoever picked. The Collectors divide what
+reaches them from every grove by contribution and relationality, and never
+need to know which grove a litre came from. Half of a 300 L season at Liminal
+and half of a 100 L season at Casa Selva come to 200 L for the pickers,
+150 L for Liminal and 50 L for Casa Selva — nobody set those numbers; they
+fell out of which trees the olives were picked from.
+
+A grove is a holon of its own, and not the location itself, for one reason:
+a split is per holon, not per unit. Liminal's split is tuned for its euros
+(equation, rings that reach Casa Selva and Lunation); seating the pickers in
+it at 50 % would hand them half of Liminal's euros too.
+
 Three ideas carry the whole thing:
 
 - **A seat is a holon.** In a custom split, a contributor row can be another
-  holon, not only a person. The mother seats its two locations and the
-  Collectors with weights; what each receives is then divided again by that
-  holon's own split — the cascade. A location that never configured a split
-  keeps what it gets.
+  holon, not only a person. A grove seats its location and the Collectors
+  with weights; what each receives is then divided again by that holon's own
+  split — the cascade. A holon that never configured a split keeps what it
+  gets.
 - **The pot is whatever was minted.** A fund used to be OpenCollective money
-  only. Now an attester appends a `mint` (amount, unit, memo, source) and
-  that is what the split divides, in that unit. Litres stay litres: nothing
-  converts, and a holon holding euros and oil has two pots.
+  only. Now an attester appends a `mint` (amount, unit, memo) and that is
+  what the split divides, in that unit. Litres stay litres: nothing converts,
+  and a holon holding euros and oil has two pots.
 - **A right is redeemed, never transferred.** Every person and holon on the
   cascade sees their litres as a right in their Fund account. They `claim`
   it in the holon where they are a member; an attester attests and records
@@ -50,56 +66,60 @@ Three ideas carry the whole thing:
 
 ### 1. The holons
 
-Two Telegram groups with @HolonsBot in them: **Oilonics** (`-5560750486`,
-the mother) and the **Collector's guild** (`-5468909450`). Every chat the
-bot is in is a holon (id = chat id). Liminal (`-1003864542239`) and Casa
-Selva (`-1002964866719`) already exist. Seeded on 2026-10-01 with the
-script below (locations 25 each, collectors 50; hour 10, euro 1,
-contributors 80 %).
+One grove per location, plus the **Collector's guild** (`-5468909450`,
+a Telegram group with @HolonsBot). A grove can be either kind of holon:
+a Telegram group with the bot (id = chat id; the group's admins are its
+attesters, and `/fundmint` works in the chat) or a key-founded holon
+(kiosk "+" → new, or MCP `holon_create`; the founding key is the first
+admin and attester, no chat needed). Both work on every surface. Liminal
+(`-1003864542239`) and Casa Selva (`-1002964866719`) already exist and
+change nothing.
 
-Admins of the mother group are its attesters by default — they mint, attest
-and mark payouts. Admins of the Collectors group are the attesters there.
+The earlier shape — one "mother" (Oilonics, `-5560750486`) minting the
+whole season and splitting it 25/25/50 by hand — is retired: the fixed
+weights could not follow the yield per location, and the promise belongs to
+the people who own the trees, not to a holon above them.
 
 ### 2. Federation
 
-The mother links the three: on the web `/<mother>/federation`, in the kiosk
-Federation lens, or via MCP `federation_link_add`. No lenses need to flow
-either way for the split to work; the link is what lets a partner be seated
-and what lets the child find its upstream.
+Each grove links its location and the Collectors: on the web
+`/<grove>/federation`, in the kiosk Federation lens, or via MCP
+`federation_link_add`. No lenses need to flow either way for the split to
+work; the link is what lets a partner be seated and what lets the child find
+its upstream. The location and the Collectors each see the grove as a
+partner automatically (the link is mirrored).
 
-The Collectors, Liminal and Casa Selva each see the mother as a partner
-automatically (the link is mirrored).
+### 3. The groves' splits
 
-### 3. The mother's split
-
-Kiosk: Flows → gear → **Contributors** → _Custom split_ → add each partner
-holon from the picker (they appear as "Liminal (holon)" etc.) and type the
-weights. **Split**: Contributors share 100 % (the zones are unused here).
-Web: the Fund allocation panel's editor does the same. MCP:
+Kiosk: Flows → gear → **Contributors** → _Custom split_ → add the location
+and the Collectors from the picker (they appear as "Liminal (holon)" etc.)
+and type the weights. **Split**: Contributors share 100 % (the zones are
+unused here). Web: the Fund allocation panel's editor does the same. MCP:
 
 ```
-allocation_save { holon: <mother>, interiorPercent: 100, interiorMode: "custom",
-                  shares: { "-1003864542239": 25, "-1002964866719": 25, "<collectors>": 50 } }
+allocation_save { holon: <liminal grove>, interiorPercent: 100, interiorMode: "custom",
+                  shares: { "-1003864542239": 50, "-5468909450": 50 } }
 ```
 
-Or run the seed script once the two groups exist — it links the partners,
-saves the mother's split and the Collectors' equation and split in one go:
+Or run the seed script once the groups exist — it links the partners, saves
+every grove's split and the Collectors' equation and split in one go:
 
 ```
 node --env-file=.env scripts/seed-harvest-collective.mjs \
-  --mother -5560750486 --collectors -5468909450 \
-  --location -1003864542239=25 --location -1002964866719=25 --collectors-weight 50
+  --grove <liminal grove>=-1003864542239 \
+  --grove <casa selva grove>=-1002964866719 \
+  --collectors -5468909450
 ```
 
-Weights are read against their own sum: 25/25/50, 1/1/2 or 30/20/50 are all
-splits. Change them per season when the yield per location is known; what
-was already claimed stays as it was (a claim freezes its share).
+Weights are read against their own sum: 50/50 and 1/1 are the same split. A
+grove that strikes a different deal (a third to the pickers, say) sets its
+own weights; what was already claimed stays as it was (a claim freezes its
+share).
 
-**Rules** (kiosk Rules tab, web Rules, `/fundpolicy`): pin the three
-partners so their claims fold into the mother's statement
-(`/fundpolicy pin <holon id>` in the mother group, once each). The claims
-log and the mints log each take their own policy; admins attest both by
-default.
+**Rules** (kiosk Rules tab, web Rules, `/fundpolicy`): in each grove, pin
+the location and the Collectors so their claims fold into the grove's
+statement (`/fundpolicy pin <holon id>`, once each). The claims log and
+the mints log each take their own policy; admins attest both by default.
 
 ### 4. The Collectors' split
 
@@ -119,6 +139,11 @@ logging yet.) The press bill is an expense: `/expense` or the web Expenses
 board, paid by whoever paid, split with the group. Thanks to the cook can
 also be an appreciation on the cooking task if you prefer weights to rings.
 
+Contribution is pooled per lunar cycle across every grove: a picker who only
+picked at Casa Selva shares in the oil from Liminal's lots too. That is the
+deal "shared among the pickers by contribution". If hours should count per
+grove instead, the pickers would need one Collectors holon per grove.
+
 ### 5. Locations
 
 Liminal and Casa Selva change nothing — but read what their existing splits
@@ -136,35 +161,93 @@ The cascade stops three hops below the root and never goes round a loop.
 
 ## The season
 
-1. **Weights.** Set or adjust the mother's shares for this year's yield.
+1. **Weights.** Set or adjust each grove's shares if the deal changes.
 2. **Harvest days.** Tasks in the Collectors group; pickers join and log hours.
 3. **The press.** The bill goes in as an expense, in EUR, paid by whoever paid.
 4. **The cook, the tools.** Rings or appreciations, as decided above.
-5. **Mint.** When the oil is back, an attester of the mother records the
-   lot: kiosk Flows gear → **Fund** → _What the fund holds_ → amount `200`,
-   unit `L`, memo "first pressing 2026", source the location if it matters;
-   or `/fundmint 200 L first pressing` in the mother group; or MCP
-   `flow_mint_record`. One mint per lot is fine; they add up per unit.
-   A wrong lot is voided by a dispute (`/funddispute`, kiosk, web), never
-   by editing.
-6. **Everyone sees their litres.** The mother's Flows board draws the pot in
-   L and every leaf of the cascade; each person's _Your balance_ card shows
+5. **Mint.** When a lot is back from the press, an attester of its grove
+   records it: kiosk Flows gear → **Fund** → _What the fund holds_ → amount
+   `200`, unit `L`, memo "first pressing 2026"; or `/fundmint 200 L first
+   pressing` in the grove group; or MCP `flow_mint_record`. One mint per
+   lot is fine; they add up per unit. A wrong lot is voided by a dispute
+   (`/funddispute`, kiosk, web), never by editing.
+6. **Everyone sees their litres.** A grove's Flows board draws its pot in L
+   and every leaf of the cascade; each person's _Your balance_ card shows
    their right in L. The Collectors' own board shows the litres reaching it
-   as its pot and divides them by its equation. A picker's OWN board (their
-   personal holon) lists the litres reaching them from every hub they keep,
-   under _Reaching you_ — the hubs the kiosk and the web remember for them,
-   and the ones the bot remembers when it first records them there.
+   from every grove as its pot and divides them by its equation. A picker's
+   OWN board (their personal holon) lists the litres reaching them from every
+   hub they keep, under _Reaching you_ — the hubs the kiosk and the web
+   remember for them, and the ones the bot remembers when it first records
+   them there.
 7. **Redeem.** A picker claims in the Collectors group (`/fundclaim 12 L`,
    or the kiosk/web claim form). The form shows their maximum — their share
    of the pot less what they already claimed, were paid, or still have
    awaiting attestation — and refuses more; a claim that slips past it (an
    older client, a stale pot) folds as _over_: kept and shown, never counted.
    An attester attests if the rules ask for it and records `/fundpaid <id>`
-   when the oil is handed over. The Collectors as a whole claim their 50 %
-   from the mother in the same way, in their own log; the mother's admins
-   mark it paid when the oil moves.
+   when the oil is handed over. The Collectors as a whole, and each location,
+   claim their half from the grove in the same way, in their own log; the
+   grove's admins mark it paid when the oil moves.
 8. **New moon.** The bot checkpoints each log per lunar cycle; readers can
    compare their fold against the holon's root.
+
+## On chain (Sepolia)
+
+The same splits run on Sepolia as Bundle contracts, deployed by the
+collective's wallet `0xb2DA94d13735aF2DDCF5a3c797547290221f3DBb` (the
+`ETH_PRIVATE_KEY` in the root `.env`; the same key in MetaMask shows every
+payout land). Each address is recorded on its holon's settings document
+(`bundle`), so the kiosk Fund tab and the web editor read it, and every
+one is a Sourcify exact match.
+
+| holon             | Bundle                                       |
+| ----------------- | -------------------------------------------- |
+| Liminal grove     | `0xdf96fd6F85A63212730669fd43Fd80Be91e526E1` |
+| Casa Selva grove  | `0xe54721403752054dA3AaDcD923550095FbBC060B` |
+| Collector's guild | `0x277A9981c3214819eE0204Ee5f4D35f4D7897C27` |
+| Liminal           | `0xDd6862Cd372376e6BBfED08172652eBd0aad3E85` |
+| Casa Selva        | `0x8dCBf6F22b3F6f23032d0522D76cd61121A35172` |
+
+The grove ids are `holon_fig33pftaepw96i4` (Liminal) and
+`holon_ccdhuztubkrs5thm` (Casa Selva), key-founded on 2026-10-06; their
+Bundles were deployed the same day. The retired mother's Bundle,
+`0xB634A9352cb6dc7905A7a51240095C9F9123802C`, stays on chain with the demo
+vouchers it holds; the mother's split and links were cleared and nothing
+new goes to it.
+
+Bound: each grove pays its two seats to the location's and the guild's
+Bundles; Liminal pays its Casa Selva ring to the Casa Selva Bundle;
+Roberto's seat is bound to the wallet in the guild, Liminal and Casa Selva.
+
+**The oil itself is the EVO voucher**, an ERC-20 at
+`0x46CfAd0408Fe97042E7f16f6dC82B12978Fea6d3` (`contracts/src/EvoVoucher.sol`,
+Sourcify exact match): one EVO is one litre, 18 decimals. Only its owner, the
+collective's wallet, mints — one `mint(to, litres, memo)` per pressed lot,
+the on-chain twin of the `flow_mints` entry in that lot's grove. The lot is
+then handed to the grove's Bundle (`transfer`) and `reward(evo, litres)`
+there divides it in one transaction: half into the location's Bundle, half
+into the guild's, each divided again. Because the grove's split is static
+and the lot already names its grove, no re-sync is needed per lot. A holder
+`redeem(litres, memo)`s by burning when the oil is collected — the on-chain
+twin of a `payout`. Vouchers held by a Bundle for an unbound member are
+released with `claim(id, wallet)` (kiosk Fund tab → Bind). ETH sent to a
+Bundle flows the same way, but the collective's unit is litres.
+
+**What the contract holds is on the Fund tab** (kiosk Flows → gear → Fund,
+web Fund allocation editor), read live from the chain without a wallet: per
+unit — ETH and every token the Bundle record lists — the balance, how much
+of it waits for members who have not bound a wallet, how much was received
+but not divided, and what waits for the person looking. "Track" with a
+token address lists another ERC-20 on the record (core `addBundleToken`);
+EVO is listed on every record. These are the Bundle's own books, shown
+beside the split, never added to the pot: the lot in the mints log and its
+vouchers in the contract are one lot.
+
+Two things the chain cannot know on its own: an equation-mode roster is a
+snapshot, so re-sync ("Save on chain") after hours are logged; and an
+exterior share with nobody on the rings (the guild's 20 %, Casa Selva's 14 %)
+stays as free balance in that contract, pushed through the split again by
+the next `reward()`.
 
 ## Where each rule lives
 
@@ -189,7 +272,7 @@ The cascade stops three hops below the root and never goes round a loop.
 - No double-spend protection beyond the log's rules: a payout consumes one
   claim once; scarce goods settle in the world, the log records that they did.
 - A right reached only through ANOTHER member's split (the picker seated by
-  the Collectors, not by the mother) shows on the upstream boards, not under
+  the Collectors, not by a grove) shows on the upstream boards, not under
   _Reaching you_ on the picker's own board: the climb reads the hubs a person
   keeps and the splits that name them, not every cascade they appear in.
 - The MCP and the bot judge claims without the collective's expense queue

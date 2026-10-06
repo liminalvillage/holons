@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { nameMap, resolvedName } from "$lib/stores/nameResolver";
+	import { shortId } from "@holons/core/identity";
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
   import { ethers } from 'ethers';
@@ -557,7 +559,7 @@
                   <div class="members-list">
                     {#each holonMembers as member}
                       <div class="member-item">
-                        <span class="member-id">{member.id}</span>
+                        <span class="member-id" title={String(member.id)}>{resolvedName(member.id, $nameMap)}</span>
                         <span class="member-role">{member.role}</span>
                         <span class="member-joined">Joined: {new Date(member.joinedAt).toLocaleDateString()}</span>
                       </div>
@@ -601,7 +603,7 @@
                       <div class="federation-item">
                         <div class="fed-info">
                           <span class="fed-name">{partner.name}</span>
-                          <span class="fed-id">({partner.id})</span>
+                          <span class="fed-id" title={partner.id}>({shortId(partner.id)})</span>
                         </div>
                         <div class="fed-lenses">
                           {#if partner.inbound.length > 0}

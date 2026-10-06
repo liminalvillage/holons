@@ -1,6 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import Icon from "$lib/components/Icon.svelte";
+  import { nameOf as resolvedName } from "$lib/names";
   //
   // The flow editor for ONE pair of holons — what pops up when two circles are
   // dropped together, when their overlap is tapped, or when a federated
@@ -126,8 +127,8 @@
     in: cfg.inbound.length > 0,
   };
 
-  const nameA = () => holonName || holon;
-  const nameB = () => partnerName || partner;
+  const nameA = () => holonName || $resolvedName(holon);
+  const nameB = () => partnerName || $resolvedName(partner);
   const initialOf = (name: string) =>
     /[\p{L}\p{N}]/u.exec(name)?.[0]?.toUpperCase() ?? "·";
 
@@ -484,14 +485,14 @@
     color: var(--muted);
   }
   .names .join.live {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
 
   .status {
     margin: 0.2rem 0 0.65rem;
     font-size: 0.82rem;
     font-weight: 700;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     text-align: center;
   }
   .status.idle {
@@ -509,7 +510,7 @@
     margin-top: 0.15em;
   }
   .hint.keyto.warn {
-    color: #b45309;
+    color: var(--caution);
   }
   .hint {
     margin: 0.7rem 0 0;
@@ -522,7 +523,7 @@
     margin: 0.4rem 0 0;
     font-size: 0.82rem;
     font-weight: 600;
-    color: #9a3b2f;
+    color: var(--danger);
   }
 
   /* One row IS the pair in miniature: the two circles, and between them a
@@ -593,7 +594,7 @@
   .key.on {
     background: var(--teal-deep);
     border-color: var(--teal-deep);
-    color: #fff;
+    color: var(--on-teal);
   }
   .key:disabled {
     opacity: 0.45;
@@ -685,8 +686,8 @@
     width: 100%;
     min-height: 46px;
     border-radius: 12px;
-    background: rgba(255, 255, 255, 0.5);
-    color: #9a3b2f;
+    background: var(--ghost);
+    color: var(--danger);
     font-size: 0.9rem;
     font-weight: 700;
     overflow: hidden;
@@ -695,7 +696,7 @@
     padding: 0 0.8rem;
   }
   .unlink.confirm {
-    background: #9a3b2f;
-    color: #fff;
+    background: var(--danger);
+    color: var(--on-danger);
   }
 </style>

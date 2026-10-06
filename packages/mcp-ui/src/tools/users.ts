@@ -15,6 +15,9 @@ import {
   type UserProfile,
 } from '@holons/core/users';
 import type { ToolDeps } from './index.js';
+import { publishProfile } from '@holons/core/identity';
+import { signerFromSecretKey } from '@holons/core/holosphere';
+import { nameResolver } from './names.js';
 
 const userIdSchema = z.union([z.string(), z.number()]);
 
@@ -133,7 +136,20 @@ export function registerUsersTools(server: McpServer, deps: ToolDeps): void {
         const db = (await deps.getHoloSphere()) as UserDB;
         const p = parseJson<UserProfile>('profile', profile);
         await saveUserProfile(db, holon, p);
-        return ok({ saved: true, holon, userId: p.id });
+        // This key's own record: publish the kind 0 too, laid over whatever
+        // the relays hold, so a name set here shows on any Nostr client and
+        // nothing another client set is lost.
+        const hs = db as unknown as { currentPubkey?: string };
+        const secret = deps.getSignerSecret?.();
+        let published = false;
+        if (secret && hs.currentPubkey && String(p.id).toLowerCase() === String(hs.currentPubkey).toLowerCase()) {
+          const ev = await publishProfile(db as never, signerFromSecretKey(secret), {
+            first_name: p.first_name, last_name: p.last_name, username: p.username,
+          }, { holon });
+          published = !!ev;
+          nameResolver(db).invalidate(p.id);
+        }
+        return ok({ saved: true, holon, userId: p.id, profilePublished: published });
       } catch (e) {
         return fail(e);
       }

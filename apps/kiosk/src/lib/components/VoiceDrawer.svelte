@@ -316,11 +316,11 @@
     color: var(--ink-soft, #666);
   }
   .outcome:not(.bad) {
-    color: var(--teal);
+    color: var(--teal-ink);
   }
   .outcome.bad,
   .row.failed .warn {
-    color: #dc2626;
+    color: var(--danger);
   }
   footer {
     display: flex;
@@ -340,7 +340,7 @@
   }
   .apply {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
   }
   .discard {
     background: var(--paper-deep, #eee);

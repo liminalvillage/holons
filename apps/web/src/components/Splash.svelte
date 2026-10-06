@@ -4,7 +4,7 @@
 	import { telegramStore, type TelegramUser } from '$lib/stores/telegram';
 	import { authStore } from '$lib/stores/auth';
 	import { nostrStore } from '$lib/stores/nostr';
-	import { npubLabel } from '$lib/auth/nostrKey';
+	import { isPlaceholderName } from '@holons/core/identity';
 	import type { ProviderLogin } from '$lib/auth/types';
 	import type { AuthIdentity } from '@holons/core/auth';
 	import MyHolonsIcon from '../dashboard/sidebar/icons/MyHolonsIcon.svelte';
@@ -82,10 +82,14 @@
 
 	// Key-based identities: the holon id IS the pubkey, so no telegramUserId.
 	function handleKeyIdentity(identity: AuthIdentity) {
-		const who = identity.label && identity.provider !== 'passkey' ? identity.label : npubLabel(identity.pubkey);
+		// A personal holon is named only after a real name: a shortened npub or
+		// a wallet address is a stand-in, and "npub1…'s Holon" would be written
+		// as the holon's name. Unnamed, the person's key is named by their
+		// profile wherever it shows.
+		const who = identity.label && identity.provider !== 'passkey' && !isPlaceholderName(identity.label, identity.pubkey) ? identity.label : '';
 		dispatch('authenticated', {
 			publicKey: identity.pubkey,
-			holonName: `${who}'s Holon`,
+			...(who ? { holonName: `${who}'s Holon` } : {}),
 			mode: identity.provider
 		});
 	}

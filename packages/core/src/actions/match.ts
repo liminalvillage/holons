@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { userName } from '../identity/index.js';
 //
 // Matching what someone SAID to what the holon HAS. A spoken reference is
 // lossy — transcription splits and joins words, the speaker paraphrases, an
@@ -146,16 +147,6 @@ export type PersonResult =
   | { candidates: PersonMatch[] }
   | null;
 
-/** "First Last", else "@username", else "#id" — how UIs label a person. */
-export function personLabel(p: PersonLike): string {
-  const full = [p.first_name ?? p.firstName, p.last_name ?? p.lastName]
-    .filter((s) => typeof s === 'string' && s.trim())
-    .join(' ');
-  if (full) return full;
-  if (p.username) return `@${String(p.username).replace(/^@/, '')}`;
-  return `#${String(p.id ?? '')}`;
-}
-
 /**
  * Find the person a spoken reference means. Scores each profile by how many of
  * the reference's words hit its first name, last name or handle (whole-word,
@@ -181,7 +172,7 @@ export function matchPerson(ref: string, people: PersonLike[]): PersonResult {
         if (parts.includes(w)) score += 1;
         else if (w.length >= 3 && parts.some((part) => part.startsWith(w))) score += 0.6;
       }
-      return { id: String(p.id), name: personLabel(p), person: p, score };
+      return { id: String(p.id), name: userName(p, { at: true }), person: p, score };
     })
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score);

@@ -138,7 +138,7 @@
 		for (const id of [...reaUserIds, ...expenseUserIds]) {
 			// Older bot records could carry the holon id in the split; skip it.
 			if (id === holonID || byId.has(id)) continue;
-			byId.set(id, { id, first_name: resolvedName(id, $nameMap, null, id) });
+			byId.set(id, { id, first_name: resolvedName(id, $nameMap) });
 		}
 		return [...byId.values()];
 	})();

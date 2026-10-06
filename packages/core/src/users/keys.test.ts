@@ -4,6 +4,14 @@
 import { describe, it, expect } from 'vitest';
 import * as nip19 from 'nostr-tools/nip19';
 import {
+  buildKeyLinkOffer,
+  keyLinkDeepLinkPayload,
+  keyLinkProofByCodeFilter,
+  keyLinkProofPubkey,
+  keyLinkProofTemplate,
+  parseKeyLinkPayload,
+  KEY_LINK_TAG,
+  KEY_LINK_TTL_SEC,
   normalizePubkey,
   linkedKeysOf,
   getLinkedKeys,
@@ -136,6 +144,55 @@ describe('key-link challenge + proof', () => {
     expect(verifyKeyLinkProof(note({ content: 'no code here' }), c, { now: NOW + 60 })).toBe(false);
     expect(verifyKeyLinkProof(note({}), c, { now: NOW + 16 * 60 })).toBe(false);
     expect(verifyKeyLinkProof([], c, { now: NOW + 60 })).toBe(false);
+  });
+});
+
+describe('key-link offer from the key\'s own screen', () => {
+  const NOW = 1_800_000_000;
+
+  it('mints a code, a tagged proof note and a short deep-link payload', () => {
+    const o = buildKeyLinkOffer(NPUB_A, { now: NOW, random: () => 0.5 });
+    expect(o).toMatchObject({ pubkey: PK_A, issuedAt: NOW });
+    expect(o.code.startsWith(KEY_LINK_CODE_PREFIX)).toBe(true);
+    const note = keyLinkProofTemplate(o);
+    expect(note).toMatchObject({ kind: 1, created_at: NOW, content: o.code });
+    expect(note.tags).toContainEqual(['t', KEY_LINK_TAG]);
+    expect(note.tags).toContainEqual(['t', o.code]);
+    const payload = keyLinkDeepLinkPayload(o);
+    expect(payload.length).toBeLessThanOrEqual(64);
+    expect(payload).toMatch(/^keylink_[a-z2-9]{8}_[0-9a-f]{16}$/);
+    expect(parseKeyLinkPayload(payload)).toEqual({ code: o.code, pubkeyPrefix: PK_A.slice(0, 16) });
+    expect(parseKeyLinkPayload('keylink_short')).toBeNull();
+    expect(parseKeyLinkPayload('link_x_y')).toBeNull();
+    expect(() => buildKeyLinkOffer('junk')).toThrow();
+  });
+
+  it('finds the note by its code tag within the TTL', () => {
+    expect(keyLinkProofByCodeFilter('holons-link-abcdefgh', { now: NOW })).toEqual({
+      kinds: [1],
+      '#t': ['holons-link-abcdefgh'],
+      since: NOW - KEY_LINK_TTL_SEC,
+      limit: 20,
+    });
+  });
+
+  it('names the key only for a fresh note by a key matching the prefix', () => {
+    const o = buildKeyLinkOffer(PK_A, { now: NOW });
+    const parsed = parseKeyLinkPayload(keyLinkDeepLinkPayload(o))!;
+    const note = (over: Partial<{ pubkey: string; created_at: number; content: string }>) => ({
+      pubkey: PK_A,
+      created_at: NOW,
+      content: o.code,
+      ...over,
+    });
+    expect(keyLinkProofPubkey([note({})], parsed, { now: NOW + 60 })).toBe(PK_A);
+    // a stranger's note with the same code does not match the prefix
+    expect(keyLinkProofPubkey([note({ pubkey: PK_B })], parsed, { now: NOW + 60 })).toBeNull();
+    expect(keyLinkProofPubkey([note({ content: 'other' })], parsed, { now: NOW + 60 })).toBeNull();
+    expect(keyLinkProofPubkey([note({})], parsed, { now: NOW + KEY_LINK_TTL_SEC + 1 })).toBeNull();
+    expect(keyLinkProofPubkey([note({ created_at: NOW + 3600 })], parsed, { now: NOW })).toBeNull();
+    // the newest of several wins
+    expect(keyLinkProofPubkey([note({ created_at: NOW - 10 }), note({})], parsed, { now: NOW + 60 })).toBe(PK_A);
   });
 });
 

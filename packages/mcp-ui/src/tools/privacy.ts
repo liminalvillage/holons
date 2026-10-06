@@ -10,6 +10,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { audience, lock, privacyOfHolon, share, sync, unlock, unshare, type Scope } from '@holons/core/privacy';
 import type { ToolDeps } from './index.js';
+import { namesFor } from './names.js';
 
 function ok(payload: object) {
   return {
@@ -111,7 +112,8 @@ export function registerPrivacyTools(server: McpServer, deps: ToolDeps): void {
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
-        return ok(await audience(hs, scopeOf(args)));
+        const a = await audience(hs, scopeOf(args));
+        return ok({ ...a, names: await namesFor(hs, scopeOf(args).holon, a.holons.map((h) => h.holon)) });
       } catch (err) {
         return fail((err as Error).message);
       }

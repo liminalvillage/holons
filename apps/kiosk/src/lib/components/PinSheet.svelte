@@ -139,7 +139,7 @@
     min-height: 48px;
     border-radius: 14px;
     font-weight: 700;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
   }
   .primary:disabled {
@@ -159,10 +159,10 @@
     text-decoration: underline;
   }
   .link.danger {
-    color: #9a3b2f;
+    color: var(--danger);
   }
   .error {
     font-size: 0.85rem;
-    color: #9a3b2f;
+    color: var(--danger);
   }
 </style>

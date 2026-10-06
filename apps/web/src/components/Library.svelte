@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { shortId } from '@holons/core/identity';
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import { page } from "$app/stores";
@@ -226,7 +227,7 @@
             }
             return {
                 id: nostrPub,
-                display_name: holonName || `${nostrPub.slice(0, 8)}…`
+                display_name: holonName || shortId(nostrPub)
             };
         }
 

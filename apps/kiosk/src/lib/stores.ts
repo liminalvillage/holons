@@ -168,6 +168,14 @@ export const calendarEnabled = writable<boolean>(true);
 export const partnerNames = writable<Record<string, string>>({});
 
 /**
+ * Every name the resolver has learned, id → name (`$lib/names` fills it).
+ * Lives here, not in `$lib/names`, so the card stores below can depend on
+ * it without an import cycle: a card is mapped with the short form and
+ * re-mapped the moment the person's name arrives.
+ */
+export const names = writable<ReadonlyMap<string, string>>(new Map());
+
+/**
  * Free-text search from the header bar. Filters the visible content of every
  * view (tasks, calendar, library, roles) through the derived stores below, so
  * one query narrows whatever tab is on screen. Empty ⇒ no filtering.
@@ -323,18 +331,29 @@ export const lensEmitAt: Record<
 // text ("Untitled" fallbacks), so a language switch recomputes the boards.
 // `holonColors` is a dep everywhere a foreign card carries its source holon's
 // colour, so a caretaker choosing a colour re-tints the cards live.
+// `names` is a dep wherever a card carries people: the people are named at
+// mapping time, so a name learned later (a key's kind 0) re-maps the cards.
 export const events = derived(
-  [rawQuests, partnerNames, searchQuery, scope, t, holonColors],
+  [rawQuests, partnerNames, searchQuery, scope, t, holonColors, names],
   ([$q, $n, $query, $s, $t, $c]) =>
     filterBySearch(toEvents(scopeLocal($q, $s), $n, $t, $c), $query),
 );
 export const backlog = derived(
-  [rawQuests, partnerNames, searchQuery, scope, taskSort, t, holonColors],
+  [
+    rawQuests,
+    partnerNames,
+    searchQuery,
+    scope,
+    taskSort,
+    t,
+    holonColors,
+    names,
+  ],
   ([$q, $n, $query, $s, $sort, $t, $c]) =>
     filterBySearch(toBacklog(scopeLocal($q, $s), $n, $sort, $t, $c), $query),
 );
 export const things = derived(
-  [rawLibrary, partnerNames, searchQuery, scope, t, holonColors],
+  [rawLibrary, partnerNames, searchQuery, scope, t, holonColors, names],
   ([$l, $n, $query, $s, $t, $c]) =>
     filterBySearch(toThings(scopeLocal($l, $s), $n, $t, $c), $query),
 );
@@ -343,12 +362,12 @@ export const things = derived(
 // translator input: a booking's title is the item's own name, so there is no
 // display text to re-resolve on a language switch.
 export const bookingEvents = derived(
-  [rawLibrary, partnerNames, searchQuery, scope, holonColors],
+  [rawLibrary, partnerNames, searchQuery, scope, holonColors, names],
   ([$l, $n, $query, $s, $c]) =>
     filterBySearch(toBookingEvents(scopeLocal($l, $s), $n, $c), $query),
 );
 export const roleCards = derived(
-  [rawRoles, partnerNames, searchQuery, scope, t, holonColors],
+  [rawRoles, partnerNames, searchQuery, scope, t, holonColors, names],
   ([$r, $n, $query, $s, $t, $c]) =>
     filterBySearch(toRoles(scopeLocal($r, $s), $n, $t, $c), $query),
 );

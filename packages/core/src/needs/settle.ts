@@ -230,7 +230,7 @@ export async function settleNeedHandoff(
   // THEIR holon; a settlement recorded only on the owner's is invisible to
   // them. Expense + events are copies (settlement facts, stable ids); the
   // quest itself mirrors as a hologram, the same intentional opt-in as
-  // reflectJoin's personal-holon mirror.
+  // the roster mirror into a participant's own holon.
   if (
     opts.mirrorToProvider !== false &&
     providerHolonId != null &&

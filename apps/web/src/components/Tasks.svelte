@@ -577,12 +577,8 @@
 					};
 				} else if (nostrPubKey) {
 					// Use Nostr identity
-					initiatorInfo = {
-						id: nostrPubKey,
-						username: nostrPubKey.slice(0, 8) + "...",
-						firstName: "Nostr",
-						lastName: "User"
-					};
+					// The key alone — named where it is shown, never a stand-in on the record.
+					initiatorInfo = { id: nostrPubKey };
 				} else {
 					// Fallback to default
 					initiatorInfo = {
@@ -603,12 +599,8 @@
 						lastName: telegramUser.last_name || ""
 					};
 				} else if (nostrPubKey) {
-					initiatorInfo = {
-						id: nostrPubKey,
-						username: nostrPubKey.slice(0, 8) + "...",
-						firstName: "Nostr",
-						lastName: "User"
-					};
+					// The key alone — named where it is shown, never a stand-in on the record.
+					initiatorInfo = { id: nostrPubKey };
 				} else {
 					initiatorInfo = {
 						id: holonID,

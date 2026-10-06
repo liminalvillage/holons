@@ -1,11 +1,18 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import "../app.css";
-  import { onMount, tick } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { page } from "$app/stores";
   import { afterNavigate, replaceState } from "$app/navigation";
-  import { getHolosphere, getHolonName, subscribeLens } from "$lib/holosphere";
-  import { holonColor, holonColors, learnHolonColor } from "$lib/palette";
+  import { getHolosphere, subscribeLens } from "$lib/holosphere";
+  import { isShortName, resolveNames } from "$lib/names";
+  import {
+    accentFamily,
+    holonColor,
+    holonColors,
+    learnHolonColor,
+    washOf,
+  } from "$lib/palette";
   import type { Subscription } from "$lib/holosphere";
   import { getFederationSnapshot } from "@holons/core/federation";
   import { HIDDEN_LENS, hiddenIdSet, isRefHidden } from "@holons/core/hidden";
@@ -41,7 +48,7 @@
     resolveCalendarView,
     resolveLibraryCalendarView,
   } from "$lib/config";
-  import { themeMode, startTheme } from "$lib/theme";
+  import { activeTheme, themeMode, startTheme } from "$lib/theme";
   import { langMode, holonLang, startI18n, tr, type Lang } from "$lib/i18n";
   import { writeAcceptance } from "@holons/core/holosphere";
   import { sessionKeyPub } from "$lib/sessionKey";
@@ -300,9 +307,11 @@
       // dock circle is named from the SAME resolution, so an unnamed holon
       // shows its id rather than inheriting the last board's name.
       nameBoard(id, "");
-      getHolonName(hs, id).then((name) => {
+      resolveNames([id]).then((m) => {
         if (boundHolon !== id) return;
-        if (name) holonName.set(name);
+        const name = m.get(id) ?? "";
+        if (isShortName(name, id)) return;
+        holonName.set(name);
         nameBoard(id, name);
       });
       // Holon colour override (best-effort): re-read on every bind so a colour
@@ -443,8 +452,9 @@
         // colour its own board, orb and hexagon wear.
         void learnHolonColor(hs, partner);
         if (snap.partnerNames[partner]) continue;
-        getHolonName(hs, partner).then((name) => {
-          if (boundHolon !== id || !name) return;
+        resolveNames([partner]).then((m) => {
+          const name = m.get(partner) ?? "";
+          if (boundHolon !== id || isShortName(name, partner)) return;
           partnerNames.update((cur) => ({ ...cur, [partner]: name }));
         });
       }
@@ -486,22 +496,51 @@
   // hub and key as a notice.
   const standingSaid = new Set<string>();
   const profileSaid = new Set<string>();
-  async function refreshStanding(id: string) {
+  // The hub's signed roster arrives from the relays after the bind, so the
+  // first reading can be "open" (nothing known yet) or "held" (log not here
+  // yet) for a key the hub has in fact linked. Re-read on a short, bounded
+  // schedule until the answer is "accepted"; a new bind or key starts over.
+  const STANDING_RECHECKS_MS = [4000, 12000, 30000, 60000];
+  let standingTimers: ReturnType<typeof setTimeout>[] = [];
+  let hsKeyNow = (): string | null => null;
+  function scheduleStandingRechecks(id: string, key: string) {
+    for (const t of standingTimers) clearTimeout(t);
+    standingTimers = STANDING_RECHECKS_MS.map((ms) =>
+      setTimeout(() => {
+        if (id === boundHolon && key === hsKeyNow())
+          void refreshStanding(id, true);
+      }, ms),
+    );
+  }
+  onDestroy(() => {
+    for (const t of standingTimers) clearTimeout(t);
+  });
+  async function refreshStanding(id: string, recheck = false) {
     let hs: HoloSphere;
     try {
       hs = await getHolosphere();
     } catch {
       return;
     }
+    hsKeyNow = () => hs.currentPubkey;
     const key = hs.currentPubkey;
     try {
+      // A re-check must see what landed since: the read-authority cache
+      // would otherwise hand back the same answer for ten seconds.
+      if (recheck)
+        (
+          hs as { _readAuthority?: { invalidate?: (h: string) => void } }
+        )._readAuthority?.invalidate?.(id);
       const { status } = await writeAcceptance(hs, id, key);
       if (id !== boundHolon || key !== hs.currentPubkey) return;
       writeStanding.set(status);
+      if (!recheck) scheduleStandingRechecks(id, key);
+      else if (status === "accepted")
+        for (const t of standingTimers) clearTimeout(t);
       const mark = `${id}|${key}`;
       if (status === "held" && get(currentUser) && !standingSaid.has(mark)) {
         standingSaid.add(mark);
-        showNotice(tr("layout.heldWrites"), 6000);
+        showNotice(tr("layout.notLinked"), 6000);
       }
       // Seated by key in a key-founded hub: make sure the hub has an
       // accepted profile for this person (one signed before the seat never
@@ -1011,11 +1050,19 @@
   }
 
   // Apply the chosen accent as the `--teal` family on :root so every component
-  // (header, views, modals) picks it up. `--teal-deep` is derived a shade darker.
+  // (header, views, modals) picks it up: `--teal-deep` a shade darker,
+  // `--teal-ink` the accent as readable TEXT on the palette that is up (so it
+  // re-derives when day turns to night), `--on-teal` the ink on an accent
+  // ground. See palette.accentFamily.
   $: if (typeof document !== "undefined") {
     const s = document.documentElement.style;
+    const family = accentFamily($accent, $activeTheme);
     s.setProperty("--teal", $accent);
-    s.setProperty("--teal-deep", `color-mix(in srgb, ${$accent} 78%, #000)`);
+    s.setProperty("--teal-deep", family.deep);
+    if (family.ink) s.setProperty("--teal-ink", family.ink);
+    else s.removeProperty("--teal-ink");
+    if (family.on) s.setProperty("--on-teal", family.on);
+    else s.removeProperty("--on-teal");
   }
 
   // The displayed holon's colour — the note its id hashes to, the same
@@ -1025,8 +1072,13 @@
   // map. Cleared between boards so the landing page keeps the plain paper.
   $: if (typeof document !== "undefined") {
     const s = document.documentElement.style;
+    // As a wash it must stay a ground the ink clears, whatever colour the
+    // caretaker chose and whichever palette is up (palette.washOf).
     if ($holonIdStore)
-      s.setProperty("--holon", holonColor($holonIdStore, $holonColors));
+      s.setProperty(
+        "--holon",
+        washOf(holonColor($holonIdStore, $holonColors), $activeTheme),
+      );
     else s.removeProperty("--holon");
   }
 

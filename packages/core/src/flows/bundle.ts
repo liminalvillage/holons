@@ -57,10 +57,65 @@ export interface HolonBundleRecord {
   nzones?: number;
   deployedAt?: number;
   txHash?: string;
+  /**
+   * ERC-20 tokens the fund is read in besides the chain's own coin — the
+   * EVO voucher, say. What the Fund view asks the Bundle about; a token not
+   * listed here still flows, it is just not shown.
+   */
+  tokens?: BundleToken[];
+}
+
+/** A token the Bundle's holdings are read in. */
+export interface BundleToken {
+  address: string;
+  symbol: string;
+  decimals: number;
+  name?: string;
 }
 
 const isAddress = (value: unknown): value is string =>
   typeof value === 'string' && /^0x[0-9a-fA-F]{40}$/.test(value);
+
+/** A stored token entry made whole, or null when it cannot be used. */
+export function normalizeBundleToken(raw: unknown): BundleToken | null {
+  const t = (raw ?? {}) as Record<string, unknown>;
+  if (!isAddress(t.address)) return null;
+  const symbol = String(t.symbol ?? '').trim();
+  if (!symbol) return null;
+  const decimals = Number(t.decimals);
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) return null;
+  const name = typeof t.name === 'string' && t.name.trim() ? t.name.trim() : undefined;
+  return { address: t.address, symbol, decimals, ...(name ? { name } : {}) };
+}
+
+/** The tokens a record lists, cleaned, one per address. */
+export function readBundleTokens(record: Pick<HolonBundleRecord, 'tokens'> | null | undefined): BundleToken[] {
+  const seen = new Set<string>();
+  const out: BundleToken[] = [];
+  for (const raw of record?.tokens ?? []) {
+    const token = normalizeBundleToken(raw);
+    if (!token) continue;
+    const key = token.address.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(token);
+  }
+  return out;
+}
+
+/** The record with `token` listed, replacing an entry at the same address. */
+export function withBundleToken(record: HolonBundleRecord, token: BundleToken): HolonBundleRecord {
+  const clean = normalizeBundleToken(token);
+  if (!clean) throw new Error('A token needs a 0x address, a symbol and its decimals');
+  const rest = readBundleTokens(record).filter((t) => t.address.toLowerCase() !== clean.address.toLowerCase());
+  return { ...record, tokens: [...rest, clean] };
+}
+
+/** The record without the token at `address`. */
+export function withoutBundleToken(record: HolonBundleRecord, address: string): HolonBundleRecord {
+  const tokens = readBundleTokens(record).filter((t) => t.address.toLowerCase() !== String(address).toLowerCase());
+  return { ...record, tokens };
+}
 
 /** Coerce a stored record, returning null when there is no usable address. */
 function toBundle(raw: unknown): HolonBundleRecord | null {
@@ -79,7 +134,29 @@ function toBundle(raw: unknown): HolonBundleRecord | null {
     nzones: num(doc.nzones),
     deployedAt: num(doc.deployedAt),
     txHash: doc.txHash != null ? String(doc.txHash) : undefined,
+    ...(Array.isArray(doc.tokens) ? { tokens: readBundleTokens({ tokens: doc.tokens as BundleToken[] }) } : {}),
   };
+}
+
+/**
+ * List a token on the holon's Bundle record, so every surface reads the fund
+ * in it from then on. Needs a deployed Bundle to hang it on.
+ */
+export async function addBundleToken(holosphere: any, holonId: string, token: BundleToken): Promise<HolonBundleRecord> {
+  const record = await loadBundleRecord(holosphere, holonId);
+  if (!record) throw new Error('No Bundle recorded for this holon yet');
+  const next = withBundleToken(record, token);
+  await saveBundleRecord(holosphere, holonId, next);
+  return next;
+}
+
+/** Drop a token from the holon's Bundle record. */
+export async function removeBundleToken(holosphere: any, holonId: string, address: string): Promise<HolonBundleRecord> {
+  const record = await loadBundleRecord(holosphere, holonId);
+  if (!record) throw new Error('No Bundle recorded for this holon yet');
+  const next = withoutBundleToken(record, address);
+  await saveBundleRecord(holosphere, holonId, next);
+  return next;
 }
 
 /** The holon's bundle as stored on the canonical settings document. */

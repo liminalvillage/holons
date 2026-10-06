@@ -175,7 +175,7 @@
   }
   /* Muted reads as "off". */
   .bubble-controls .ctl.silenced {
-    color: #dc2626;
+    color: var(--danger);
   }
   .bubble p {
     margin: 0;
@@ -233,7 +233,7 @@
     border: 0;
     border-radius: 999px;
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     font-weight: 700;
     font-size: 0.9rem;
     box-shadow: var(--shadow-soft);
@@ -276,7 +276,7 @@
   }
   .typeactions .send {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
   }
   .typeactions .send:disabled {
     opacity: 0.5;

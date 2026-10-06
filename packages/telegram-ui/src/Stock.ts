@@ -23,6 +23,7 @@
 
 import { Markup } from 'telegraf';
 import * as utils from './utilities.js';
+import { nameResolver } from './protocolContext.js';
 import { REAEventStore } from '@holons/core/rea';
 import { syncSurplusFromShelf } from '@holons/core/offers';
 import { getFederationSnapshot } from '@holons/core/federation';
@@ -291,7 +292,11 @@ export function parseQuantityLine(
   const glued = m[2];
   if (glued) {
     const g = glued.toLowerCase();
-    if (KNOWN_UNITS.has(g) || g in UNIT_ALIASES || (g.length <= 3 && remainder)) {
+    if (
+      KNOWN_UNITS.has(g) ||
+      g in UNIT_ALIASES ||
+      (g.length <= 3 && remainder)
+    ) {
       unit = normalizeUnit(g);
     } else {
       remainder = `${glued} ${remainder}`.trim();
@@ -307,7 +312,12 @@ export function parseQuantityLine(
   if (!remainder) return null;
   const { item, note } = splitItemAndNote(remainder, known);
   if (!item) return null;
-  return { quantity, ...(unit ? { unit } : {}), item, ...(note ? { note } : {}) };
+  return {
+    quantity,
+    ...(unit ? { unit } : {}),
+    item,
+    ...(note ? { note } : {}),
+  };
 }
 
 // ----------------------------------------------------------------------------
@@ -355,10 +365,7 @@ const CATEGORY_ICON: Record<string, string> = {
 };
 
 const escapeHtml = (s: string): string =>
-  String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 // ----------------------------------------------------------------------------
 // The board: everything the commands show, from raw reads
@@ -459,7 +466,8 @@ class Stock {
   }
 
   private async readSpecs(holonId: string): Promise<StockItemSpecRecord[]> {
-    const raw = ((await this.db.getAll(holonId, STOCK_LENS)) ?? []) as unknown[];
+    const raw = ((await this.db.getAll(holonId, STOCK_LENS)) ??
+      []) as unknown[];
     // Only our own records: a federated copy carries `_federation.origin`.
     return readStockItemSpecs(
       raw.filter(
@@ -507,7 +515,11 @@ class Stock {
   private async record(
     holonId: string,
     ctx: AnyCtx,
-    kind: 'stock:produced' | 'stock:consumed' | 'stock:raised' | 'stock:lowered',
+    kind:
+      | 'stock:produced'
+      | 'stock:consumed'
+      | 'stock:raised'
+      | 'stock:lowered',
     spec: StockItemSpecRecord,
     quantity: number,
     note?: string
@@ -561,11 +573,28 @@ class Stock {
         case 'count':
           return await this.count(ctx, holonId, language, parsed.rest);
         case 'target':
-          return await this.setSpecLevel(ctx, holonId, language, parsed.rest, 'target');
+          return await this.setSpecLevel(
+            ctx,
+            holonId,
+            language,
+            parsed.rest,
+            'target'
+          );
         case 'keep':
-          return await this.setSpecLevel(ctx, holonId, language, parsed.rest, 'min');
+          return await this.setSpecLevel(
+            ctx,
+            holonId,
+            language,
+            parsed.rest,
+            'min'
+          );
         case 'reorder':
-          return await this.reorder(ctx, holonId, language, parsed.flag === 'buy');
+          return await this.reorder(
+            ctx,
+            holonId,
+            language,
+            parsed.flag === 'buy'
+          );
         case 'moves':
           return await this.moves(ctx, holonId, language);
         case 'help':
@@ -641,9 +670,14 @@ class Stock {
 
   async add(ctx: AnyCtx, holonId: string, language: string, rest: string) {
     const specs = await this.readSpecs(holonId);
-    const parsed = parseQuantityLine(rest, specs.map(s => s.name));
+    const parsed = parseQuantityLine(
+      rest,
+      specs.map(s => s.name)
+    );
     if (!parsed || parsed.quantity <= 0) {
-      return ctx.reply(this.t('stockqtyinvalid', language, { example: 'add 5kg flour' }));
+      return ctx.reply(
+        this.t('stockqtyinvalid', language, { example: 'add 5kg flour' })
+      );
     }
     let spec = this.findSpec(specs, parsed.item);
     let created = false;
@@ -657,7 +691,14 @@ class Stock {
       this.afterShelfWrite(holonId, ctx);
       created = true;
     }
-    await this.record(holonId, ctx, 'stock:produced', spec, parsed.quantity, parsed.note);
+    await this.record(
+      holonId,
+      ctx,
+      'stock:produced',
+      spec,
+      parsed.quantity,
+      parsed.note
+    );
     const { levels } = await this.readLevels(holonId);
     const now = this.levelOf(levels, spec.id);
     const parts = [
@@ -683,13 +724,25 @@ class Stock {
 
   async use(ctx: AnyCtx, holonId: string, language: string, rest: string) {
     const specs = await this.readSpecs(holonId);
-    const parsed = parseQuantityLine(rest, specs.map(s => s.name));
+    const parsed = parseQuantityLine(
+      rest,
+      specs.map(s => s.name)
+    );
     if (!parsed || parsed.quantity <= 0) {
-      return ctx.reply(this.t('stockqtyinvalid', language, { example: 'use 2kg flour' }));
+      return ctx.reply(
+        this.t('stockqtyinvalid', language, { example: 'use 2kg flour' })
+      );
     }
     const spec = this.findSpec(specs, parsed.item);
     if (!spec) return this.replyUnknown(ctx, language, parsed.item, specs);
-    await this.record(holonId, ctx, 'stock:consumed', spec, parsed.quantity, parsed.note);
+    await this.record(
+      holonId,
+      ctx,
+      'stock:consumed',
+      spec,
+      parsed.quantity,
+      parsed.note
+    );
     const { levels } = await this.readLevels(holonId);
     const now = this.levelOf(levels, spec.id);
     const parts = [
@@ -707,9 +760,14 @@ class Stock {
 
   async count(ctx: AnyCtx, holonId: string, language: string, rest: string) {
     const specs = await this.readSpecs(holonId);
-    const parsed = parseQuantityLine(rest, specs.map(s => s.name));
+    const parsed = parseQuantityLine(
+      rest,
+      specs.map(s => s.name)
+    );
     if (!parsed) {
-      return ctx.reply(this.t('stockqtyinvalid', language, { example: 'count 12 flour' }));
+      return ctx.reply(
+        this.t('stockqtyinvalid', language, { example: 'count 12 flour' })
+      );
     }
     const spec = this.findSpec(specs, parsed.item);
     if (!spec) return this.replyUnknown(ctx, language, parsed.item, specs);
@@ -751,7 +809,10 @@ class Stock {
     field: 'target' | 'min'
   ) {
     const specs = await this.readSpecs(holonId);
-    const parsed = parseQuantityLine(rest, specs.map(s => s.name));
+    const parsed = parseQuantityLine(
+      rest,
+      specs.map(s => s.name)
+    );
     if (!parsed) {
       return ctx.reply(
         this.t('stockqtyinvalid', language, {
@@ -789,7 +850,10 @@ class Stock {
   ) {
     return ctx.reply(
       specs.length
-        ? this.t('stockunknown', language, { name, items: this.itemNames(specs) })
+        ? this.t('stockunknown', language, {
+            name,
+            items: this.itemNames(specs),
+          })
         : this.t('stockunknownempty', language, { name })
     );
   }
@@ -803,7 +867,10 @@ class Stock {
     const specs = await this.readSpecs(holonId);
     const { levels } = await this.readLevels(holonId);
     const needs = await this.readNeeds(holonId);
-    const demands = demandsOf(needs as Parameters<typeof demandsOf>[0], holonId);
+    const demands = demandsOf(
+      needs as Parameters<typeof demandsOf>[0],
+      holonId
+    );
     return {
       lines: reorderList(reserve(levels, demands), specs),
       hasTargets: specs.some(s => (s.target ?? 0) > 0),
@@ -814,12 +881,18 @@ class Stock {
     const { lines, hasTargets } = await this.reorderLines(holonId);
     if (lines.length === 0) {
       return ctx.reply(
-        this.t(hasTargets ? 'stockreorderempty' : 'stockreordernotargets', language)
+        this.t(
+          hasTargets ? 'stockreorderempty' : 'stockreordernotargets',
+          language
+        )
       );
     }
     if (buy) return this.writeShopping(ctx, holonId, language, lines);
 
-    const out: string[] = [`<b>${this.t('stockreordertitle', language)}</b>`, ''];
+    const out: string[] = [
+      `<b>${this.t('stockreordertitle', language)}</b>`,
+      '',
+    ];
     for (const line of lines) {
       out.push(
         `• <b>${fmtQty(line.quantity, line.unit)}</b> ${escapeHtml(line.name)} <i>(${escapeHtml(
@@ -850,9 +923,14 @@ class Stock {
     language: string,
     lines: ReorderLine[]
   ) {
-    const changed = await syncReorderToShopping(this.db as any, holonId, lines, {
-      creator: ctx.from?.id,
-    });
+    const changed = await syncReorderToShopping(
+      this.db as any,
+      holonId,
+      lines,
+      {
+        creator: ctx.from?.id,
+      }
+    );
     return ctx.reply(
       changed
         ? this.t('stockshoppingupdated', language, { n: changed })
@@ -868,7 +946,10 @@ class Stock {
       const { lines, hasTargets } = await this.reorderLines(holonId);
       if (lines.length === 0) {
         return ctx.reply(
-          this.t(hasTargets ? 'stockreorderempty' : 'stockreordernotargets', language)
+          this.t(
+            hasTargets ? 'stockreorderempty' : 'stockreordernotargets',
+            language
+          )
         );
       }
       return await this.writeShopping(ctx, holonId, language, lines);
@@ -882,7 +963,11 @@ class Stock {
 
   private async readPartners(
     holonId: string
-  ): Promise<{ federated: string[]; names: Record<string, string>; partners: PartnerStock[] }> {
+  ): Promise<{
+    federated: string[];
+    names: Record<string, string>;
+    partners: PartnerStock[];
+  }> {
     let federated: string[] = [];
     let names: Record<string, string> = {};
     try {
@@ -898,17 +983,22 @@ class Stock {
         let specs: StockItemSpecRecord[] = [];
         let fed: string[] = [holonId];
         try {
-          events = ((await this.db.getAll(id, 'rea_events')) ?? []) as StockEventLike[];
+          events = ((await this.db.getAll(id, 'rea_events')) ??
+            []) as StockEventLike[];
         } catch (error) {
           console.warn('[Stock] partner events failed:', id, error);
         }
         try {
-          specs = readStockItemSpecs(((await this.db.getAll(id, STOCK_LENS)) ?? []) as unknown[]);
+          specs = readStockItemSpecs(
+            ((await this.db.getAll(id, STOCK_LENS)) ?? []) as unknown[]
+          );
         } catch (error) {
           console.warn('[Stock] partner specs failed:', id, error);
         }
         try {
-          fed = (await getFederationSnapshot(this.db as any, id)).federated ?? [holonId];
+          fed = (await getFederationSnapshot(this.db as any, id)).federated ?? [
+            holonId,
+          ];
         } catch {
           fed = [holonId];
         }
@@ -923,11 +1013,23 @@ class Stock {
     const { events } = await this.readLevels(holonId);
     const needs = await this.readNeeds(holonId);
     const { federated, names, partners } = await this.readPartners(holonId);
-    const board = buildBoard({ holonId, specs, events, needs, federated, partners });
+    const board = buildBoard({
+      holonId,
+      specs,
+      events,
+      needs,
+      federated,
+      partners,
+    });
 
     const here = this.t('stockhere', language);
+    const resolver = nameResolver(this.db);
     const nameOf = (id: string) =>
-      id === holonId ? here : names[id] || partners.find(p => p.id === id)?.name || id;
+      id === holonId
+        ? here
+        : names[id] ||
+          partners.find(p => p.id === id)?.name ||
+          resolver.nameOf(id);
     const cost = federationCost(
       Object.fromEntries([
         [holonId, federated],
@@ -966,7 +1068,9 @@ class Stock {
           `• ${escapeHtml(leg.category)}: <b>${fmtQty(leg.quantity, '')}</b> ${escapeHtml(nameOf(leg.from))} → ${escapeHtml(nameOf(leg.to))} <i>(${escapeHtml(
             hops === 1
               ? this.t('stockhop1', language)
-              : this.t('stockhopsn', language, { n: Number.isFinite(hops) ? hops : '?' })
+              : this.t('stockhopsn', language, {
+                  n: Number.isFinite(hops) ? hops : '?',
+                })
           )})</i>`
         );
       }

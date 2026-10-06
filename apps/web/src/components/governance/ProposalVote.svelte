@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { nameMap, resolvedName } from "$lib/stores/nameResolver";
+	import { userName } from "@holons/core/identity";
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
   // The ballot on a proposal: the tally so far, the member's own vote (a
@@ -144,7 +146,7 @@
   const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
   const name = (id: string) => {
     const u = users.find((x) => String(x?.id ?? "") === id) as { first_name?: string; username?: string } | undefined;
-    return names[id] || u?.first_name || u?.username || id;
+    return names[id] || (u ? userName(u, { idFallback: false, unknown: "" }) : "") || resolvedName(id, $nameMap);
   };
   const statusLabel: Record<Vote["status"], string> = {
     counted: "Counted",
@@ -225,7 +227,7 @@
                 : 'border-gray-500 text-gray-300'}">{choiceLabel[v.choice]}</span
           >
           {#if v.status !== "counted"}<span class="text-xs text-gray-400">{statusLabel[v.status]}</span>{/if}
-          {#if v.origin}<span class="text-xs text-gray-500">via {names[v.origin] || v.origin}</span>{/if}
+          {#if v.origin}<span class="text-xs text-gray-500">via {names[v.origin] || resolvedName(v.origin, $nameMap)}</span>{/if}
         </li>
       {/each}
     </ul>

@@ -18,7 +18,7 @@ export * as fileOps from './fileOperations.js';
 
 // Re-export commonly used functions at the top level
 export { getUserId, getholonId, getUserName } from './telegram.js';
-export { normalizeHolonId, getHolonName } from './holon.js';
+export { normalizeHolonId } from './holon.js';
 export { safeReadFile, safeWriteFile, fileExists } from './fileOperations.js';
 
 // String utilities (extracted from original utilities.js)

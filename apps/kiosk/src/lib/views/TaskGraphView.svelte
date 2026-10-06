@@ -916,7 +916,7 @@
     stroke-dasharray: none;
     stroke-width: 3;
     animation: none;
-    color: var(--teal);
+    color: var(--teal-ink);
   }
 
   .node {
@@ -998,13 +998,13 @@
   .foot .waits,
   .foot .due {
     color: var(--ink-soft);
-    background: rgba(255, 255, 255, 0.55);
+    background: var(--glass);
     border-radius: 999px;
     padding: 0.05rem 0.4rem;
     white-space: nowrap;
   }
   .foot .heart {
-    color: #d4493a;
+    color: var(--heart);
   }
   .foot .who {
     display: inline-flex;
@@ -1135,7 +1135,7 @@
     box-shadow: var(--shadow-soft);
   }
   .hint.drag.armed {
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     border-color: var(--teal);
   }
@@ -1151,7 +1151,7 @@
     display: grid;
     place-items: center;
     font-size: 1.2rem;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     background: var(--card);
     border: 1.5px solid var(--line);
     box-shadow: var(--shadow-soft);

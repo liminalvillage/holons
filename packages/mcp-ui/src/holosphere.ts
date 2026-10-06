@@ -9,6 +9,7 @@ import { createHoloSphere, resolveEnforce, resolveRelays } from '@holons/core/ho
 import { FLOW_CLAIMS_LENS, FLOW_MINTS_LENS } from '@holons/core/flows';
 import { GOVERNANCE_VOTES_LENS } from '@holons/core/governance';
 import { generateNsec, nsecToHex, projectionOptionsFor } from '@holons/core/nostr';
+import { membersTrustedAuthors } from '@holons/core/holons';
 
 function resolveApp(): string {
   return process.env.HOLONS_APP || process.env.APPNAME || 'HolonsDebug';
@@ -64,7 +65,12 @@ export async function getHoloSphere(): Promise<any> {
     // to it and fold it; `lens_put` to it is refused.
     appendLenses: [FLOW_CLAIMS_LENS, FLOW_MINTS_LENS, GOVERNANCE_VOTES_LENS],
     // Standard-kind projections for every lens (HOLOSPHERE_PROJECTIONS=off opts out).
-    nostr: projectionOptionsFor({ appName: resolvedApp, privateKey, lenses: process.env.HOLOSPHERE_PROJECTIONS }),
+    nostr: {
+      ...projectionOptionsFor({ appName: resolvedApp, privateKey, lenses: process.env.HOLOSPHERE_PROJECTIONS }),
+      // A member's kind-0 edit on any Nostr client folds back into their
+      // `users` record here: a holon's seated keys are its trusted authors.
+      trustedAuthors: (holon: string) => (hs ? membersTrustedAuthors(hs)(holon) : Promise.resolve([])),
+    },
     // Authorized reads (HOLOSPHERE_ENFORCE=off reads the open graph).
     enforce: resolveEnforce(process.env.HOLOSPHERE_ENFORCE),
     awaitReady: true,

@@ -13,6 +13,7 @@
  * a facade over this module.
  */
 
+import { userName } from '../identity/index.js';
 import type { BorrowActor } from './types.js';
 
 /**
@@ -143,19 +144,6 @@ export function withBookings<T extends BookableItem>(item: T, bookings: Booking[
   };
 }
 
-/**
- * Display name an actor's bookings are stored under: username (no '@'),
- * falling back to first/last name, then the raw id. Surfaces that have a
- * richer name (e.g. a resolved holon name for a Nostr key) pass it via
- * `BorrowActor.display_name`.
- */
-export function actorDisplayName(actor: BorrowActor): string {
-  if (actor.display_name) return actor.display_name;
-  if (actor.username) return actor.username.replace(/^@/, '');
-  const name = [actor.first_name, actor.last_name].filter(Boolean).join(' ').trim();
-  return name || String(actor.id);
-}
-
 /** Case- and '@'-insensitive handle comparison. */
 function sameHandle(a?: string | null, b?: string | null): boolean {
   if (!a || !b) return false;
@@ -198,7 +186,9 @@ export function makeBooking(
     start: dayKey(start),
     end: dayKey(end),
     borrowerId: String(actor.id),
-    borrower: actorDisplayName(actor),
+    // The name shown on the booking: what the surface resolved (`display_name`),
+    // else the one rule every surface shares. Ownership is matched by id.
+    borrower: actor.display_name || userName(actor),
     borrowerInitials: computeBorrowerInitials(actor),
     created: new Date().toISOString(),
     // Omitted entirely for a local booking, so the stored shape is unchanged

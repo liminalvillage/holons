@@ -29,10 +29,6 @@ export const es: Record<MessageKey, Msg> = {
   "tasks.deleteFailed": "No se pudo eliminar esta tarea.",
   "tasks.addFailed": "No se pudo añadir — {reason}",
   "tasks.deleteTask": "Eliminar la tarea",
-  "tasks.configure": "Privacidad del tablero",
-  "tasks.privacyTitle": "Quién puede leer este tablero",
-  "tasks.privacySub":
-    "Bloquea el tablero para sellar cada tarjeta en los relays y compártelo con los holones que pueden leerlo. Una tarjeta suelta se bloquea desde su propia vista.",
   "tasks.locked": "Privada",
   "tasks.markComplete": "Marcar como completada",
   "tasks.proposedBy": "Propuesta por {name}",
@@ -428,6 +424,9 @@ export const es: Record<MessageKey, Msg> = {
   "dock.add": "Añadir un hub",
   "dock.addPlaceholder": "Id del holon, nombre, npub, dirección o enlace",
   "dock.addInvalid": "Eso no identifica un holon.",
+  "dock.searchPlaceholder": "Busca un hub para añadir…",
+  "dock.searchDocked": "ya aquí",
+  "dock.searchNone": "Ningún hub con ese nombre.",
   "dock.addTo": "Añadir {lens} aquí",
   "dock.addToInvalid": "Primero ponle un nombre.",
   "dock.addToFailed": "No se pudo añadir a esta celda.",
@@ -670,18 +669,6 @@ export const es: Record<MessageKey, Msg> = {
   "settings.checking": "Comprobando…",
   "settings.change": "Cambiar…",
   "settings.setLocation": "Fijar la ubicación…",
-  "settings.privacy": "Lentes privadas",
-  "settings.privacySub":
-    "— selladas en los relés; solo las claves que entregues pueden leerlas",
-  "settings.privacyLogin":
-    "Inicia sesión con tu clave para hacer privada una lente.",
-  "settings.privacyAria": "{lens}: {state}",
-  "settings.privacyPrivate": "privada",
-  "settings.privacyPublic": "pública",
-  "settings.privacyFailed":
-    "No se pudo cambiar esa lente — inténtalo de nuevo.",
-  "settings.privacyNeedsKey":
-    "Para compartir, este hub necesita una clave propia — mira Miembros más abajo.",
   "members.title": "Miembros",
   "members.sub": "— quién está vinculado a este hub",
   "members.youLinked":
@@ -689,7 +676,12 @@ export const es: Record<MessageKey, Msg> = {
   "members.youNotLinked":
     "Tu clave {key} aún no está vinculada a este hub, así que solo esta pantalla ve tus cambios. Pídelo abajo — la petición va firmada con tu clave, no hace falta nada más.",
   "members.youNotLinkedTelegram":
-    "O vincula esta clave a tu cuenta de Telegram: envía /key al bot en un chat privado.",
+    "O vincula esta clave a tu cuenta de Telegram, para que el bot la vincule en cada chat en el que estés.",
+  "members.linkTelegram": "Vincular vía Telegram",
+  "members.linkTelegramOpen": "Abre Telegram y pulsa Iniciar",
+  "members.linkTelegramHint":
+    "La prueba se publica desde este dispositivo; el bot la comprueba y vincula la clave a tu cuenta. Tus hubs la vinculan en su próxima actualización.",
+  "members.linkTelegramFailed": "No se pudo publicar la prueba: {reason}",
   "members.youNoKey":
     "Has entrado sin clave, así que nada te vincula a este hub. Entra con tu clave (nsec, passkey o wallet).",
   "members.youNoKeyTelegram":
@@ -745,10 +737,6 @@ export const es: Record<MessageKey, Msg> = {
     "Los miembros del chat quedan vinculados aquí, la clave del bot pasa a ser admin de este hub y ambos tableros muestran los elementos del otro.",
   "tglink.done":
     "Vinculado. Los miembros del chat aparecen a medida que el bot los sincroniza.",
-  "settings.privacyHint":
-    "Una lente bloqueada mantiene su contenido sellado; los miembros de este hub siempre la leen. Comparte una lente entera aquí o desde el dock, una tarjeta desde su vista.",
-  "audience.lock": "Bloquear",
-  "audience.unlock": "Desbloquear",
   "audience.locked": "Privada",
   "audience.open": "Pública",
   "audience.sharedWith": "compartida con {n}",
@@ -768,6 +756,17 @@ export const es: Record<MessageKey, Msg> = {
   "audience.lensLocked":
     "Todo el tablero está bloqueado; las tarjetas lo siguen. Cámbialo desde los ajustes del tablero.",
   "audience.failed": "No se pudo cambiar — inténtalo de nuevo.",
+  "audience.whenLockLens":
+    "Hacerlo privado sella cada tarjeta de este tablero — las que ya están y cada una nueva — para que solo los miembros de este hub y los holones con los que lo compartas puedan leerlas. Lo que ya se leyó sigue leído.",
+  "audience.whenUnlockLens":
+    "Hacerlo público reescribe cada tarjeta de este tablero en claro, viejas y nuevas, para que cualquiera las lea.",
+  "audience.whenLockCard":
+    "Hacerla privada sella esta tarjeta y cada cambio, para que solo los miembros de este hub y los holones con los que la compartas puedan leerla. Lo que ya se leyó sigue leído.",
+  "audience.whenUnlockCard":
+    "Hacerla pública reescribe esta tarjeta en claro, y sus cambios quedan públicos, para que cualquiera la lea.",
+  "audience.makePrivate": "Hacer privada",
+  "audience.makePublic": "Hacer pública",
+  "privacy.who": "Quién puede leer {lens}",
   "settings.onMap": "En el mapa",
   "settings.onMapSub":
     "— lo que este holón pone en el mapa compartido, y desde qué lejos se ve",
@@ -927,6 +926,9 @@ export const es: Record<MessageKey, Msg> = {
   "detail.participantsHint":
     "Quién participa. Añade o quita a cualquiera; quien participa deja de apreciar.",
   "detail.addParticipant": "Añadir un participante…",
+  "detail.addSomeone": "Añadir a alguien",
+  "detail.addedPerson": "{name} ya participa.",
+  "detail.addFailed": "No se pudo añadir — inténtalo de nuevo.",
   "detail.removeParticipant": "Quitar a {name} de los participantes",
   "detail.leaveTitle": "Dejar esta tarea",
   "detail.joinedLeave": "Unido · dejar",
@@ -1224,11 +1226,6 @@ export const es: Record<MessageKey, Msg> = {
   "draft.failed": "No se pudo rellenar (HTTP {status}).",
   "draft.unavailable":
     "Rellenar necesita una clave de OpenAI — ponla en el deploy o pégala en Ajustes.",
-
-  "settings.collective": "OpenCollective",
-  "settings.collectiveSub": "El colectivo cuyo saldo reporta este holon.",
-  "settings.collectivePlaceholder": "slug o URL del colectivo",
-  "settings.collectiveFailed": "No se pudo guardar el colectivo.",
   // Flows board
   "flows.onChainUnknownNetwork": "Red no registrada",
   "flows.loading": "Leyendo el registro\u2026",
@@ -1523,6 +1520,18 @@ export const es: Record<MessageKey, Msg> = {
   "alloc.chainDone": "Actualizado en cadena — {hash}…",
   "alloc.chainRejected": "Transacción rechazada.",
   "alloc.chainNoWallet": "No hay monedero Ethereum en este navegador.",
+  "alloc.holdsTitle": "Contiene",
+  "alloc.holdsHeld":
+    "{amount} esperando a que los miembros vinculen una cartera",
+  "alloc.holdsFree": "{amount} aún sin repartir",
+  "alloc.holdsMine": "{amount} esperándote",
+  "alloc.holdsReading": "Leyendo el contrato…",
+  "alloc.holdsNothing": "Nada todavía.",
+  "alloc.holdsUnreadable": "No se pudo leer el contrato desde aquí.",
+  "alloc.tokenHint": "Dirección del token (0x…) en que leer el fondo",
+  "alloc.tokenTrack": "Seguir",
+  "alloc.tokenReading": "Leyendo…",
+  "alloc.tokenFailed": "No se pudo añadir ese token.",
   "alloc.chainNoContract":
     "No hay contrato en esa dirección en la red de tu monedero — cambia de red e inténtalo de nuevo.",
   "alloc.chainFailed": "No se pudo actualizar en cadena: {reason}",

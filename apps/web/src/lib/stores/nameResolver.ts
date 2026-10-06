@@ -1,24 +1,31 @@
 /**
- * Unified Holon Name Service
- *
- * Single source of truth for resolving holon/user display names.
+ * Names on the web, from one place.
  *
  *   WRITE  →  src/lib/hns/index.ts   (HNS registration, untouched)
- *   READ   →  this file               (cache, fetch, reactive store)
+ *   READ   →  this file               (core's resolver + a reactive store)
  *
- * All UI components import from here. Nothing else is needed.
+ * Every id a component shows — a Telegram id, a hex pubkey or npub, a holon
+ * id — goes through `@holons/core/identity`'s `createNameResolver` over the
+ * app's holosphere: the holon's `users`, the person's own record, the
+ * kind-31926 key directory, kind-0 profiles on the relays, `settings.name`,
+ * HNS. Templates read `$nameMap[id]`; `resolvedName()` answers at once with
+ * the best known name or the one short form (`npub1…`, `#id`), never a bare
+ * key and never "Unknown" for an id that exists.
  */
 
 import { writable, get } from "svelte/store";
 import type { HoloSphere } from "holosphere";
+import {
+  createNameResolver,
+  normalizeId,
+  shortId,
+  userName,
+  type NameResolver,
+  type ProfileMeta,
+} from "@holons/core/identity";
 import { holosphereStore } from "./holosphere";
 import { lookupName as hnsLookup, clearHNSCache } from "../hns";
-import { userName } from "@holons/core/identity";
-
-// ─── low-level cache ────────────────────────────────────────────────
-
-const holonNameCache = new Map<string, string>();
-const fetchPromises = new Map<string, Promise<string>>();
+import { ID } from "../../dashboard/store";
 
 const RESERVED_NAMES = new Set([
   "no",
@@ -39,11 +46,6 @@ const RESERVED_NAMES = new Set([
 ]);
 
 // ─── pure helpers ───────────────────────────────────────────────────
-
-/** Check if a string looks like a 64-char hex public key. */
-function isPubkey(id: string): boolean {
-  return typeof id === "string" && /^[0-9a-f]{64}$/i.test(id);
-}
 
 /** Validate that a holon name is acceptable. */
 export function isValidHolonName(name: unknown): name is string {
@@ -76,9 +78,7 @@ export function extractLensAndItemFromSoul(hologramSoul: string | undefined): {
 }
 
 /** Map holosphere lens names to SvelteKit route names. */
-const lensToRoute: Record<string, string> = {
-  quests: "tasks",
-};
+const lensToRoute: Record<string, string> = { quests: "tasks" };
 
 export function lensToRouteName(lens: string): string {
   return lensToRoute[lens] || lens;
@@ -97,133 +97,54 @@ export function buildHologramLink(hologram: {
   return itemId ? `${base}?task=${itemId}` : base;
 }
 
-// ─── async fetch (cache → HNS → settings → fallback) ───────────────
-
-/**
- * Fetch a holon name. Tries HNS (signed) then local settings.
- * Results are cached — safe to call repeatedly.
- */
-async function fetchHolonName(
-  holosphere: HoloSphere,
-  holonId: string,
-): Promise<string> {
-  const cached = holonNameCache.get(holonId);
-  if (cached) return cached;
-
-  if (fetchPromises.has(holonId)) return fetchPromises.get(holonId)!;
-
-  const promise = (async () => {
-    try {
-      if (!holosphere) {
-        const fb = `Holon ${holonId}`;
-        holonNameCache.set(holonId, fb);
-        return fb;
-      }
-
-      // 1. HNS — cryptographically signed, authoritative
-      try {
-        const hnsName = await hnsLookup(holosphere, holonId);
-        if (hnsName && hnsName.trim() !== "") {
-          holonNameCache.set(holonId, hnsName);
-          return hnsName;
-        }
-      } catch {
-        // continue
-      }
-
-      // 2. Local settings (requires federation)
-      try {
-        const settings = await holosphere.get(holonId, "settings", holonId);
-        let name: string | undefined;
-        if (Array.isArray(settings)) {
-          name = settings.find((s: any) => s?.name)?.name;
-        } else if (settings) {
-          name = settings?.name;
-        }
-        if (name && name.trim() !== "") {
-          holonNameCache.set(holonId, name);
-          return name;
-        }
-      } catch {
-        // continue
-      }
-
-      // 3. Fallback
-      const fb = `Holon ${holonId.slice(0, 8)}...`;
-      holonNameCache.set(holonId, fb);
-      return fb;
-    } catch {
-      const fb = `Holon ${holonId.slice(0, 8)}...`;
-      holonNameCache.set(holonId, fb);
-      return fb;
-    } finally {
-      fetchPromises.delete(holonId);
-    }
-  })();
-
-  fetchPromises.set(holonId, promise);
-  return promise;
-}
-
-/** Clear low-level cache (one entry or everything). Also clears HNS cache. */
-function clearHolonNameCache(holonId?: string): void {
-  if (holonId) {
-    holonNameCache.delete(holonId);
-    fetchPromises.delete(holonId);
-    clearHNSCache(holonId);
-  } else {
-    holonNameCache.clear();
-    fetchPromises.clear();
-    clearHNSCache();
-  }
-}
-
-/** Clear cache then re-fetch. Awaitable — used by BrowserPanel for federation partner names. */
-export async function forceRefreshHolonName(
-  holosphere: HoloSphere,
-  holonId: string,
-): Promise<string> {
-  clearHolonNameCache(holonId);
-  return fetchHolonName(holosphere, holonId);
-}
-
-// ─── reactive store (single UI interface) ───────────────────────────
+// ─── the resolver, bound to the app's holosphere ────────────────────
 
 const _nameMap = writable<Record<string, string>>({});
-const pending = new Set<string>();
+let resolver: NameResolver | null = null;
+let boundTo: HoloSphere | null = null;
+const queued = new Set<string>();
+
+function bind(hs: HoloSphere | null): NameResolver | null {
+  if (!hs) return resolver;
+  if (resolver && boundTo === hs) return resolver;
+  const r = createNameResolver(hs as never, {
+    holon: get(ID),
+    hns: (id) => hnsLookup(hs, id),
+  });
+  r.subscribe((m) => _nameMap.set(Object.fromEntries(m)));
+  resolver = r;
+  boundTo = hs;
+  if (queued.size) {
+    const ids = [...queued];
+    queued.clear();
+    void r.resolve(ids);
+  }
+  return r;
+}
+
+holosphereStore.subscribe((hs) => void bind(hs));
+ID.subscribe((id) => resolver?.setHolon(id));
+
+function current(): NameResolver | null {
+  return resolver ?? bind(get(holosphereStore));
+}
+
+// ─── reactive API (the single UI interface) ─────────────────────────
 
 /**
- * Trigger async name resolution for a pubkey.
- * Result lands in the `nameMap` store. Safe to call many times.
+ * Trigger async name resolution for any id. The result lands in `nameMap`.
+ * Safe to call many times.
  */
-export function resolveName(pubkey: string): void {
-  if (!pubkey || !isPubkey(pubkey)) return;
-
-  const current = get(_nameMap);
-  if (current[pubkey] || pending.has(pubkey)) return;
-
-  pending.add(pubkey);
-
-  const holosphere = get(holosphereStore);
-  if (!holosphere) {
-    pending.delete(pubkey);
-    return;
-  }
-
-  fetchHolonName(holosphere, pubkey)
-    .then((name) => {
-      if (name && !name.startsWith("Holon ")) {
-        _nameMap.update((map) => ({ ...map, [pubkey]: name }));
-      }
-    })
-    .catch(() => {})
-    .finally(() => {
-      pending.delete(pubkey);
-    });
+export function resolveName(id: string | number | null | undefined): void {
+  const n = normalizeId(id);
+  if (!n) return;
+  const r = current();
+  if (r) r.nameOf(n);
+  else queued.add(n);
 }
 
 /** Batch resolve multiple IDs. */
-export function resolveNames(ids: string[]): void {
+export function resolveNames(ids: Array<string | number>): void {
   for (const id of ids) resolveName(id);
 }
 
@@ -234,99 +155,98 @@ export function resolveHologramSource(hologramSoul: string): void {
 }
 
 /**
- * Awaitable version — resolves the name and populates the reactive store.
- * Use in imperative code (QR page, federation, etc.).
+ * Awaitable: the name, else the short form. Use in imperative code (QR page,
+ * federation, bookings).
  */
-export async function awaitName(pubkey: string): Promise<string> {
-  if (!pubkey || !isPubkey(pubkey)) return pubkey || "Unknown";
-
-  const current = get(_nameMap);
-  if (current[pubkey]) return current[pubkey];
-
-  const holosphere = get(holosphereStore);
-  if (!holosphere) return pubkey.slice(0, 8);
-
+export async function awaitName(
+  id: string | number | null | undefined,
+): Promise<string> {
+  const n = normalizeId(id);
+  if (!n) return "";
+  const r = current();
+  if (!r) return shortId(n);
   try {
-    const name = await fetchHolonName(holosphere, pubkey);
-    if (name && !name.startsWith("Holon ")) {
-      _nameMap.update((map) => ({ ...map, [pubkey]: name }));
-      return name;
-    }
-    return pubkey.slice(0, 8);
+    return (await r.resolve([n])).get(n) ?? shortId(n);
   } catch {
-    return pubkey.slice(0, 8);
+    return shortId(n);
   }
 }
 
-/** Force refresh: clear caches + re-resolve reactively. */
-export function forceRefresh(pubkey: string): void {
-  if (!pubkey) return;
+/** The kind-0 profile learned for a key (picture, about…), if any. */
+export function profileOf(
+  id: string | number | null | undefined,
+): ProfileMeta | undefined {
+  return resolver?.profileOf(id);
+}
 
+/** Force refresh: forget the id and ask again. */
+export function forceRefresh(id: string | number | null | undefined): void {
+  const n = normalizeId(id);
+  if (!n) return;
+  clearHNSCache(n);
+  resolver?.invalidate(n);
   _nameMap.update((map) => {
-    const { [pubkey]: _, ...rest } = map;
+    const { [n]: _, ...rest } = map;
     return rest;
   });
-  pending.delete(pubkey);
-  clearHolonNameCache(pubkey);
+  resolveName(n);
+}
 
-  if (isPubkey(pubkey)) resolveName(pubkey);
+/** Forget and re-resolve, awaiting the answer (BrowserPanel's partner refresh). */
+export async function forceRefreshHolonName(
+  _hs: HoloSphere,
+  id: string,
+): Promise<string> {
+  forceRefresh(id);
+  return awaitName(id);
 }
 
 /**
- * Directly set a resolved name (no fetch needed).
- * Use after writing settings/HNS to avoid relay round-trip races.
+ * Directly set a resolved name (no fetch needed). Use after writing
+ * settings/HNS to avoid relay round-trip races.
  */
-export function setName(pubkey: string, name: string): void {
-  if (!pubkey || !name) return;
-  holonNameCache.set(pubkey, name);
-  if (isPubkey(pubkey) && !name.startsWith("Holon ")) {
-    _nameMap.update((map) => ({ ...map, [pubkey]: name }));
-  }
+export function setName(
+  id: string | number | null | undefined,
+  name: string,
+): void {
+  const n = normalizeId(id);
+  if (!n || !name) return;
+  const r = current();
+  if (r) r.prime([[n, name]]);
+  else _nameMap.update((map) => ({ ...map, [n]: name }));
 }
 
 // ─── canonical display-name functions ───────────────────────────────
 
 /** User object shape for name resolution. */
 export interface NameUser {
-  first_name?: string;
-  last_name?: string;
-  username?: string;
+  id?: string | number;
+  first_name?: string | null;
+  last_name?: string | null;
+  username?: string | null;
 }
 
 /**
- * Canonical name resolver. Works for both users (with user object) and holons (just an ID).
- * Auto-triggers resolveName() as a side-effect.
+ * Canonical name for an id, right now. Works for people and holons alike.
+ * Auto-triggers `resolveName()` as a side effect.
  *
- * Resolution waterfall:
- *   nameMap[id] → first+last → first → username → fallback → truncated ID → "Unknown"
+ *   nameMap[id] → the user record's own name → `fallback` → the short form
  */
 export function resolvedName(
-  id: string | null | undefined,
+  id: string | number | null | undefined,
   nameMap: Record<string, string>,
   user?: NameUser | null,
   fallback?: string,
 ): string {
-  // 1. Side-effect: trigger async resolution for pubkeys
-  if (id) resolveName(id);
-
-  // 2. nameMap hit (HNS-resolved name)
-  if (id && nameMap[id]) return nameMap[id];
-
-  // 3. User object fields (via the shared core resolver: first+last → first →
-  //    username; no id/unknown fallback here — the waterfall continues below).
+  const n = normalizeId(id);
+  if (n) resolveName(n);
+  if (n && nameMap[n]) return nameMap[n];
   if (user) {
-    const n = userName(user, { idFallback: false, unknown: "" });
-    if (n) return n;
+    const own = userName(user, { idFallback: false, unknown: "" });
+    if (own) return own;
   }
-
-  // 4. Explicit fallback
   if (fallback) return fallback;
-
-  // 5. Truncated pubkey (for long IDs like 64-char hex)
-  if (id && id.length >= 16) return `${id.slice(0, 8)}...`;
-
-  // 6. Last resort
-  return "Unknown";
+  return n ? shortId(n) : "Unknown";
 }
 
 /**
@@ -334,17 +254,14 @@ export function resolvedName(
  * Use for avatar fallbacks.
  */
 export function resolvedInitials(
-  id: string | undefined,
+  id: string | number | undefined,
   nameMap: Record<string, string>,
   user?: NameUser | null,
 ): string {
   const name = resolvedName(id, nameMap, user);
-  if (name === "Unknown") return "?";
-
+  if (name === "Unknown" || name === shortId(id)) return "?";
   const words = name.trim().split(/\s+/);
-  if (words.length >= 2) {
-    return (words[0][0] + words[1][0]).toUpperCase();
-  }
+  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
   return name.slice(0, 2).toUpperCase();
 }
 

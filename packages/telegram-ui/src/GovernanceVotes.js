@@ -28,7 +28,7 @@ import {
 } from '@holons/core/governance';
 import {
   appendAsMember,
-  memberNames,
+  partyNames,
   readLogContext,
 } from './protocolContext.js';
 
@@ -212,14 +212,18 @@ export default class GovernanceVotes {
         const { proposal, error } = await this.find(holon, args);
         if (error) return ctx.reply(error);
         const id = String(proposal.id);
-        const names = await memberNames(this.db, holon);
         const votes = fold.folded.votes.filter(
           v => v.proposal === id && v.status !== 'superseded'
         );
+        const names = await partyNames(this.db, holon, [
+          ...votes.map(v => v.party),
+          ...votes.map(v => v.origin).filter(Boolean),
+        ]);
         const lines = votes.slice(-25).map(v => {
           const who = names.get(v.party) || v.party;
           const mark = STATUS_MARK[v.status] ? ` ${STATUS_MARK[v.status]}` : '';
-          return `${CHOICE_MARK[v.choice]} <b>${escapeHtml(who)}</b>${v.memo ? ` — ${escapeHtml(v.memo)}` : ''}${mark}${v.origin ? ` <i>via ${escapeHtml(v.origin)}</i>` : ''}`;
+          const via = v.origin ? names.get(v.origin) || v.origin : '';
+          return `${CHOICE_MARK[v.choice]} <b>${escapeHtml(who)}</b>${v.memo ? ` — ${escapeHtml(v.memo)}` : ''}${mark}${via ? ` <i>via ${escapeHtml(via)}</i>` : ''}`;
         });
         return ctx.replyWithHTML(
           [

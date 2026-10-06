@@ -1,6 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import Icon from "$lib/components/Icon.svelte";
+  import { shortId } from "@holons/core/identity";
   // The sign-in card. Your own Nostr key is the suggested path (paste an
   // nsec or create one — the key is resolved client-side and adopted for the
   // session, see auth.ts `loginWithKey`); Telegram (full-page OIDC redirect,
@@ -32,6 +33,15 @@
   import NostrKeySheet from "./NostrKeySheet.svelte";
   import PinSheet from "./PinSheet.svelte";
   import { t } from "$lib/i18n";
+  import { keyLoginOffered, loginProviders } from "$lib/login/providers";
+
+  // What this kiosk offers (VITE_KIOSK_LOGIN). With Telegram alone the
+  // Telegram button is the front door and nothing about keys shows.
+  const providers = loginProviders();
+  const hasKey = providers.includes("nostr");
+  const hasTg = providers.includes("telegram");
+  const hasEth = providers.includes("ethereum");
+  const keysOffered = keyLoginOffered(providers);
 
   let sheet: "none" | "nostr" | "pin" | "unlock" = "none";
   let busy = false;
@@ -47,7 +57,7 @@
   let wrongPins = 0;
   onMount(() => {
     walletOk = isWalletAvailable();
-    remembered = readRememberedKey();
+    remembered = keysOffered ? readRememberedKey() : null;
     // A remembered key with no live session: the PIN step is the front door.
     if (remembered && !get(sessionKeyPub)) sheet = "unlock";
   });
@@ -164,7 +174,7 @@
   {:else if sheet === "unlock" && remembered}
     <PinSheet
       mode="enter"
-      label={remembered.label || `${remembered.pubkey.slice(0, 8)}…`}
+      label={remembered.label || shortId(remembered.pubkey)}
       error={pinError}
       {busy}
       canForget={wrongPins >= 3}
@@ -177,55 +187,14 @@
     <h3>{$t("login.title")}</h3>
     <p>{$t("login.lead")}</p>
 
-    <button
-      class="primary-key"
-      disabled={busy}
-      on:click={() => {
-        sheet = "nostr";
-        error = "";
-      }}
-    >
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.75"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-      >
-        <circle cx="8" cy="15" r="4.5" /><path
-          d="M11.2 11.8 20 3M16 7l2.5 2.5M13.5 9.5 16 12"
-        />
-      </svg>
-      <span>{$t("login.nostrLead")}</span>
-    </button>
-    <p class="hint">{$t("login.nostrHint")}</p>
-
-    <div class="divider" role="separator">
-      <span>{$t("login.orOther")}</span>
-    </div>
-
-    <div class="tiles">
-      <button class="tile" disabled={busy} on:click={login}>
-        <svg
-          class="tg"
-          viewBox="0 0 24 24"
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <path
-            d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"
-          />
-        </svg>
-        <span class="tile__label">{$t("login.telegramTile")}</span>
-        <span class="tile__hint">{$t("login.telegramHint")}</span>
-      </button>
+    {#if hasKey}
       <button
-        class="tile"
-        disabled={!walletOk || busy}
-        title={!walletOk ? $t("login.ethNoWallet") : undefined}
-        on:click={() => finish(signInWithEthereum)}
+        class="primary-key"
+        disabled={busy}
+        on:click={() => {
+          sheet = "nostr";
+          error = "";
+        }}
       >
         <svg
           viewBox="0 0 24 24"
@@ -236,28 +205,79 @@
           stroke-linejoin="round"
           aria-hidden="true"
         >
-          <path d="M12 2.5 5.5 12.4 12 16.2l6.5-3.8L12 2.5Z" /><path
-            d="m5.5 13.9 6.5 8.6 6.5-8.6L12 17.7l-6.5-3.8Z"
+          <circle cx="8" cy="15" r="4.5" /><path
+            d="M11.2 11.8 20 3M16 7l2.5 2.5M13.5 9.5 16 12"
           />
         </svg>
-        <span class="tile__label">{$t("login.ethTile")}</span>
-        <span class="tile__hint"
-          >{walletOk ? $t("login.ethHint") : $t("login.ethNoWallet")}</span
-        >
+        <span>{$t("login.nostrLead")}</span>
       </button>
+      <p class="hint">{$t("login.nostrHint")}</p>
+    {/if}
+
+    {#if hasKey && (hasTg || hasEth)}
+      <div class="divider" role="separator">
+        <span>{$t("login.orOther")}</span>
+      </div>
+    {/if}
+
+    <div class="tiles" class:single={!hasKey && !(hasTg && hasEth)}>
+      {#if hasTg}
+        <button class="tile" disabled={busy} on:click={login}>
+          <svg
+            class="tg"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path
+              d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"
+            />
+          </svg>
+          <span class="tile__label">{$t("login.telegramTile")}</span>
+          <span class="tile__hint">{$t("login.telegramHint")}</span>
+        </button>
+      {/if}
+      {#if hasEth}
+        <button
+          class="tile"
+          disabled={!walletOk || busy}
+          title={!walletOk ? $t("login.ethNoWallet") : undefined}
+          on:click={() => finish(signInWithEthereum)}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.75"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M12 2.5 5.5 12.4 12 16.2l6.5-3.8L12 2.5Z" /><path
+              d="m5.5 13.9 6.5 8.6 6.5-8.6L12 17.7l-6.5-3.8Z"
+            />
+          </svg>
+          <span class="tile__label">{$t("login.ethTile")}</span>
+          <span class="tile__hint"
+            >{walletOk ? $t("login.ethHint") : $t("login.ethNoWallet")}</span
+          >
+        </button>
+      {/if}
     </div>
 
-    <label class="stay">
-      <input type="checkbox" bind:checked={stay} />
-      <span>
-        <span class="stay__label">{$t("login.stay")}</span>
-        <span class="stay__hint">{$t("login.stayHint")}</span>
-      </span>
-    </label>
+    {#if keysOffered}
+      <label class="stay">
+        <input type="checkbox" bind:checked={stay} />
+        <span>
+          <span class="stay__label">{$t("login.stay")}</span>
+          <span class="stay__hint">{$t("login.stayHint")}</span>
+        </span>
+      </label>
+    {/if}
     {#if remembered}
       <button class="link" on:click={() => (sheet = "unlock")}>
         {$t("login.pinEnterBody", {
-          label: remembered.label || `${remembered.pubkey.slice(0, 8)}…`,
+          label: remembered.label || shortId(remembered.pubkey),
         })}
       </button>
     {/if}
@@ -275,7 +295,7 @@
   }
   .glyph {
     font-size: 2rem;
-    color: var(--teal);
+    color: var(--teal-ink);
   }
   h3 {
     margin: 0.4rem 0 0.3rem;
@@ -296,7 +316,7 @@
     padding: 0 1.6rem;
     border-radius: 14px;
     font-weight: 700;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
   }
   .primary-key svg {
@@ -314,7 +334,11 @@
     font-size: 0.8rem;
     color: var(--muted);
   }
+  /* Telegram's blue, a shade deeper by day so the mark stands off the card. */
   .tile .tg {
+    color: #1b8ac2;
+  }
+  :global(:root[data-theme="dark"]) .tile .tg {
     color: #2aabee;
   }
   .stay {
@@ -375,6 +399,9 @@
     max-width: 22rem;
     margin: 0 auto;
   }
+  .tiles.single {
+    grid-template-columns: 1fr;
+  }
   .tile {
     display: flex;
     flex-direction: column;
@@ -395,7 +422,7 @@
   .tile svg {
     width: 1.6rem;
     height: 1.6rem;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .tile__label {
     font-weight: 700;
@@ -420,7 +447,7 @@
   .error {
     margin: 0.8rem 0 0;
     font-size: 0.85rem;
-    color: #9a3b2f;
+    color: var(--danger);
   }
   .error.soft {
     color: var(--muted);

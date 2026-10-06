@@ -7,6 +7,8 @@
 //   - `library` → the library of things
 // Core owns the meaning of these records; here we only shape them for display.
 
+import { userName } from "@holons/core/identity";
+import { nameFor } from "$lib/names";
 import {
   isQuestCompleted,
   isQuestSettled,
@@ -135,7 +137,7 @@ export function sourceLabel(rec: unknown, names?: Names): string | undefined {
     names?.[id] ??
     r._hologram?.sourceHolonName ??
     r._federation?.originName ??
-    id
+    nameFor(id)
   );
 }
 
@@ -313,14 +315,16 @@ export interface BacklogTask {
  * exists.
  */
 export function personName(p: any): string {
-  const first = String(p?.first_name ?? p?.firstName ?? "").trim();
-  const last = String(p?.last_name ?? p?.lastName ?? "").trim();
-  if (first || last) {
-    const initial = last ? `${last[0].toUpperCase()}.` : "";
-    return [first, initial].filter(Boolean).join(" ");
-  }
-  const handle = String(p?.username ?? "").trim();
-  return handle || `#${p?.id ?? "?"}`;
+  // Core's one rule ("Roberto V."); an unnamed record is named by the
+  // resolver (its users record elsewhere, the key directory, its kind 0),
+  // else shown in the short form — never a bare id.
+  const own = userName(p, {
+    lastName: "initial",
+    idFallback: false,
+    unknown: "",
+  });
+  if (own) return own;
+  return p?.id != null ? nameFor(p.id) : "";
 }
 
 /** The quest's initiator as an avatar-stack person, or null when unset. */
@@ -893,7 +897,7 @@ export function toBookingEvents(
         1,
         Math.round((end.getTime() - date.getTime()) / 86_400_000) + 1,
       );
-      const who = b.borrower || (b.borrowerId ? String(b.borrowerId) : "");
+      const who = b.borrower || (b.borrowerId ? nameFor(b.borrowerId) : "");
       out.push({
         id: `booking-${itemId}-${b.id}`,
         libraryItemId: itemId,

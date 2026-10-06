@@ -23,6 +23,7 @@
 import { env } from "$env/dynamic/private";
 import { createHash, randomBytes } from "node:crypto";
 import { SignJWT, jwtVerify, createRemoteJWKSet } from "jose";
+import { deriveTelegramNostrKey } from "@holons/core/auth";
 
 export interface TelegramProfile {
   id: string;
@@ -62,6 +63,8 @@ export interface AuthConfig {
    * Empty in local dev → falls back to the request origin (single host).
    */
   callbackOrigin: string;
+  /** NOSTR_DERIVATION_SECRET — the member-key secret shared with the bot and the web; '' = none. */
+  derivationSecret: string;
 }
 
 /** Read auth config from private env (server-only, sourced from root .env). */
@@ -75,7 +78,32 @@ export function authConfig(): AuthConfig {
     callbackOrigin: (env.TELEGRAM_OIDC_CALLBACK_ORIGIN || "")
       .trim()
       .replace(/\/$/, ""),
+    derivationSecret: (env.NOSTR_DERIVATION_SECRET || "").trim(),
   };
+}
+
+/**
+ * The key a Telegram login signs with: derived from the Telegram id and
+ * `NOSTR_DERIVATION_SECRET` — the same key the bot links to every hub the
+ * person's chat is in, and the web hands out on login. Delivered to the
+ * browser over HTTPS, held in memory there, re-derived from the session
+ * cookie on every load. Null without the secret: then the login is a
+ * profile only, and the kiosk writes with its device key.
+ */
+export function derivedKeyFor(
+  profile: Pick<TelegramProfile, "id">,
+  derivationSecret: string,
+): { nostrPublicKey: string; nostrPrivateKey: string } | null {
+  if (!derivationSecret) return null;
+  try {
+    const { publicKey, privateKey } = deriveTelegramNostrKey(
+      profile.id,
+      derivationSecret,
+    );
+    return { nostrPublicKey: publicKey, nostrPrivateKey: privateKey };
+  } catch {
+    return null;
+  }
 }
 
 /**

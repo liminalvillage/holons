@@ -1,6 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import Icon from "$lib/components/Icon.svelte";
+  import { nameFor } from "$lib/names";
   //
   // The optional Status board: a simplified, read-only contribution leaderboard.
   // A trimmed cousin of the web dashboard's Status view — same numbers (it scores
@@ -310,7 +311,7 @@
     rows = scored
       .map((s) => ({
         id: s.userId,
-        name: nameById.get(s.userId) ?? `#${s.userId}`,
+        name: nameById.get(s.userId) ?? nameFor(s.userId),
         score: s.score,
         percentage: s.percentage,
         aggregates: s.aggregates,
@@ -693,13 +694,23 @@
   }
   /* The podium: gold for the trophy, then the two medals in their metals. */
   .rank.top .place {
-    color: #c9971c;
+    color: #8f6a00;
   }
   .place :global(.silver) {
-    color: #8e98a3;
+    color: #6b7682;
   }
   .place :global(.bronze) {
-    color: #b07a45;
+    color: #96602f;
+  }
+  /* By night the metals are lit rather than deep, to stand off the slate. */
+  :global(:root[data-theme="dark"]) .rank.top .place {
+    color: #e0b23c;
+  }
+  :global(:root[data-theme="dark"]) .place :global(.silver) {
+    color: #aab4be;
+  }
+  :global(:root[data-theme="dark"]) .place :global(.bronze) {
+    color: #d09a62;
   }
 
   .av {
@@ -755,10 +766,14 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
+  /* The podium row is a post-it: the quiet ink doesn't clear it. */
+  .rank.top .pct {
+    color: var(--ink-soft);
+  }
   .score {
     font-size: 0.95rem;
     font-weight: 800;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
@@ -790,7 +805,7 @@
     font-weight: 700;
   }
   .disclaimer .more {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-weight: 700;
     text-decoration: underline;
   }
@@ -883,7 +898,7 @@
     color: var(--muted);
   }
   .dsub strong {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
 
   .dsec {
@@ -938,7 +953,7 @@
   }
   .eq .p {
     font-weight: 800;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .eq tfoot td {
     border-top: 2px solid var(--line);
@@ -953,7 +968,7 @@
     color: var(--muted);
   }
   .eq tfoot .p {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
 
   .ledger {
@@ -981,7 +996,7 @@
     place-items: center;
     font-weight: 800;
     font-size: 0.85rem;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     background: color-mix(in srgb, var(--teal) 16%, transparent);
   }
   .licon.in {

@@ -1,6 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import Icon from "$lib/components/Icon.svelte";
+  import { nameOf as resolvedName } from "$lib/names";
   //
   // The Stock board: what the place keeps, in quantity.
   //
@@ -255,7 +256,7 @@
   $: needs = $rawQuests.filter((q) => (q as { type?: string }).type === "need");
   $: partnersWithSpecs = partners.map((p) => ({
     ...p,
-    name: $partnerNames[p.id] ?? p.id,
+    name: $partnerNames[p.id] ?? $resolvedName(p.id),
     specs: p.specs.length ? p.specs : (sets.partners[p.id] ?? []),
   }));
   $: board = hid
@@ -292,7 +293,7 @@
       : [];
   $: hasTargets = sets.own.some((s) => (s.target ?? 0) > 0);
   $: nameOf = (id: string) =>
-    id === hid ? $t("stock.here") : ($partnerNames[id] ?? id);
+    id === hid ? $t("stock.here") : ($partnerNames[id] ?? $resolvedName(id));
 
   $: rotationHold.set(
     openItemId != null ||
@@ -1305,7 +1306,7 @@
     color: var(--muted);
   }
   .section.partner {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .rows {
     list-style: none;
@@ -1333,8 +1334,10 @@
   .row:not(.plain):active {
     filter: brightness(0.97);
   }
+  /* Out of stock steps back a touch — only a touch: this is the row someone
+     has to read to restock it, and its labels must still clear the paper. */
   .row.out {
-    opacity: 0.75;
+    opacity: 0.9;
   }
   .row.is-foreign {
     border-left: 4px solid var(--teal);
@@ -1371,7 +1374,7 @@
     color: var(--muted);
   }
   .basis.in {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-weight: 700;
   }
   .bar {
@@ -1414,7 +1417,7 @@
   }
   .stepper.live .qty,
   .big.live {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .step {
     width: 2.3rem;
@@ -1422,7 +1425,7 @@
     border-radius: 50%;
     border: 1.5px solid var(--line);
     background: var(--card);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-size: 1.25rem;
     font-weight: 800;
     line-height: 1;
@@ -1451,7 +1454,7 @@
     white-space: nowrap;
     font-size: 0.76rem;
     font-weight: 700;
-    color: var(--ink-soft);
+    color: var(--ink);
     background: var(--note-coral);
     border-radius: 999px;
     padding: 0.15rem 0.7rem;
@@ -1478,7 +1481,7 @@
     flex: 0 0 auto;
     font-size: 0.78rem;
     font-weight: 700;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     border-radius: 999px;
     padding: 0.4rem 0.8rem;
@@ -1526,11 +1529,11 @@
   }
   .primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .ghost {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--ghost);
     color: var(--ink);
   }
   .danger {
@@ -1564,7 +1567,7 @@
     border-radius: 50%;
     font-size: 2rem;
     line-height: 1;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     box-shadow: 0 10px 24px rgba(14, 107, 102, 0.4);
     display: grid;
@@ -1600,7 +1603,7 @@
     background: var(--card);
     border: 1.5px solid var(--line);
     font-size: 1.1rem;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .level {
     display: flex;
@@ -1625,7 +1628,7 @@
     margin-right: 2.4rem;
   }
   .icon-btn.done {
-    color: var(--teal);
+    color: var(--teal-ink);
   }
   .level .big {
     font-size: 2.2rem;
@@ -1665,7 +1668,7 @@
   .mv .g {
     font-size: 1.4rem;
     line-height: 1;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .mv:active {
     transform: scale(0.96);
@@ -1726,11 +1729,11 @@
   }
   .hist .delta {
     font-weight: 800;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-variant-numeric: tabular-nums;
   }
   .hist .delta.neg {
-    color: #b8452e;
+    color: var(--danger);
   }
   .hist .what {
     color: var(--ink);
@@ -1764,7 +1767,7 @@
   }
   .form .glyph {
     font-size: 1.8rem;
-    color: var(--teal);
+    color: var(--teal-ink);
     font-weight: 800;
   }
   .form h3 {
@@ -1817,7 +1820,7 @@
     background: color-mix(in srgb, var(--teal) 12%, var(--card));
   }
   .typechip.on .tl {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .field {
     display: block;

@@ -43,6 +43,7 @@
   // `expenses` is small enough to subscribe to normally.
 
   import { onDestroy, onMount } from "svelte";
+  import { nameOf as resolvedName, names } from "$lib/names";
   import {
     holonId,
     rotationHold,
@@ -58,7 +59,6 @@
     setFlowsWindow,
   } from "$lib/config";
   import {
-    getHolonName,
     getHolosphere,
     subscribeLens,
     type Subscription,
@@ -406,11 +406,7 @@
     claimMax,
     Number(String(claimAmount).replace(",", ".")),
   );
-  const partyName = (id: string) =>
-    usersById[id]?.first_name ||
-    usersById[id]?.username ||
-    partnerNameMap[id] ||
-    id;
+  const partyName = (id: string) => nameFor(id);
   async function submitClaim() {
     if (!hsRef || !hid || !selfId || claimBusy) return;
     const amount = Number(String(claimAmount).replace(",", "."));
@@ -506,44 +502,25 @@
   });
 
   // ── Names for ids the name map cannot know ──────────────────────────────
-  // The users lens and the REA stream name people. A HOLON id — a federation
-  // partner in the REA stream, or a personal holon nobody here has a profile
-  // for — would otherwise print as its raw number on a Sankey bar. Those resolve the way the dock resolves
-  // them: partner names from the federation record, then HNS / the holon's
-  // settings through `getHolonName`, asked once per id and folded in as they
-  // arrive. Only positive answers are kept, so a lookup that finds nothing
-  // never re-asks and the derivation settles.
-  let holonNames: Record<string, string> = {};
+  // The users lens and the REA stream name people. Anything else on the
+  // board — a federation partner, a personal holon, a bare key — is named by
+  // the kiosk's one resolver (`$lib/names`): partner names, the holon's
+  // settings and HNS, the key directory, kind-0 profiles — folded in as they
+  // arrive, never a raw id.
   let partnerNameMap: Record<string, string> = {};
-  const askedNames = new Set<string>();
   let hsRef: HoloSphere | null = null;
 
-  function queueName(id: string) {
-    if (!hsRef || !hid || askedNames.has(id)) return;
-    askedNames.add(id);
-    const holon = hid;
-    void getHolonName(hsRef, id).then((name) => {
-      if (hid !== holon || !name) return;
-      holonNames = { ...holonNames, [id]: name };
-    });
-  }
-
-  /** The name for any id on the board, or undefined while still unknown. */
-  $: nameFor = (id: string): string | undefined => {
+  /** The name for any id on the board — a learned name, else its short form. */
+  $: nameFor = (id: string): string => {
     // `buildNameMap` stands in "#<id>" for a REA agent that carried no name;
     // that is a placeholder, not an answer, so keep looking past it.
     const mapped = nameMap.get(id);
-    const known =
-      (mapped && mapped !== `#${id}` ? mapped : undefined) ??
-      partnerNameMap[id] ??
-      holonNames[id] ??
-      undefined;
-    if (known) return known;
+    if (mapped && mapped !== `#${id}`) return mapped;
+    if (partnerNameMap[id]) return partnerNameMap[id];
     if ($currentUser && id === String($currentUser.id)) {
       return displayName($currentUser);
     }
-    if (id) queueName(id);
-    return mapped;
+    return $resolvedName(id);
   };
 
   // Partners with their rings and best-known names. Derived, not loaded: the
@@ -575,7 +552,7 @@
     window: flowsWindow,
     members: memberIds,
     nameOf: nameFor,
-    hubLabel: holonNames[hid ?? ""] ?? $t("flows.hub"),
+    hubLabel: (hid && $names.get(hid)) || $t("flows.hub"),
   };
   $: graph = buildValueFlows(flowsInput);
   // The rows the diagram was drawn from — what a tapped bar lists when it has
@@ -1635,9 +1612,7 @@
     expenses = [];
     collective = null;
     collectiveError = "";
-    holonNames = {};
     partnerNameMap = {};
-    askedNames.clear();
     hsRef = null;
     cascadeChildren = {};
     cascadeKey = "";
@@ -1667,9 +1642,6 @@
     }
     if (hid !== holon) return; // holon changed while connecting
     hsRef = hs;
-    // The board's own name, for its hub bar and its seat at the table.
-    queueName(holon);
-
     // Small lenses: safe to subscribe.
     expensesSub = subscribeLens(hs, holon, "expenses", (items) => {
       expenses = items as Expense[];
@@ -2386,6 +2358,7 @@
     scored={memberShares}
     shares={savedShares}
     {bundle}
+    {selfId}
     {cascade}
     collectiveSlug={readCollectiveSlug(settings)}
     units={unitOptions}
@@ -2677,7 +2650,7 @@
   .amount {
     margin: 0;
     font-size: 1.6rem;
-    color: var(--teal);
+    color: var(--teal-ink);
   }
 
   .detail-rows {
@@ -2739,7 +2712,7 @@
   .who .amt {
     text-align: right;
     padding-left: 0.8rem;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
@@ -2766,7 +2739,7 @@
     border-radius: var(--radius);
     background: var(--card);
     box-shadow: var(--shadow-soft);
-    color: var(--teal);
+    color: var(--teal-ink);
     font-size: 0.9rem;
     text-align: left;
     touch-action: manipulation;
@@ -2841,10 +2814,11 @@
     padding: 0.15rem 0.5rem;
     border-radius: 6px;
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
   }
   .chain-net.unknown {
     background: #a3540d;
+    color: #fff;
   }
   .chain-addr {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -2858,7 +2832,7 @@
   .section-note {
     margin: 0.4rem 0 0.2rem;
     font-size: 0.82rem;
-    color: #b45309;
+    color: var(--caution);
   }
 
   .pot-units {
@@ -2902,15 +2876,11 @@
   .account-main .v {
     font-size: 2rem;
     line-height: 1.1;
-    color: var(--teal);
+    color: var(--teal-ink);
     font-variant-numeric: tabular-nums;
   }
   .account.over .account-main .v {
-    color: #c0392b;
-  }
-  :global(:root[data-theme="dark"]) .account.over .account-main .v,
-  :global(:root[data-theme="dark"]) .statement .debit {
-    color: #ff8a7a;
+    color: var(--danger);
   }
 
   /* The one action on the card: take what the balance says is still yours.
@@ -2927,7 +2897,7 @@
     border: 1px solid var(--teal);
     border-radius: 999px;
     background: transparent;
-    color: var(--teal);
+    color: var(--teal-ink);
     font-size: 0.95rem;
     text-decoration: none;
     touch-action: manipulation;
@@ -2938,7 +2908,7 @@
     color: var(--muted);
   }
   .claim-hint.error {
-    color: #ff8a7a;
+    color: var(--danger);
   }
   .claim-form {
     display: flex;
@@ -3004,14 +2974,14 @@
   .claim-row.approved .badge,
   .claim-row.settled .badge {
     border-color: var(--teal);
-    color: var(--teal);
+    color: var(--teal-ink);
   }
   .claim-row.disputed .badge,
   .claim-row.over .badge,
   .claim-row.rejected .badge,
   .claim-row.conflict .badge {
     border-color: #ff8a7a;
-    color: #ff8a7a;
+    color: var(--danger);
   }
   .claim-row .acts {
     display: flex;
@@ -3023,7 +2993,7 @@
     border: 1px solid var(--teal);
     border-radius: 999px;
     background: transparent;
-    color: var(--teal);
+    color: var(--teal-ink);
     font: inherit;
     font-size: 0.8rem;
     touch-action: manipulation;
@@ -3058,7 +3028,7 @@
     font-variant-numeric: tabular-nums;
   }
   .statement .debit {
-    color: #c0392b;
+    color: var(--danger);
   }
   .statement .foot dt,
   .statement .foot dd {

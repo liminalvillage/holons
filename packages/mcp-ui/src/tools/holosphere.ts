@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { readHolonSettings } from '@holons/core/settings';
 import { z } from 'zod';
 import type { ToolDeps } from './index.js';
+import { namesFor } from './names.js';
 
 /**
  * Strip Nostr metadata that is noisy in tool output.
@@ -179,6 +180,7 @@ export function registerHolosphereTools(server: McpServer, deps: ToolDeps): void
         h.getAll(holon, 'roles').catch(() => []),
       ]);
       const s = settings ?? {};
+      const names = await namesFor(h, holon, [holon]);
 
       return {
         content: [
@@ -187,7 +189,7 @@ export function registerHolosphereTools(server: McpServer, deps: ToolDeps): void
             text: JSON.stringify(
               {
                 id: holon,
-                name: s.name || s.title || holon,
+                name: s.name || s.title || names[holon] || holon,
                 description: s.description || '',
                 language: s.language || 'en',
                 settings: s,

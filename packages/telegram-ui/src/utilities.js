@@ -1,5 +1,6 @@
+import { shortId, userName } from '@holons/core/identity';
+import { nameResolver } from './protocolContext.js';
 import i18next from 'i18next';
-import { userName } from '@holons/core/identity';
 
 export { i18next };
 
@@ -226,45 +227,44 @@ export const getHolonName = async (db, holonId, ctx = null) => {
     }
   }
 
-  try {
-    // Attempt to get settings for this holonId
-    // Settings are stored at holonId + '/settings'
-    const settings = await db.get(
-      normalizedHolonId.toString() + '/settings',
-      normalizedHolonId.toString()
-    );
-    if (settings && settings.name) {
-      return settings.name;
-    }
-  } catch (error) {
-    // Log benignly, as this is an attempt to get a prettier name
-    console.warn(
-      `Could not fetch settings name for holon ${holonId} which is normalized to${normalizedHolonId}: ${error.message}`
-    );
-  }
+  const id = normalizedHolonId.toString();
+  const short = shortId(id);
 
-  // Fallback 1: Try Telegram chat name if ctx is provided and getChatName is available
-  if (ctx && typeof getChatName === 'function') {
+  // The one resolver every surface shares: settings and HNS for a holon, a
+  // person's record / key directory / kind 0 for a key (a key is its
+  // holder's personal holon). It never reads `<id>/settings` as a holon —
+  // the Gun-era address that founded phantom holons on the relays.
+  if (db && typeof db.get === 'function') {
     try {
-      const chatName = await getChatName(ctx, normalizedHolonId.toString());
-      // Ensure getChatName doesn't return an empty, null, or default 'unknown' string
-      if (
-        chatName &&
-        chatName !== 'unknown' &&
-        chatName !== null &&
-        chatName.trim() !== ''
-      ) {
-        return chatName;
-      }
+      const names = await nameResolver(db).resolve([id]);
+      const name = names.get(id);
+      if (name && name !== short) return name;
     } catch (error) {
       console.warn(
-        `Could not fetch Telegram chat name for ${normalizedHolonId}: ${error.message}`
+        `Could not resolve a name for holon ${holonId}: ${error.message}`
       );
     }
   }
 
-  // Final fallback: return a generic name instead of the ID
-  return `External Holon`;
+  // The Telegram chat title, when the bot can ask — and remembered, so the
+  // next lookup needs no context.
+  if (ctx && typeof getChatName === 'function') {
+    try {
+      const chatName = await getChatName(ctx, id);
+      if (chatName && chatName !== 'unknown' && chatName.trim() !== '') {
+        if (db && typeof db.get === 'function')
+          nameResolver(db).prime([[id, chatName]]);
+        return chatName;
+      }
+    } catch (error) {
+      console.warn(
+        `Could not fetch Telegram chat name for ${id}: ${error.message}`
+      );
+    }
+  }
+
+  // Nothing names it: the short form (a chat id as itself, a key as npub1…).
+  return short;
 };
 
 /**

@@ -74,12 +74,9 @@
 			} catch { lensPrivate = false; }
 			const list: Array<{ id: string; name: string }> = [];
 			for (const id of snap.federated) {
-				let name = await awaitName(id);
-				if (!name || name.startsWith('Holon ')) {
-					const stored = snap.partnerNames?.[id];
-					if (stored && stored !== id) name = stored;
-				}
-				list.push({ id, name: name || `Holon ${id.slice(0, 8)}…` });
+				const stored = snap.partnerNames?.[id];
+				const name = stored && stored !== id ? stored : await awaitName(id);
+				list.push({ id, name });
 			}
 			partners = list;
 		} catch (err) {

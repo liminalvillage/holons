@@ -29,10 +29,6 @@ export const it: Record<MessageKey, Msg> = {
   "tasks.deleteFailed": "Impossibile eliminare questa attività.",
   "tasks.addFailed": "Impossibile aggiungere — {reason}",
   "tasks.deleteTask": "Elimina l'attività",
-  "tasks.configure": "Privacy della bacheca",
-  "tasks.privacyTitle": "Chi può leggere questa bacheca",
-  "tasks.privacySub":
-    "Blocca la bacheca per sigillare ogni scheda sui relay, poi condividila con gli holon che possono leggerla. Una singola scheda si blocca dalla sua vista.",
   "tasks.locked": "Privata",
   "tasks.markComplete": "Segna come completata",
   "tasks.proposedBy": "Proposta da {name}",
@@ -427,6 +423,9 @@ export const it: Record<MessageKey, Msg> = {
   "dock.add": "Aggiungi un hub",
   "dock.addPlaceholder": "Id dell'holon, nome, npub, indirizzo o link",
   "dock.addInvalid": "Questo non identifica un holon.",
+  "dock.searchPlaceholder": "Cerca un hub da aggiungere…",
+  "dock.searchDocked": "già qui",
+  "dock.searchNone": "Nessun hub con questo nome.",
   "dock.addTo": "Aggiungi {lens} qui",
   "dock.addToInvalid": "Prima dagli un nome.",
   "dock.addToFailed": "Non è stato possibile aggiungerlo a questa cella.",
@@ -671,17 +670,6 @@ export const it: Record<MessageKey, Msg> = {
   "settings.checking": "Verifica…",
   "settings.change": "Cambia…",
   "settings.setLocation": "Imposta la posizione…",
-  "settings.privacy": "Lenti private",
-  "settings.privacySub":
-    "— sigillate sui relay; solo le chiavi che consegni possono leggerle",
-  "settings.privacyLogin":
-    "Accedi con la tua chiave per rendere privata una lente.",
-  "settings.privacyAria": "{lens}: {state}",
-  "settings.privacyPrivate": "privata",
-  "settings.privacyPublic": "pubblica",
-  "settings.privacyFailed": "Impossibile cambiare quella lente — riprova.",
-  "settings.privacyNeedsKey":
-    "Per condividere, questo hub deve avere una chiave propria — vedi Membri qui sotto.",
   "members.title": "Membri",
   "members.sub": "— chi è collegato a questo hub",
   "members.youLinked":
@@ -689,7 +677,12 @@ export const it: Record<MessageKey, Msg> = {
   "members.youNotLinked":
     "La tua chiave {key} non è ancora collegata a questo hub, quindi solo questo schermo vede le tue modifiche. Chiedilo qui sotto — la richiesta è firmata dalla tua chiave, non serve altro.",
   "members.youNotLinkedTelegram":
-    "Oppure collega questa chiave al tuo account Telegram: manda /key al bot in chat privata.",
+    "Oppure collega questa chiave al tuo account Telegram, così il bot la collega in ogni chat in cui sei.",
+  "members.linkTelegram": "Collega via Telegram",
+  "members.linkTelegramOpen": "Apri Telegram e tocca Avvia",
+  "members.linkTelegramHint":
+    "La prova è pubblicata da questo dispositivo; il bot la verifica e collega la chiave al tuo account. I tuoi hub la collegano al prossimo aggiornamento.",
+  "members.linkTelegramFailed": "Impossibile pubblicare la prova: {reason}",
   "members.youNoKey":
     "Sei entrato senza chiave, quindi nulla ti collega a questo hub. Entra con la tua chiave (nsec, passkey o wallet).",
   "members.youNoKeyTelegram":
@@ -746,10 +739,6 @@ export const it: Record<MessageKey, Msg> = {
     "I membri della chat vengono collegati qui, la chiave del bot diventa admin di questo hub, ed entrambe le bacheche mostrano gli elementi dell’altra.",
   "tglink.done":
     "Collegata. I membri della chat compaiono man mano che il bot li sincronizza.",
-  "settings.privacyHint":
-    "Una lente bloccata tiene sigillato il contenuto; i membri di questo hub la leggono sempre. Condividi una lente intera qui o dal dock, una scheda dalla sua vista.",
-  "audience.lock": "Blocca",
-  "audience.unlock": "Sblocca",
   "audience.locked": "Privata",
   "audience.open": "Pubblica",
   "audience.sharedWith": "condivisa con {n}",
@@ -769,6 +758,17 @@ export const it: Record<MessageKey, Msg> = {
   "audience.lensLocked":
     "L'intera bacheca è bloccata; le schede la seguono. Cambialo dalle impostazioni della bacheca.",
   "audience.failed": "Impossibile cambiarlo — riprova.",
+  "audience.whenLockLens":
+    "Renderla privata sigilla ogni scheda di questa bacheca — quelle già presenti e ogni nuova — così solo i membri di questo hub e gli holon con cui la condividi possono leggerle. Ciò che è già stato letto resta letto.",
+  "audience.whenUnlockLens":
+    "Renderla pubblica riscrive ogni scheda di questa bacheca in chiaro, vecchie e nuove, leggibile da chiunque.",
+  "audience.whenLockCard":
+    "Renderla privata sigilla questa scheda e ogni sua modifica, così solo i membri di questo hub e gli holon con cui la condividi possono leggerla. Ciò che è già stato letto resta letto.",
+  "audience.whenUnlockCard":
+    "Renderla pubblica riscrive questa scheda in chiaro, e le sue modifiche restano pubbliche, leggibile da chiunque.",
+  "audience.makePrivate": "Rendi privata",
+  "audience.makePublic": "Rendi pubblica",
+  "privacy.who": "Chi può leggere {lens}",
   "settings.onMap": "Sulla mappa",
   "settings.onMapSub":
     "— ciò che questo holon mette sulla mappa condivisa, e da quanto lontano si vede",
@@ -932,6 +932,9 @@ export const it: Record<MessageKey, Msg> = {
   "detail.participantsHint":
     "Chi partecipa. Aggiungi o rimuovi chiunque; chi partecipa smette di apprezzare.",
   "detail.addParticipant": "Aggiungi un partecipante…",
+  "detail.addSomeone": "Aggiungi qualcuno",
+  "detail.addedPerson": "{name} ora partecipa.",
+  "detail.addFailed": "Impossibile aggiungere — riprova.",
   "detail.removeParticipant": "Rimuovi {name} dai partecipanti",
   "detail.leaveTitle": "Lascia questa attività",
   "detail.joinedLeave": "Iscritto · lascia",
@@ -1231,12 +1234,6 @@ export const it: Record<MessageKey, Msg> = {
   "draft.failed": "Non è stato possibile compilare (HTTP {status}).",
   "draft.unavailable":
     "Per compilare serve una chiave OpenAI — impostala sul deploy o incollala nelle Impostazioni.",
-
-  "settings.collective": "OpenCollective",
-  "settings.collectiveSub":
-    "Il collettivo di cui questo holon riporta il saldo.",
-  "settings.collectivePlaceholder": "slug o URL del collettivo",
-  "settings.collectiveFailed": "Impossibile salvare il collettivo.",
   // Flows board
   "flows.onChainUnknownNetwork": "Rete non registrata",
   "flows.loading": "Lettura del registro\u2026",
@@ -1535,6 +1532,18 @@ export const it: Record<MessageKey, Msg> = {
   "alloc.chainDone": "Aggiornato on-chain — {hash}…",
   "alloc.chainRejected": "Transazione rifiutata.",
   "alloc.chainNoWallet": "Nessun portafoglio Ethereum in questo browser.",
+  "alloc.holdsTitle": "Contiene",
+  "alloc.holdsHeld":
+    "{amount} in attesa che i membri colleghino un portafoglio",
+  "alloc.holdsFree": "{amount} non ancora divisi",
+  "alloc.holdsMine": "{amount} in attesa per te",
+  "alloc.holdsReading": "Lettura del contratto…",
+  "alloc.holdsNothing": "Ancora niente.",
+  "alloc.holdsUnreadable": "Impossibile leggere il contratto da qui.",
+  "alloc.tokenHint": "Indirizzo del token (0x…) in cui leggere il fondo",
+  "alloc.tokenTrack": "Segui",
+  "alloc.tokenReading": "Lettura…",
+  "alloc.tokenFailed": "Impossibile aggiungere quel token.",
   "alloc.chainNoContract":
     "Nessun contratto a quell'indirizzo sulla rete del portafoglio — cambia rete e riprova.",
   "alloc.chainFailed": "Aggiornamento on-chain non riuscito: {reason}",

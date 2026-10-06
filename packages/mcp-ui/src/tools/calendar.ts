@@ -8,13 +8,13 @@ import {
   generateICalFeed,
   toggleRSVP,
   isAttending,
-  rsvpDisplayName,
   type HolonEvent,
   type RSVPUser,
 } from '@holons/core/calendar';
 import { addHost, createTask, questSchedule, type Quest, type QuestParticipant } from '@holons/core/tasks';
 import type { ToolDeps } from './index.js';
 import { shortTaskId } from './tasks.js';
+import { namesFor } from './names.js';
 
 type TextContent = { type: 'text'; text: string };
 type ToolResult = { content: TextContent[]; isError?: boolean };
@@ -69,13 +69,12 @@ export function registerCalendarTools(server: McpServer, deps: ToolDeps): void {
     async ({ holon }): Promise<ToolResult> => {
       try {
         const h = await deps.getHoloSphere();
-        const [profile, quests, events] = await Promise.all([
-          h.get(holon, 'profile', holon).catch(() => null),
+        const [names, quests, events] = await Promise.all([
+          namesFor(h, holon, [holon]),
           h.getAll(holon, 'quests').catch(() => []),
           h.getAll(holon, 'events').catch(() => []),
         ]);
-        const holonName =
-          profile?.name || profile?.title || 'Holon Calendar';
+        const holonName = names[holon] && names[holon] !== holon ? names[holon] : 'Holon Calendar';
         const items = [...asArray(quests), ...asArray(events)];
         const calendarEvents = toHolonEvents(items);
         const ical = generateICalFeed(calendarEvents, holonName, holon);
@@ -162,25 +161,6 @@ export function registerCalendarTools(server: McpServer, deps: ToolDeps): void {
         const parsed = JSON.parse(user) as RSVPUser;
         const attending = isAttending(parsed, eventKey);
         return ok({ success: true, attending });
-      } catch (err) {
-        return fail(err instanceof Error ? err.message : String(err));
-      }
-    }
-  );
-
-  server.tool(
-    'calendar_rsvp_display_name',
-    'Render a display name for an RSVP participant, falling back through first_name / username / id. Pure wrapper over @holons/core/calendar.rsvpDisplayName.',
-    {
-      participant: z
-        .string()
-        .describe('Participant / RSVP user record as JSON ({ id, username?, first_name?, second_name? })'),
-    },
-    async ({ participant }): Promise<ToolResult> => {
-      try {
-        const parsed = JSON.parse(participant) as RSVPUser;
-        const name = rsvpDisplayName(parsed);
-        return ok({ success: true, name });
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err));
       }

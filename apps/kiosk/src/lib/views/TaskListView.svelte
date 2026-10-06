@@ -262,7 +262,10 @@
   .src {
     font-size: 0.68rem;
     font-weight: 700;
-    color: var(--glow, var(--teal-deep));
+    /* The source holon's own hue, carried by the ink rather than replacing it:
+       a holon's colour is a ground (a pastel by day, a jewel by night), never
+       something to read on its own. */
+    color: color-mix(in srgb, var(--glow, var(--teal)) 30%, var(--ink));
     background: color-mix(in srgb, var(--glow) 12%, transparent);
     border-radius: 999px;
     padding: 0.05rem 0.45rem;
@@ -296,7 +299,7 @@
     width: 1.9rem;
     height: 1.9rem;
     line-height: 1;
-    color: rgba(154, 59, 47, 0.55);
+    color: var(--heart-quiet);
     touch-action: manipulation;
     transition:
       transform 0.1s ease,
@@ -311,11 +314,10 @@
     transform: translateY(0.1em);
     font-size: 0.6rem;
     font-weight: 800;
-    color: #fff;
-    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+    color: var(--on-heart);
   }
   .heart.on {
-    color: #d4493a;
+    color: var(--heart);
   }
   .heart:active {
     transform: scale(0.88);
@@ -338,20 +340,20 @@
       transform 0.1s ease;
   }
   .tool.check {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .tool.check:active {
     transform: scale(0.88);
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
   }
   .tool.del {
-    color: rgba(154, 59, 47, 0.75);
+    color: var(--danger);
   }
   .tool.del:active {
     transform: scale(0.88);
-    background: #d4493a;
-    color: #fff;
+    background: var(--danger);
+    color: var(--on-danger);
   }
   .empty {
     color: var(--muted);

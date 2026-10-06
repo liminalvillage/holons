@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  actorDisplayName,
   actorMatchesBooking,
   dayKey,
   findOverlappingBooking,
@@ -129,15 +128,6 @@ describe('withBookings', () => {
 });
 
 describe('actor identity', () => {
-  it('actorDisplayName prefers display_name, then username without @, then names, then id', () => {
-    expect(actorDisplayName({ id: 1, username: 'bob', display_name: 'Bob the Builder' })).toBe(
-      'Bob the Builder'
-    );
-    expect(actorDisplayName({ id: 1, username: '@bob' })).toBe('bob');
-    expect(actorDisplayName({ id: 1, first_name: 'Bob', last_name: 'Kane' })).toBe('Bob Kane');
-    expect(actorDisplayName({ id: 42 })).toBe('42');
-  });
-
   it('actorMatchesBooking matches by id and by @-tolerant name', () => {
     const byWeb = booking({ borrowerId: '20', borrower: '@Bob' });
     expect(actorMatchesBooking(byWeb, { id: 20, username: 'other' })).toBe(true);
@@ -161,8 +151,10 @@ describe('makeBooking', () => {
     expect(b.start).toBe('2099-01-10');
     expect(b.end).toBe('2099-01-20');
     expect(b.borrowerId).toBe('20');
-    expect(b.borrower).toBe('bob');
+    expect(b.borrower).toBe('Bob Kane'); // the one name rule: real name before handle
     expect(b.borrowerInitials).toBe('BK');
+    expect(makeBooking({ id: 21, username: '@ann' }, '2099-01-10', '2099-01-11').borrower).toBe('ann');
+    expect(makeBooking({ id: 22, display_name: 'Resolved Name', username: 'x' }, '2099-01-10', '2099-01-11').borrower).toBe('Resolved Name');
     expect(b.id).toMatch(/^b-/);
     expect(new Date(b.created).getTime()).not.toBeNaN();
   });

@@ -32,10 +32,6 @@ export const en = {
   "tasks.deleteFailed": "Couldn't delete this task.",
   "tasks.addFailed": "Couldn't add — {reason}",
   "tasks.deleteTask": "Delete task",
-  "tasks.configure": "Board privacy",
-  "tasks.privacyTitle": "Who can read this board",
-  "tasks.privacySub":
-    "Lock the board to seal every card on the relays, then share it with the holons that may read it. One card is locked from its own view.",
   "tasks.locked": "Private",
   "tasks.markComplete": "Mark complete",
   "tasks.proposedBy": "Proposed by {name}",
@@ -416,6 +412,11 @@ export const en = {
   "dock.add": "Add a hub",
   "dock.addPlaceholder": "Holon id, name, npub, address, or link",
   "dock.addInvalid": "That doesn't name a holon.",
+  // The map's search box: hubs from the registry and this deploy's labels,
+  // or anything pasted whole. A hub already docked is flown to, not re-added.
+  "dock.searchPlaceholder": "Find a hub to add…",
+  "dock.searchDocked": "on your dock",
+  "dock.searchNone": "No hub by that name.",
   // The tray's "+" on the map: with a cell and a lens in hand it writes into
   // that pair; with a cell alone the hub it names comes to live there.
   "dock.addTo": "Add {lens} here",
@@ -663,16 +664,6 @@ export const en = {
   "settings.setLocation": "Set location…",
   // The home hex as a federation partner: which lenses reach the map, and
   // how far up the scalespace they travel.
-  "settings.privacy": "Private lenses",
-  "settings.privacySub":
-    "— sealed on the relays; only the keys you hand out can read them",
-  "settings.privacyLogin": "Log in with your key to make a lens private.",
-  "settings.privacyAria": "{lens}: {state}",
-  "settings.privacyPrivate": "private",
-  "settings.privacyPublic": "public",
-  "settings.privacyFailed": "Could not change that lens — try again.",
-  "settings.privacyNeedsKey":
-    "Sharing needs this hub to have a key of its own — see Members below.",
   "members.title": "Members",
   "members.sub": "— who is linked to this hub",
   "members.youLinked":
@@ -680,7 +671,12 @@ export const en = {
   "members.youNotLinked":
     "Your key {key} isn’t linked to this hub yet, so only this screen sees your changes. Ask below — the ask is signed by your key, nothing else is needed.",
   "members.youNotLinkedTelegram":
-    "Or link this key to your Telegram account: send /key to the bot in a private chat.",
+    "Or link this key to your Telegram account, so the bot seats it in every chat you are in.",
+  "members.linkTelegram": "Link via Telegram",
+  "members.linkTelegramOpen": "Open Telegram and tap Start",
+  "members.linkTelegramHint":
+    "The proof is published from this device; the bot checks it and links the key to your account. Your hubs seat it on their next refresh.",
+  "members.linkTelegramFailed": "Couldn't publish the proof: {reason}",
   "members.youNoKey":
     "You are signed in without a key, so nothing links you to this hub. Sign in with your key (nsec, passkey or wallet).",
   "members.youNoKeyTelegram":
@@ -734,10 +730,6 @@ export const en = {
   "tglink.confirmBody":
     "The chat’s members are linked here, the bot’s key becomes an admin of this hub, and both boards show each other’s items.",
   "tglink.done": "Linked. The chat’s members appear as the bot syncs them.",
-  "settings.privacyHint":
-    "A locked lens keeps what is inside sealed; this hub's members always read it. Share a whole lens here or from the dock, one card from its own view.",
-  "audience.lock": "Lock",
-  "audience.unlock": "Unlock",
   "audience.locked": "Private",
   "audience.open": "Public",
   "audience.sharedWith": "shared with {n}",
@@ -756,6 +748,17 @@ export const en = {
   "audience.lensLocked":
     "The whole board is locked; its cards follow it. Change that from the board settings.",
   "audience.failed": "Could not change that — try again.",
+  "audience.whenLockLens":
+    "Making it private seals every card on this board — the ones already here and every new one — so only this hub's members and the holons you share it with can read them. What was read before stays read.",
+  "audience.whenUnlockLens":
+    "Making it public rewrites every card on this board in the clear, old and new, for anyone to read.",
+  "audience.whenLockCard":
+    "Making it private seals this card and every change to it, so only this hub's members and the holons you share it with can read it. What was read before stays read.",
+  "audience.whenUnlockCard":
+    "Making it public rewrites this card in the clear, and its changes stay public, for anyone to read.",
+  "audience.makePrivate": "Make private",
+  "audience.makePublic": "Make public",
+  "privacy.who": "Who can read {lens}",
   "settings.onMap": "On the map",
   "settings.onMapSub":
     "— what this holon puts on the shared map, and how far out it can be seen",
@@ -906,6 +909,9 @@ export const en = {
   "detail.participantsHint":
     "Who takes part. Add or remove anyone; a participant stops appreciating.",
   "detail.addParticipant": "Add a participant…",
+  "detail.addSomeone": "Add someone",
+  "detail.addedPerson": "{name} added.",
+  "detail.addFailed": "Could not add them — try again.",
   "detail.removeParticipant": "Remove {name} from participants",
   "detail.leaveTitle": "Leave this task",
   "detail.joinedLeave": "Joined · leave",
@@ -1206,11 +1212,6 @@ export const en = {
   "draft.failed": "Couldn't draft that (HTTP {status}).",
   "draft.unavailable":
     "Drafting needs an OpenAI key — set one on the deploy, or paste one in Settings.",
-
-  "settings.collective": "OpenCollective",
-  "settings.collectiveSub": "The collective whose balance this holon reports.",
-  "settings.collectivePlaceholder": "collective slug or URL",
-  "settings.collectiveFailed": "Could not save the collective.",
   // Flows board
   "flows.onChainUnknownNetwork": "Network not recorded",
   "flows.loading": "Reading the ledger\u2026",
@@ -1501,6 +1502,17 @@ export const en = {
   "alloc.chainDone": "Updated on chain — {hash}…",
   "alloc.chainRejected": "Transaction rejected.",
   "alloc.chainNoWallet": "No Ethereum wallet in this browser.",
+  "alloc.holdsTitle": "Holds",
+  "alloc.holdsHeld": "{amount} waiting for members to bind",
+  "alloc.holdsFree": "{amount} not divided yet",
+  "alloc.holdsMine": "{amount} waiting for you",
+  "alloc.holdsReading": "Reading the contract…",
+  "alloc.holdsNothing": "Nothing yet.",
+  "alloc.holdsUnreadable": "Couldn't read the contract from here.",
+  "alloc.tokenHint": "Token address (0x…) to read the fund in",
+  "alloc.tokenTrack": "Track",
+  "alloc.tokenReading": "Reading…",
+  "alloc.tokenFailed": "Couldn't add that token.",
   "alloc.chainNoContract":
     "No contract at that address on your wallet's network — switch networks and try again.",
   "alloc.chainFailed": "Couldn't update on chain: {reason}",

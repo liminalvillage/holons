@@ -256,7 +256,9 @@
     background: transparent !important;
     border: 2px dashed var(--line);
     box-shadow: none;
-    opacity: 0.85;
+    /* The dashed outline says "not on the wall yet"; the fade only seconds it,
+       lightly enough that every label still clears the paper. */
+    opacity: 0.92;
   }
   .shift.stale {
     filter: saturate(0.4);
@@ -277,7 +279,7 @@
     padding: 0.08rem 0.45rem;
     border-radius: 999px;
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     font-size: 0.65rem;
     font-weight: 700;
     text-transform: uppercase;
@@ -292,12 +294,16 @@
   .flag {
     margin-left: auto;
   }
+  /* These grounds flip with the palette (deep by day, lit by night), so the
+     label takes the surface colour rather than the accent's ink. */
   .ghostflag {
     background: var(--muted);
+    color: var(--card);
   }
   .staleflag,
   .driftflag {
     background: var(--warn, #c8542a);
+    color: var(--card);
   }
   .ttl {
     font-size: 1rem;
@@ -347,7 +353,7 @@
     color: var(--ink-soft);
   }
   .cap-label.needs {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .cap-label.loud {
     color: var(--warn, #c8542a);
@@ -358,11 +364,8 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
-  /* The dark skin's accent must be brightened to read on the deep note
-     grounds (same trick as app.css's .tool.check). */
-  :global([data-theme="dark"]) .cap-label.needs {
-    color: color-mix(in srgb, var(--teal) 45%, #fff);
-  }
+  /* The dark skin's alarm must be brightened to read on the deep note
+     grounds. */
   :global([data-theme="dark"]) .cap-label.loud {
     color: color-mix(in srgb, var(--warn, #c8542a) 55%, #fff);
   }
@@ -396,7 +399,7 @@
   }
   .rsvp.take {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .rsvp.drop {

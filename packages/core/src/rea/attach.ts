@@ -29,6 +29,7 @@
 import { economicEventProblems, normalizeReaEvent } from './valueflows.js';
 import { LEDGER_LENSES, REA_EVENTS_LENS, planLedger, type LedgerContext, type LedgerUpsert } from './ledger.js';
 import type { REAEvent } from './event-store.js';
+import { resolveWriteTarget, splitWriteArgs, storedItem } from '../holosphere/write-target.js';
 
 /** The slice of a HoloSphere instance the projection touches. */
 export interface LedgerHost {
@@ -58,28 +59,12 @@ export function hasLedger(host: unknown): boolean {
   return !!host && typeof host === 'object' && (host as any)[ATTACHED] === true;
 }
 
-function splitArgs(passwordOrOptions: unknown, options: unknown): { password: string | null; options: Record<string, any> } {
-  if (passwordOrOptions && typeof passwordOrOptions === 'object') {
-    const o = passwordOrOptions as Record<string, any>;
-    return { password: o.password ?? null, options: o };
-  }
-  return {
-    password: typeof passwordOrOptions === 'string' && passwordOrOptions ? passwordOrOptions : null,
-    options: (options && typeof options === 'object' ? options : {}) as Record<string, any>,
-  };
-}
-
 function localItem(host: LedgerHost, holon: string, lens: string, key: string): Record<string, unknown> | null {
-  try {
-    const rec = host.store?.get(holon, lens, key);
-    const item = rec?.item;
-    if (!item || typeof item !== 'object') return null;
-    if ((item as any)._deleted === true) return null;
-    if ((item as any)._locked === true) return null;
-    return item as Record<string, unknown>;
-  } catch {
-    return null;
-  }
+  const item = storedItem(host, holon, lens, key);
+  if (!item) return null;
+  if ((item as any)._deleted === true) return null;
+  if ((item as any)._locked === true) return null;
+  return item;
 }
 
 function localLedger(host: LedgerHost, holon: string): REAEvent[] {
@@ -96,37 +81,6 @@ function localLedger(host: LedgerHost, holon: string): REAEvent[] {
   } catch {
     return [];
   }
-}
-
-/**
- * Where the write actually lands. HoloSphere follows a hologram at the target
- * (or the record's own source envelope) to the owner's graph; the ledger
- * entry belongs there too.
- */
-function resolveTarget(
-  host: LedgerHost,
-  holon: string,
-  lens: string,
-  data: Record<string, unknown>,
-  options: Record<string, any>,
-): { holon: string; lens: string; key: string } {
-  const key = String(data.id ?? '');
-  if (options.disableHologramRedirection) return { holon, lens, key };
-  const env = data._hologram as Record<string, unknown> | undefined;
-  if (env && typeof env.sourceHolon === 'string') {
-    const soul = typeof env.soul === 'string' ? host.parseSoulPath?.(env.soul) : null;
-    return {
-      holon: (env.sourceHolon as string) ?? soul?.holon ?? holon,
-      lens: (typeof env.sourceLens === 'string' ? env.sourceLens : soul?.lens) ?? lens,
-      key: String((env.sourceKey as string | undefined) ?? soul?.key ?? key),
-    };
-  }
-  const atPath = key ? host.store?.get(holon, lens, key)?.item : undefined;
-  if (atPath && host.isHologram?.(atPath) && typeof (atPath as any).soul === 'string') {
-    const soul = host.parseSoulPath?.((atPath as any).soul);
-    if (soul) return { holon: soul.holon, lens: soul.lens, key: soul.key };
-  }
-  return { holon, lens, key };
 }
 
 /**
@@ -223,7 +177,7 @@ export function attachLedger<T extends LedgerHost>(host: T, opts: AttachLedgerOp
   };
 
   host.put = async function ledgerPut(this: T, holon: any, lens: any, data: any, passwordOrOptions: any = null, options: any = {}) {
-    const { password, options: opts2 } = splitArgs(passwordOrOptions, options);
+    const { password, options: opts2 } = splitWriteArgs(passwordOrOptions, options);
     const eligible =
       holon != null &&
       typeof lens === 'string' &&
@@ -239,7 +193,7 @@ export function attachLedger<T extends LedgerHost>(host: T, opts: AttachLedgerOp
     let prev: Record<string, unknown> | null = null;
     if (eligible) {
       try {
-        target = resolveTarget(host, String(holon), lens, data, opts2);
+        target = resolveWriteTarget(host, String(holon), lens, data, opts2);
         if (!LEDGER_LENSES.includes(target.lens) || !target.key) target = null;
         else prev = localItem(host, target.holon, target.lens, target.key);
       } catch (err) {

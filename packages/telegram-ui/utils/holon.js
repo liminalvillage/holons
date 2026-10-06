@@ -1,5 +1,4 @@
 import { log } from './logger.js';
-import { getChatName } from './telegram.js';
 
 /**
  * Holon-specific utility functions
@@ -29,63 +28,6 @@ export const toholonId = holonId => {
     return `chat_${holonId.slice(1)}`;
   }
   return holonId;
-};
-
-/**
- * Retrieve the name of a Holon given its ID.
- * It first tries to fetch the name from the Holon's own settings.
- * If that fails and a context `ctx` is provided, it attempts to get the name via `getChatName`.
- * As a last resort, it returns a generic name.
- */
-export const getHolonName = async (db, holonId, ctx = null) => {
-  if (!holonId) return 'Unknown Holon';
-
-  const normalizedHolonId = normalizeHolonId(holonId);
-
-  try {
-    // Attempt to get settings for this holonId
-    // Settings are stored at holonId + '/settings'
-    const settings = await db.get(
-      normalizedHolonId.toString() + '/settings',
-      normalizedHolonId.toString()
-    );
-
-    if (settings && settings.name) {
-      return settings.name;
-    }
-  } catch (error) {
-    // Log benignly, as this is an attempt to get a prettier name
-    log.warn('Could not fetch settings name for holon', {
-      holonId,
-      normalizedHolonId,
-      error: error.message,
-    });
-  }
-
-  // Fallback 1: Try Telegram chat name if ctx is provided
-  if (ctx && typeof getChatName === 'function') {
-    try {
-      const chatName = await getChatName(ctx, normalizedHolonId.toString());
-      // Ensure getChatName doesn't return an empty, null, or default 'unknown' string
-      if (
-        chatName &&
-        chatName !== 'unknown' &&
-        chatName !== null &&
-        chatName.trim() !== ''
-      ) {
-        return chatName;
-      }
-    } catch (error) {
-      log.warn('Could not fetch Telegram chat name for holon', {
-        holonId: normalizedHolonId,
-        error: error.message,
-      });
-    }
-  }
-
-  // Final fallback: return a generic name instead of the ID
-  log.debug('Returning generic name for holon', { holonId });
-  return 'External Holon';
 };
 
 /**
@@ -180,23 +122,6 @@ export const getHolonMetadata = async (db, holonId) => {
 };
 
 /**
- * Batch get multiple holon names
- */
-export const getMultipleHolonNames = async (db, holonIds, ctx = null) => {
-  const promises = holonIds.map(id =>
-    getHolonName(db, id, ctx).catch(error => {
-      log.warn('Failed to get holon name in batch', {
-        holonId: id,
-        error: error.message,
-      });
-      return 'External Holon';
-    })
-  );
-
-  return await Promise.all(promises);
-};
-
-/**
  * Check if a holon ID represents a private chat
  */
 export const isPrivateHolon = holonId => {
@@ -215,12 +140,10 @@ export const isGroupHolon = holonId => {
 export default {
   normalizeHolonId,
   toholonId,
-  getHolonName,
   validateHolonId,
   getHolonNumericId,
   isSameHolon,
   getHolonMetadata,
-  getMultipleHolonNames,
   isPrivateHolon,
   isGroupHolon,
 };

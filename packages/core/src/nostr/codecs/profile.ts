@@ -13,6 +13,7 @@ import {
   groupJoinRequestTemplate, groupPutUserTemplate, groupRemoveUserTemplate,
 } from '../groups.js';
 import { IDENTITY_ATTESTATION_KIND, buildAttestationTemplate, telegramIdentifier } from '../../shifts/attestation.js';
+import { parseProfileEvent } from '../../identity/profiles.js';
 
 export const PROFILE_KIND = 0;
 
@@ -34,7 +35,10 @@ export interface UserRecord {
 export function profileContent(user: UserRecord): Record<string, string> {
   const out: Record<string, string> = {};
   const display = [user.first_name, user.last_name].filter((s) => typeof s === 'string' && s.trim()).join(' ').trim();
-  if (user.username !== undefined && user.username !== null && String(user.username).trim()) out.name = String(user.username);
+  // A handle that is only digits (the bot's default when Telegram gives no
+  // username) is an id, not a name — it never becomes the profile's `name`.
+  const handle = user.username !== undefined && user.username !== null ? String(user.username).trim() : '';
+  if (handle && !/^\d+$/.test(handle) && handle !== String(user.id ?? '')) out.name = handle;
   if (display) out.display_name = display;
   if (!out.name && display) out.name = display;
   const about = user.about ?? user.bio;
@@ -137,17 +141,16 @@ export const profileCodec: LensCodec<UserRecord> = {
     if (event.kind !== PROFILE_KIND) return null;
     const uid = ctx.userIdFor?.(event.pubkey);
     if (uid === undefined || uid === null) return null;
-    let meta: Record<string, unknown>;
-    try { meta = JSON.parse(event.content || '{}'); } catch { return null; }
-    if (!meta || typeof meta !== 'object') return null;
+    const meta = parseProfileEvent(event);
+    if (!meta) return null;
     const patch: Partial<UserRecord> = {};
-    const display = typeof meta.display_name === 'string' && meta.display_name.trim() ? meta.display_name.trim() : undefined;
-    const name = typeof meta.name === 'string' && meta.name.trim() ? meta.name.trim() : undefined;
+    const display = meta.display_name;
+    const name = meta.name;
     if (display) patch.first_name = display;
     else if (name) patch.first_name = name;
     if (name && name !== display) patch.username = name;
-    if (typeof meta.about === 'string') patch.about = meta.about;
-    if (isUrl(meta.picture)) patch.picture = meta.picture;
+    if (typeof meta.raw.about === 'string') patch.about = meta.raw.about;
+    if (meta.picture) patch.picture = meta.picture;
     return {
       lens: 'users', holon: '', id: String(uid), kind: PROFILE_KIND, pubkey: event.pubkey,
       createdAt: event.created_at, eventId: event.id, patch, ownerOnly: true,

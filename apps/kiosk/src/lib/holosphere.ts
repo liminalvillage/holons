@@ -16,6 +16,7 @@ import {
 } from "@holons/core/holosphere";
 import { projectionOptionsFor } from "@holons/core/nostr";
 import { FLOW_CLAIMS_LENS, FLOW_MINTS_LENS } from "@holons/core/flows";
+import { membersTrustedAuthors } from "@holons/core/holons";
 import { GOVERNANCE_VOTES_LENS } from "@holons/core/governance";
 import { cellToLatLng } from "h3-js";
 import type { HoloSphere } from "holosphere";
@@ -28,7 +29,6 @@ import {
   resolveShiftCoordinator,
 } from "./config";
 import { actingAs } from "./auth";
-import { lookupHolonName } from "./hns";
 import { countsAsPresent, looksLikeRecord, type LensId } from "./maplens";
 
 const DEVICE_KEY = "kiosk_device_key";
@@ -88,14 +88,22 @@ export function getHolosphere(): Promise<HoloSphere> {
       // entry kept, folded by every reader the same way (see $lib/flowsClaims,
       // $lib/governanceVotes).
       appendLenses: [FLOW_CLAIMS_LENS, FLOW_MINTS_LENS, GOVERNANCE_VOTES_LENS],
-      nostr: projectionOptionsFor({
-        appName,
-        privateKey,
-        lenses:
-          (import.meta.env.VITE_KIOSK_PROJECTIONS as string | undefined) ??
-          (import.meta.env.VITE_HOLOSPHERE_PROJECTIONS as string | undefined),
-        cellToLatLng,
-      }),
+      nostr: {
+        ...projectionOptionsFor({
+          appName,
+          privateKey,
+          lenses:
+            (import.meta.env.VITE_KIOSK_PROJECTIONS as string | undefined) ??
+            (import.meta.env.VITE_HOLOSPHERE_PROJECTIONS as string | undefined),
+          cellToLatLng,
+        }),
+        // A member's kind-0 edit on any Nostr client folds back into their
+        // `users` record here: the holon's seated keys are the trusted authors.
+        trustedAuthors: (holon: string) =>
+          instance
+            ? instance.then((hs) => membersTrustedAuthors(hs)(holon))
+            : Promise.resolve([]),
+      },
       // Authorized reads: only accepted authors' claims are shown for a holon
       // someone is defined to speak for (VITE_HOLOSPHERE_ENFORCE=off opts out).
       enforce: resolveEnforceReads(),
@@ -109,65 +117,6 @@ export function getHolosphere(): Promise<HoloSphere> {
     }
   }
   return instance;
-}
-
-// Session cache of holon-id → display name. Only *resolved* names are cached;
-// an unresolved holon is left out so a later call (e.g. after its data has
-// replicated) can retry.
-const holonNameCache = new Map<string, string>();
-
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-// One resolution attempt. Tries, in order:
-//   1. HNS — a global, signed, federation-free name table.
-//   2. The holon's own `settings/<id>` record — the source holosphere itself
-//      uses; it may come back as an object OR an array of entries, so handle
-//      both (the array case is why partner names previously read as ids).
-// Returns "" when nothing is found yet.
-async function resolveHolonName(
-  hs: HoloSphere,
-  holonId: string,
-): Promise<string> {
-  try {
-    const hns = await lookupHolonName(hs, holonId);
-    if (hns && hns.trim()) return hns;
-  } catch {
-    /* fall through to settings */
-  }
-  try {
-    const s: any = await hs.get(holonId, "settings", holonId);
-    const raw = Array.isArray(s) ? s.find((e: any) => e?.name)?.name : s?.name;
-    if (raw && String(raw).trim()) return String(raw);
-  } catch {
-    /* no name available yet */
-  }
-  return "";
-}
-
-/**
- * Resolve a holon's friendly name, then cache it for the session. Returns ""
- * when no name can be read (caller falls back to the id).
- *
- * A federation partner's settings/HNS replicate shortly *after* we subscribe
- * to it, so a single immediate read often races and misses — we retry a few
- * times with backoff before giving up. Only positive results are cached.
- */
-export async function getHolonName(
-  hs: HoloSphere,
-  holonId: string,
-): Promise<string> {
-  const cached = holonNameCache.get(holonId);
-  if (cached) return cached;
-
-  for (const delay of [0, 800, 2000]) {
-    if (delay) await sleep(delay);
-    const name = await resolveHolonName(hs, holonId);
-    if (name) {
-      holonNameCache.set(holonId, name);
-      return name;
-    }
-  }
-  return "";
 }
 
 /** A `{ unsubscribe }` shape, tolerant of older promise-returning builds. */

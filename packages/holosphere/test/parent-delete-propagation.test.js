@@ -123,7 +123,7 @@ describe('parent-hexagon deletion propagation', () => {
     expect(await idsAt(PARENTS[0])).toContain('q4');
   }, 60000);
 
-  // `needs/publish` (and `needs/settle`, `tasks/join-reflect`) propagate to the
+  // `needs/publish` (and `needs/settle`, `tasks/roster-mirror`) propagate to the
   // parent hexagons with `useHolograms: true`, so the copy stored at each parent
   // is a bare `{ id, soul, _federation }` pointer rather than a full record. The
   // retraction sweep has to see those pointers AS STORED — resolving them would

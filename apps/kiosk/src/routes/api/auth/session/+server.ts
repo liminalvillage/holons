@@ -3,7 +3,10 @@
 //
 // GET    /api/auth/session — return the logged-in identity from the session
 //                            cookie (or a dev user in non-prod): a Telegram
-//                            profile, or a bare key user (pubkey + provider).
+//                            profile — plus its derived signing key when
+//                            NOSTR_DERIVATION_SECRET is set, so a Telegram
+//                            login is linked wherever its chat is — or a
+//                            bare key user (pubkey + provider).
 // DELETE /api/auth/session — log out (clear the cookie).
 
 import { json } from "@sveltejs/kit";
@@ -13,6 +16,7 @@ import {
   verifySessionIdentity,
   mintSession,
   mintKeySession,
+  derivedKeyFor,
   sessionCookieOptions,
   cookieDomain,
   SESSION_COOKIE,
@@ -63,7 +67,10 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
     );
     return json(
       identity.kind === "telegram"
-        ? { user: identity.profile }
+        ? {
+            user: identity.profile,
+            ...derivedKeyFor(identity.profile, cfg.derivationSecret),
+          }
         : { key: { pubkey: identity.pubkey, provider: identity.provider } },
     );
   }
@@ -81,7 +88,7 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
         cookieDomain(url.hostname),
       ),
     );
-    return json({ user: dev });
+    return json({ user: dev, ...derivedKeyFor(dev, cfg.derivationSecret) });
   }
 
   return json({ user: null }, { status: 401 });

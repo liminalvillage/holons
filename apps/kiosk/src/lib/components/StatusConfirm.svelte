@@ -64,7 +64,7 @@
     border-radius: 14px;
     background: var(--card);
     border: 1.5px solid var(--line);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-size: 0.95rem;
     font-weight: 700;
     transition: transform 0.1s ease;
@@ -73,7 +73,7 @@
   .confirm-actions button.primary {
     background: var(--teal);
     border-color: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .confirm-actions button:active {

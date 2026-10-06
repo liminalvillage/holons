@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { shortId } from "@holons/core/identity";
 import { describe, expect, it } from "vitest";
 import { makeTranslator } from "./i18n";
 import {
@@ -872,12 +873,14 @@ describe("personName — first name and a dotted surname", () => {
 
   it("never shows a handle when a name exists", () => {
     expect(personName({ first_name: "Sam", username: "samwise" })).toBe("Sam");
-    expect(personName({ last_name: "Ng", username: "ng" })).toBe("N.");
+    expect(personName({ last_name: "Ng", username: "ng" })).toBe("Ng");
   });
 
   it("falls back to the bare username, then the id", () => {
     expect(personName({ username: "samwise", id: 4 })).toBe("samwise");
     expect(personName({ id: 4 })).toBe("#4");
-    expect(personName(undefined)).toBe("#?");
+    // A key with no record is shown in the one short form, never bare hex.
+    expect(personName({ id: "ab".repeat(32) })).toBe(shortId("ab".repeat(32)));
+    expect(personName(undefined)).toBe("");
   });
 });

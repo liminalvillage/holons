@@ -11,7 +11,8 @@ describe('describeChain', () => {
   it('names the chains Holons deploys to, and numbers the rest', () => {
     expect(describeChain(11155111)).toMatchObject({ name: 'Sepolia', testnet: true });
     expect(describeChain(31337n)).toMatchObject({ name: 'Local chain', explorer: null });
-    expect(describeChain(424242)).toEqual({ chainId: 424242, name: 'Chain 424242', explorer: null, testnet: false });
+    expect(describeChain(424242)).toEqual({ chainId: 424242, name: 'Chain 424242', explorer: null, testnet: false, native: 'ETH', rpc: null });
+    expect(describeChain(100)).toMatchObject({ native: 'xDAI', rpc: expect.stringMatching(/^https:/) });
     expect(describeChain(undefined)).toBeNull();
     expect(describeChain(0)).toBeNull();
   });

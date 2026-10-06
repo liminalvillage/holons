@@ -32,6 +32,7 @@ import {
 import { readHolonClaim, telegramDeepLinks } from '@holons/core/onboarding';
 import { addHolonMember, holonMembers, myHolonRole, removeHolonMember, syncFoundingAuthority } from '@holons/core/protocol';
 import type { ToolDeps } from './index.js';
+import { namesFor } from './names.js';
 
 function ok(payload: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
@@ -85,7 +86,8 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
         const hs = await deps.getHoloSphere();
         const founding = await syncFoundingAuthority(hs, args.holon);
         const members = Object.fromEntries(await holonMembers(hs, args.holon));
-        return ok({ holon: args.holon, founding, members, myPubkey: hs.currentPubkey, myRole: await myHolonRole(hs, args.holon) });
+        const names = await namesFor(hs, args.holon, Object.keys(members));
+        return ok({ holon: args.holon, founding, members, names, myPubkey: hs.currentPubkey, myRole: await myHolonRole(hs, args.holon) });
       } catch (err) {
         return fail((err as Error).message);
       }
@@ -157,7 +159,8 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
-        return ok({ holon: args.holon, requests: await listJoinRequests(hs, args.holon, { windowMs: args.windowMs }) });
+        const requests = await listJoinRequests(hs, args.holon, { windowMs: args.windowMs });
+        return ok({ holon: args.holon, requests, names: await namesFor(hs, args.holon, requests.map((r) => r.pubkey)) });
       } catch (err) {
         return fail((err as Error).message);
       }

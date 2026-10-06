@@ -6,8 +6,9 @@
 // the preview itself come from @holons/core/actions; this module supplies the
 // kiosk's context — the live tasks, the roster, the open card, who is logged
 // in — and, on Apply, the kiosk's own write paths (identity-aware writer with
-// owner-holon targeting, hologram reflection for the speaker's joins, the
-// full completion flow with its accounting).
+// owner-holon targeting, the speaker's own Telegram DM after a join, the
+// full completion flow with its accounting). Whoever is added to a card gets
+// a hologram of it in their own holon from core's write itself.
 
 import { get, writable } from "svelte/store";
 import type { ToolCall, ToolResult } from "@holons/ai-ui";
@@ -39,7 +40,7 @@ import {
 import { currentUser } from "$lib/auth";
 import { getHolosphere, getWriter } from "$lib/holosphere";
 import { loadMembers } from "$lib/members";
-import { person, reflectMembership, type TgUser } from "$lib/membership";
+import { person, refreshOwnDm, type TgUser } from "$lib/membership";
 import { recordCompletion } from "$lib/complete";
 
 export interface PendingPlan {
@@ -303,11 +304,11 @@ function kioskPorts(actor: TgUser): ApplyPorts {
     },
     complete: async (holon, task, completer: QuestParticipant) =>
       (await recordCompletion(holon, task, completer.id ?? actor.id)).ok,
-    afterParticipants: async (holon, updated, user, joined) => {
-      // The speaker's own join/leave mirrors into their personal holon and
-      // refreshes the linked DM, exactly as a tapped toggle does.
+    afterParticipants: async (_holon, updated, user) => {
+      // The speaker's own join/leave refreshes their linked DM, exactly as a
+      // tapped toggle does. (The proxy only ever reaches the caller's chat.)
       if (String(user.id) === String(actor.id)) {
-        await reflectMembership(holon, updated, actor, joined);
+        await refreshOwnDm(String(updated.id), actor);
       }
     },
   };

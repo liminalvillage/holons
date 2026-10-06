@@ -69,10 +69,10 @@
     color: var(--ink);
   }
   .fedswitch.on {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .fedswitch.on :global(.picon) {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .txt {
     font-size: 0.86rem;

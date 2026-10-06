@@ -6,7 +6,7 @@
 import ICAL from 'ical.js';
 import { parseInstant } from '../datetime/index.js';
 import { isTimedValue } from '../tasks/schedule.js';
-import { rsvpDisplayName } from './rsvp.js';
+import { userName } from '../identity/index.js';
 
 // `console` is universally present (browser, Node, workers); declare it
 // here so we don't pull in `dom`/`node` lib types from the base tsconfig.
@@ -155,7 +155,7 @@ function buildVEvent(
     if (Array.isArray(event.participants)) {
         for (const participant of event.participants) {
             if (participant?.id == null) continue;
-            const attendeeName = text(participant.firstName) || rsvpDisplayName(participant);
+            const attendeeName = text(participant.firstName) || userName(participant);
             const attendee = vevent.addPropertyWithValue(
                 'attendee',
                 `mailto:${participant.id}@${uidDomain}`

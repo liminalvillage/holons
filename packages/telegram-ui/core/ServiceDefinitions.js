@@ -665,5 +665,8 @@ export const postInitHooks = {
       settings.setHolonsInstance(holons);
       log.debug('Holons instance passed to Settings');
     }
+    if (typeof settings.setKeysInstance === 'function') {
+      settings.setKeysInstance(await container.get('keys'));
+    }
   },
 };

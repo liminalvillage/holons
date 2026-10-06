@@ -35,7 +35,7 @@ import { getLibraryDb } from "$lib/holosphere";
 import { sourceRef, toPeople } from "$lib/data";
 import { discardPlan, findChange, projectedQuests } from "$lib/voice/plan";
 import { loadMembers } from "$lib/members";
-import { personLabel } from "@holons/core/actions";
+import { userName } from "@holons/core/identity";
 
 const str = (description: string) => ({ type: "string", description });
 
@@ -164,7 +164,7 @@ export function digestMembers(
   return JSON.stringify(
     members
       .slice(0, 60)
-      .map((m) => ({ id: String(m.id), name: personLabel(m) })),
+      .map((m) => ({ id: String(m.id), name: userName(m, { at: true }) })),
   );
 }
 

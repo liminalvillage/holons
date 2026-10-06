@@ -164,6 +164,13 @@ describe('profile codec', () => {
     expect(codec.retract(HOLON, '1', ctx)).toEqual([]);
   });
 
+  it('never makes a digits-only handle the profile name; the real name still projects', () => {
+    const codec = PROJECTION_CODECS.users;
+    const out = codec.project(HOLON, { id: 42, username: '42', first_name: 'Ann' }, ctx)!;
+    expect(JSON.parse(out.primary.content)).toEqual({ name: 'Ann', display_name: 'Ann' });
+    expect(codec.project(HOLON, { id: 42, username: '42' }, ctx)).toBeNull();
+  });
+
   it('claims the telegram identity (NIP-39) and attests it as the provider', () => {
     const codec = PROJECTION_CODECS.users;
     const providerCtx: ProjectionCtx = { ...ctx, providerPubkey: 'f'.repeat(64) };

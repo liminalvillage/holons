@@ -31,10 +31,10 @@ import {
   fuzzyFindByTitle,
   matchPerson,
   namesAnItem,
-  personLabel,
   titleMismatch,
   type PersonLike,
 } from './match.js';
+import { userName } from '../identity/index.js';
 
 export interface ActionCall {
   name: string;
@@ -251,7 +251,7 @@ function resolvePerson(input: Record<string, unknown>, ctx: ResolveContext): Per
       `No member matches "${ref}". Members: ` +
       ctx.users
         .slice(0, 40)
-        .map((p) => personLabel(p))
+        .map((p) => userName(p, { at: true }))
         .join(', ') +
       '. Ask the user who they mean if unclear.',
   };

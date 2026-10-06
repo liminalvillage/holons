@@ -3,7 +3,7 @@
   import Icon from "$lib/components/Icon.svelte";
   import { glide } from "$lib/glide";
   import { get } from "svelte/store";
-  import { onDestroy, onMount } from "svelte";
+  import { onMount } from "svelte";
   import { autoScrollToEnd } from "$lib/autoscroll";
   import {
     backlog,
@@ -15,11 +15,9 @@
     showNotice,
     taskViewMode,
     taskSort,
-    offerSettings,
   } from "$lib/stores";
   import { requestSwitch } from "$lib/dock";
   import { privacyOfHolon } from "@holons/core/privacy";
-  import TaskSettings from "$lib/components/TaskSettings.svelte";
   import { setTaskSort } from "$lib/config";
   import { t, locale } from "$lib/i18n";
   import type { TaskSort } from "$lib/data";
@@ -60,11 +58,10 @@
   // ── Privacy ──────────────────────────────────────────────────────────
   // Which cards are sealed on the relays: the whole board (every card), or
   // single cards locked from their own view. Read from the vault records
-  // anyone can see — no key needed to show the lock. The board's own
-  // settings (the gear in the pills band) lock it and say who may read.
+  // anyone can see — no key needed to show the lock. The board is locked
+  // from the lock beside the gear in the pills band.
   let lockedIds = new Set<string>();
   let boardLocked = false;
-  let settingsOpen = false;
   async function refreshLocks(hid: string | null, _n: number) {
     if (!hid) {
       lockedIds = new Set();
@@ -91,14 +88,6 @@
     if (id) requestSwitch(id, { name, from: $holonId });
   }
   const onPrivacyChanged = () => void refreshLocks(get(holonId), -1);
-  function openSettings() {
-    if (!get(currentUser)) {
-      loginOpen.set(true);
-      return;
-    }
-    settingsOpen = true;
-  }
-  onDestroy(offerSettings({ labelKey: "tasks.configure", open: openSettings }));
   onMount(() => {
     window.addEventListener("kiosk:privacy-changed", onPrivacyChanged);
     return () =>
@@ -1169,10 +1158,6 @@
   </div>
 {/if}
 
-{#if settingsOpen && $holonId}
-  <TaskSettings holonId={$holonId} on:close={() => (settingsOpen = false)} />
-{/if}
-
 <style>
   .meta .locked {
     display: inline-flex;
@@ -1244,7 +1229,7 @@
     border-radius: 50%;
     font-size: 2rem;
     line-height: 1;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     box-shadow: 0 10px 24px rgba(14, 107, 102, 0.4);
     display: grid;
@@ -1391,7 +1376,7 @@
     font-size: 0.9rem;
     font-weight: 800;
     color: var(--ink-soft);
-    background: rgba(255, 255, 255, 0.65);
+    background: var(--glass);
     box-shadow: var(--shadow-soft);
     touch-action: manipulation;
     transition:
@@ -1404,19 +1389,19 @@
     left: 0.5rem;
   }
   .tool.check {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .tool:active {
     transform: scale(0.88);
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
   }
   .tool.del {
-    color: rgba(154, 59, 47, 0.75);
+    color: var(--danger);
   }
   .tool.del:active {
-    background: #d4493a;
-    color: #fff;
+    background: var(--danger);
+    color: var(--on-danger);
   }
 
   /* Completion: the post-it drops away while confetti bursts from it. */
@@ -1494,14 +1479,16 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: rgba(32, 48, 47, 0.55);
+    color: var(--ink-soft);
   }
   .src {
     font-size: 0.7rem;
     font-weight: 700;
-    /* Tinted with the source holon's own colour (same hue as its glow edge). */
-    color: var(--glow, var(--teal-deep));
-    background: rgba(255, 255, 255, 0.7);
+    /* The source holon's own hue, carried by the ink rather than replacing it:
+       a holon's colour is a ground (a pastel by day, a jewel by night), never
+       something to read on its own. */
+    color: color-mix(in srgb, var(--glow, var(--teal)) 30%, var(--ink));
+    background: var(--glass);
     border-radius: 999px;
     padding: 0.1rem 0.5rem;
     max-width: 9rem;
@@ -1513,7 +1500,7 @@
     font-size: 0.74rem;
     font-weight: 700;
     color: var(--ink);
-    background: rgba(255, 255, 255, 0.55);
+    background: var(--glass);
     border-radius: 999px;
     padding: 0.1rem 0.55rem;
   }
@@ -1521,8 +1508,8 @@
   .waits {
     font-size: 0.72rem;
     font-weight: 700;
-    color: rgba(32, 48, 47, 0.6);
-    background: rgba(255, 255, 255, 0.55);
+    color: var(--ink-soft);
+    background: var(--glass);
     border-radius: 999px;
     padding: 0.1rem 0.55rem;
     white-space: nowrap;
@@ -1547,7 +1534,7 @@
     height: 1.7rem;
     line-height: 1;
     /* Muted by default; brightens when you've appreciated (see .on). */
-    color: rgba(154, 59, 47, 0.55);
+    color: var(--heart-quiet);
     touch-action: manipulation;
     transition:
       transform 0.1s ease,
@@ -1563,11 +1550,10 @@
     transform: translateY(0.1em);
     font-size: 0.62rem;
     font-weight: 800;
-    color: #fff;
-    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+    color: var(--on-heart);
   }
   .note .heart.on {
-    color: #d4493a;
+    color: var(--heart);
   }
   .note .heart:active {
     transform: scale(0.88);
@@ -1632,7 +1618,7 @@
   .rowclone .rowheart {
     font-size: 0.85rem;
     font-weight: 800;
-    color: #d4493a;
+    color: var(--heart);
   }
 
   /* Add-task dialog */
@@ -1642,15 +1628,15 @@
   }
   .add .glyph {
     font-size: 1.8rem;
-    color: var(--teal);
+    color: var(--teal-ink);
     font-weight: 800;
   }
   .add .glyph.heart-glyph {
-    color: #d4493a;
+    color: var(--heart);
     font-size: 2.2rem;
   }
   .add .glyph.del-glyph {
-    color: #d4493a;
+    color: var(--heart);
   }
   .add h3 {
     margin: 0.2rem 0 0.3rem;
@@ -1694,14 +1680,15 @@
   }
   .add .primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .add .primary.danger {
-    background: #d4493a;
+    background: var(--danger);
+    color: var(--on-danger);
   }
   .add .ghost {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--ghost);
     color: var(--ink);
   }
   .add .primary:active,

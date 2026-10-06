@@ -166,6 +166,13 @@ so a single `/setdomain hubs.network` authorises every `*.hubs.network` kiosk.
 In dev, `VITE_DEV_TELEGRAM_USER_*` auto-signs-in so you can exercise editing
 without the widget.
 
+`VITE_KIOSK_LOGIN` picks which logins the card offers — `telegram`, `nostr`,
+`ethereum`, comma-separated; unset means all. `VITE_KIOSK_LOGIN=telegram` is
+the Telegram-only switch. A Telegram login signs with the member's derived key
+when the server has `NOSTR_DERIVATION_SECRET` (the bot's value), so the person
+is linked to every hub their chat is in with no further step; the key lives in
+memory only and is re-derived from the session cookie on each load.
+
 ## Voice
 
 The voice widget (hold-to-talk + typed transcripts) runs one of two pipelines

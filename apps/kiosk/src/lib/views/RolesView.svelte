@@ -1,6 +1,8 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import Icon from "$lib/components/Icon.svelte";
+  import { nameFor } from "$lib/names";
+  import { userName } from "@holons/core/identity";
   //
   // The optional Roles board. Two views, switched like the dashboard:
   //   • Cards — one card per role, featuring TODAY's holder (the kiosk shows the
@@ -104,14 +106,13 @@
   // ── Identity helpers ────────────────────────────────────────────────────────
   function holderName(p: RoleParticipant | ScheduledUser | null): string {
     if (!p) return "";
-    const full = [
-      (p as RoleParticipant).first_name,
-      (p as RoleParticipant).last_name,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .trim();
-    return full || (p.username ? String(p.username) : `#${p.id}`);
+    return (
+      userName(p as never, {
+        lastName: "initial",
+        idFallback: false,
+        unknown: "",
+      }) || nameFor(p.id)
+    );
   }
   function meScheduled(): ScheduledUser {
     const u = get(currentUser)!;
@@ -717,7 +718,7 @@
     border-radius: 50%;
     font-size: 1.3rem;
     line-height: 1;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     background: var(--paper);
     display: grid;
     place-items: center;
@@ -735,7 +736,7 @@
   .todaybtn {
     font-size: 0.8rem;
     font-weight: 700;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     text-decoration: underline;
   }
 
@@ -798,14 +799,14 @@
     font-size: 0.9rem;
     font-weight: 800;
     color: var(--ink-soft);
-    background: rgba(255, 255, 255, 0.65);
+    background: var(--glass);
     box-shadow: var(--shadow-soft);
     transition: transform 0.1s ease;
   }
   .tool:active {
     transform: scale(0.88);
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
   }
 
   /* ── List rows (compact layout) ─────────────────────────────────────── */
@@ -885,7 +886,7 @@
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: rgba(32, 48, 47, 0.5);
+    color: var(--ink-soft);
   }
   .holder {
     display: inline-flex;
@@ -931,7 +932,7 @@
   .open {
     font-size: 0.85rem;
     font-weight: 700;
-    color: rgba(32, 48, 47, 0.4);
+    color: var(--ink-soft);
   }
 
   .cardfoot {
@@ -942,7 +943,7 @@
   .fixednote {
     font-size: 0.78rem;
     font-weight: 700;
-    color: rgba(32, 48, 47, 0.5);
+    color: var(--ink-soft);
   }
   .take {
     flex: 0 0 auto;
@@ -951,7 +952,7 @@
     border-radius: 999px;
     font-size: 0.85rem;
     font-weight: 800;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     box-shadow: var(--shadow-soft);
     transition:
@@ -965,8 +966,8 @@
     opacity: 0.6;
   }
   .take.in {
-    color: var(--teal-deep);
-    background: rgba(255, 255, 255, 0.7);
+    color: var(--teal-ink);
+    background: var(--glass);
   }
 
   /* ── Week ──────────────────────────────────────────────────────────────── */
@@ -1013,7 +1014,7 @@
     color: var(--muted);
   }
   .leg-cell.today .dow {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .dnum {
     font-size: 0.86rem;
@@ -1069,7 +1070,7 @@
   .wdot {
     font-size: 1.1rem;
     font-weight: 700;
-    color: rgba(32, 48, 47, 0.28);
+    color: var(--muted);
   }
   .wav {
     position: relative;
@@ -1117,7 +1118,7 @@
     border-radius: 50%;
     font-size: 2rem;
     line-height: 1;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     box-shadow: 0 10px 24px rgba(14, 107, 102, 0.4);
     display: grid;
@@ -1138,7 +1139,7 @@
   }
   .form .glyph {
     font-size: 1.8rem;
-    color: var(--teal);
+    color: var(--teal-ink);
     font-weight: 800;
   }
   .form h3 {
@@ -1205,7 +1206,7 @@
   .linkbtn {
     font-size: 0.85rem;
     font-weight: 700;
-    color: #9a3b2f;
+    color: var(--danger);
     text-decoration: underline;
   }
 
@@ -1232,11 +1233,11 @@
   }
   .form .primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .form .ghost {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--ghost);
     color: var(--ink);
   }
   .form .primary:active,
@@ -1254,7 +1255,7 @@
     border-radius: 12px;
     font-size: 0.9rem;
     font-weight: 700;
-    color: #9a3b2f;
+    color: var(--danger);
     background: rgba(154, 59, 47, 0.08);
     transition: transform 0.1s ease;
   }

@@ -233,10 +233,10 @@
   .preview {
     margin: 0;
     font-size: 0.85rem;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .preview.bad {
-    color: #9a3b2f;
+    color: var(--danger);
   }
   .note {
     margin: 0;
@@ -246,7 +246,7 @@
   .warn {
     margin: 0;
     font-size: 0.9rem;
-    color: #9a3b2f;
+    color: var(--danger);
     font-weight: 600;
   }
   .keybox {
@@ -289,7 +289,7 @@
     min-height: 48px;
     border-radius: 14px;
     font-weight: 700;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
   }
   .primary:disabled {
@@ -301,6 +301,6 @@
   .error {
     margin: 0;
     font-size: 0.85rem;
-    color: #9a3b2f;
+    color: var(--danger);
   }
 </style>

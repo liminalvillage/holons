@@ -36,7 +36,6 @@
     cellRing as ring,
     countsAsPresent,
     isLensId,
-    rimFade,
     itemDetails,
     itemLabel,
     lensColor,
@@ -268,9 +267,8 @@
       map.on("load", () => {
         if (!map) return;
         // The zoom-following H3 grid, in the dashboard map's two layers: the
-        // current resolution plus the next finer one, fainter, inside it.
-        // Per-cell `fade` (see cellFade) thins the outlines at the rim of
-        // the map — the grid itself covers every last corner.
+        // current resolution plus the next finer one, fainter, inside it,
+        // drawn at full strength right out to the rim.
         map.addSource("dock-grid", {
           type: "geojson",
           data: { type: "FeatureCollection", features: [] },
@@ -283,7 +281,7 @@
           paint: {
             "line-color": "#ffffff",
             "line-width": 1.2,
-            "line-opacity": ["*", 0.18, ["get", "fade"]],
+            "line-opacity": 0.18,
           },
         });
         map.addLayer({
@@ -294,7 +292,7 @@
           paint: {
             "line-color": "#ffffff",
             "line-width": 2,
-            "line-opacity": ["*", 0.45, ["get", "fade"]],
+            "line-opacity": 0.45,
           },
         });
         map.on("moveend", onViewChange);
@@ -471,29 +469,9 @@
   }
 
   /**
-   * How strongly a cell's outline is drawn: full everywhere, thinning only
-   * across a band at the very rim so the grid dissolves into the edge of
-   * the map instead of being guillotined by it. The band is measured to the
-   * nearest EDGE, not out from the centre — a hexagon in the middle of the
-   * bottom edge is just as near the rim as one in a corner — and it runs
-   * past the edge, so the cells straddling it still draw faintly. Nothing
-   * is ever dropped: every place on the map keeps its hexagon.
-   */
-  function cellFade(cell: string): number {
-    if (!map) return 1;
-    const el = map.getContainer() as HTMLElement;
-    const [lat, lng] = cellToLatLng(cell);
-    const p = map.project([lng, lat]);
-    const nx = (p.x - (el.clientWidth || 1) / 2) / ((el.clientWidth || 1) / 2);
-    const ny =
-      (p.y - (el.clientHeight || 1) / 2) / ((el.clientHeight || 1) / 2);
-    return rimFade(Math.max(Math.abs(nx), Math.abs(ny)));
-  }
-
-  /**
    * Refill the viewport grid at the zoom-matched resolution, with the next
    * finer one laid faintly inside it. Both layers live in one source, told
-   * apart by `kind`, each cell carrying its own rim `fade`.
+   * apart by `kind`.
    */
   function rebuildGrid() {
     if (!map) return;
@@ -506,7 +484,7 @@
       for (const c of cells)
         features.push({
           type: "Feature",
-          properties: { kind, fade: cellFade(c) },
+          properties: { kind },
           geometry: { type: "Polygon", coordinates: [ring(c)] },
         });
     };
@@ -515,6 +493,23 @@
     const fine = viewportCells(paddedViewBox(view, res + 1), res + 1);
     if (fine.length <= 6000) add("fine", fine);
     src.setData({ type: "FeatureCollection", features });
+  }
+
+  /**
+   * Fly to a docked board's place — the search box picked a hub that is
+   * here already. A board whose cell is not known yet is looked up first;
+   * one with no place at all moves nothing (its orb floats free).
+   */
+  export async function showBoard(id: string): Promise<void> {
+    if (!hexCache.get(id)) {
+      try {
+        await lookupHex(await getHolosphere(), id);
+      } catch {
+        return;
+      }
+    }
+    const hex = hexCache.get(id);
+    if (hex && alive) flyToCell(hex);
   }
 
   /** Fly to a cell at the zoom its resolution reads best (goToHex-style). */
@@ -906,15 +901,6 @@
 
   $: if (alive) void loadHexes($dockEntries);
 
-  // The top bar's place search lands here: glide the map to the pick.
-  export function flyTo(lng: number, lat: number) {
-    map?.flyTo({
-      center: [lng, lat],
-      zoom: Math.max(map.getZoom(), 12),
-      essential: true,
-    });
-  }
-
   // The ONLY place this view asks for coordinates — an explicit tap on the
   // top bar's My-location button (DockView). The fix is cached (setGeo) so
   // the sunset theme can track the real horizon without ever prompting on
@@ -1091,9 +1077,10 @@
      map px and field px. No stacking context of its own: the lens chips and
      the cell panel below rise above the orbs on the sky's z-order, so a
      wandering orb never covers a chip. The hex grid covers the box whole —
-     every cell that touches the viewport — and thins to nothing at the rim
-     (see cellFade); the earth under it keeps its own edge. The map's bottom
-     stops on the lens drawer, so the chips sit on paper, not on satellite. */
+     every cell that touches the viewport — at full strength; the imagery is
+     shown as it is, with no wash, vignette or fade laid over it. The map's
+     bottom stops on the lens drawer, so the chips sit on paper, not on
+     satellite. */
   /* The component's own box, filling the sky. The earth inside it stops
      short of the foot; the chips and the cell panel hang below, over the
      dock's paper. */
@@ -1109,10 +1096,11 @@
        The frame goes in from the top and the sides; the earth ends at the
        foot ON the lens drawer rather than running under it, so the chips
        get paper to sit on and the rounded bottom corners read against it.
-       --dock-lens is the row the dock reserves for them (see DockView).
-       frameOffset() folds this inset into the field<->container maths. */
-    --frame: clamp(0.4rem, 2vw, 1.4rem);
-    inset: var(--frame) var(--frame)
+       --dock-lens is the row the dock reserves for them (see DockView),
+       and --frame is the dock's too, so the bar it floats over the earth
+       can sit inside the same frame. frameOffset() folds this inset into
+       the field<->container maths. */
+    inset: var(--frame, 0px) var(--frame, 0px)
       calc(var(--dock-lens) + env(safe-area-inset-bottom));
     overflow: hidden;
     background: #1a2426;
@@ -1123,19 +1111,6 @@
        of a hard screen corner. `overflow: hidden` clips the canvas, the
        vignette and every hexagon to it. */
     border-radius: calc(var(--radius) + 8px);
-    /* How far the earth is washed back toward the paper. Per skin, because
-       the two washes do opposite things to the imagery: the dark skin's
-       near-black sinks it under the sky, while the light skin's cream at the
-       same strength bleached it out — so the day earth keeps most of its own
-       colour and leans on the vignette instead. */
-    --earth-wash: 22%;
-    --earth-saturate: 0.95;
-    --earth-vignette: rgba(10, 18, 20, 0.3);
-  }
-  :global(:root[data-theme="dark"]) .mapwrap {
-    --earth-wash: 58%;
-    --earth-saturate: 0.6;
-    --earth-vignette: rgba(10, 18, 20, 0.5);
   }
   .map {
     position: absolute;
@@ -1150,28 +1125,6 @@
   .map :global(.mapboxgl-canvas) {
     border-radius: inherit;
   }
-  .mapwrap::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    pointer-events: none;
-    /* Same curve, so the vignette turns the corner with the earth rather
-       than banding across it. */
-    border-radius: inherit;
-    /* Washed back toward the paper: the earth is the ground the sky floats
-       over, and the orbs and their beams must read against it. Flat, and
-       flat only — the imagery keeps its own edge right out to the rim. It
-       is the GRID that fades there, per hexagon, in rebuildGrid. */
-    background: color-mix(
-      in srgb,
-      var(--paper-deep) var(--earth-wash),
-      transparent
-    );
-    backdrop-filter: saturate(var(--earth-saturate));
-    box-shadow: inset 0 0 64px var(--earth-vignette);
-  }
-
   /* The lens chips: one horizontal, swipeable row along the very bottom
      edge — the first thing a thumb reaches. The dock reserves the row as
      --dock-lens and stacks its tray above it, so the two never collide.
@@ -1359,7 +1312,7 @@
     white-space: pre-line;
   }
   .detail a {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     text-decoration: underline;
   }
   .empty {

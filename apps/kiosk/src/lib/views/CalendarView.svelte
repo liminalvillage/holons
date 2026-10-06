@@ -2051,7 +2051,7 @@
     border-radius: 50%;
     font-size: 2rem;
     line-height: 1;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     box-shadow: 0 10px 24px rgba(14, 107, 102, 0.4);
     display: grid;
@@ -2099,7 +2099,7 @@
   .drop {
     outline: 2px dashed var(--teal);
     outline-offset: -2px;
-    background: #e7f3f1 !important;
+    background: var(--teal-wash) !important;
   }
   .drag-ghost {
     position: fixed;
@@ -2225,7 +2225,7 @@
     border-radius: 50%;
     font-size: 1.7rem;
     line-height: 1;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     background: var(--paper);
     display: grid;
     place-items: center;
@@ -2278,11 +2278,11 @@
     text-align: center;
   }
   .cell.today {
-    background: #e7f3f1;
+    background: var(--teal-wash);
     outline: 2px solid var(--teal);
   }
   .cell.today .num {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-weight: 800;
   }
   .chips {
@@ -2300,7 +2300,7 @@
     max-width: 100%;
     font-size: 0.62rem;
     font-weight: 700;
-    color: rgba(32, 48, 47, 0.78);
+    color: var(--ink-soft);
     padding: 0.12rem 0.34rem;
     border-radius: 3px 6px 6px 6px;
     white-space: nowrap;
@@ -2322,7 +2322,7 @@
     font: inherit;
     font-size: 0.6rem;
     font-weight: 800;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     text-align: center;
     cursor: pointer;
     box-shadow:
@@ -2352,7 +2352,7 @@
   .more-card:hover,
   .more-card.open {
     transform: translateY(-1px);
-    background: #e7f3f1;
+    background: var(--teal-wash);
     border-color: var(--teal);
     box-shadow:
       0 3px 0 -1px var(--card),
@@ -2423,7 +2423,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: rgba(32, 48, 47, 0.62);
+    color: var(--ink-soft);
   }
   .pop-chip .ttl {
     font-size: 0.9rem;
@@ -2433,7 +2433,7 @@
   }
   .pop-chip .where {
     font-size: 0.76rem;
-    color: rgba(32, 48, 47, 0.62);
+    color: var(--ink-soft);
   }
   .pop-chip .ev-foot {
     margin-top: 0.25rem;
@@ -2509,7 +2509,7 @@
     color: var(--muted);
   }
   .col-head.today {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   /* Week header: weekday over the date, like a wall calendar; a button so
      tapping a day jumps to it. */
@@ -2541,11 +2541,11 @@
   }
   .col-head.stacked.today .dow,
   .col-head.stacked.today .dom {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .col-head.stacked.today .dom {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     border-radius: 999px;
     min-width: 1.7rem;
     padding: 0.05rem 0.3rem;
@@ -2730,7 +2730,7 @@
     animation: none;
   }
   .day-event .dur {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   /* Bottom grip: drag to change the event's length. */
   .resize-handle {
@@ -2758,7 +2758,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: rgba(32, 48, 47, 0.62);
+    color: var(--ink-soft);
   }
   .day-event .ttl {
     font-size: 0.95rem;
@@ -2768,15 +2768,17 @@
   }
   .day-event .where {
     font-size: 0.78rem;
-    color: rgba(32, 48, 47, 0.62);
+    color: var(--ink-soft);
   }
   .day-event .src {
     margin-top: 0.15rem;
     padding: 0;
     font-size: 0.7rem;
     font-weight: 700;
-    /* Tinted with the source holon's own colour (same hue as its glow edge). */
-    color: var(--glow, var(--teal-deep));
+    /* The source holon's own hue, carried by the ink rather than replacing it:
+       a holon's colour is a ground (a pastel by day, a jewel by night), never
+       something to read on its own. */
+    color: color-mix(in srgb, var(--glow, var(--teal)) 30%, var(--ink));
   }
   .day-event .ev-foot {
     display: flex;
@@ -2790,7 +2792,7 @@
     gap: 0.15rem;
     font-size: 0.74rem;
     font-weight: 700;
-    color: #9a3b2f;
+    color: var(--danger);
   }
   .day-event .appr .h {
     font-size: 1.4em;
@@ -2860,7 +2862,7 @@
     pointer-events: none;
     font-size: 0.85rem;
     line-height: 1.2;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .stretch-ghost.gutter {
     left: 3.2rem;
@@ -2917,7 +2919,7 @@
     top: -0.82em;
     font-size: 0.64rem;
     font-weight: 800;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     padding: 0.08rem 0.45rem;
     border-radius: 999px;

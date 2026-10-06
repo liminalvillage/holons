@@ -391,7 +391,7 @@
   .opt--new {
     border-color: var(--teal-deep);
     background: var(--teal);
-    color: var(--paper);
+    color: var(--on-teal);
   }
   .opt--new .opt__icon {
     background: color-mix(in srgb, var(--paper) 22%, transparent);
@@ -432,7 +432,7 @@
     padding: 0.8rem 1rem;
     border-radius: 14px;
     background: var(--teal);
-    color: var(--paper);
+    color: var(--on-teal);
     text-decoration: none;
     transition: transform 120ms ease;
   }
@@ -519,7 +519,7 @@
     height: 2.7rem;
     border-radius: 999px;
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     font-weight: 700;
     font-size: 0.9rem;
   }
@@ -574,7 +574,7 @@
     padding: 0 1rem;
     border-radius: 999px;
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     font-weight: 700;
     font-size: 0.9rem;
   }

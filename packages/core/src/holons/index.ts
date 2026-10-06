@@ -41,6 +41,7 @@ import { sync as syncPrivacy } from '../privacy/audience.js';
 import { addHolonMember, foundHolon, holonMembers, myHolonRole, newHolonId, removeHolonMember } from '../protocol/founding.js';
 import { readMembersLog } from '../protocol/membership.js';
 import type { Role } from '../protocol/types.js';
+import { cleanName, isPlaceholderName } from '../identity/ids.js';
 
 const HEX64 = /^[0-9a-f]{64}$/i;
 /** The namespace stamped on every event when the caller names none. */
@@ -220,6 +221,12 @@ export function listJoinRequests(hs: HoloSphere, holon: string, opts: { windowMs
 
 export interface SeatOptions extends HolonPublishOptions {
   role?: Role;
+  /**
+   * The name the person gave on their join request. Written as their `users`
+   * record by the admin when they have none yet, so the roster names them
+   * from the first moment; their own later write replaces it.
+   */
+  name?: string;
 }
 
 /**
@@ -233,7 +240,21 @@ export async function approveJoin(hs: HoloSphere, holon: string, pubkey: string,
   hs.publishNostrEvents(signer.sign(groupPutUserTemplate(ctx, holon, pub, role)));
   await publishGroupState(hs, holon, signer, opts);
   afterRoster(hs, holon);
+  await seedProfile(hs, holon, pub, opts.name);
   return pub;
+}
+
+/** The joiner's record from the name on their request — only when they have none, never a placeholder. */
+async function seedProfile(hs: HoloSphere, holon: string, pub: string, name: string | undefined): Promise<void> {
+  const first = cleanName(name);
+  if (!first || isPlaceholderName(first, pub)) return;
+  try {
+    const cur = await hs.get(holon, 'users', pub);
+    if (cur && typeof cur === 'object' && !(cur as { _deleted?: boolean })._deleted) return;
+    await hs.put(holon, 'users', { id: pub, first_name: first });
+  } catch {
+    /* the roster still names them through the request itself */
+  }
 }
 
 /** Unseat a key: the signed `_members` remove, a kind-9001, and the refreshed state. Admins only. */
@@ -337,10 +358,19 @@ export async function ensureProfile(hs: HoloSphere, holon: string, profile: Prof
   const wait = seatAt - Math.floor(Date.now() / 1000);
   if (wait > 0 && wait <= 5) await new Promise((r) => setTimeout(r, wait * 1000 + 50));
   const record: Record<string, unknown> = { id: me };
-  for (const [k, v] of Object.entries(profile)) if (typeof v === 'string' && v.trim()) record[k] = v.trim();
+  for (const [k, v] of Object.entries(profile)) {
+    if (typeof v !== 'string' || !v.trim()) continue;
+    // A shortened npub or hex prefix is a stand-in, never a name: a record
+    // written with one would show it on every surface until the person edits.
+    if ((k === 'first_name' || k === 'username' || k === 'last_name') && isPlaceholderName(v, me)) continue;
+    record[k] = v.trim();
+  }
   await hs.put(holon, 'users', record);
   return true;
 }
+
+// ── Trust ──────────────────────────────────────────────────────────────────
+export { membersTrustedAuthors } from './trust.js';
 
 // ── My holons (cross-device) ───────────────────────────────────────────────
 // Lives in `list.ts` so leaf modules can import it without this file's stack.

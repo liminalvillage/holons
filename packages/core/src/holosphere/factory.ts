@@ -19,6 +19,7 @@
 
 import { HoloSphere } from 'holosphere';
 import { attachLedger, type LedgerHost } from '../rea/attach.js';
+import { attachRosterMirror, type RosterMirrorHost } from '../tasks/roster-mirror.js';
 import { createWireRegistry } from 'holosphere/store';
 import { createShiftIdentityWire, createShiftWire } from '../shifts/wire.js';
 import { PROTOCOL_LENSES } from '../protocol/events.js';
@@ -113,6 +114,13 @@ export interface CreateHoloSphereOptions {
    */
   ledger?: boolean;
   /**
+   * Keep every person a task or event names holding a hologram of it in their
+   * own holon (see `@holons/core/tasks` `attachRosterMirror`). On by default —
+   * adding someone to a card is the same on every UI. `false` only for
+   * tooling that must write raw records (imports, forensics).
+   */
+  rosterMirror?: boolean;
+  /**
    * Append-only lenses (kind 1808, every signed entry kept — see
    * `@holons/core/protocol`). Defaults to the protocol's own lenses; pass a
    * list to add a domain's logs, or `false` for none. Registering costs
@@ -142,7 +150,7 @@ export function createHoloSphere(options: CreateHoloSphereOptions): HoloSphere;
 export function createHoloSphere(
   options: CreateHoloSphereOptions
 ): HoloSphere | Promise<HoloSphere> {
-  const { appName, privateKey, relays, store, nostr, strict, awaitReady, standardWires, extra, ledger, appendLenses, enforce } = options;
+  const { appName, privateKey, relays, store, nostr, strict, awaitReady, standardWires, extra, ledger, rosterMirror, appendLenses, enforce } = options;
 
   // A lens that owns a standard kind needs the store to consume that kind.
   // Built here so no UI has to know the registry exists.
@@ -189,5 +197,6 @@ export function createHoloSphere(
   // key stands (`writeAcceptance`) and for tests.
   if (authority) (instance as unknown as { _readAuthority?: unknown })._readAuthority = authority;
   if (ledger !== false) attachLedger(instance as unknown as LedgerHost);
+  if (rosterMirror !== false) attachRosterMirror(instance as unknown as RosterMirrorHost);
   return awaitReady ? instance.ready().then(() => instance) : instance;
 }

@@ -25,7 +25,13 @@
   // (parseHolonAdd accepts anything people actually copy or type).
   import { onMount, tick } from "svelte";
   import { goto } from "$app/navigation";
-  import { holonColor, holonColors, learnHolonColor } from "$lib/palette";
+  import {
+    holonColor,
+    holonColors,
+    inkOn,
+    learnHolonColor,
+    type HolonColors,
+  } from "$lib/palette";
   import {
     beaconPath,
     beaconTangents,
@@ -49,7 +55,12 @@
     syncOrbs,
     type Vec,
   } from "$lib/dock";
-  import { getHolonName, getHolosphere, getWriter } from "$lib/holosphere";
+  import { getHolosphere, getWriter } from "$lib/holosphere";
+  import {
+    isShortName,
+    nameOf as resolvedName,
+    resolveNames,
+  } from "$lib/names";
   import { dockPartnersOf } from "$lib/dockfed";
   import { clearBotHandoff, returningFromBot } from "$lib/config";
   import { clearHubClaim, pendingClaim } from "$lib/hubclaim";
@@ -64,10 +75,23 @@
   import AddHubSheet from "./AddHubSheet.svelte";
   import FederationLens from "./FederationLens.svelte";
   import DockMap from "./DockMap.svelte";
-  import PlaceSearch from "./PlaceSearch.svelte";
+  import HolonSearch from "./HolonSearch.svelte";
+  import { showHomePage } from "$lib/home";
+  import { holonId } from "$lib/stores";
 
-  // The earth, when it's showing beneath the sky — the top bar's place
-  // search flies it, its My-location button asks it to locate, and every
+  /**
+   * An orb's paint as inline custom properties: `--c`, the holon's colour,
+   * and — only for a caretaker's literal colour, which the palette's ink was
+   * never tuned against — `--on-c`, the ink that reads on it.
+   */
+  function paintOf(id: string, colors: HolonColors): string {
+    const c = holonColor(id, colors);
+    const ink = inkOn(c);
+    return ink ? `--c: ${c}; --on-c: ${ink}` : `--c: ${c}`;
+  }
+
+  // The earth, when it's showing beneath the sky — the bar's hub search
+  // docks onto it, its My-location button asks it to locate, and every
   // frame the sky asks it where each placed board's hexagon sits.
   let dockMap: DockMap | undefined;
   let locating = false;
@@ -182,14 +206,23 @@
 
   function askForget(id: string) {
     if (broughtInBy($dockEntries, id).length === 0) {
-      forgetBoard(id);
+      forget(id, false);
       return;
     }
     forgetTarget = id;
   }
   function confirmForget(id: string, withDependents: boolean) {
     forgetTarget = null;
+    forget(id, withDependents);
+  }
+  /**
+   * Remove a circle for good. The board the screen is SHOWING (its id is
+   * remembered, and in the address) is also let go of — else the next load
+   * would open it again and dock it straight back.
+   */
+  function forget(id: string, withDependents: boolean) {
     forgetBoard(id, { withDependents });
+    if (id === $holonId) void showHomePage();
   }
 
   /**
@@ -315,7 +348,7 @@
 
   /** A partner's display name — always another docked board's. */
   const partnerLabel = (id: string) =>
-    $dockEntries.find((e) => e.id === id)?.name ?? id;
+    $dockEntries.find((e) => e.id === id)?.name ?? $resolvedName(id);
 
   /**
    * Make `hex` the board's home — `settings.hex`, exactly what Settings →
@@ -381,7 +414,7 @@
   }
 
   const nameOf = (id: string) =>
-    $dockEntries.find((e) => e.id === id)?.name ?? id;
+    $dockEntries.find((e) => e.id === id)?.name ?? $resolvedName(id);
 
   // ── Federation ties ─────────────────────────────────────────────────────--
   // Each docked board's partner list, fetched once and cached for the dock's
@@ -476,8 +509,11 @@
       return; // offline — the stored labels stand
     }
     for (const e of pending)
-      void getHolonName(hs, e.id).then(
-        (n) => nameBoard(e.id, n),
+      void resolveNames([e.id]).then(
+        (m) => {
+          const n = m.get(e.id) ?? "";
+          if (!isShortName(n, e.id)) nameBoard(e.id, n);
+        },
         () => {},
       );
   }
@@ -581,8 +617,15 @@
     // came back) resumes on the Telegram step; otherwise ask which way in.
     addSheet = { step: pendingClaim() ? "new" : "choose" };
   }
-  /** The sheet named a hub — pasted, or claimed back from the bot. */
-  async function addHub(hub: { id: string; name?: string }) {
+  /**
+   * The sheet named a hub — pasted, or claimed back from the bot — or the
+   * map's search box picked one (`stay`: the hub is docked onto the map and
+   * flown to, the board's window is not opened over it).
+   */
+  async function addHub(
+    hub: { id: string; name?: string },
+    opts: { stay?: boolean } = {},
+  ) {
     const cell = addCell;
     const id = hub.id;
     addSheet = null;
@@ -602,8 +645,19 @@
       void dockPartnersOf(id);
       return;
     }
+    if (opts.stay) {
+      void dockPartnersOf(id);
+      void dockMap?.showBoard(id);
+      return;
+    }
     await tick();
     requestOpen(id);
+  }
+
+  /** The search box picked a hub: dock it, or fly to it if it is here. */
+  function pickHub(hit: { id: string; name: string; docked: boolean }) {
+    if (hit.docked) void dockMap?.showBoard(hit.id);
+    else void addHub({ id: hit.id, name: hit.name }, { stay: true });
   }
 
   // Back from Telegram: with a claim token out, the Telegram step picks the
@@ -825,7 +879,7 @@
               class="slot"
               class:front={dragId === e.id}
               role="listitem"
-              style="--c: {holonColor(
+              style="{paintOf(
                 e.id,
                 $holonColors,
               )}; --i: {i}; left: {p.x}px; top: {p.y}px"
@@ -854,8 +908,23 @@
                   >&times;</button
                 >
               {/if}
-              <span class="name">{e.name}</span>
             </div>
+          {/if}
+        {/each}
+
+        <!-- The names, in a layer of their own ABOVE every orb: inside its
+             slot a name was painted over by whichever neighbour came later
+             in the list, and federated orbs overlap by design. Read
+             `positions` inline, like the slots do. -->
+        {#each $dockEntries as e (e.id)}
+          {@const p = positions.get(e.id)}
+          {#if p}
+            <span
+              class="name"
+              class:front={dragId === e.id}
+              aria-hidden="true"
+              style="left: {p.x}px; top: {p.y}px">{e.name}</span
+            >
           {/if}
         {/each}
       {/if}
@@ -872,12 +941,13 @@
   </div>
 
   <!-- The top bar hovers over the sky, in three slots: the sky/earth switch
-       always in the middle; with the earth on, the place search to its left
-       and the My-location button at the right edge. -->
+       always in the middle; with the earth on, the hub search to its left
+       and the My-location button at the right edge — all inside the earth's
+       pane. -->
   <div class="topbar" class:onmap={mapOn}>
     <div class="topbar__left">
       {#if mapOn}
-        <PlaceSearch onpick={(hit) => dockMap?.flyTo(hit.lng, hit.lat)} />
+        <HolonSearch onpick={pickHub} />
       {/if}
     </div>
     <div class="viewtoggle" role="radiogroup" aria-label={$t("dock.boards")}>
@@ -995,7 +1065,7 @@
     <div class="home-confirm">
       <span
         class="orb-chip"
-        style="--c: {holonColor(drop.holon, $holonColors)}"
+        style={paintOf(drop.holon, $holonColors)}
         aria-hidden="true"><Icon name="hexagon" /></span
       >
       <h3>{$t("hex.moveTitle", { name: nameOf(drop.holon) })}</h3>
@@ -1026,7 +1096,7 @@
     <div class="home-confirm">
       <span
         class="orb-chip"
-        style="--c: {holonColor(target, $holonColors)}"
+        style={paintOf(target, $holonColors)}
         aria-hidden="true">{initialOf(nameOf(target))}</span
       >
       <h3>{$t("dock.removeTitle", { name: nameOf(target) })}</h3>
@@ -1095,6 +1165,9 @@
   .dock.onmap {
     --dock-lens: 3.4rem;
     --dock-tray: calc(4.4rem + var(--dock-lens) + env(safe-area-inset-bottom));
+    /* The margin of paper the earth's pane keeps from the screen edge
+       (DockMap .mapwrap reads it): the bar sits inside it, on the map. */
+    --frame: clamp(0.4rem, 2vw, 1.4rem);
   }
 
   /* The sky's box: earth, beacons and field all fill it edge to edge. */
@@ -1243,7 +1316,7 @@
     pointer-events: auto; /* the one thing in the field that catches a finger */
     /* Anchor the ORB's centre (not the column's) on the physics position:
        shift up by half the orb so the vesica, ties, and hit math all line up
-       with the visible circle; the name simply hangs below. */
+       with the visible circle; the name hangs below it, in the names layer. */
     transform: translate(-50%, calc(var(--orb) / -2));
     display: flex;
     flex-direction: column;
@@ -1309,7 +1382,7 @@
     font-size: 1.3rem;
     background: color-mix(in srgb, var(--c, var(--teal)) 55%, transparent);
     border: 3px solid color-mix(in srgb, var(--c, var(--teal)) 70%, var(--ink));
-    color: var(--ink);
+    color: var(--on-c, var(--ink));
   }
   .home-confirm h3 {
     margin: 0;
@@ -1343,12 +1416,12 @@
     padding: 0 0.8rem;
   }
   .home-confirm .ghost {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--ghost);
     color: var(--ink-soft);
   }
   .home-confirm .go {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
   }
   .home-confirm .acts--stack {
     flex-direction: column;
@@ -1396,7 +1469,7 @@
     padding: 0 1.2rem;
     border-radius: 12px;
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     font-weight: 700;
     font-size: 0.95rem;
     text-decoration: none;
@@ -1416,18 +1489,35 @@
     font-size: 2.4rem;
     font-weight: 700;
     line-height: 1;
-    color: var(--ink);
+    color: var(--on-c, var(--ink));
   }
 
+  /* A name is a small card of its own, hung just under its orb. It has to
+     carry its own ground: beneath it is satellite imagery at any brightness
+     (the day palette's ink vanished into it), a neighbour's orb, or the
+     paper sky — and the theme's ink only reads on the theme's card. */
   .name {
-    max-width: 100%;
-    font-size: 0.92rem;
-    font-weight: 600;
-    color: var(--ink-soft);
+    position: absolute;
+    z-index: 2; /* over the orbs and the vesicas, under a carried orb */
+    transform: translate(-50%, calc(var(--orb) / 2 + 0.3rem));
+    max-width: 8.5rem;
+    padding: 0.14rem 0.55rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--card) 90%, transparent);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(6px);
+    font-size: 0.88rem;
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--ink);
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    pointer-events: none; /* a tap goes to the orb or the earth beneath */
+  }
+  .name.front {
+    z-index: 4; /* the carried orb's name rides with it */
   }
 
   /* Edit mode ✕ — oversized for kiosk fingers, riding the circle's shoulder. */
@@ -1477,16 +1567,10 @@
     );
     pointer-events: none;
   }
-  /* Over the earth the tray never becomes a floor: an opaque foot cut the
-     map off well above the screen's edge. It stays a scrim — enough to carry
-     the hint, thin enough that the ground reads all the way down. */
+  /* Over the earth the tray is no floor and no scrim either: the ground
+     reads all the way down, and the add pill carries its own card. */
   .tray.onmap {
-    background: linear-gradient(
-      to top,
-      color-mix(in srgb, var(--paper-deep) 58%, transparent) 0%,
-      color-mix(in srgb, var(--paper-deep) 30%, transparent) 55%,
-      transparent
-    );
+    background: none;
   }
   .tray > * {
     pointer-events: auto;
@@ -1508,11 +1592,13 @@
     gap: 0.5rem;
     pointer-events: none;
   }
-  /* With the earth on, the bar keeps the same breathing room from the edge
-     as the map's lens chips (DockMap .lensbar). */
+  /* With the earth on, the bar sits INSIDE the earth's pane — in from the
+     frame the pane keeps from the screen edge, then the same breathing room
+     the map's lens chips keep (DockMap .lensbar). */
   .topbar.onmap {
-    left: calc(env(safe-area-inset-left) + 0.9rem);
-    right: calc(env(safe-area-inset-right) + 0.9rem);
+    top: calc(env(safe-area-inset-top) + var(--frame) + 0.8rem);
+    left: calc(env(safe-area-inset-left) + var(--frame) + 0.9rem);
+    right: calc(env(safe-area-inset-right) + var(--frame) + 0.9rem);
   }
   .topbar__left,
   .topbar__right {
@@ -1544,16 +1630,16 @@
     .topbar.onmap .topbar__right {
       grid-area: right;
     }
-    .topbar.onmap :global(.placesearch) {
+    .topbar.onmap :global(.hubsearch) {
       flex: 1 1 auto;
     }
   }
   .topbar :global(.viewtoggle),
-  .topbar :global(.placesearch),
+  .topbar :global(.hubsearch),
   .topbar :global(.locate) {
     pointer-events: auto;
   }
-  .topbar :global(.placesearch) {
+  .topbar :global(.hubsearch) {
     flex: 0 1 24rem;
   }
   .locate {
@@ -1612,7 +1698,9 @@
     gap: 0.35rem;
     padding: 0.4rem 1rem;
     border-radius: 999px;
-    color: var(--muted);
+    /* Not the quietest ink: the switch is glass over the earth, and what
+       shows through it is satellite imagery at any brightness. */
+    color: var(--ink-soft);
     font-size: 0.88rem;
     font-weight: 700;
     transition:
@@ -1621,7 +1709,7 @@
   }
   .viewopt.on {
     background: var(--card);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     box-shadow: var(--shadow-soft);
   }
   .viewopt:active {
@@ -1646,8 +1734,9 @@
        looked at. Reaching for it (hover, focus, or the touch itself) brings
        it back to full. This holds in every state, the loaded
        add-a-lens-here one included: it is the same button, and it should
-       not start shouting because a cell got picked. */
-    opacity: 0.62;
+       not start shouting because a cell got picked. It never steps back so
+       far that its label stops clearing the pill. */
+    opacity: 0.7;
     transition:
       opacity 160ms ease,
       transform 120ms ease;
@@ -1665,7 +1754,7 @@
   /* With a cell and a lens in hand the pill is the action, not an offer:
      it wears the kiosk's action colour so it reads at arm's length. */
   .plus.here {
-    color: var(--paper);
+    color: var(--on-teal);
     background: var(--teal);
     border-color: var(--teal-deep);
   }

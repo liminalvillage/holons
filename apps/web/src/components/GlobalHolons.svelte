@@ -331,16 +331,8 @@
         }
     }
 
-    // Simple function to fetch just the holon name
-    async function getHolonName(holonId: string): Promise<string> {
-        try {
-            const settingsResult = await holosphere.get(holonId, "settings", holonId);
-            return settingsResult?.name || holonId;
-        } catch (error) {
-            console.warn(`Failed to fetch name for holon ${holonId}:`, error);
-            return holonId; // Fallback to ID
-        }
-    }
+    // The holon's name through the app's one resolver (settings, HNS, a key's profile).
+    const getHolonName = (holonId: string): Promise<string> => awaitName(holonId);
 
     // Async function to compute stats in the background
     async function computeStatsAsync(holonIds: string[]) {

@@ -31,11 +31,12 @@
   import { privacyOfHolon, type Audience } from "@holons/core/privacy";
   import AudienceEditor from "./AudienceEditor.svelte";
   import {
-    reflectMembership,
+    addMember,
+    refreshOwnDm,
     toggleJoin,
     toggleAppreciate,
-    type TgUser,
   } from "$lib/membership";
+  import { loadMembers, members } from "$lib/members";
   import {
     checkComplete,
     checkOccurrenceComplete,
@@ -44,6 +45,7 @@
   } from "$lib/complete";
   import {
     noteColor,
+    personName,
     toPeople,
     sourceRef,
     deleteRef,
@@ -798,19 +800,60 @@
       return;
     }
     closeDetail();
-    // Everyone added or dropped gets the same mirror a self-service join
-    // makes: a hologram in their own holon and a refreshed Telegram DM.
-    // Best-effort, after the save has landed.
+    // Core mirrored the card into the holon of everyone put on the roster and
+    // dropped it from whoever was taken off — that is part of the write. What
+    // is left for the board is the signed-in user's own Telegram DM, when
+    // their place on the card changed.
+    const me = $currentUser;
+    if (!me) return;
     const { joined, left } = rosterDiff(
       sel.quest.participants,
       updated.participants,
     );
-    const hid = $holonId;
-    // rosterDiff only yields people with an id; the cast narrows the type.
-    for (const p of joined)
-      void reflectMembership(hid, updated, p as TgUser, true);
-    for (const p of left)
-      void reflectMembership(hid, updated, p as TgUser, false);
+    if ([...joined, ...left].some((p) => String(p.id) === String(me.id)))
+      void refreshOwnDm(String(updated.id), me);
+  }
+
+  // Who can still be put on this card: the holon's members not yet on it.
+  // The roster loads once the card is up, so the control appears with it.
+  $: if (quest && $isLoggedIn) void loadMembers();
+  $: onRoster = new Set(people.map((p) => String(p.id)));
+  $: addable = $members.filter((m) => !onRoster.has(String(m.id)));
+
+  /**
+   * Put a member of the holon on this card, straight from it — no edit form.
+   * The card stays up with the new roster so several people can be added in
+   * a row; core's write puts a hologram of the card in each one's own holon.
+   */
+  async function addSomeone(e: Event) {
+    const select = e.currentTarget as HTMLSelectElement;
+    const m = $members.find((x) => String(x.id) === select.value);
+    select.value = ""; // back to the label so the next pick fires change too
+    if (!m || !sel || sel.kind === "thing" || !$holonId) return;
+    saving = true;
+    message = "";
+    try {
+      const id = String(sel.quest.id ?? sel.quest.title);
+      const res = await addMember($holonId, id, m, sourceRef(sel.quest, id));
+      if (res === "failed") {
+        message = $t("detail.addFailed");
+        return;
+      }
+      if (res !== "already") {
+        // Only the people lists changed; the card keeps its own provenance.
+        selection.set({
+          ...sel,
+          quest: {
+            ...sel.quest,
+            participants: res.participants,
+            appreciation: res.appreciation,
+          },
+        });
+      }
+      showNotice($t("detail.addedPerson", { name: personName(m) }));
+    } finally {
+      saving = false;
+    }
   }
 
   /**
@@ -1384,7 +1427,7 @@
               >
               {#if lockable || cardLocked}
                 <button
-                  class="ghost"
+                  class="ghost lockbtn"
                   class:on={cardLocked}
                   aria-expanded={lockOpen}
                   on:click={() => (lockOpen = !lockOpen)}
@@ -1589,6 +1632,25 @@
                 ? ` · ${appreciationCount}`
                 : ""}</button
             >
+            {#if addable.length && quest?.status !== "completed"}
+              <!-- Put anyone in the holon on the card: the members not yet on
+                   it, as a native dropdown laid invisibly over the button. -->
+              <span class="ghost addperson" class:busy={saving}>
+                <Icon name="plus" />
+                {$t("detail.addSomeone")}
+                <select
+                  on:change={addSomeone}
+                  disabled={saving}
+                  aria-label={$t("detail.addParticipant")}
+                  title={$t("detail.addParticipant")}
+                >
+                  <option value="">{$t("detail.addParticipant")}</option>
+                  {#each addable as m (m.id)}
+                    <option value={String(m.id)}>{personName(m)}</option>
+                  {/each}
+                </select>
+              </span>
+            {/if}
             {#if occurrenceWhen}
               <!-- Opened from one date of a repeating series: done means done
                    THIS time. The series lives on. -->
@@ -1628,9 +1690,14 @@
                   {$t("detail.breakDown")}{/if}</button
               >
             {/if}
+            <button
+              class="ghost danger"
+              on:click={deleteQuest}
+              disabled={saving}>{$t("tasks.delete")}</button
+            >
             {#if lockable || cardLocked}
               <button
-                class="ghost"
+                class="ghost lockbtn"
                 class:on={cardLocked}
                 aria-expanded={lockOpen}
                 on:click={() => (lockOpen = !lockOpen)}
@@ -1639,11 +1706,6 @@
                 {$t(cardLocked ? "detail.locked" : "detail.lock")}</button
               >
             {/if}
-            <button
-              class="ghost danger"
-              on:click={deleteQuest}
-              disabled={saving}>{$t("tasks.delete")}</button
-            >
           </div>
 
           {#if breakdownSteps !== null}
@@ -2008,7 +2070,7 @@
     word-break: break-word;
   }
   h2 :global(a) {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     text-decoration: underline;
     overflow-wrap: anywhere;
   }
@@ -2070,7 +2132,7 @@
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .chips {
     display: flex;
@@ -2089,12 +2151,12 @@
     border-radius: 50%;
     font-size: 1.1rem;
     color: var(--ink-soft);
-    background: rgba(255, 255, 255, 0.55);
+    background: var(--glass);
     display: grid;
     place-items: center;
   }
   .share.done {
-    color: var(--teal);
+    color: var(--teal-ink);
   }
   /* Where a foreign card came from — coloured with the source holon's glow
      hue, matching the wall's source chips and the hologram projection. */
@@ -2126,7 +2188,7 @@
     padding: 0.05rem 0.45rem;
     border-radius: 999px;
     white-space: nowrap;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     border: 1px solid color-mix(in srgb, var(--teal) 45%, transparent);
     background: color-mix(in srgb, var(--teal) 10%, transparent);
   }
@@ -2177,7 +2239,7 @@
     gap: 0.45rem;
     padding: 0.25rem 0.7rem 0.25rem 0.3rem;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.55);
+    background: var(--glass);
     font-weight: 700;
     color: var(--ink);
     font-size: 0.92rem;
@@ -2219,7 +2281,7 @@
     word-break: break-word;
   }
   .desc :global(a) {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     text-decoration: underline;
     overflow-wrap: anywhere;
   }
@@ -2267,18 +2329,18 @@
     border-radius: 999px;
     font-weight: 700;
     font-size: 0.92rem;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     background: var(--card);
     border: 1.5px solid var(--line);
   }
   .chip.on {
     background: var(--teal);
     border-color: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
   }
   .joined {
-    background: #e7f3f1;
-    color: var(--teal-deep);
+    background: var(--teal-wash);
+    color: var(--teal-ink);
   }
 
   label {
@@ -2430,7 +2492,7 @@
     padding: 0;
     background: none;
     border: none;
-    color: var(--teal);
+    color: var(--teal-ink);
     font-size: 0.8rem;
     font-weight: 700;
     cursor: pointer;
@@ -2447,11 +2509,17 @@
     margin-top: 1rem;
     padding: 0.8rem 0.9rem;
     border-radius: 14px;
-    background: rgba(255, 255, 255, 0.45);
+    background: var(--glass);
   }
   .ghost.on {
     border-color: var(--teal-deep);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
+  }
+  /* The lock is always the last thing on the row, flush right. */
+  .actions .lockbtn {
+    flex: 0 0 auto;
+    min-width: 0;
+    margin-left: auto;
   }
   .primary,
   .ghost {
@@ -2465,15 +2533,15 @@
   }
   .primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .ghost {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--ghost);
     color: var(--ink);
   }
   .danger {
-    color: #c0392b;
+    color: var(--danger);
     background: rgba(192, 57, 43, 0.1);
   }
   .danger:active {
@@ -2486,13 +2554,38 @@
   .primary:disabled {
     opacity: 0.6;
   }
+  /* "Add someone": a ghost button whose whole face is a native dropdown. */
+  .addperson {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0 1rem;
+  }
+  .addperson select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+    font-size: 1rem; /* keeps iOS from zooming the page when it opens */
+  }
+  .addperson:focus-within {
+    outline: 2px solid var(--teal-deep);
+    outline-offset: 2px;
+  }
+  .addperson.busy {
+    opacity: 0.6;
+  }
   .appreciate.on {
     background: var(--note-coral);
-    color: #9a3b2f;
+    color: var(--danger);
   }
   .msg {
     margin-top: 0.9rem;
-    color: #9a3b2f;
+    color: var(--danger);
     font-weight: 600;
     text-align: center;
   }
@@ -2503,7 +2596,7 @@
     padding: 0.9rem 1rem;
     border: 1.5px solid var(--line);
     border-radius: 14px;
-    background: rgba(255, 255, 255, 0.45);
+    background: var(--glass);
   }
   .bd-head {
     margin: 0 0 0.4rem;
@@ -2511,7 +2604,7 @@
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .bd-note {
     margin: 0 0 0.5rem;
@@ -2548,7 +2641,7 @@
     margin-left: 0.35rem;
     font-size: 0.78rem;
     font-weight: 600;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .bd-desc {
     margin: 0.15rem 0 0;
@@ -2561,7 +2654,7 @@
     min-height: 2.3rem;
     border-radius: 10px;
     background: rgba(192, 57, 43, 0.08);
-    color: #c0392b;
+    color: var(--danger);
     font-weight: 700;
   }
   .bd-x:active {
@@ -2585,7 +2678,7 @@
     margin: 0.2rem 0;
     font-size: 0.82rem;
     font-weight: 600;
-    color: #a07908;
+    color: var(--caution);
   }
   .breakdown .actions {
     margin-top: 0.8rem;

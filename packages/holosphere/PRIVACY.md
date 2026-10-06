@@ -20,6 +20,10 @@ Five rules say all of it:
    the owner, tags public. Every instance can see the flag; no settings
    hint, no heuristics. `lock` creates the record and rewrites the scope
    sealed; `unlock` rewrites it in the clear and tombstones the record.
+   A rewrite covers what the owner *sees*: under enforced reads a record
+   the holon's authority rejects (unsigned, by a never-seated key, a stray
+   revival over a signed delete) is left alone — re-signing it would
+   publish it as the owner's own.
 3. **One key per scope.** `content = { enc:'nip44', v:2, kid, ct }` with
    `ct = nip44(JSON(item), K_scope)` and `kid = sha256(K_scope)[0:16]`.
    Rotation = a new key in the vault + the scope's items rewritten + the

@@ -29,6 +29,7 @@
  * @module src/Shifts
  */
 
+import { shortId } from '@holons/core/identity';
 import { Markup } from 'telegraf';
 import { createIdentityContext } from '@holons/core/holosphere';
 import {
@@ -257,9 +258,7 @@ export default class Shifts {
         lines.push('', `<b>${escapeHtml(occ.date)}</b>`);
       }
       const enrolled = enrolledPubkeys(occ, rsvps, identity);
-      const who = enrolled.map(pk =>
-        escapeHtml(names.get(pk) || `${pk.slice(0, 8)}…`)
-      );
+      const who = enrolled.map(pk => escapeHtml(names.get(pk) || shortId(pk)));
       const cap =
         occ.capacity !== undefined
           ? `${enrolled.length}/${occ.capacity}`

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { nameMap, resolvedName } from "$lib/stores/nameResolver";
+	import { get } from "svelte/store";
     // SPDX-License-Identifier: AGPL-3.0-or-later
     //
     // Who may read a scope — a whole lens or one item — as a list of HOLONS.
@@ -64,7 +66,7 @@
             if (canChange && partners.length === 0) {
                 try {
                     const fed = await getFederationSnapshot(holosphere, scope.holon);
-                    partners = fed.federated.map((id) => ({ id, name: fed.partnerNames[id] ?? id }));
+                    partners = fed.federated.map((id) => ({ id, name: fed.partnerNames[id] ?? resolvedName(id, get(nameMap)) }));
                     names = { ...names, ...fed.partnerNames };
                 } catch {
                     partners = [];
@@ -91,7 +93,17 @@
         }
     }
 
+    // One click does it; the line under the state says what that click does
+    // to what is already in the scope and to what comes after.
     const toggleLock = () => run("lock", () => (aud?.locked ? unlock(holosphere, scope) : lock(holosphere, scope)));
+    $: frozen = loading || !!busy || !canChange || (!!aud?.locked && !aud.owned) || (!!scope.item && lensLocked);
+    $: why = aud?.locked
+        ? scope.item
+            ? "Making it public rewrites this item in the clear, and its changes stay public, for anyone to read."
+            : "Making it public rewrites every item of this lens in the clear, old and new, for anyone to read."
+        : scope.item
+          ? "Making it private seals this item and every change to it, so only this holon's members and the holons you share it with can read it. What was read before stays read."
+          : "Making it private seals every item of this lens — the ones already here and every new one — so only this holon's members and the holons you share it with can read them. What was read before stays read.";
     const add = (id: string, name?: string) => {
         if (name) names = { ...names, [id]: name };
         addOpen = false;
@@ -118,20 +130,20 @@
 </script>
 
 <div class="aud">
+    <!-- The state on the left, the one action on the right. -->
     <div class="aud__head">
-        <button
-            type="button"
-            class="aud__lock"
-            class:aud__lock--on={!!aud?.locked}
-            aria-pressed={!!aud?.locked}
-            disabled={loading || !!busy || !canChange || (!!aud?.locked && !aud.owned) || (!!scope.item && lensLocked)}
-            title={aud?.locked ? "Unlock — anyone can read it" : "Lock — only this holon and the holons it is shared with can read it"}
-            on:click={toggleLock}
-        >
+        <span class="aud__state" class:aud__state--on={!!aud?.locked}>
             {#if aud?.locked}<Lock size="14" /> Private{:else}<Unlock size="14" /> Public{/if}
-        </button>
-        {#if !canChange}<span class="aud__hint">Log in with your key to change this.</span>{/if}
+        </span>
+        {#if !canChange}
+            <span class="aud__hint">Log in with your key to change this.</span>
+        {:else if !frozen || loading || busy}
+            <button type="button" class="aud__act" class:aud__act--open={!!aud?.locked} disabled={frozen} on:click={toggleLock}>
+                {aud?.locked ? "Make public" : "Make private"}
+            </button>
+        {/if}
     </div>
+    {#if canChange && !frozen}<p class="aud__hint">{why}</p>{/if}
     {#if scope.item && lensLocked}
         <p class="aud__hint">The whole lens is locked; this item follows it.</p>
     {:else if aud?.locked && !aud.owned && canChange}
@@ -193,14 +205,15 @@
 <style>
     .aud { display: flex; flex-direction: column; gap: 0.5rem; }
     .aud__head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-    .aud__lock {
-        display: inline-flex; align-items: center; gap: 0.35rem;
-        padding: 0.35rem 0.75rem; border-radius: 999px;
-        border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.06);
-        color: #cbd5e1; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    .aud__state { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; font-weight: 600; color: #cbd5e1; }
+    .aud__state--on { color: #99f6e4; }
+    .aud__act {
+        margin-left: auto; padding: 0.4rem 0.9rem; border-radius: 999px; white-space: nowrap;
+        border: 1px solid rgba(45, 212, 191, 0.6); background: rgba(45, 212, 191, 0.25);
+        color: #99f6e4; font-size: 0.8rem; font-weight: 600; cursor: pointer;
     }
-    .aud__lock--on { background: rgba(45, 212, 191, 0.2); border-color: rgba(45, 212, 191, 0.5); color: #99f6e4; }
-    .aud__lock:disabled { opacity: 0.5; cursor: default; }
+    .aud__act--open { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.2); color: #cbd5e1; }
+    .aud__act:disabled { opacity: 0.5; cursor: default; }
     .aud__hint { margin: 0; font-size: 0.75rem; color: #94a3b8; }
     .aud__err { margin: 0; font-size: 0.78rem; color: #fca5a5; }
     .aud__chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }

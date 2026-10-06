@@ -5,7 +5,7 @@
 		resolveName,
 		extractHolonIdFromSoul,
 		buildHologramLink
-	} from '$lib/stores/nameResolver';
+	, resolvedName} from '$lib/stores/nameResolver';
 	import VerifiedBadge from './badges/VerifiedBadge.svelte';
 
 	/**
@@ -54,7 +54,7 @@
 		? (hologram.sourceHolonName as string | undefined)
 		: (federation?.originName as string | undefined);
 
-	$: displayName = stampedName || (sourceHolonId ? $nameMap[sourceHolonId] : '') || sourceHolonId || '';
+	$: displayName = stampedName || (sourceHolonId ? resolvedName(sourceHolonId, $nameMap) : '');
 
 	$: href = hologram
 		? buildHologramLink(hologram)

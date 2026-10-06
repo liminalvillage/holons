@@ -5,6 +5,7 @@
 // A port of the web app's apps/web/src/lib/auth/nostrKey.ts.
 
 import { nostrUtils } from "holosphere";
+import { shortId } from "@holons/core/identity";
 import { AuthUiError, type ProviderLogin } from "./types";
 
 const {
@@ -13,16 +14,7 @@ const {
   generatePrivateKey,
   hexToNpub,
   hexToNsec,
-  shortenNpub,
 } = nostrUtils;
-
-export function npubLabel(pubkeyHex: string): string {
-  try {
-    return shortenNpub(hexToNpub(pubkeyHex));
-  } catch {
-    return pubkeyHex.slice(0, 8);
-  }
-}
 
 /** Validate an nsec/hex without committing to it — for live preview. */
 export function previewNostrKey(
@@ -52,7 +44,7 @@ export function importNostrKey(input: string): ProviderLogin {
     identity: {
       provider: "nostr",
       pubkey: publicKey,
-      label: npubLabel(publicKey),
+      label: shortId(publicKey),
     },
   };
 }
@@ -67,7 +59,7 @@ export function generateNostrKey(): ProviderLogin & { nsec: string } {
     identity: {
       provider: "nostr",
       pubkey: publicKey,
-      label: npubLabel(publicKey),
+      label: shortId(publicKey),
     },
   };
 }

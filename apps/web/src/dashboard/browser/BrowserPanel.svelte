@@ -17,7 +17,8 @@
 	import QRScanner from '../../components/QRScanner.svelte';
 
 	import { ID, sidebarExpanded } from '../store';
-	import { nameMap, resolveName, awaitName, forceRefreshHolonName } from '$lib/stores/nameResolver';
+	import { nameMap, resolveName, resolvedName, awaitName, forceRefreshHolonName } from '$lib/stores/nameResolver';
+	import { shortId } from '@holons/core/identity';
 	import { activeHolonIdentity, userHolons, activeHolonIdentityStore } from '../../lib/stores/activeHolonIdentity';
 	import { getEffectiveAppName, setAppNameOverride } from '$lib/stores/appName';
 
@@ -275,7 +276,7 @@
 							const outbound = Array.isArray(storedLensConfig?.outbound) ? storedLensConfig.outbound : [];
 							holonList.push({
 								id: holonId,
-								name: name || `Holon ${holonId.slice(0, 8)}...`,
+								name: name || resolvedName(holonId, $nameMap),
 								federationStatus: 'accepted',
 								lensConfig: {
 									lenses: [...new Set([...inbound, ...outbound])],
@@ -298,7 +299,7 @@
 				try {
 					for (const h of await myHolons(holosphere, me)) {
 						if (h.id === federationSourceId || holonList.some((x) => x.id === h.id)) continue;
-						holonList.push({ id: h.id, name: h.name || `Holon ${h.id.slice(0, 8)}...`, federationStatus: 'accepted' });
+						holonList.push({ id: h.id, name: h.name || resolvedName(h.id, $nameMap), federationStatus: 'accepted' });
 					}
 				} catch (err) {
 					console.warn('[BrowserPanel] could not read your holons:', err);
@@ -314,7 +315,7 @@
 
 				holonList.push({
 					id: request.recipientPubKey || request.senderHolonId,
-					name: request.recipientHolonName || `Holon ${(request.recipientPubKey || '').slice(0, 8)}...`,
+					name: request.recipientHolonName || resolvedName(request.recipientPubKey || request.senderHolonId, $nameMap),
 					federationStatus: 'pending_outgoing',
 					pendingRequestId: request.id
 				});
@@ -790,13 +791,12 @@
 			let name = newHolonName.trim();
 			if (!name && holosphere) {
 				try {
-					const fetchedName = await awaitName(holonId);
-					name = fetchedName || `Holon ${holonId.slice(0, 8)}...`;
+					name = await awaitName(holonId);
 				} catch {
-					name = `Holon ${holonId.slice(0, 8)}...`;
+					name = shortId(holonId);
 				}
 			} else if (!name) {
-				name = `Holon ${holonId.slice(0, 8)}...`;
+				name = shortId(holonId);
 			}
 
 			// Initiate federation handshake if we have private key

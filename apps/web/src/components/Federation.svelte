@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { shortId } from "@holons/core/identity";
     import { onMount, onDestroy, getContext } from "svelte";
     import { fade, fly, slide } from "svelte/transition";
     import { flip } from "svelte/animate";
@@ -402,7 +403,7 @@
     }
 
     function displayNameOf(h: FederatedHolon): string {
-        return $nameMap[h.id] || h.name || h.id;
+        return $nameMap[h.id] || h.name || resolvedName(h.id, $nameMap);
     }
 
     $: filteredHolons = (() => {
@@ -445,7 +446,7 @@
                 <span class="privacy-card__title">🔒 Private lenses</span>
                 <span class="privacy-card__hint">
                     {#if canOwn}
-                        A private lens keeps its content sealed; this holon's members always read it. Send it to a partner with the arrow, then share it with the key button.
+                        Private seals every item of the lens, old and new, so only this holon's members and the holons you share it with read them (what was read before stays read); public rewrites them all in the clear. Send a lens to a partner with the arrow, then share it with the key button.
                     {:else}
                         Log in with your key to make a lens private.
                     {/if}
@@ -541,7 +542,7 @@
                                 >
                                     {name}
                                 </button>
-                                <div class="fed-card__id" title={holon.id}>{holon.id}</div>
+                                <div class="fed-card__id" title={holon.id}>{shortId(holon.id)}</div>
                                 {#if ownedLenses.length}
                                     {@const state = readerState(audiences, holon.id)}
                                     <div class="fed-card__key" class:fed-card__key--none={state === 'no-readers'}>

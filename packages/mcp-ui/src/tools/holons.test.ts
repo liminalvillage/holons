@@ -53,6 +53,9 @@ describe('holon tools', () => {
     const members = payload(await tools.get('holon_members')!({ holon: H }));
     expect(members.members).toMatchObject({ [me.pk]: 'admin', [bob.pk]: 'member' });
     expect(members.myRole).toBe('admin');
+    // Every key named: the founder by the profile holon_create wrote, Bob in the short form.
+    expect(members.names[me.pk]).toBe('Me');
+    expect(members.names[bob.pk]).toMatch(/^npub1.*…/);
 
     expect(payload(await tools.get('holon_remember')!({ holon: H, name: 'Orto' })).success).toBe(true);
     expect(payload(await tools.get('holon_list_mine')!({})).holons.map((h: { id: string }) => h.id)).toEqual([H]);

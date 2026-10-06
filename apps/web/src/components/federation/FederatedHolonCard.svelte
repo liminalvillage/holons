@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { nameMap, resolvedName } from "$lib/stores/nameResolver";
+	import { shortId } from "@holons/core/identity";
     import { createEventDispatcher } from "svelte";
     import { slide, fly } from "svelte/transition";
     import { Copy, Check, ChevronDown, Trash2, ExternalLink } from "svelte-feathers";
@@ -49,11 +51,6 @@
             'recurring': '🔄'
         };
         return icons[normalizeLensName(lens)] || '📦';
-    }
-
-    function shortenPubKey(pubKey: string): string {
-        if (!pubKey || pubKey.length < 16) return pubKey;
-        return `${pubKey.slice(0, 8)}...${pubKey.slice(-6)}`;
     }
 
     function toggleExpanded() {
@@ -109,9 +106,9 @@
 
         <!-- Info -->
         <div class="holon-card__info">
-            <span class="holon-card__name">{holon.name || holon.id}</span>
+            <span class="holon-card__name">{holon.name || resolvedName(holon.id, $nameMap)}</span>
             {#if holon.pubKey}
-                <span class="holon-card__npub">{shortenPubKey(holon.pubKey)}</span>
+                <span class="holon-card__npub">{shortId(holon.pubKey)}</span>
             {/if}
         </div>
 

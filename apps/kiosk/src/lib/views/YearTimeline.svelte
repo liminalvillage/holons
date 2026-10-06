@@ -1314,7 +1314,7 @@
     padding: 0.25rem 0.55rem;
     border-radius: 8px;
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     font-size: 0.75rem;
     font-weight: 800;
     white-space: nowrap;

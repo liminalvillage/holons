@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { nameMap, resolvedName } from "$lib/stores/nameResolver";
+	import { shortId } from "@holons/core/identity";
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import * as d3 from 'd3';
   import type { InteriorMember, ZonedHolon } from './types';
@@ -477,7 +479,7 @@
             {member.username?.slice(0, 1).toUpperCase() || '?'}
           </div>
           <div class="tooltip-title">
-            <span class="tooltip-name">{member.username || member.userId}</span>
+            <span class="tooltip-name">{member.username || resolvedName(member.userId, $nameMap)}</span>
             <span class="tooltip-score">{member.percentage?.toFixed(1)}% share</span>
           </div>
         </div>
@@ -530,7 +532,7 @@
           </div>
           <div class="breakdown-row">
             <span>ID:</span>
-            <span class="tooltip-id">{holon.id.slice(0, 12)}...</span>
+            <span class="tooltip-id">{shortId(holon.id)}</span>
           </div>
           {#if holon.splitterAddress}
             <div class="breakdown-row">

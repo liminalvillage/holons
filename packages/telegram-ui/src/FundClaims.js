@@ -58,7 +58,7 @@ import {
 } from '@holons/core/protocol';
 import {
   appendAsMember,
-  memberNames,
+  partyNames,
   readLogContext,
 } from './protocolContext.js';
 
@@ -276,7 +276,10 @@ export default class FundClaims {
         return ctx.reply(
           'Nothing has been brought into this fund yet. An attester adds to it with /fundmint <amount> [UNIT] [what it is].'
         );
-      const names = await this.names(holon);
+      const names = await this.names(
+        holon,
+        folded.mints.map(m => m.pubkey)
+      );
       const held = Object.entries(folded.byUnit)
         .map(([u, v]) => `${v} ${u}`)
         .join(' · ');
@@ -314,7 +317,10 @@ export default class FundClaims {
         return ctx.reply(
           'No claims on this fund yet. Raise one with /fundclaim <amount>.'
         );
-      const names = await this.names(holon);
+      const names = await this.names(
+        holon,
+        folded.claims.map(c => c.party)
+      );
       const lines = folded.claims.slice(-25).map(c => {
         const who = names.get(c.party) || c.party;
         return `#${c.id.slice(0, 8)} <b>${escapeHtml(who)}</b> ${c.amount} ${c.unit}${c.memo ? ` — ${escapeHtml(c.memo)}` : ''}\n   ${this.describe(c)}`;
@@ -399,8 +405,9 @@ export default class FundClaims {
     }
   }
 
-  names(holon) {
-    return memberNames(this.db, holon);
+  /** Names for the parties on the fund — members by any key, partners, strangers. */
+  names(holon, ids = []) {
+    return partyNames(this.db, holon, ids);
   }
 
   // ---------------------------------------------------------------- policy

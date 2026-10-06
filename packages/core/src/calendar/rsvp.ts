@@ -2,6 +2,7 @@
 // Pure data helpers shared by web and bot. UI-agnostic — no Telegraf,
 // no DOM. Bots own the keyboard rendering, the web app owns its UI.
 
+import { userName } from '../identity/index.js';
 /** Display fields used to build a participant label. */
 export interface RSVPUser {
     id: string | number;
@@ -20,12 +21,6 @@ export interface RSVPEntry {
     userId: string | number;
     name: string;
     attending: boolean;
-}
-
-/** Display name for a user, falling back through the available fields. */
-export function rsvpDisplayName(user: RSVPUser): string {
-    const first = user.first_name || user.username || String(user.id);
-    return user.second_name ? `${first} ${user.second_name}` : first;
 }
 
 /** Whether the user is currently marked attending for the given event/message. */
@@ -66,7 +61,7 @@ export function buildRSVPList(
 ): RSVPEntry[] {
     return (users ?? []).map((user) => ({
         userId: user.id,
-        name: rsvpDisplayName(user),
+        name: userName({ ...user, last_name: user.second_name ?? (user as { last_name?: string }).last_name }),
         attending: isAttending(user, eventKey),
     }));
 }

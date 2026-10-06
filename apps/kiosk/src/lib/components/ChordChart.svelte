@@ -337,7 +337,7 @@
   }
 
   .tip-value {
-    color: var(--teal);
+    color: var(--teal-ink);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }

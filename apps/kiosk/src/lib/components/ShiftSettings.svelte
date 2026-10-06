@@ -772,7 +772,7 @@
     border: 1.5px solid var(--line);
   }
   .day.on {
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     border-color: transparent;
   }
@@ -794,7 +794,7 @@
     padding: 0.55rem 0.9rem;
     border-radius: 999px;
     font-weight: 700;
-    color: var(--teal);
+    color: var(--teal-ink);
     background: var(--card);
     border: 1.5px dashed var(--teal);
   }
@@ -861,7 +861,7 @@
     background: var(--paper);
   }
   .range button.on {
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
   }
   .tally {
@@ -883,19 +883,15 @@
     background: transparent;
   }
   .pill.loud {
-    color: #fff;
+    color: var(--paper);
     background: var(--warn);
   }
   .pill.needs {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     background: color-mix(in srgb, var(--teal) 16%, var(--paper));
   }
   .pill.ok {
-    color: var(--teal-deep);
-  }
-  :global([data-theme="dark"]) .pill.needs,
-  :global([data-theme="dark"]) .pill.ok {
-    color: color-mix(in srgb, var(--teal) 45%, #fff);
+    color: var(--teal-ink);
   }
 
   .wall {
@@ -971,7 +967,7 @@
     font-size: 0.9rem;
   }
   .primary {
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     box-shadow: var(--shadow-soft);
   }

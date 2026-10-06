@@ -7,11 +7,12 @@
 // the dock is this device's view, not a crawl of the whole federation.
 // Nothing here writes to the relays; the tags live in localStorage with the
 // rest of the dock (dock.ts), and removing the hub can offer to take its
-// retinue along (DockView).
+// retinue along (DockView). A partner the person removed stays removed
+// (dock.ts `isForgotten`): a shown hub's retinue is folded in around it.
 
 import { get } from "svelte/store";
 import { getFederationSnapshot } from "@holons/core/federation";
-import { dockEntries, rememberBoard } from "./dock";
+import { dockEntries, isForgotten, rememberBoard } from "./dock";
 import { getHolosphere } from "./holosphere";
 
 /** Hubs whose partners were already fetched this session — once is enough. */
@@ -39,7 +40,7 @@ export async function dockPartnersOf(id: string): Promise<string[]> {
   const here = new Set(get(dockEntries).map((e) => e.id));
   const added: string[] = [];
   for (const pid of federated) {
-    if (!pid || pid === id || here.has(pid)) continue;
+    if (!pid || pid === id || here.has(pid) || isForgotten(pid)) continue;
     rememberBoard(pid, names[pid] ?? "", { via: id });
     here.add(pid);
     added.push(pid);

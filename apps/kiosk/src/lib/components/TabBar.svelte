@@ -834,7 +834,7 @@
   .chip.on {
     border-color: var(--teal);
     background: color-mix(in srgb, var(--teal) 14%, var(--card));
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .chip__dot {
     width: 0.62rem;
@@ -850,7 +850,7 @@
     display: grid;
     place-items: center;
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     font-size: 0.62rem;
     font-weight: 700;
     flex: 0 0 auto;
@@ -866,7 +866,7 @@
     max-width: 11rem;
   }
   .account.in {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .account:active {
     transform: scale(0.96);
@@ -882,7 +882,7 @@
     place-items: center;
     object-fit: cover;
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     font-size: 0.9rem;
     font-weight: 700;
   }
@@ -906,7 +906,7 @@
     font-size: 1.55rem;
     font-weight: 500;
     letter-spacing: 0.05em;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     line-height: 1;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
@@ -1048,7 +1048,7 @@
      glide (flip) into the slots it leaves and takes. */
   .tab.lifted {
     z-index: 2;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     background: var(--card);
     transform: scale(1.06);
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
@@ -1112,7 +1112,7 @@
   }
   .add:hover,
   .add.open {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     background: var(--card);
   }
   .add:active {
@@ -1131,7 +1131,7 @@
     padding: 0.6rem 0.85rem;
     border-radius: 14px;
     background: var(--teal-deep);
-    color: #fff;
+    color: var(--on-teal);
     font-size: 0.92rem;
     font-weight: 600;
     line-height: 1.3;
@@ -1233,13 +1233,13 @@
     letter-spacing: 0.01em;
   }
   .tab.active {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     background: var(--card);
     box-shadow: var(--shadow-soft);
   }
   /* Pinned: a steady accent + the pin glyph, no rotation rail. */
   .tab.pinned {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   /* Tappable pin on the active tab: muted while unpinned (an invitation),
      accent once the kiosk is parked here. */
@@ -1263,7 +1263,7 @@
     height: 0.9rem;
   }
   .pinbtn.on {
-    color: var(--teal);
+    color: var(--teal-ink);
     opacity: 1;
   }
   .pinbtn:active {

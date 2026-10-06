@@ -56,11 +56,12 @@ export async function seat(
   hub: string,
   key: string,
   role: Role = "member",
+  name?: string,
 ): Promise<string> {
   const hs = await getHolosphere();
   const signer = sessionSigner();
   const pub = signer
-    ? await approveJoin(hs, hub, key, signer, { ...opts(), role })
+    ? await approveJoin(hs, hub, key, signer, { ...opts(), role, name })
     : await addHolonMember(hs, hub, key, role);
   undismiss(hub, pub);
   return pub;

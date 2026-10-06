@@ -7,6 +7,8 @@
   // every surface does (`$lib/governanceVotes`); renders, never decides.
 
   import { onDestroy } from "svelte";
+  import { nameOf } from "$lib/names";
+  import { userName } from "@holons/core/identity";
   import type { HoloSphere } from "holosphere";
   import { t } from "$lib/i18n";
   import { currentUser, isLoggedIn, loginOpen } from "$lib/auth";
@@ -82,7 +84,13 @@
     const u = roster?.users.find((x) => String(x?.id ?? "") === id) as
       | { first_name?: string; username?: string }
       | undefined;
-    return u?.first_name || u?.username || $partnerNames[id] || id;
+    return (
+      (u
+        ? userName(u, { lastName: "initial", idFallback: false, unknown: "" })
+        : "") ||
+      $partnerNames[id] ||
+      $nameOf(id)
+    );
   };
 
   async function cast(choice: VoteChoice) {
@@ -225,11 +233,12 @@
   .choice.on {
     border-color: var(--teal);
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
   }
   .choice.on.no {
-    border-color: #c0392b;
-    background: #c0392b;
+    border-color: var(--danger);
+    background: var(--danger);
+    color: var(--on-danger);
   }
   .choice:disabled {
     opacity: 0.6;
@@ -241,14 +250,14 @@
     background: none;
     border: 0;
     padding: 0;
-    color: var(--teal);
+    color: var(--teal-ink);
     font: inherit;
     cursor: pointer;
     text-decoration: underline;
   }
   .error {
     margin: 0.4rem 0 0;
-    color: #c0392b;
+    color: var(--danger);
     font-size: 0.82rem;
   }
   .ballots {
@@ -275,11 +284,11 @@
   }
   .choice-tag.yes {
     border-color: var(--teal);
-    color: var(--teal);
+    color: var(--teal-ink);
   }
   .choice-tag.no {
     border-color: #c0392b;
-    color: #c0392b;
+    color: var(--danger);
   }
   .badge {
     font-size: 0.72rem;

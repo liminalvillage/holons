@@ -44,6 +44,12 @@ describe('userName', () => {
     expect(userName({ username: 'ada' })).toBe('ada');
     expect(userName({ name: 'ada' }, { at: true })).toBe('@ada');
   });
+  it('a handle that is only the id, or digits, is not a name', () => {
+    expect(userName({ id: 42, username: '42' })).toBe('#42');
+    expect(userName({ id: 42, username: '123456' }, { idFallback: false, unknown: '' })).toBe('');
+    expect(userName({ id: 42, username: '@ada' }, { at: true })).toBe('@ada');
+    expect(userName({ id: 42, first_name: 'Ada', username: '42' })).toBe('Ada');
+  });
   it('falls back to #id then the unknown string', () => {
     expect(userName({ id: 42 })).toBe('#42');
     expect(userName({ id: 42 }, { idFallback: false })).toBe('Unknown');

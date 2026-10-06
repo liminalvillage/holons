@@ -20,6 +20,7 @@ import {
 import { MEMBERS_LENS, POLICY_LENS, importPartnerLogs, lensContext, readMembersLog } from '@holons/core/protocol';
 import { attestationsFrom, SHIFT_IDENTITY_LENS } from '@holons/core/shifts';
 import type { ToolDeps } from './index.js';
+import { namesFor } from './names.js';
 
 function ok(payload: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
@@ -120,6 +121,8 @@ export function registerGovernanceTools(server: McpServer, deps: ToolDeps): void
         const proposals = args.proposal ? [args.proposal] : Object.keys(ctx.folded.ballots);
         const tallies: Record<string, unknown> = {};
         for (const p of proposals) tallies[p] = tallyBallots(ctx.folded.ballots[p] ?? {}, memberIds, { delegations });
+        const shown = args.proposal ? ctx.folded.votes.filter((v) => v.proposal === args.proposal) : ctx.folded.votes;
+        const names = await namesFor(hs, args.holon, [...shown.map((v) => v.party), ...shown.map((v) => v.origin), ...memberIds]);
         return ok({
           success: true,
           source: ctx.actors.source,
@@ -127,6 +130,7 @@ export function registerGovernanceTools(server: McpServer, deps: ToolDeps): void
           policy: ctx.policy,
           myPubkey: hs.currentPubkey,
           myRole: ctx.actors.roleAt(hs.currentPubkey, Math.floor(Date.now() / 1000)),
+          names,
           imports: ctx.folded.imports,
           votes: args.proposal ? ctx.folded.votes.filter((v) => v.proposal === args.proposal) : ctx.folded.votes,
           ballots: args.proposal ? { [args.proposal]: ctx.folded.ballots[args.proposal] ?? {} } : ctx.folded.ballots,

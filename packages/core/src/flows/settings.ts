@@ -178,10 +178,13 @@ export function toAllocationPartners(
   // The federation record can list a partner twice (double link, replayed
   // write); UIs key on the id, so dedupe here rather than in every renderer.
   const ids = [...new Set((federated ?? []).map((id) => String(id ?? '')).filter(Boolean))];
+  // A person's id is their personal holon's id, and a joined personal holon
+  // is also a federation partner: a ring set on the person must still count
+  // when the partner map says nothing, or the placement silently vanishes.
   const holons: AllocationPartner[] = ids.map((id) => ({
     id,
     name: partnerNames?.[id] || id,
-    zone: zones[id] ?? 0,
+    zone: zones[id] ?? people?.[id] ?? 0,
     kind: 'holon',
   }));
   const seated = new Set(ids);

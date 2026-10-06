@@ -5,6 +5,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { deriveTelegramNostrKey } from '@holons/core/auth';
 import { toNpub, toNsec } from '@holons/core/nostr';
 import Keys, { keyLinkRelaysFromEnv } from '../src/Keys.js';
+import {
+  buildKeyLinkOffer,
+  keyLinkDeepLinkPayload,
+  keyLinkProofTemplate,
+} from '@holons/core/users';
 
 const SECRET = 'test-derivation-secret';
 const OWN_PK = 'a'.repeat(64);
@@ -231,6 +236,58 @@ describe('/key', () => {
     const cmd = ctxFor({ text: `/key unlink ${OWN_NPUB}` });
     await keys.command(cmd);
     expect(cmd.reply.mock.calls[0][0]).toMatch(/not linked to you/);
+  });
+});
+
+describe('/start keylink_… (proof published from the screen)', () => {
+  function published(offer, over = {}) {
+    return { ...keyLinkProofTemplate(offer), pubkey: offer.pubkey, ...over };
+  }
+
+  it('links the key the fresh note proves, once, and attests it', async () => {
+    const { keys, db, pool, changed } = build();
+    const offer = buildKeyLinkOffer(OWN_PK, { now: 1_800_000_000 });
+    const payload = keyLinkDeepLinkPayload(offer);
+    pool.querySync.mockResolvedValueOnce([published(offer)]);
+    const ctx = ctxFor({ text: `/start ${payload}` });
+    await keys.acceptDeepLink(ctx, payload);
+    expect(pool.querySync.mock.calls[0][1]).toMatchObject({
+      kinds: [1],
+      '#t': [offer.code],
+    });
+    expect(ctx.reply.mock.calls[0][0]).toContain(
+      `Linked <code>${OWN_NPUB}</code>`
+    );
+    expect(changed).toHaveBeenCalledWith(42);
+    const profile = await db.get('42', 'users', '42');
+    expect(profile.linkedKeys).toEqual([OWN_PK]);
+
+    // a second tap with the same code, from another account, is refused
+    const other = ctxFor({ userId: 43, text: `/start ${payload}` });
+    await keys.acceptDeepLink(other, payload);
+    expect(other.reply.mock.calls[0][0]).toMatch(/already used/);
+    expect(await db.get('43', 'users', '43')).toBeNull();
+  });
+
+  it('refuses when no fresh note by a matching key is on the relays', async () => {
+    const { keys, pool } = build();
+    const offer = buildKeyLinkOffer(OWN_PK, { now: 1_800_000_000 });
+    const payload = keyLinkDeepLinkPayload(offer);
+    // a stranger posted the code from their own key
+    pool.querySync.mockResolvedValueOnce([
+      published(offer, { pubkey: 'b'.repeat(64) }),
+    ]);
+    const ctx = ctxFor({ text: `/start ${payload}` });
+    await keys.acceptDeepLink(ctx, payload);
+    expect(ctx.reply.mock.calls[0][0]).toMatch(/could not find a fresh proof/);
+
+    const junk = ctxFor({ text: '/start keylink_nope' });
+    await keys.acceptDeepLink(junk, 'keylink_nope');
+    expect(junk.reply.mock.calls[0][0]).toMatch(/not one I can read/);
+
+    const group = ctxFor({ chatType: 'group', text: `/start ${payload}` });
+    await keys.acceptDeepLink(group, payload);
+    expect(group.reply.mock.calls[0][0]).toMatch(/private chat/);
   });
 });
 

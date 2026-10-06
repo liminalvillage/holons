@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { nameOf as resolvedName } from "$lib/names";
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
   // A read-only Sankey, drawn from geometry core already worked out.
@@ -94,8 +95,9 @@
   $: title = hoverNode
     ? hoverNode.label
     : hoverLink
-      ? `${nodeById.get(hoverLink.source)?.label ?? hoverLink.source} → ${
-          nodeById.get(hoverLink.target)?.label ?? hoverLink.target
+      ? `${nodeById.get(hoverLink.source)?.label ?? $resolvedName(hoverLink.source)} → ${
+          nodeById.get(hoverLink.target)?.label ??
+          $resolvedName(hoverLink.target)
         }`
       : "";
 
@@ -404,8 +406,8 @@
             d={scalePath(link.path, VW, VH)}
             role="img"
             aria-label="{nodeById.get(link.source)?.label ??
-              link.source} to {nodeById.get(link.target)?.label ??
-              link.target}: {shown(link)}"
+              $resolvedName(link.source)} to {nodeById.get(link.target)
+              ?.label ?? $resolvedName(link.target)}: {shown(link)}"
             on:mouseenter={(e) => {
               hoverNode = null;
               hoverLink = link;
@@ -812,7 +814,7 @@
   }
 
   .tip-value {
-    color: var(--teal);
+    color: var(--teal-ink);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }

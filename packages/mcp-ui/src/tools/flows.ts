@@ -46,6 +46,7 @@ import {
 import { MEMBERS_LENS, POLICY_LENS, importPartnerLogs, lensContext, readMembersLog } from '@holons/core/protocol';
 import { attestationsFrom, SHIFT_IDENTITY_LENS } from '@holons/core/shifts';
 import type { ToolDeps } from './index.js';
+import { namesFor } from './names.js';
 
 function ok(payload: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
@@ -352,6 +353,13 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
       try {
         const hs = await deps.getHoloSphere();
         const { ctx, ceilings, pots, truncated } = await judgedClaims(hs, args.holon);
+        const names = await namesFor(hs, args.holon, [
+          ...Object.keys(ceilings),
+          ...Object.keys(ctx.folded.byParty),
+          ...ctx.folded.claims.map((c) => c.party),
+          ...ctx.folded.claims.map((c) => c.pubkey),
+          ...ctx.folded.imports.map((i) => i.holon),
+        ]);
         return ok({
           success: true,
           source: ctx.actors.source,
@@ -359,6 +367,7 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
           policy: ctx.policy,
           myPubkey: hs.currentPubkey,
           myRole: ctx.actors.roleAt(hs.currentPubkey, Math.floor(Date.now() / 1000)),
+          names,
           imports: ctx.folded.imports,
           claims: ctx.folded.claims,
           payouts: ctx.folded.payouts,
@@ -413,6 +422,11 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
           loadMints(hs, args.holon),
           loadInboundRights(hs, args.holon, { scoreOf: scoreOf(hs) }),
         ]);
+        const names = await namesFor(hs, args.holon, [
+          ...ctx.folded.mints.map((m) => m.pubkey),
+          ...ctx.folded.mints.map((m) => m.source),
+          ...inbound.inbound.map((r) => r.from),
+        ]);
         return ok({
           success: true,
           holon: args.holon,
@@ -420,6 +434,7 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
           policy: ctx.policy,
           myPubkey: hs.currentPubkey,
           myRole: ctx.actors.roleAt(hs.currentPubkey, Math.floor(Date.now() / 1000)),
+          names,
           byUnit: ctx.folded.byUnit,
           pendingByUnit: ctx.folded.pendingByUnit,
           mints: ctx.folded.mints,
@@ -449,7 +464,8 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
       try {
         const hs = await deps.getHoloSphere();
         const entries = await hs.getLog(args.holon, args.lens, { since: args.since, until: args.until, authors: args.authors });
-        return ok({ success: true, count: entries.length, entries: entries.map((e: any) => ({ id: e.id, pubkey: e.pubkey, created_at: e.created_at, refs: e.refs, item: e.item })) });
+        const names = await namesFor(hs, args.holon, entries.map((e: any) => e.pubkey));
+        return ok({ success: true, count: entries.length, names, entries: entries.map((e: any) => ({ id: e.id, pubkey: e.pubkey, created_at: e.created_at, refs: e.refs, item: e.item })) });
       } catch (err) {
         return fail((err as Error).message);
       }

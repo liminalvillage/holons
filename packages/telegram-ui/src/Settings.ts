@@ -29,6 +29,7 @@ import { REAEventStore } from '@holons/core/rea';
 import { registerHolon } from '@holons/core/holosphere';
 import { audience, lock, share, unlock, unshare } from '@holons/core/privacy';
 import { parseClaimPayload, recordHolonClaim } from '@holons/core/onboarding';
+import { KEY_LINK_DEEPLINK_PREFIX } from '@holons/core/users';
 import {
   acceptTelegramLink,
   linkedHolons,
@@ -159,6 +160,8 @@ export default class Settings {
     this.bot = bot;
     this.holons = null;
     this.quests = null;
+    /** The /key service, for `/start keylink_…` (set by the container). */
+    this.keys = null;
 
     this._settingsCache = new Map();
     this._cacheTTL = 60 * 1000;
@@ -273,6 +276,19 @@ export default class Settings {
         const payload = ctx.message.text.split(' ')[1];
         if (payload && payload.startsWith('join_') && chatType === 'private') {
           await this._handleJoinDeeplink(ctx, payload, language);
+          return;
+        }
+
+        // A screen that holds a key published its proof and sent the person
+        // here (`keylink_<code>_<keyprefix>`, see @holons/core/users): the
+        // /key service checks the note and links the key to this account.
+        if (
+          payload &&
+          payload.startsWith(KEY_LINK_DEEPLINK_PREFIX) &&
+          chatType === 'private' &&
+          this.keys
+        ) {
+          await this.keys.acceptDeepLink(ctx, payload);
           return;
         }
 
@@ -685,7 +701,7 @@ export default class Settings {
         if (federatedHolons.length === 0) {
           message += 'This chat is not federated with any other spaces.';
         } else {
-          message += `This chat (${holonId}) is federated with:\n`;
+          message += `${await utils.getHolonName(this.db, holonId, ctx)} is federated with:\n`;
           for (const space of federatedHolons) {
             const lensConfig = fedInfo.lensConfig?.[space] || {};
             const inLenses = lensConfig.inbound || [];
@@ -2606,6 +2622,11 @@ export default class Settings {
   }
 
   // Re-add this method to allow injection of Holons instance
+  /** The /key service answers `/start keylink_…` deep links. */
+  setKeysInstance(keys) {
+    this.keys = keys;
+  }
+
   setHolonsInstance(holonsInstance) {
     this.holons = holonsInstance;
     // Forward the holons instance to the scenes
@@ -5316,79 +5337,20 @@ export default class Settings {
    */
   async getHolonDisplayName(holonIdOrPubkey, ctx) {
     if (!holonIdOrPubkey) return 'Unknown Holon';
-
     const idStr = String(holonIdOrPubkey);
-    const isPubkey = /^[0-9a-f]{64}$/i.test(idStr);
-
-    // If it's a pubkey, first try to get partner name from federation metadata
-    if (isPubkey && ctx) {
+    // A federation partner's name as this chat recorded it, then the shared
+    // lookup every surface uses (settings, HNS, a key's profile, the chat title).
+    if (/^[0-9a-f]{64}$/i.test(idStr) && ctx) {
       try {
         const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
-        if (holonId) {
-          const fedData = await this.db.getFederation(holonId);
-          const partnerName = fedData?.partnerNames?.[idStr.toLowerCase()];
-          if (partnerName) {
-            return partnerName;
-          }
-        }
-      } catch (error) {
-        // Partner name not found, continue
+        const fedData = holonId ? await this.db.getFederation(holonId) : null;
+        const partnerName = fedData?.partnerNames?.[idStr.toLowerCase()];
+        if (partnerName) return partnerName;
+      } catch {
+        /* no federation record */
       }
     }
-
-    // Determine the actual holon ID to use for lookups
-    let lookupHolonId = idStr;
-
-    // If it's a pubkey, try to resolve to telegram ID
-    if (isPubkey && this.db.keyManager) {
-      try {
-        const telegramId = await this.db.keyManager.getTelegramId(
-          idStr.toLowerCase()
-        );
-        if (telegramId) {
-          lookupHolonId = telegramId;
-        }
-      } catch (error) {
-        // Could not resolve, continue with pubkey
-      }
-    }
-
-    try {
-      // Try to get the holon's settings to find its name
-      const settings = await this.db.get(
-        lookupHolonId,
-        'settings',
-        lookupHolonId
-      );
-      if (settings && settings.name && settings.name !== 'unknown') {
-        return settings.name;
-      }
-    } catch (error) {
-      // Settings not found, continue to fallback
-    }
-
-    // Try to get Telegram chat name if ctx is provided
-    if (ctx && !isPubkey) {
-      try {
-        const holonName = await utils.getChatName(ctx, lookupHolonId);
-        if (
-          holonName &&
-          holonName !== 'unknown' &&
-          holonName !== null &&
-          holonName.trim() !== ''
-        ) {
-          return holonName;
-        }
-      } catch (error) {
-        // Chat name not available, continue to fallback
-      }
-    }
-
-    // Final fallback: for pubkeys, show truncated version; otherwise show the ID
-    if (isPubkey) {
-      return `${idStr.substring(0, 8)}...${idStr.substring(56)}`;
-    }
-    return lookupHolonId;
+    return utils.getHolonName(this.db, idStr, ctx);
   }
 
   /**

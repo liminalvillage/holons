@@ -174,6 +174,13 @@ describe('toAllocationPartners', () => {
       { id: 'u1', name: 'Ada', zone: 2, kind: 'person' },
     ]);
   });
+
+  it('keeps the ring set on a person whose personal holon is also a partner', () => {
+    // Liminal lists Roberto's personal holon as a partner (a joined hologram)
+    // and places him on ring 5 as a person; the partner map says nothing.
+    const partners = toAllocationPartners(['235114395'], {}, {}, { '235114395': 5 });
+    expect(partners).toEqual([{ id: '235114395', name: '235114395', zone: 5, kind: 'holon' }]);
+  });
 });
 
 describe('readZonePeople', () => {

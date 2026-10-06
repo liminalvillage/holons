@@ -185,6 +185,7 @@ describe('claim tools under the ceiling', () => {
 
     const before = payload(await tools.get('flow_claims_state')!({ holon: 'olive' }));
     expect(before.pots).toEqual({ l: 200 });
+    expect(before.names).toEqual(expect.objectContaining({ u1: 'u1', u2: 'u2' })); // nothing names them: the id itself
     expect(before.ceilings).toEqual({ u1: { L: 100 }, u2: { L: 100 } });
     expect(before.headroom).toEqual({ u1: { L: 100 }, u2: { L: 100 } });
 

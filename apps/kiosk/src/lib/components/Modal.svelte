@@ -15,6 +15,10 @@
   export let seed: number | undefined = undefined;
   /** A wide card for sheets that carry a board preview beside a form. */
   export let wide = false;
+  // The corner: the ✕ and, through the `corner` slot, a sheet's one headline
+  // action beside it. Its width is published as `--corner-w` on the card so
+  // the sheet's title can keep clear of it (`padding-right: var(--corner-w)`).
+  let cornerW = 0;
   function close() {
     dispatch("close");
   }
@@ -51,12 +55,16 @@
     class:wide
     style="--tint: {tint};{glow ? ` --glow: ${glow};` : ''}"
     style:--holo-seed={seed}
+    style:--corner-w="{cornerW}px"
     role="dialog"
     aria-modal="true"
   >
-    <button class="x" on:click={close} aria-label={$t("common.close")}
-      ><Icon name="close" /></button
-    >
+    <div class="corner" bind:clientWidth={cornerW}>
+      <slot name="corner" />
+      <button class="x" on:click={close} aria-label={$t("common.close")}
+        ><Icon name="close" /></button
+      >
+    </div>
     <div class="body scroll">
       <slot />
     </div>
@@ -115,17 +123,22 @@
       transform: scale(1) translateY(0);
     }
   }
-  .x {
+  .corner {
     position: absolute;
     top: 0.8rem;
     right: 0.8rem;
     z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .x {
     width: 44px;
     height: 44px;
     border-radius: 50%;
     font-size: 1.1rem;
     color: var(--ink-soft);
-    background: rgba(255, 255, 255, 0.55);
+    background: var(--ghost);
     display: grid;
     place-items: center;
   }

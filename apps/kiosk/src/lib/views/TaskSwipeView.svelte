@@ -718,13 +718,16 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: rgba(32, 48, 47, 0.55);
+    color: var(--ink-soft);
   }
   .src {
     font-size: 0.74rem;
     font-weight: 700;
-    color: var(--glow, var(--teal-deep));
-    background: rgba(255, 255, 255, 0.7);
+    /* The source holon's own hue, carried by the ink rather than replacing it:
+       a holon's colour is a ground (a pastel by day, a jewel by night), never
+       something to read on its own. */
+    color: color-mix(in srgb, var(--glow, var(--teal)) 30%, var(--ink));
+    background: var(--glass);
     border-radius: 999px;
     padding: 0.1rem 0.5rem;
     max-width: 11rem;
@@ -736,7 +739,7 @@
     font-size: 0.78rem;
     font-weight: 700;
     color: var(--ink);
-    background: rgba(255, 255, 255, 0.55);
+    background: var(--glass);
     border-radius: 999px;
     padding: 0.1rem 0.55rem;
   }
@@ -751,7 +754,7 @@
     width: 1.9rem;
     height: 1.9rem;
     line-height: 1;
-    color: rgba(154, 59, 47, 0.55);
+    color: var(--heart-quiet);
   }
   .heart .glyph {
     grid-area: 1 / 1;
@@ -762,11 +765,10 @@
     transform: translateY(0.1em);
     font-size: 0.66rem;
     font-weight: 800;
-    color: #fff;
-    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+    color: var(--on-heart);
   }
   .heart.on {
-    color: #d4493a;
+    color: var(--heart);
   }
 
   /* Foreign-holon glow, same treatment as the wall. */
@@ -790,24 +792,24 @@
     letter-spacing: 0.08em;
     opacity: 0;
     pointer-events: none;
-    background: rgba(255, 255, 255, 0.55);
+    background: var(--glass);
     z-index: 3;
   }
   .stamp.join {
     left: 1rem;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     transform: rotate(-14deg);
   }
   .stamp.skip {
     right: 1rem;
-    color: #6d7b79;
+    color: var(--ink-soft);
     transform: rotate(14deg);
   }
   .stamp.like {
     top: auto;
     bottom: 4.2rem;
     left: 50%;
-    color: #d4493a;
+    color: var(--heart);
     transform: translateX(-50%) rotate(-6deg);
   }
 
@@ -818,7 +820,7 @@
     right: -2.6rem;
     transform: rotate(35deg);
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     font-size: 0.72rem;
     font-weight: 800;
     letter-spacing: 0.08em;
@@ -875,7 +877,7 @@
     display: grid;
     place-items: center;
     font-size: 7rem;
-    color: #d4493a;
+    color: var(--heart);
     pointer-events: none;
     z-index: 30;
     animation: swipe-heartpop 0.9s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
@@ -913,7 +915,7 @@
   }
   .alldone .star {
     font-size: 3rem;
-    color: var(--teal);
+    color: var(--teal-ink);
     animation: swipe-glow 2.4s ease-in-out infinite;
   }
   @keyframes swipe-glow {
@@ -952,7 +954,7 @@
   }
   .doneactions .primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .doneactions .ghost {

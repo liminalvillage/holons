@@ -62,7 +62,7 @@
     } from "@holons/core/datetime";
     import { getEventStore } from "../lib/rea/eventStore";
     import { queryManager } from "$lib/holosphere/QueryManager";
-    import { reflectMembership } from "../utils/reflectMembership";
+    import { refreshMemberDm } from "../utils/refreshMemberDm";
     import { Lock, Unlock } from "svelte-feathers";
     import { isLocked } from "@holons/core/privacy";
     import AudienceEditor from "./shared/AudienceEditor.svelte";
@@ -336,8 +336,17 @@
         quest = updatedQuest;
         dispatch("updated", { questId, quest: updatedQuest });
 
-        // Sync quest in background — roll back on failure.
-        holosphere.put(holonId, lens, updatedQuest).catch((error: any) => {
+        // Sync quest in background — roll back on failure. Core mirrors the
+        // change into the member's personal holon as part of this write; once
+        // it landed, a member who left gets their linked DM refreshed.
+        // `isSelected` is the pre-toggle state, so joined === !isSelected.
+        holosphere.put(holonId, lens, updatedQuest).then(() => {
+            refreshMemberDm({
+                questId: String(updatedQuest.id),
+                userId: user.id,
+                joined: !isSelected,
+            });
+        }).catch((error: any) => {
             quest = previousQuest;
             dispatch("updated", { questId, quest: previousQuest });
             if (error?.name === 'AuthorizationError') {
@@ -355,15 +364,6 @@
             });
         }
 
-        // Mirror into the member's personal holon + (re)send the linked DM.
-        // `isSelected` is the pre-toggle state, so joined === !isSelected.
-        void reflectMembership({
-            holosphere,
-            holonId,
-            questId: String(updatedQuest.id),
-            userId: user.id,
-            joined: !isSelected,
-        });
     }
 
     // Hosts of an event: when any is named they get the credit for it;
@@ -1002,7 +1002,9 @@
         }
         const nostrPubKey = $nostrPublicKey;
         if (nostrPubKey) {
-            return { id: nostrPubKey, username: nostrPubKey.slice(0, 8) + '...', firstName: 'Nostr', lastName: 'User' };
+            // The key alone: its name is resolved wherever it is shown (kind 0,
+            // the holon's record), never a stand-in stored on the task.
+            return { id: nostrPubKey };
         }
         return undefined; // core falls back to the parent task's initiator
     }
@@ -1383,9 +1385,10 @@
                 
                 {#if holosphere && holonId && questId}
                     <div class="mt-2">
+                        <!-- The lock sits at the far right of its row. -->
                         <button
                             type="button"
-                            class="inline-flex items-center gap-1 text-xs text-gray-300 hover:text-white"
+                            class="ml-auto flex items-center gap-1 text-xs text-gray-300 hover:text-white"
                             aria-expanded={lockOpen}
                             title={cardLocked ? "Private — only this holon and the holons it is shared with can read it" : "Public — anyone can read it"}
                             on:click={() => (lockOpen = !lockOpen)}

@@ -1,6 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import Icon from "$lib/components/Icon.svelte";
+  import { nameOf as resolvedName } from "$lib/names";
   //
   // The allocation split, editable where it is read — the kiosk's take on the
   // dashboard's AllocationEditor. Move a slider, place a partner — or a
@@ -46,6 +47,9 @@
     chainStanding,
     describeChain,
     loadBundleRecord,
+    addBundleToken,
+    formatHolding,
+    holdingLines,
     resolveInteriorMembers,
     saveAllocationConfig,
     saveCollectiveSlug,
@@ -55,6 +59,7 @@
     type AllocationMember,
     type InboundRight,
     type Mint,
+    type BundleHoldings,
     type CascadeResult,
     type HolonBundleRecord,
     type InteriorMode,
@@ -65,8 +70,10 @@
     bindOnChain,
     connectedWallet,
     deployBundleOnChain,
+    describeToken,
     isWalletAvailable,
     readBindings,
+    readHoldings,
     syncAllocationOnChainAndMirror,
     walletChainId,
     type BundleBindings,
@@ -97,6 +104,8 @@
   export let collectiveSlug = "";
   /** The holon's deployed Bundle contract, when there is one. */
   export let bundle: HolonBundleRecord | null = null;
+  /** The person looking, so the Fund tab can say what is held for them. */
+  export let selfId: string | null = null;
   /** The cascade the board resolved, for the pre-flight before a bind. */
   export let cascade: CascadeResult | null = null;
   /** The units the board can be drawn in (`all` first) and the current one. */
@@ -379,7 +388,10 @@
   $: nameOfPerson = new Map(candidates.map((c) => [c.id, c.name]));
   $: placedPeople = Object.entries(personZone)
     .filter(([, zone]) => zone >= 1)
-    .map(([id]) => ({ id, name: nameOfPerson.get(id) ?? id }))
+    .map(([id]) => ({
+      id,
+      name: nameOfPerson.get(id) ?? nameOf(id) ?? $resolvedName(id),
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
   $: unplaced = candidates
     .filter(
@@ -426,7 +438,8 @@
       nameOfPerson.get(id) ??
       scoredOf.get(id)?.name ??
       nameOfPartner.get(id) ??
-      id,
+      nameOf(id) ??
+      $resolvedName(id),
     scored: scoredOf.get(id)?.percentage,
     text: shareText[id] ?? pct(shareOf[id]),
     ofTotal: shareOfTotal[id] ?? 0,
@@ -535,6 +548,58 @@
   let copied = false;
   $: if (tab === "fund" && hasWallet)
     void walletChainId().then((id) => (walletChain = id));
+
+  // ── What the contract holds ─────────────────────────────────────────
+  // Read whenever the Fund tab shows a Bundle: with the wallet's provider
+  // when it is on the Bundle's chain, else the chain's public endpoint, so
+  // a kiosk without a wallet still shows the litres are there. Re-read
+  // after a bind (it pays out what was held) and after a token is listed.
+  let holdings: BundleHoldings | null = null;
+  let holdingsLoading = false;
+  let holdingsKey = "";
+  $: holdingsWant = bundle
+    ? `${bundle.address}#${bundle.chainId ?? ""}#${(bundle.tokens ?? [])
+        .map((t) => t.address)
+        .join(",")}#${selfId ?? ""}`
+    : "";
+  $: if (tab === "fund" && bundle) void loadHoldings(bundle, holdingsWant);
+
+  async function loadHoldings(record: HolonBundleRecord, want: string) {
+    if (want === holdingsKey) return;
+    holdingsKey = want;
+    holdingsLoading = true;
+    try {
+      const read = await readHoldings(record, selfId);
+      if (holdingsKey === want) holdings = read;
+    } catch (err) {
+      console.warn("[kiosk] holdings read failed", err);
+      if (holdingsKey === want) holdings = null;
+    } finally {
+      if (holdingsKey === want) holdingsLoading = false;
+    }
+  }
+  $: holdingRows = holdingLines(holdings);
+
+  let tokenAddress = "";
+  let tokenBusy = false;
+  let tokenError = "";
+  /** List an ERC-20 on the record: from then on the fund is read in it too. */
+  async function trackToken() {
+    if (!bundle || tokenBusy) return;
+    tokenBusy = true;
+    tokenError = "";
+    try {
+      const token = await describeToken(bundle.chainId ?? null, tokenAddress);
+      const store = await getReaStore();
+      bundle = await addBundleToken(store, holonId, token);
+      tokenAddress = "";
+      holdingsKey = "";
+    } catch (err: any) {
+      tokenError = err?.message ?? $t("alloc.tokenFailed");
+    } finally {
+      tokenBusy = false;
+    }
+  }
   $: standing = chainStanding(bundle, walletChain);
   $: bundleChain = describeChain(bundle?.chainId);
   $: explorer = bundleExplorerUrl(bundle);
@@ -682,6 +747,7 @@
       bindNotice = $t("alloc.bindDone", { hash: hash.slice(0, 10) });
       bindFor = "";
       bindingsKey = "";
+      holdingsKey = "";
       void loadBindings(bundle.address, partyIds);
     } catch (err: any) {
       bindNotice = "";
@@ -1394,7 +1460,7 @@
                 <div class="pline">
                   <span class="pname"
                     >{$t("alloc.inboundFrom", {
-                      name: nameOf(r.from) ?? r.from,
+                      name: nameOf(r.from) ?? $resolvedName(r.from),
                     })}</span
                   >
                   <span class="pshare">{r.right} {r.unit.toUpperCase()}</span>
@@ -1411,7 +1477,7 @@
                   <span class="pname"
                     >{m.amount}
                     {m.unit}{m.memo ? ` — ${m.memo}` : ""}{m.source
-                      ? ` · ${nameOf(m.source) ?? m.source}`
+                      ? ` · ${nameOf(m.source) ?? $resolvedName(m.source)}`
                       : ""}</span
                   >
                   <span class="pshare" class:warn={m.status !== "issued"}
@@ -1513,6 +1579,48 @@
               <span class="chain-k">{$t("alloc.chainAddress")}</span>
               <code class="chain-addr">{bundle.address}</code>
             </div>
+            <!-- The contract's own books: per unit, what it holds, how much
+                 of that waits for members who have not bound a wallet, and
+                 what waits for the person looking. -->
+            <div class="chain-row">
+              <span class="chain-k">{$t("alloc.holdsTitle")}</span>
+              {#if holdingRows.length}
+                <ul class="hold-list">
+                  {#each holdingRows as line (line.unit + (line.address ?? ""))}
+                    <li class="hold-row">
+                      <span class="hold-total"
+                        >{formatHolding(line.total, line.unit)}</span
+                      >
+                      <span class="hold-detail">
+                        {#if line.held > 0}
+                          {$t("alloc.holdsHeld", {
+                            amount: formatHolding(line.held, line.unit),
+                          })}
+                        {/if}
+                        {#if line.free > 0}
+                          {$t("alloc.holdsFree", {
+                            amount: formatHolding(line.free, line.unit),
+                          })}
+                        {/if}
+                      </span>
+                      {#if (line.mine ?? 0) > 0}
+                        <span class="hold-mine"
+                          >{$t("alloc.holdsMine", {
+                            amount: formatHolding(line.mine ?? 0, line.unit),
+                          })}</span
+                        >
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              {:else if holdingsLoading}
+                <span class="chain-v muted">{$t("alloc.holdsReading")}</span>
+              {:else if holdings}
+                <span class="chain-v muted">{$t("alloc.holdsNothing")}</span>
+              {:else}
+                <span class="chain-v muted">{$t("alloc.holdsUnreadable")}</span>
+              {/if}
+            </div>
             <div class="chain-actions">
               <button class="chain-btn" on:click={copyAddress}
                 >{copied
@@ -1528,6 +1636,29 @@
                 >
               {/if}
             </div>
+            <!-- A token the fund is read in — the EVO voucher, say. -->
+            <div class="token-form">
+              <input
+                type="text"
+                autocapitalize="none"
+                spellcheck="false"
+                placeholder={$t("alloc.tokenHint")}
+                bind:value={tokenAddress}
+                disabled={tokenBusy}
+              />
+              <button
+                class="chain-btn"
+                disabled={tokenBusy ||
+                  !/^0x[0-9a-fA-F]{40}$/.test(tokenAddress.trim())}
+                on:click={trackToken}
+                >{tokenBusy
+                  ? $t("alloc.tokenReading")
+                  : $t("alloc.tokenTrack")}</button
+              >
+            </div>
+            {#if tokenError}
+              <p class="bind-warn">{tokenError}</p>
+            {/if}
           </div>
           {#if standing.kind === "elsewhere"}
             <p class="bind-warn">
@@ -1646,7 +1777,12 @@
                             {#if w === "loop"}
                               {$t("alloc.bindWarnLoop", {
                                 names: bindPreflight.loops[0]
-                                  .map((id) => nameOfPerson.get(id) ?? id)
+                                  .map(
+                                    (id) =>
+                                      nameOfPerson.get(id) ??
+                                      nameOf(id) ??
+                                      $resolvedName(id),
+                                  )
                                   .join(" → "),
                               })}
                             {:else if w === "large"}
@@ -1793,7 +1929,7 @@
     white-space: nowrap;
   }
   .tab.on .tsum {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .tabpanel:focus-visible {
     outline: 2px solid var(--teal);
@@ -1904,7 +2040,7 @@
     color: var(--ink);
   }
   .jv {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-size: 0.85rem;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1933,7 +2069,7 @@
   }
   .seg.on {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
   }
 
   /* ── Party rows ──────────────────────────────────────────────────────
@@ -1972,7 +2108,7 @@
     flex: 0 0 auto;
     font-size: 0.8rem;
     font-weight: 500;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-variant-numeric: tabular-nums;
   }
   .unplaced {
@@ -2004,7 +2140,7 @@
   }
   .rp.on {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
   }
   .rp.drop {
     flex: 0 0 44px;
@@ -2065,7 +2201,7 @@
     color: var(--ink);
   }
   .sum {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-variant-numeric: tabular-nums;
   }
   .rowactions {
@@ -2085,7 +2221,7 @@
     min-height: 44px;
   }
   .pshare.warn {
-    color: #b45309;
+    color: var(--caution);
   }
 
   .picker {
@@ -2109,7 +2245,7 @@
     min-height: 48px;
     border-radius: 12px;
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     font-size: 1.2rem;
     touch-action: manipulation;
   }
@@ -2158,7 +2294,7 @@
     gap: 0.5rem;
   }
   .chain-v.warn {
-    color: #a3540d;
+    color: var(--caution);
     font-weight: 500;
   }
   .chain-tag {
@@ -2170,6 +2306,57 @@
     border-radius: 6px;
     background: var(--paper);
     color: var(--muted);
+  }
+  .hold-list {
+    list-style: none;
+    margin: 0.15rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .hold-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.6rem;
+  }
+  .hold-total {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .hold-detail {
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .hold-mine {
+    flex-basis: 100%;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .chain-v.muted {
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 0.85rem;
+  }
+  .token-form {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.6rem;
+  }
+  .token-form input {
+    flex: 1;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0.4rem 0.6rem;
+    border: 1.5px solid var(--line);
+    border-radius: 10px;
+    background: var(--paper);
+    color: var(--ink);
+    font: inherit;
+    font-size: 0.85rem;
   }
   .chain-addr {
     display: block;
@@ -2238,7 +2425,7 @@
     font-variant-numeric: tabular-nums;
   }
   .bind-status.bound {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .bind-btn {
     grid-area: btn;
@@ -2274,13 +2461,13 @@
   }
   .bind-own.on {
     border-color: var(--teal);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .bind-warn {
     margin: 0.5rem 0 0;
     font-size: 0.85rem;
     line-height: 1.4;
-    color: #a3540d;
+    color: var(--caution);
   }
   .bind-actions {
     display: flex;
@@ -2351,7 +2538,7 @@
   }
   .rs {
     font-size: 0.6rem;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
@@ -2392,7 +2579,7 @@
   }
   .chip.on {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .dates {
@@ -2438,7 +2625,7 @@
   }
   .primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .ghost {
@@ -2467,12 +2654,12 @@
     opacity: 0.45;
   }
   .error {
-    color: #c0392b;
+    color: var(--danger);
     font-size: 0.88rem;
     margin: 0 0 0.6rem;
   }
   .notice {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-size: 0.88rem;
     margin: 0 0 0.6rem;
   }

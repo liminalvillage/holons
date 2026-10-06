@@ -19,6 +19,28 @@ import {
 import { attestationsFrom, SHIFT_IDENTITY_LENS } from '@holons/core/shifts';
 import { deriveTelegramNostrKey } from '@holons/core/auth';
 import { linkedKeysOf } from '@holons/core/users';
+import {
+  createNameResolver,
+  normalizeId,
+  shortId,
+  userName,
+} from '@holons/core/identity';
+
+// One name resolver per instance (`@holons/core/identity`): the same rule
+// every surface applies — the holon's users, the person's own record, the
+// key directory, kind-0 profiles, settings, never a bare id. Bot style:
+// "Ada L.".
+const resolvers = new WeakMap();
+
+/** The instance's name resolver (created on first use). */
+export function nameResolver(db) {
+  let r = resolvers.get(db);
+  if (!r) {
+    r = createNameResolver(db, { format: { lastName: 'initial' } });
+    resolvers.set(db, r);
+  }
+  return r;
+}
 
 /**
  * Everything a `fold*FromLenses` takes for `lens`, from the instance.
@@ -112,8 +134,20 @@ export async function appendAsMember(
   });
 }
 
-/** Member id → display name, from the users lens. */
-export async function memberNames(db, holon) {
+/**
+ * Member → display name, from the users lens, keyed by the member's id AND
+ * by every key they hold — the derived one (with the secret) and the keys
+ * they linked — so a claim or vote signed by any of them names the person.
+ * A record with no name is shown in the short form (`#id`), never bare.
+ * @param {object} db
+ * @param {string} holon
+ * @param {{ secret?: string }} [options] NOSTR_DERIVATION_SECRET (default: the env)
+ */
+export async function memberNames(
+  db,
+  holon,
+  { secret = process.env.NOSTR_DERIVATION_SECRET ?? '' } = {}
+) {
   const map = new Map();
   let users = [];
   try {
@@ -123,8 +157,60 @@ export async function memberNames(db, holon) {
   }
   for (const u of users) {
     if (!u || u.id === undefined || u.id === null) continue;
-    const name = u.first_name || u.username || String(u.id);
-    map.set(String(u.id), u.username ? `${name} (@${u.username})` : name);
+    const id = String(u.id);
+    const own = userName(u, {
+      lastName: 'initial',
+      idFallback: false,
+      unknown: '',
+    });
+    const handle = String(u.username ?? '').replace(/^@/, '');
+    const withHandle =
+      own && handle && !/^\d+$/.test(handle) && handle !== own
+        ? `${own} (@${handle})`
+        : own;
+    const label = withHandle || shortId(id);
+    map.set(id, label);
+    const keys = [...linkedKeysOf(u)];
+    if (secret && /^\d+$/.test(id)) {
+      try {
+        keys.push(deriveTelegramNostrKey(id, secret).publicKey);
+      } catch {
+        /* unparsable id */
+      }
+    }
+    for (const k of keys) if (k && !map.has(k)) map.set(k, label);
   }
   return map;
+}
+
+/**
+ * Names for `ids` in `holon`: members from the users lens, everyone and
+ * everything else (partner holons, foreign keys) through the resolver.
+ * Every id given is in the result — named, or in the short form.
+ * @param {object} db
+ * @param {string} holon
+ * @param {Iterable<string>} ids
+ * @returns {Promise<Map<string, string>>}
+ */
+export async function partyNames(db, holon, ids = []) {
+  const map = await memberNames(db, holon);
+  const rest = [
+    ...new Set([...ids].map(id => String(id ?? '')).filter(Boolean)),
+  ].filter(id => !map.has(id) && !map.has(normalizeId(id)));
+  if (rest.length) {
+    const r = nameResolver(db);
+    r.setHolon(String(holon));
+    try {
+      for (const [id, name] of await r.resolve(rest)) map.set(id, name);
+    } catch {
+      for (const id of rest) map.set(id, shortId(id));
+    }
+  }
+  return map;
+}
+
+/** One member's label in `holon`, resolved by any id or key. */
+export async function memberDisplayName(db, holon, id) {
+  const names = await partyNames(db, holon, [id]);
+  return names.get(String(id)) ?? names.get(normalizeId(id)) ?? shortId(id);
 }

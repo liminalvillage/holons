@@ -31,7 +31,6 @@ import {
   parsePresence,
   PRESENCE_TTL_MS,
   resolutionToZoom,
-  rimFade,
   serializePresence,
   viewportCells,
   zoomToResolution,
@@ -507,28 +506,5 @@ describe("grid coverage", () => {
       0,
     );
     expect(global.east - global.west).toBe(360);
-  });
-});
-
-describe("rim fade", () => {
-  it("leaves the whole map at full strength but for a band at the rim", () => {
-    expect(rimFade(0)).toBe(1); // the middle
-    expect(rimFade(0.8)).toBe(1); // most of the way out, still full
-    expect(rimFade(1)).toBeGreaterThan(0); // ON the edge, still drawn
-    expect(rimFade(1)).toBeLessThan(1);
-  });
-
-  it("keeps drawing the cells that straddle the edge, then stops", () => {
-    expect(rimFade(1.1)).toBeGreaterThan(0);
-    expect(rimFade(1.2)).toBe(0);
-  });
-
-  it("thins monotonically across the band", () => {
-    let prev = 1;
-    for (let e = 0.86; e <= 1.2; e += 0.02) {
-      const v = rimFade(e);
-      expect(v).toBeLessThanOrEqual(prev);
-      prev = v;
-    }
   });
 });

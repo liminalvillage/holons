@@ -28,9 +28,12 @@ import { toNpub, toNsec } from '@holons/core/nostr';
 import {
   buildKeyLinkChallenge,
   getLinkedKeys,
+  keyLinkProofByCodeFilter,
   keyLinkProofFilter,
+  keyLinkProofPubkey,
   linkUserKey,
   normalizePubkey,
+  parseKeyLinkPayload,
   unlinkUserKey,
   verifyKeyLinkProof,
   KEY_LINK_TTL_SEC,
@@ -315,6 +318,65 @@ export default class Keys {
         ]),
       }
     );
+  }
+
+  /**
+   * The screen's turn of the flow (`/start keylink_<code>_<keyprefix>`):
+   * the kiosk or the web signed and published the proof note with the key
+   * it holds and sent the person here. Find the note by its code, check the
+   * author matches the prefix and it is fresh, and link that key to whoever
+   * tapped. A code is honoured once — the note is public, so a second tap
+   * from another account must not annex the same key.
+   */
+  async acceptDeepLink(ctx, payload) {
+    if (!this.isPrivate(ctx)) return ctx.reply('Only in a private chat.');
+    const user = this.user(ctx);
+    if (!user) return;
+    const parsed = parseKeyLinkPayload(payload);
+    if (!parsed) return ctx.reply('That link is not one I can read.');
+    const now = this.now();
+    this.usedCodes ??= new Map();
+    for (const [code, at] of this.usedCodes)
+      if (now - at > KEY_LINK_TTL_SEC) this.usedCodes.delete(code);
+    if (this.usedCodes.has(parsed.code)) {
+      return ctx.reply(
+        'That link was already used. Start again from the screen.'
+      );
+    }
+    let events = [];
+    try {
+      const pool = await this.pool();
+      events = await pool.querySync(
+        this.relays,
+        keyLinkProofByCodeFilter(parsed.code, { now }),
+        { maxWait: 6000 }
+      );
+    } catch (err) {
+      console.error('[keys] proof lookup failed:', err);
+    }
+    const pk = keyLinkProofPubkey(events, parsed, { now });
+    if (!pk) {
+      return ctx.reply(
+        'I could not find a fresh proof for that key yet. Give the relays a moment and tap the link again, or start over from the screen.'
+      );
+    }
+    const derived = this.derived(user.id);
+    if (derived && pk === derived.publicKey) {
+      return ctx.reply('That is already your Holons key — nothing to link.');
+    }
+    const linked = await getLinkedKeys(this.db, user).catch(() => []);
+    if (linked.includes(pk)) {
+      this.usedCodes.set(parsed.code, now);
+      return ctx.reply('That key is already linked to you.');
+    }
+    this.usedCodes.set(parsed.code, now);
+    const keys = await linkUserKey(this.db, user, pk);
+    this.onLinkedKeysChanged(user.id);
+    await ctx.reply(
+      `🔗 Linked <code>${toNpub(pk)}</code>. ${keys.length} linked key${keys.length === 1 ? '' : 's'} now count as you on every board — your hubs will seat it on their next refresh.`,
+      { parse_mode: 'HTML' }
+    );
+    return this.overview(ctx);
   }
 
   /** Look for the proof note and record the link. */

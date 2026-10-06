@@ -532,7 +532,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.16em;
-    color: var(--teal);
+    color: var(--teal-ink);
   }
   h3 {
     margin: 0.2rem 0 0;
@@ -675,7 +675,7 @@
     min-height: 52px;
     border-radius: 14px;
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     font-size: 1rem;
     font-weight: 700;
     box-shadow: var(--shadow-soft);

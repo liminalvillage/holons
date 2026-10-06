@@ -186,6 +186,13 @@ legacy `federation[]`/`lensConfig` settings fields were removed):
 - `publishToFederation()` — routes an item to `all` federated partners, one
   `partner`, or one `hex` (H3 cell). By default it writes a standalone copy;
   hologram (soul-pointer) publication is opt-in via `useHolograms`.
+- The roster mirror (`attachRosterMirror`, `@holons/core/tasks`) — the one
+  standing hologram: `createHoloSphere` wraps `put` so that everyone a task
+  or event names (participants, and an event's hosts) holds a `{ id, soul }`
+  pointer to it in their own holon, written when they are added and dropped
+  when they are taken off. Adding a person is therefore only a roster edit
+  on any UI; no interface mirrors anything itself. `rosterMirror: false`
+  opts a tooling instance out.
 - `migrateLegacyFederationLinks()` — one-shot, merge-only fold of
   pre-unification settings-lens links into the native record; federation UIs
   call it best-effort before reading the snapshot.

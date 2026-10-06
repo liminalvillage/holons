@@ -235,7 +235,7 @@
     padding: 0 1rem;
     border-radius: 12px;
     font-weight: 700;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
   }
   .back {
@@ -251,6 +251,6 @@
   .err {
     margin: 0;
     font-size: 0.82rem;
-    color: #9a3b2f;
+    color: var(--danger);
   }
 </style>

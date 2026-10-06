@@ -238,9 +238,31 @@ export {
   migrateLegacyBundleRecord,
   readBundleRecord,
   saveBundleRecord,
+  addBundleToken,
+  removeBundleToken,
+  normalizeBundleToken,
+  readBundleTokens,
+  withBundleToken,
+  withoutBundleToken,
   type BundleMigration,
+  type BundleToken,
   type HolonBundleRecord,
 } from './bundle.js';
+
+export {
+  BUNDLE_HOLDINGS_ABI,
+  ERC20_META_ABI,
+  foldHoldings,
+  formatHolding,
+  fromBaseUnits,
+  holdingLines,
+  holdsAnything,
+  nativeUnit,
+  type BundleHoldings,
+  type HoldingLine,
+  type RawHolding,
+  type RawHoldings,
+} from './holdings.js';
 
 export {
   ALLOCATION_KEY,

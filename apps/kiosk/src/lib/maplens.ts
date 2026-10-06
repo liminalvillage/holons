@@ -283,29 +283,6 @@ export function viewportCells(box: ViewBox, res: number): string[] {
   }
 }
 
-/**
- * How strongly a grid cell's outline is drawn, given how near its centre is
- * to the rim of the map: `edge` is the distance to the NEAREST edge as a
- * fraction of the half-box (0 at the middle, 1 on an edge, more outside).
- *
- * Full strength across almost the whole map, thinning across a band at the
- * rim and gone a little way past it — so the grid dissolves into the edge
- * instead of being cut off by it, while the cells straddling the edge still
- * draw. The distance is to an edge, not out from the centre: a hexagon at
- * the middle of the bottom edge is exactly as near the rim as one in a
- * corner, and a centre-out measure would wrongly fade the whole map into a
- * disk.
- */
-export function rimFade(edge: number): number {
-  const inner = 0.86;
-  const outer = 1.16;
-  if (edge <= inner) return 1;
-  if (edge >= outer) return 0;
-  const t = (edge - inner) / (outer - inner);
-  const smooth = t * t * (3 - 2 * t);
-  return Math.round((1 - smooth) * 100) / 100;
-}
-
 // ── Presence cache ───────────────────────────────────────────────────────--
 //
 // Per-(lens, hex) "does this cell contain anything" rows, persisted to

@@ -17,6 +17,7 @@
 // The `groupId` of a shift IS the holon id (both are the Telegram chat id),
 // so the feed simply follows the displayed holon.
 
+import { nameFor } from "$lib/names";
 import {
   SHIFTS_LENS,
   SHIFT_IDENTITY_LENS,
@@ -760,7 +761,7 @@ export function participantNames(
   const enrolled = enrolledPubkeys(occurrence, rsvps, identity);
   const shown = enrolled
     .slice(0, max)
-    .map((pk) => names.get(pk) ?? `${pk.slice(0, 8)}…`);
+    .map((pk) => names.get(pk) ?? nameFor(pk));
   return { shown, more: Math.max(0, enrolled.length - max) };
 }
 

@@ -321,7 +321,7 @@
   .err {
     margin: 0.6rem 0 0;
     font-size: 0.9rem;
-    color: #9a3b2f;
+    color: var(--danger);
   }
   .empty {
     margin: 0 0 0.8rem;
@@ -407,7 +407,7 @@
     padding: 0.5rem 0.9rem;
     border-radius: 999px;
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     font-size: 0.9rem;
     font-weight: 700;
     text-decoration: none;
@@ -417,7 +417,7 @@
   }
   .act.ghost {
     background: var(--paper);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .act:active {
     transform: scale(0.97);

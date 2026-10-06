@@ -4,6 +4,7 @@
 // matching. The protocol itself (parsing, RSVP resolution) is covered in
 // @holons/core/shifts; these specs only cover what the kiosk adds on top.
 
+import { shortId } from "@holons/core/identity";
 import { describe, expect, it } from "vitest";
 import type { ShiftOccurrence, ShiftRsvp } from "@holons/core/shifts";
 import {
@@ -164,10 +165,10 @@ describe("participantNames", () => {
   const pks = ["1".repeat(64), "2".repeat(64), "3".repeat(64)];
   const enrolled = pks.map((pk) => rsvp(a.address, pk, "accepted"));
 
-  it("maps attested names and falls back to hex prefixes", () => {
+  it("maps attested names and falls back to the short npub form", () => {
     const names = new Map([[pks[0], "Alice"]]);
     const { shown, more } = participantNames(a, enrolled, names);
-    expect(shown).toEqual(["Alice", `${"2".repeat(8)}…`, `${"3".repeat(8)}…`]);
+    expect(shown).toEqual(["Alice", shortId(pks[1]), shortId(pks[2])]);
     expect(more).toBe(0);
   });
 

@@ -562,8 +562,10 @@
     padding: 0;
     font-size: 0.68rem;
     font-weight: 700;
-    /* Tinted with the source holon's own colour (same hue as its glow edge). */
-    color: var(--glow, var(--teal-deep));
+    /* The source holon's own hue, carried by the ink rather than replacing it:
+       a holon's colour is a ground (a pastel by day, a jewel by night), never
+       something to read on its own. */
+    color: color-mix(in srgb, var(--glow, var(--teal)) 30%, var(--ink));
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -580,7 +582,7 @@
   }
   .status.available {
     background: var(--note-mint);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .empty {
     color: var(--muted);
@@ -620,7 +622,7 @@
     border-radius: 50%;
     font-size: 1.7rem;
     line-height: 1;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     background: var(--paper);
     display: grid;
     place-items: center;
@@ -671,7 +673,7 @@
     border-radius: 50%;
     font-size: 2rem;
     line-height: 1;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     box-shadow: 0 10px 24px rgba(14, 107, 102, 0.4);
     display: grid;
@@ -692,7 +694,7 @@
   }
   .form .glyph {
     font-size: 1.8rem;
-    color: var(--teal);
+    color: var(--teal-ink);
     font-weight: 800;
   }
   .form h3 {
@@ -765,7 +767,7 @@
     background: color-mix(in srgb, var(--teal) 12%, var(--card));
   }
   .typechip.on .tl {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .typechip:active {
     transform: scale(0.95);
@@ -787,11 +789,11 @@
   }
   .form .primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .form .ghost {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--ghost);
     color: var(--ink);
   }
   .form .primary:active,

@@ -3,6 +3,7 @@
 
 import { describe, it, expect } from "vitest";
 import {
+  derivedKeyFor,
   mintSession,
   verifySession,
   mintKeySession,
@@ -11,6 +12,18 @@ import {
 } from "./telegramAuth";
 
 const JWT_SECRET = "a".repeat(48);
+
+describe("derivedKeyFor", () => {
+  it("is the bot's key for the Telegram id, and null without the secret", async () => {
+    const { deriveTelegramNostrKey } = await import("@holons/core/auth");
+    const got = derivedKeyFor({ id: "235114395" }, "s3cret");
+    expect(got?.nostrPublicKey).toBe(
+      deriveTelegramNostrKey("235114395", "s3cret").publicKey,
+    );
+    expect(got?.nostrPrivateKey).toMatch(/^[0-9a-f]{64}$/);
+    expect(derivedKeyFor({ id: "235114395" }, "")).toBeNull();
+  });
+});
 
 describe("key sessions", () => {
   const pubkey = "ab".repeat(32);

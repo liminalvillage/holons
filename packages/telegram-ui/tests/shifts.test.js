@@ -1,3 +1,4 @@
+import { shortId } from '@holons/core/identity';
 import { describe, it, expect, vi } from 'vitest';
 import { deriveTelegramNostrKey } from '@holons/core/auth';
 import {
@@ -255,7 +256,7 @@ describe('Shifts', () => {
     expect(text).toContain('Carol');
   });
 
-  it('falls back to hex prefixes when the attestation fetch fails', async () => {
+  it('falls back to the short npub form when the attestation fetch fails', async () => {
     const client = fakeClient();
     const db = fakeDb();
     const stranger = 'e'.repeat(64);
@@ -278,7 +279,7 @@ describe('Shifts', () => {
     const shifts = new Shifts(null, db, { client, derivationSecret: SECRET });
     const ctx = ctxFor(2, undefined, '/shifts 2026-08-30');
     await shifts.list(ctx);
-    expect(ctx.reply.mock.calls[0][0]).toContain(`${stranger.slice(0, 8)}…`);
+    expect(ctx.reply.mock.calls[0][0]).toContain(shortId(stranger));
   });
 
   it("publishes an accepted RSVP with the tapping user's key and refreshes", async () => {

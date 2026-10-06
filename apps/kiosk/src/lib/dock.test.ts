@@ -6,6 +6,7 @@ import {
   boundsPath,
   broughtInBy,
   convexHull,
+  forgottenBy,
   hueFor,
   labelFor,
   lensPath,
@@ -16,6 +17,7 @@ import {
   orbPositions,
   orbUnder,
   parseDock,
+  parseForgotten,
   removeEntry,
   seedOrbs,
   segmentFor,
@@ -240,6 +242,40 @@ describe("removeEntry", () => {
     expect(
       removeEntry(list, "-1", { withDependents: true }).map((e) => e.id),
     ).toEqual(["-4", "-5"]);
+  });
+});
+
+describe("forgottenBy — what a removal keeps off the dock", () => {
+  it("is the board alone, or the board and the retinue it brought in", () => {
+    const list = [
+      entry("-1"),
+      { ...entry("-2"), via: "-1" },
+      { ...entry("-3"), via: "-9" },
+    ];
+    expect(forgottenBy(list, "-1")).toEqual(["-1"]);
+    expect(forgottenBy(list, "-1", { withDependents: true })).toEqual([
+      "-1",
+      "-2",
+    ]);
+  });
+
+  it("names a board that was never docked, so it stays off", () => {
+    expect(forgottenBy([], "-7")).toEqual(["-7"]);
+  });
+});
+
+describe("parseForgotten", () => {
+  it("returns [] for null, junk, and non-arrays", () => {
+    expect(parseForgotten(null)).toEqual([]);
+    expect(parseForgotten("nope")).toEqual([]);
+    expect(parseForgotten('{"id":"x"}')).toEqual([]);
+  });
+
+  it("keeps the ids, dropping blanks, non-strings and repeats", () => {
+    expect(parseForgotten('["-1", "", 3, null, "-1", "-2"]')).toEqual([
+      "-1",
+      "-2",
+    ]);
   });
 });
 

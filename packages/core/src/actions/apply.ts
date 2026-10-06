@@ -6,8 +6,9 @@
 // someone made by touch while the change sat in the drawer survives, and a
 // stale preview is never written back. The ports are the only I/O: a
 // consumer brings its own reader, its identity-aware writer, and optionally
-// its completion flow and its membership side-effects (hologram reflection
-// for the current user on the kiosk).
+// its completion flow and what it does once a roster write landed (the
+// kiosk refreshes the current user's DM). The hologram in each added
+// person's own holon is not a port: the write itself makes it.
 
 import type { Quest, QuestParticipant } from '../tasks/types.js';
 import { applyOp, creditedForCompletion, type Changeset, type PrivacyOp, type StagedChange } from './stage.js';
@@ -25,7 +26,7 @@ export interface ApplyPorts {
    * Absent → privacy changes fail with a clear message.
    */
   privacy?(holon: string, lens: string, key: string, op: PrivacyOp): Promise<boolean>;
-  /** After a participant write landed — e.g. mirror the join into a hologram. */
+  /** After a participant write landed — e.g. tell the person. */
   afterParticipants?(
     holon: string,
     updated: Quest,

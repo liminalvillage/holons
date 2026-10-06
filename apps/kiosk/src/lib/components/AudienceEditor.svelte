@@ -1,6 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import Icon from "$lib/components/Icon.svelte";
+  import { nameFor, nameOf as resolvedName } from "$lib/names";
   //
   // Who may read a scope — a whole board (lens) or one card — as a list of
   // HOLONS. The lock makes the scope private; the chips are the holons it is
@@ -25,13 +26,18 @@
   import { getHolosphere } from "$lib/holosphere";
   import { holonName, partnerNames } from "$lib/stores";
   import { isLoggedIn, loginOpen } from "$lib/auth";
-  import { t } from "$lib/i18n";
+  import { t, type MessageKey } from "$lib/i18n";
 
   export let scope: Scope;
-  /** One row: the lock and a count; chips and the picker fold out when locked. */
-  export let compact = false;
-  /** A title above the editor (the lens name on a board, nothing on a card). */
-  export let title = "";
+  /** The one action rendered elsewhere (a sheet's corner): bind `locked` and
+   * `frozen`, call `toggle()`. */
+  export let actionOutside = false;
+  export let locked = false;
+  export let frozen = true;
+  $: locked = !!aud?.locked;
+  export function toggle() {
+    toggleLock();
+  }
 
   const dispatch = createEventDispatcher<{ change: Audience }>();
 
@@ -59,7 +65,7 @@
 
   function nameOf(id: string): string {
     if (id === scope.holon) return $holonName || id;
-    return $partnerNames[id] ?? names[id] ?? id;
+    return $partnerNames[id] ?? names[id] ?? $resolvedName(id);
   }
 
   function announce() {
@@ -93,7 +99,7 @@
           const fed = await getFederationSnapshot(hs, scope.holon);
           partners = fed.federated.map((id) => ({
             id,
-            name: $partnerNames[id] ?? fed.partnerNames[id] ?? id,
+            name: $partnerNames[id] ?? fed.partnerNames[id] ?? nameFor(id),
           }));
           names = { ...names, ...fed.partnerNames };
         } catch {
@@ -128,8 +134,23 @@
     }
   }
 
+  // One tap does it; the line under the state says what that tap does to
+  // what is already in the scope and to what comes after.
   const toggleLock = () =>
     run("lock", (h) => (aud?.locked ? unlock(h, scope) : lock(h, scope)));
+  let whyKey: MessageKey = "audience.whenLockLens";
+  $: whyKey = aud?.locked
+    ? scope.item
+      ? "audience.whenUnlockCard"
+      : "audience.whenUnlockLens"
+    : scope.item
+      ? "audience.whenLockCard"
+      : "audience.whenLockLens";
+  $: frozen =
+    loading ||
+    !!busy ||
+    (!!aud?.locked && !aud.owned) ||
+    (!!scope.item && lensLocked);
   const add = (id: string, name?: string) => {
     if (name) names = { ...names, [id]: name };
     addOpen = false;
@@ -162,33 +183,34 @@
   });
 </script>
 
-<div class="audience" class:compact>
-  <div class="head">
-    {#if title}<span class="title">{title}</span>{/if}
-    <button
-      type="button"
-      class="lockbtn"
-      class:on={!!aud?.locked}
-      aria-pressed={!!aud?.locked}
-      aria-label={$t(aud?.locked ? "audience.unlock" : "audience.lock")}
-      title={$t(aud?.locked ? "audience.unlock" : "audience.lock")}
-      disabled={loading ||
-        !!busy ||
-        (!!aud?.locked && !aud.owned) ||
-        (!!scope.item && lensLocked)}
-      on:click={toggleLock}
-    >
+<div class="audience">
+  <!-- The state on the left, the one action on the right. -->
+  <div class="state">
+    <span class="badge" class:on={!!aud?.locked}>
       <Icon name={aud?.locked ? "lock" : "unlock"} />
-      <span class="lbl"
-        >{$t(aud?.locked ? "audience.locked" : "audience.open")}</span
-      >
-    </button>
-    {#if aud?.locked && aud.owned && others.length}
-      <span class="count"
-        >{$t("audience.sharedWith", { n: others.length })}</span
+      {$t(aud?.locked ? "audience.locked" : "audience.open")}
+      {#if aud?.locked && aud.owned && others.length}
+        <span class="count"
+          >· {$t("audience.sharedWith", { n: others.length })}</span
+        >
+      {/if}
+    </span>
+    {#if !actionOutside && (!frozen || loading || busy)}
+      <button
+        type="button"
+        class="act"
+        class:open={!!aud?.locked}
+        disabled={frozen}
+        on:click={toggleLock}
+        >{$t(
+          aud?.locked ? "audience.makePublic" : "audience.makePrivate",
+        )}</button
       >
     {/if}
   </div>
+  {#if !frozen}
+    <p class="why">{$t(whyKey)}</p>
+  {/if}
 
   {#if scope.item && lensLocked}
     <p class="note">{$t("audience.lensLocked")}</p>
@@ -287,48 +309,54 @@
     letter-spacing: 0;
     text-align: left;
   }
-  .head {
+  .state {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
+    gap: 0.6rem;
   }
-  .title {
-    font-weight: 700;
-    color: var(--ink);
-  }
-  .lockbtn {
+  .badge {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    min-height: 44px;
-    min-width: 44px;
-    padding: 0 0.8rem;
-    border-radius: 999px;
-    border: 1.5px solid var(--line);
-    background: var(--card);
-    color: var(--muted);
     font-weight: 700;
-    font-size: 0.85rem;
+    color: var(--muted);
   }
-  .lockbtn.on {
-    background: var(--teal-deep);
-    border-color: var(--teal-deep);
-    color: #fff;
+  .badge.on {
+    color: var(--teal-ink);
   }
-  .lockbtn:disabled {
-    opacity: 0.5;
-  }
-  .lockbtn :global(svg) {
+  .badge :global(svg) {
     width: 1.1em;
     height: 1.1em;
-  }
-  .compact .lockbtn .lbl {
-    display: none;
   }
   .count {
     font-size: 0.78rem;
     font-weight: 600;
+    color: var(--muted);
+  }
+  .act {
+    margin-left: auto;
+    min-height: 44px;
+    padding: 0 0.9rem;
+    border-radius: 999px;
+    border: 1.5px solid var(--teal-deep);
+    background: var(--teal-deep);
+    color: var(--on-teal);
+    font-weight: 700;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+  .act.open {
+    background: var(--card);
+    color: var(--teal-ink);
+  }
+  .act:disabled {
+    opacity: 0.5;
+  }
+  .why {
+    margin: 0.45rem 0 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    line-height: 1.4;
     color: var(--muted);
   }
   .chips {
@@ -344,7 +372,7 @@
     min-height: 44px;
     padding: 0 0.3rem 0 0.7rem;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.55);
+    background: var(--glass);
     border: 1.5px solid var(--line);
     font-size: 0.85rem;
     font-weight: 600;
@@ -357,7 +385,7 @@
   .chip.add {
     padding: 0 0.8rem;
     border-color: var(--teal-deep);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .chip .name {
     max-width: 11rem;
@@ -397,7 +425,7 @@
     margin-top: 0.5rem;
     padding: 0.6rem 0.7rem;
     border-radius: 12px;
-    background: rgba(255, 255, 255, 0.45);
+    background: var(--glass);
     border: 1.5px dashed var(--line);
   }
   .group {
@@ -453,6 +481,6 @@
     margin: 0.4rem 0 0;
     font-size: 0.82rem;
     font-weight: 600;
-    color: #9a3b2f;
+    color: var(--danger);
   }
 </style>

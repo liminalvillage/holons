@@ -450,7 +450,7 @@
     color: var(--muted);
   }
   .req {
-    color: var(--teal);
+    color: var(--teal-ink);
     margin-left: 0.15rem;
   }
   .field__hint {
@@ -510,7 +510,7 @@
     border-radius: 999px;
   }
   .opt.on {
-    color: var(--paper);
+    color: var(--on-teal);
     background: var(--teal);
     border-color: var(--teal);
   }
@@ -535,7 +535,7 @@
     color: var(--muted);
   }
   .primary {
-    color: var(--paper);
+    color: var(--on-teal);
     background: var(--teal);
   }
   .primary:disabled {

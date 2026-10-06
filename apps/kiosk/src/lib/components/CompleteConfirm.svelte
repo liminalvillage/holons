@@ -239,7 +239,7 @@
       color 0.15s ease;
   }
   .row.on {
-    background: #e7f3f1;
+    background: var(--teal-wash);
     color: var(--ink);
   }
   .av {
@@ -302,7 +302,7 @@
     flex: 0 0 auto;
     font-size: 1.2rem;
     font-weight: 800;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .add select {
     flex: 1;
@@ -335,11 +335,11 @@
   }
   .primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .ghost {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--ghost);
     color: var(--ink);
   }
   .primary:active,

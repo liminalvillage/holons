@@ -28,10 +28,18 @@
   // the all-compact row can't fit does the band fall back to the full
   // segmented pills, centred and wrapping. One hidden copy of the row per
   // packing level is measured against the band to decide.
+  import { onMount } from "svelte";
+  import { privacyOfHolon } from "@holons/core/privacy";
+  import { getHolosphere } from "$lib/holosphere";
+  import { isLoggedIn, loginOpen } from "$lib/auth";
+  import LensPrivacy from "$lib/components/LensPrivacy.svelte";
   import {
     activeTab,
+    holonId,
     settingsOpen,
     viewSettings,
+    TABS,
+    type TabId,
     taskViewMode,
     taskSort,
     libraryViewMode,
@@ -343,6 +351,51 @@
   $: gear = $viewSettings ?? kioskGear;
   $: gearLabel = $t(gear.labelKey);
 
+  // The lock beside the gear: who can read the board on screen. Shown on
+  // every tab whose board is one lens that can be sealed (quests, library,
+  // checklists, roles, stock); its state is the vault flag anyone can see
+  // (@holons/core/privacy), refreshed when any surface changes a lock.
+  const LENS_OF_TAB: Partial<Record<TabId, string>> = {
+    tasks: "quests",
+    calendar: "quests",
+    library: "library",
+    checklists: "checklists",
+    roles: "roles",
+    stock: "stock",
+  };
+  $: lens = LENS_OF_TAB[$activeTab] ?? null;
+  // Named after the tab on screen (Calendar and Tasks share the quests lens).
+  $: lensLabel = $t(
+    TABS.find((x) => x.id === $activeTab)?.labelKey ?? "tabs.tasks",
+  );
+  let locked = false;
+  let privacyOpen = false;
+  $: void readLock($holonId, lens);
+  async function readLock(holon: string | null, l: string | null) {
+    if (!holon || !l) {
+      locked = false;
+      return;
+    }
+    try {
+      const flags = await privacyOfHolon(await getHolosphere(), holon);
+      if (holon === $holonId && l === lens) locked = !!flags[l]?.locked;
+    } catch {
+      locked = false;
+    }
+  }
+  function openPrivacy() {
+    if (!$isLoggedIn) {
+      loginOpen.set(true);
+      return;
+    }
+    privacyOpen = true;
+  }
+  onMount(() => {
+    const onChange = () => void readLock($holonId, lens);
+    window.addEventListener("kiosk:privacy-changed", onChange);
+    return () => window.removeEventListener("kiosk:privacy-changed", onChange);
+  });
+
   // How many pills, counting from the RIGHT, collapse into the cycling
   // toggle. Level 0 is everything unpacked, level `total` everything
   // compact; the first level whose hidden copy fits the band wins, so pills
@@ -388,6 +441,19 @@
             showText={packed ? (p.showText ?? false) : true}
           />
         {/each}
+        {#if lens && $holonId}
+          <button
+            type="button"
+            class="gear lock"
+            class:on={locked}
+            aria-pressed={locked}
+            on:click={openPrivacy}
+            aria-label={$t("privacy.who", { lens: lensLabel })}
+            title={$t(locked ? "audience.locked" : "audience.open")}
+          >
+            <Icon name={locked ? "lock" : "unlock"} />
+          </button>
+        {/if}
         <button
           type="button"
           class="gear"
@@ -413,6 +479,19 @@
           showText={p.showText ?? false}
         />
       {/each}
+      {#if lens && $holonId}
+        <button
+          type="button"
+          class="gear lock"
+          class:on={locked}
+          aria-pressed={locked}
+          on:click={openPrivacy}
+          aria-label={$t("privacy.who", { lens: lensLabel })}
+          title={$t(locked ? "audience.locked" : "audience.open")}
+        >
+          <Icon name={locked ? "lock" : "unlock"} />
+        </button>
+      {/if}
       <button
         type="button"
         class="gear"
@@ -449,10 +528,20 @@
           showText={packed ? (p.showText ?? false) : true}
         />
       {/each}
+      {#if lens && $holonId}<span class="gear"><Icon name="lock" /></span>{/if}
       <span class="gear"><Icon name="gear" /></span>
     </div>
   {/each}
 </div>
+
+{#if privacyOpen && lens && $holonId}
+  <LensPrivacy
+    holonId={$holonId}
+    {lens}
+    label={lensLabel}
+    on:close={() => (privacyOpen = false)}
+  />
+{/if}
 
 <style>
   /* The inner row owns the padding; overflow clips the invisible measuring
@@ -505,6 +594,10 @@
   .gear:active {
     transform: scale(0.92);
     background: var(--paper-deep);
+  }
+  .gear.lock.on {
+    background: var(--teal-deep);
+    color: var(--on-teal);
   }
   /* The measuring copy: laid out at natural single-row width (same gap and
      side padding as the real row — clientWidth includes the padding), but

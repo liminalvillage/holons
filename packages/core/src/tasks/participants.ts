@@ -112,10 +112,15 @@ export function setParticipants(task: Quest, participants: QuestParticipant[]): 
   return { ...task, participants: roster, appreciation };
 }
 
+/** A quest's participants as an array, however the field arrived off the wire. */
+export function participantsOf(task: Pick<Quest, 'participants'> | null | undefined): QuestParticipant[] {
+  return listOf(task?.participants);
+}
+
 /**
- * Who joined and who left between two rosters, by id. The UI mirrors each
- * change into the person's own holon (`reflectJoin` / `reflectLeave`) exactly
- * as a self-service join would.
+ * Who joined and who left between two rosters, by id. Core mirrors each
+ * change into the person's own holon on the write itself (see
+ * `roster-mirror.ts`); a UI asks only to tell someone they were added.
  */
 export function rosterDiff(
   before: QuestParticipant[] | undefined,

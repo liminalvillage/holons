@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
+	import { membersTrustedAuthors } from '@holons/core/holons';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
@@ -215,22 +216,28 @@
 				console.log('New user - creating personal holon:', holonName);
 				// Library default is 5s; splash needs faster. Local store
 				// ack returns in <100ms.
+				// A personal holon with no chosen name has NONE: "My Holon" is not
+				// a name, and a person's key is named by their profile wherever it
+				// shows. Only a name the person gave is written and registered.
+				const chosenName = nameSource === 'fallback' ? null : holonName;
 				await holosphere.put(userPublicKey, 'settings', {
 					id: userPublicKey,
-					name: holonName,
+					...(chosenName ? { name: chosenName } : {}),
 					purpose: 'Personal holon',
 					createdAt: Date.now(),
 					createdBy: userPublicKey
 				}, { timeout: SPLASH_OP_TIMEOUT_MS });
 
-				try {
-					await withSplashTimeout(
-						hnsRegister(holosphere, userPublicKey, holonName, privateKey),
-						'hnsRegister'
-					);
-					console.log('Registered holon name in HNS:', holonName);
-				} catch (error) {
-					console.warn('Failed to register holon name in HNS:', error);
+				if (chosenName) {
+					try {
+						await withSplashTimeout(
+							hnsRegister(holosphere, userPublicKey, chosenName, privateKey),
+							'hnsRegister'
+						);
+						console.log('Registered holon name in HNS:', chosenName);
+					} catch (error) {
+						console.warn('Failed to register holon name in HNS:', error);
+					}
 				}
 			} else if (nameSource === 'fallback') {
 				// Returning user with slow relay AND no HNS — do NOT overwrite with "My Holon"
@@ -520,7 +527,12 @@
 				signerFor: (id: string | number) =>
 					pendingTelegramUserId && String(id) === String(pendingTelegramUserId) ? privateKey : null,
 				reverseSync,
-				trustedAuthors: () => [ownPubkey],
+				// Our own key, plus the holon's seated keys: a member's kind-0 edit on
+				// any Nostr client folds back into their `users` record here too.
+				trustedAuthors: async (holon: string) => [
+					ownPubkey,
+					...(holosphere ? await membersTrustedAuthors(holosphere)(holon) : []),
+				],
 			}
 			: {};
 		holosphere = await createHoloSphere({

@@ -20,18 +20,25 @@ export interface ChainInfo {
   /** Block explorer base, without a trailing slash; null when unknown. */
   explorer: string | null;
   testnet: boolean;
+  /** The chain's own coin, as a unit label. */
+  native: string;
+  /**
+   * A public JSON-RPC endpoint for reads when no wallet is in the browser,
+   * or the wallet is on another chain; null when none is known.
+   */
+  rpc: string | null;
 }
 
 export const KNOWN_CHAINS: Record<number, Omit<ChainInfo, 'chainId'>> = {
-  1: { name: 'Ethereum', explorer: 'https://etherscan.io', testnet: false },
-  10: { name: 'Optimism', explorer: 'https://optimistic.etherscan.io', testnet: false },
-  100: { name: 'Gnosis Chain', explorer: 'https://gnosisscan.io', testnet: false },
-  137: { name: 'Polygon', explorer: 'https://polygonscan.com', testnet: false },
-  8453: { name: 'Base', explorer: 'https://basescan.org', testnet: false },
-  42161: { name: 'Arbitrum One', explorer: 'https://arbiscan.io', testnet: false },
-  42220: { name: 'Celo', explorer: 'https://celoscan.io', testnet: false },
-  11155111: { name: 'Sepolia', explorer: 'https://sepolia.etherscan.io', testnet: true },
-  31337: { name: 'Local chain', explorer: null, testnet: true },
+  1: { name: 'Ethereum', explorer: 'https://etherscan.io', testnet: false, native: 'ETH', rpc: 'https://ethereum-rpc.publicnode.com' },
+  10: { name: 'Optimism', explorer: 'https://optimistic.etherscan.io', testnet: false, native: 'ETH', rpc: 'https://optimism-rpc.publicnode.com' },
+  100: { name: 'Gnosis Chain', explorer: 'https://gnosisscan.io', testnet: false, native: 'xDAI', rpc: 'https://rpc.gnosischain.com' },
+  137: { name: 'Polygon', explorer: 'https://polygonscan.com', testnet: false, native: 'POL', rpc: 'https://polygon-bor-rpc.publicnode.com' },
+  8453: { name: 'Base', explorer: 'https://basescan.org', testnet: false, native: 'ETH', rpc: 'https://base-rpc.publicnode.com' },
+  42161: { name: 'Arbitrum One', explorer: 'https://arbiscan.io', testnet: false, native: 'ETH', rpc: 'https://arbitrum-one-rpc.publicnode.com' },
+  42220: { name: 'Celo', explorer: 'https://celoscan.io', testnet: false, native: 'CELO', rpc: 'https://forno.celo.org' },
+  11155111: { name: 'Sepolia', explorer: 'https://sepolia.etherscan.io', testnet: true, native: 'ETH', rpc: 'https://ethereum-sepolia-rpc.publicnode.com' },
+  31337: { name: 'Local chain', explorer: null, testnet: true, native: 'ETH', rpc: 'http://127.0.0.1:8545' },
 };
 
 /** A chain by id; an unknown id is named by its number. */
@@ -41,7 +48,7 @@ export function describeChain(chainId: number | bigint | null | undefined): Chai
   const known = KNOWN_CHAINS[id];
   return known
     ? { chainId: id, ...known }
-    : { chainId: id, name: `Chain ${id}`, explorer: null, testnet: false };
+    : { chainId: id, name: `Chain ${id}`, explorer: null, testnet: false, native: 'ETH', rpc: null };
 }
 
 /** The Bundle's page on its chain's explorer, when both are known. */

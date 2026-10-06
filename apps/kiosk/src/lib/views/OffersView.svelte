@@ -34,7 +34,8 @@
     showNotice,
   } from "$lib/stores";
   import { currentUser, loginOpen } from "$lib/auth";
-  import { getHolonName, getHolosphere, getLensStore } from "$lib/holosphere";
+  import { getHolosphere, getLensStore } from "$lib/holosphere";
+  import { nameOf as resolvedName } from "$lib/names";
   import { personName } from "$lib/data";
   import { t, type MessageKey } from "$lib/i18n";
   import { resolveOffersScale, setOffersScale } from "$lib/config";
@@ -281,26 +282,9 @@
     : [];
   $: handoffConfirmations = foldHandoffConfirmations($rawQuests as never[]);
   // Holon names: partners come with the federation snapshot; anyone else on
-  // the board (cell records, strangers) is resolved once and cached.
-  let holonNames: Record<string, string> = {};
+  // the board (cell records, strangers) is named by the kiosk's resolver.
   $: nameOf = (id: string) =>
-    id === hid
-      ? $t("offers.here")
-      : ($partnerNames[id] ?? holonNames[id] ?? id);
-  $: void resolveNames(fullBoard, hsRef);
-  async function resolveNames(b: OfferBoard | null, hs: HoloSphere | null) {
-    if (!b || !hs) return;
-    const ids = new Set<string>();
-    for (const c of [...b.supply, ...b.demand])
-      if (c.ownerHolonId !== hid && !$partnerNames[c.ownerHolonId])
-        ids.add(c.ownerHolonId);
-    for (const id of ids) {
-      if (holonNames[id] !== undefined) continue;
-      holonNames = { ...holonNames, [id]: "" };
-      const name = await getHolonName(hs, id);
-      if (name) holonNames = { ...holonNames, [id]: name };
-    }
-  }
+    id === hid ? $t("offers.here") : ($partnerNames[id] ?? $resolvedName(id));
   /** "Ada · Liminal" — who, and where when it is not here. */
   const whoWhere = (
     person: unknown,
@@ -2028,10 +2012,10 @@
     color: var(--ink);
   }
   .scalehead .g {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .scalehead strong {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-weight: 700;
   }
   .scaleslide input[type="range"] {
@@ -2077,7 +2061,7 @@
     white-space: nowrap;
   }
   .tick.on {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .section {
     margin: 1rem 0 0.45rem;
@@ -2149,7 +2133,7 @@
     letter-spacing: 0.05em;
     font-size: 0.68rem;
     font-weight: 800;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .basis {
     font-size: 0.78rem;
@@ -2222,14 +2206,14 @@
     flex: 0 0 auto;
     font-size: 0.78rem;
     font-weight: 700;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     border-radius: 999px;
     padding: 0.4rem 0.8rem;
   }
   .chip.ghost {
     background: var(--card);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     border: 1.5px solid var(--line);
   }
   .chip:disabled {
@@ -2315,11 +2299,11 @@
   }
   .primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .ghost {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--ghost);
     color: var(--ink);
   }
   .danger {
@@ -2351,7 +2335,7 @@
     border-radius: 50%;
     font-size: 2rem;
     line-height: 1;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     box-shadow: 0 10px 24px rgba(14, 107, 102, 0.4);
     display: grid;
@@ -2391,10 +2375,10 @@
     background: var(--card);
     border: 1.5px solid var(--line);
     font-size: 1.1rem;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .icon-btn.done {
-    color: var(--teal);
+    color: var(--teal-ink);
   }
   .level {
     display: flex;
@@ -2456,7 +2440,7 @@
   }
   .hist .delta {
     font-weight: 800;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-variant-numeric: tabular-nums;
   }
   .hist .what {
@@ -2477,7 +2461,7 @@
   }
   .form .glyph {
     font-size: 1.8rem;
-    color: var(--teal);
+    color: var(--teal-ink);
     font-weight: 800;
   }
   .form h3 {
