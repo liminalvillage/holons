@@ -15,9 +15,7 @@ import {
   type HolonWriter,
 } from "@holons/core/holosphere";
 import { projectionOptionsFor } from "@holons/core/nostr";
-import { FLOW_CLAIMS_LENS, FLOW_MINTS_LENS } from "@holons/core/flows";
 import { membersTrustedAuthors } from "@holons/core/holons";
-import { GOVERNANCE_VOTES_LENS } from "@holons/core/governance";
 import { cellToLatLng } from "h3-js";
 import type { HoloSphere } from "holosphere";
 import type { LibraryDB } from "@holons/core/library";
@@ -84,10 +82,9 @@ export function getHolosphere(): Promise<HoloSphere> {
         shifts: { coordinatorPubkey: resolveShiftCoordinator() ?? undefined },
         shiftIdentity: {},
       },
-      // Fund claims and votes are append-only logs (kind 1808): every signed
-      // entry kept, folded by every reader the same way (see $lib/flowsClaims,
-      // $lib/governanceVotes).
-      appendLenses: [FLOW_CLAIMS_LENS, FLOW_MINTS_LENS, GOVERNANCE_VOTES_LENS],
+      // Core registers its append-only logs (fund claims, mints, rights,
+      // votes — kind 1808) itself; every reader folds them the same way (see
+      // $lib/flowsClaims, $lib/governanceVotes).
       nostr: {
         ...projectionOptionsFor({
           appName,

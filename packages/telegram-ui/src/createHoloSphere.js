@@ -30,8 +30,6 @@ import {
 import { createLinkedKeysResolver, linkedKeysOf } from '@holons/core/users';
 import { syncMembersLog } from '@holons/core/protocol';
 import { bridgeTelegramRoster, linkedAdmins } from '@holons/core/linking';
-import { FLOW_CLAIMS_LENS, FLOW_MINTS_LENS } from '@holons/core/flows';
-import { GOVERNANCE_VOTES_LENS } from '@holons/core/governance';
 import { sync as syncPrivacy } from '@holons/core/privacy';
 import KeyManager from './KeyManager.js';
 
@@ -146,10 +144,9 @@ export default function createHoloSphere(appName, options = {}) {
       },
       shiftIdentity: {},
     },
-    // Fund claims and votes are append-only logs (kind 1808): members append
-    // signed entries (/fundclaim, /vote), every reader folds the same log
-    // (see FundClaims.js, GovernanceVotes.js).
-    appendLenses: [FLOW_CLAIMS_LENS, FLOW_MINTS_LENS, GOVERNANCE_VOTES_LENS],
+    // Core registers its append-only logs (fund claims, mints, rights, votes —
+    // kind 1808) itself: members append signed entries (/fundclaim, /vote),
+    // every reader folds the same log (see FundClaims.js, GovernanceVotes.js).
     // Authorized reads (HOLOSPHERE_ENFORCE=off reads the open graph).
     enforce: resolveEnforce(process.env.HOLOSPHERE_ENFORCE),
     nostr: projectionOptions,

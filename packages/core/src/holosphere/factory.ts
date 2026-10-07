@@ -23,8 +23,26 @@ import { attachRosterMirror, type RosterMirrorHost } from '../tasks/roster-mirro
 import { createWireRegistry } from 'holosphere/store';
 import { createShiftIdentityWire, createShiftWire } from '../shifts/wire.js';
 import { PROTOCOL_LENSES } from '../protocol/events.js';
+import { FLOW_CLAIMS_LENS } from '../flows/claims.js';
+import { FLOW_MINTS_LENS } from '../flows/mints.js';
+import { FLOW_RIGHTS_LENS } from '../flows/rights-log.js';
+import { GOVERNANCE_VOTES_LENS } from '../governance/votes.js';
 import type { ProjectionHook } from '../nostr/types.js';
 import { createReadAuthority, type VouchContext } from './authority.js';
+
+/**
+ * Every append-only lens core writes (kind 1808): the protocol's own logs
+ * plus each domain's. Registered on every HoloSphere the factory builds, so
+ * a new log is readable on every surface the day it lands — no UI keeps its
+ * own copy of this list.
+ */
+export const APPEND_LENSES: readonly string[] = [
+  ...PROTOCOL_LENSES,
+  FLOW_CLAIMS_LENS,
+  FLOW_MINTS_LENS,
+  FLOW_RIGHTS_LENS,
+  GOVERNANCE_VOTES_LENS,
+];
 
 /** Where the local store persists (see holosphere/STORE.md). */
 export interface HoloSphereStoreOptions {
@@ -121,10 +139,10 @@ export interface CreateHoloSphereOptions {
    */
   rosterMirror?: boolean;
   /**
-   * Append-only lenses (kind 1808, every signed entry kept — see
-   * `@holons/core/protocol`). Defaults to the protocol's own lenses; pass a
-   * list to add a domain's logs, or `false` for none. Registering costs
-   * nothing until a lens is read or written.
+   * Extra append-only lenses (kind 1808, every signed entry kept — see
+   * `@holons/core/protocol`). Core's own logs (`APPEND_LENSES`) are always
+   * registered; pass a list to add an app's, or `false` for none at all.
+   * Registering costs nothing until a lens is read or written.
    */
   appendLenses?: readonly string[] | false;
   /**
@@ -161,9 +179,9 @@ export function createHoloSphere(
     if (standardWires.shiftIdentity) wire.register(createShiftIdentityWire(standardWires.shiftIdentity));
     storeCfg = { ...(store ?? {}), wire };
   }
-  // The protocol's own logs ride along by default; a domain adds its own.
+  // Core's logs ride along by default; an app adds its own.
   if (appendLenses !== false) {
-    const lenses = [...new Set([...PROTOCOL_LENSES, ...(appendLenses ?? [])])];
+    const lenses = [...new Set([...APPEND_LENSES, ...(appendLenses ?? [])])];
     storeCfg = { ...(storeCfg ?? {}), appendLenses: lenses };
   }
 

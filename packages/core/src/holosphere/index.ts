@@ -7,6 +7,7 @@
  */
 
 export {
+  APPEND_LENSES,
   createHoloSphere,
   type CreateHoloSphereOptions,
   type HoloSphereStoreOptions,
