@@ -27,12 +27,16 @@
 
 import {
   action,
+  attestation,
+  attestationTarget,
   collapse,
   isAction,
+  isAttestation,
   lensContext,
   normalizePolicy,
   type AcceptedActors,
   type Appendable,
+  type AttestationRecord,
   type LensContextInput,
   type LogEvent,
   type Policy,
@@ -116,6 +120,44 @@ export function buildRightsEntry(input: {
 }
 
 export const isRights = (item: unknown): item is RightsBody => isAction(item) && item.kind === 'rights';
+
+/** An attestation that also carries the signer's wallet signature over the Pot's `Root` digest. */
+export interface RightsSignature extends AttestationRecord {
+  /** The wallet that signed, lower-cased. */
+  signer: string;
+  /** The EIP-712 signature, 0x hex. */
+  signature: string;
+}
+
+/**
+ * A signer's word on a table, with their wallet signature riding along: the
+ * attestation counts toward the log's quorum as any attestation does, and
+ * the signature is what `postRoot` takes. One entry, two quorums.
+ */
+export function buildRightsSignature(tableId: string, input: { signer: string; signature: string; reason?: string }): Appendable<RightsSignature> {
+  const signer = normalizeAddress(input.signer);
+  const signature = String(input.signature ?? '').trim();
+  if (!signer) throw new Error('A signer is a 0x address');
+  if (!/^0x[0-9a-fA-F]{130}$/.test(signature)) throw new Error('A signature is 65 bytes of hex');
+  const base = attestation(tableId, 'attest', input.reason);
+  return { ...base, item: { ...base.item, signer, signature: signature.toLowerCase() } };
+}
+
+export const isRightsSignature = (item: unknown): item is RightsSignature =>
+  isAttestation(item) && typeof (item as RightsSignature).signer === 'string' && typeof (item as RightsSignature).signature === 'string';
+
+/** The wallet signatures the log holds for `tableId`, one per signer (the latest), for `orderSignatures`. */
+export function rootSignatures(entries: Iterable<LogEvent<unknown>>, tableId: string): Array<{ signer: string; signature: string; pubkey: string }> {
+  const bySigner = new Map<string, { signer: string; signature: string; pubkey: string; at: number }>();
+  for (const e of entries) {
+    if (!isRightsSignature(e.item) || attestationTarget(e) !== tableId) continue;
+    const signer = normalizeAddress(e.item.signer);
+    if (!signer) continue;
+    const seen = bySigner.get(signer);
+    if (!seen || seen.at < e.created_at) bySigner.set(signer, { signer, signature: e.item.signature, pubkey: e.pubkey, at: e.created_at });
+  }
+  return [...bySigner.values()].map(({ at: _at, ...rest }) => rest);
+}
 
 const asBig = (v: unknown): bigint | null => {
   try {

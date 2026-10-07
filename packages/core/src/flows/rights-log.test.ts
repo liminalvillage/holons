@@ -7,7 +7,7 @@ import { attestation } from '../protocol/events.js';
 import { shuffled, signedEntry, testKey } from '../protocol/testing.js';
 import { orderSignatures, potClaimArgs, potCommitment } from './pot-contract.js';
 import { advanceRights, ZERO_ADDRESS } from './rights.js';
-import { buildRightsEntry, foldRights, isRights, latestRights, rightsByRef, tableOf } from './rights-log.js';
+import { buildRightsEntry, buildRightsSignature, foldRights, isRights, latestRights, rightsByRef, rootSignatures, tableOf } from './rights-log.js';
 import { rightsRoot, rowLeaf, verifyRightsProof } from './rights-tree.js';
 
 const T0 = 1_760_000_000;
@@ -115,5 +115,26 @@ describe('potCommitment / potClaimArgs', () => {
         { signer: '0x' + '1'.repeat(40), signature: 'sig-1' },
       ]),
     ).toEqual(['sig-1', 'sig-f']);
+  });
+});
+
+describe('rootSignatures', () => {
+  it('a signature rides on an attestation and counts once per signer, latest word', () => {
+    const e1 = entry(treasurer.sk, buildRightsEntry({ table: first, chainId: 1, pot: POT }) as never, T0);
+    const sig = (n: string) => '0x' + n.repeat(130);
+    const s1 = entry(treasurer.sk, buildRightsSignature(e1.id, { signer: '0x' + 'F'.repeat(40), signature: sig('1') }) as never, T0 + 1);
+    const s2 = entry(steward.sk, buildRightsSignature(e1.id, { signer: '0x' + '2'.repeat(40), signature: sig('2') }) as never, T0 + 2);
+    const again = entry(treasurer.sk, buildRightsSignature(e1.id, { signer: '0x' + 'f'.repeat(40), signature: sig('3') }) as never, T0 + 3);
+    const other = entry(treasurer.sk, buildRightsSignature('elsewhere', { signer: '0x' + '9'.repeat(40), signature: sig('4') }) as never, T0 + 4);
+    const plain = entry(steward.sk, attestation(e1.id, 'attest') as never, T0 + 5);
+    expect(rootSignatures([e1, s1, s2, again, other, plain], e1.id)).toEqual([
+      { signer: '0x' + 'f'.repeat(40), signature: sig('3'), pubkey: treasurer.pk },
+      { signer: '0x' + '2'.repeat(40), signature: sig('2'), pubkey: steward.pk },
+    ]);
+    // and the attestations still count toward the log's quorum
+    const f = foldRights({ entries: [e1, s1, s2, plain], actors: actors(), policy: { quorum: 2 } });
+    expect(f.tables[0].attests).toBe(2);
+    expect(() => buildRightsSignature(e1.id, { signer: 'nope', signature: sig('1') })).toThrow(/0x/);
+    expect(() => buildRightsSignature(e1.id, { signer: '0x' + '1'.repeat(40), signature: '0x12' })).toThrow(/65 bytes/);
   });
 });

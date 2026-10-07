@@ -104,7 +104,7 @@ export function encodeChainSync(input: ChainSyncInput): unknown[] {
  * said its chain is checked for code only, and the chain found is returned
  * so the caller can record it.
  */
-async function ensureChain(
+export async function ensureChain(
   provider: ethers.BrowserProvider,
   bundleAddress: string,
   expected: number | null | undefined,
@@ -126,7 +126,7 @@ async function ensureChain(
     );
     if (actual !== want) {
       throw new ChainError(
-        `This Bundle is on ${describeChain(want)?.name}; the wallet is on ${
+        `This contract is on ${describeChain(want)?.name}; the wallet is on ${
           describeChain(actual)?.name
         }. Switch the wallet to ${describeChain(want)?.name} first.`,
         "wrong-network",
@@ -136,7 +136,7 @@ async function ensureChain(
   const code = await provider.getCode(bundleAddress).catch(() => "0x");
   if (!code || code === "0x") {
     throw new ChainError(
-      `No contract at the bundle address on ${describeChain(actual)?.name}.`,
+      `No contract at that address on ${describeChain(actual)?.name}.`,
       "no-contract",
     );
   }
@@ -451,7 +451,7 @@ export async function bindOnChain(input: {
   }
 }
 
-function isRejection(err: any): boolean {
+export function isRejection(err: any): boolean {
   return err?.code === 4001 || err?.code === "ACTION_REJECTED";
 }
 
@@ -473,7 +473,7 @@ import {
 } from "@holons/core/flows";
 
 /** A read-only provider on `chainId`: the wallet's if it is there, else public. */
-async function readProvider(
+export async function readProvider(
   chainId: number | null,
 ): Promise<ethers.Provider | null> {
   if (isWalletAvailable()) {

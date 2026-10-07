@@ -403,6 +403,9 @@ export {
 export {
   FLOW_RIGHTS_LENS,
   buildRightsEntry,
+  buildRightsSignature,
+  isRightsSignature,
+  rootSignatures,
   foldRights,
   foldRightsFromLenses,
   isRights,
@@ -413,6 +416,7 @@ export {
   type FoldedRights,
   type PublishedRights,
   type RightsBody,
+  type RightsSignature,
   type RightsStatus,
   type RightsFromLensesInput,
 } from './rights-log.js';

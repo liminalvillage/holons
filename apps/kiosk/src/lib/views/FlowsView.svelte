@@ -107,6 +107,8 @@
     readAllocationConfig,
     describeChain,
     readBundleRecord,
+    readBundleTokens,
+    readPotRecord,
     readInteriorShares,
     resolveInteriorMembers,
     readCollectiveSlug,
@@ -155,6 +157,7 @@
   import ChordChart from "$lib/components/ChordChart.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import BalancesView from "./BalancesView.svelte";
+  import PotPanel from "$lib/components/PotPanel.svelte";
   import {
     watchClaimsLogs,
     claimSigner,
@@ -340,12 +343,21 @@
   // minted here, what reaches here. One unit is drawn at a time; a pill row
   // offers the others when a holon holds more than one.
   let potUnitPick = "";
+  // The holon's Pot, when it has one: what it received on chain is the pot
+  // in those units (a mint in the same unit is the same lot), and a right
+  // in them is collected from the Pot by its table, never claimed in the
+  // log (`held` below). The panel reads the chain and reports the receipts.
+  $: potRecord = readPotRecord(settings);
+  $: potTokens = readBundleTokens(bundle);
+  let potChain: Record<string, number> = {};
+  $: if (!potRecord && Object.keys(potChain).length) potChain = {};
   $: potSources = {
     collective: collective
       ? { currency: collective.currency, balance: collective.balance }
       : null,
     mints: mintsCtx?.folded ?? null,
     inbound,
+    chain: potChain,
   };
   $: potUnitList = potUnits(potSources);
   $: potUnit =
@@ -831,7 +843,9 @@
     pots: potByUnit,
     usage,
     claims: claimsShape?.folded ?? null,
+    held: Object.keys(potChain),
   });
+  $: myShare = selfId && cascade ? (cascade.leaves[selfId]?.percentage ?? 0) : 0;
   $: myAccount = selfId ? fundAccount(rights, usageJudged, selfId) : null;
   $: myPassesTo = selfId ? namesOf(cascadeFlows.to.get(selfId)) : "";
   // A statement shows cents; the diagram rounds to whole units.
@@ -2046,6 +2060,25 @@
               <div class="k">{$t("flows.accountTitle")}</div>
               <p class="account-sub">{$t("flows.accountNone")}</p>
             </div>
+          {/if}
+          {#if hsRef && hid}
+            <!-- The Pot: collect what the committed table owes you, see what
+                 accrues until the next new moon; an attester cuts and signs
+                 the lunation's table here. -->
+            <PotPanel
+              hs={hsRef}
+              holon={hid}
+              pot={potRecord}
+              tokens={potTokens}
+              {settings}
+              {usersById}
+              {selfId}
+              {myShare}
+              {canAttest}
+              nameFor={(id) => nameFor(id) ?? undefined}
+              on:receipts={(e) => (potChain = e.detail)}
+              on:changed={() => hsRef && hid && void loadHolonSettings(hsRef, hid)}
+            />
           {/if}
           {#if canAttest && reviewClaims.length}
             <!-- An attester's desk: every open claim by someone else, with
