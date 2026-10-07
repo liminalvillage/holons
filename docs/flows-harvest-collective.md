@@ -249,6 +249,74 @@ exterior share with nobody on the rings (the guild's 20 %, Casa Selva's 14 %)
 stays as free balance in that contract, pushed through the split again by
 the next `reward()`.
 
+## The Pot: rights committed at each new moon, collected in one transfer
+
+The Bundle pushes: `reward()` pays every seat and a seat that is a contract
+runs its own `reward()` in the same transaction, so gas grows with the chain,
+everyone is paid whether they want it or not, and every re-split needs a
+`syncAll` at every level. The **Pot** (`contracts/src/Pot.sol`, bytes in
+`pot-artifact.ts`) holds instead. It never splits: who holds a right over
+the pool is decided off-chain and committed once per lunation as the Merkle
+root of a **rights table** — one row per final holder and token, carrying
+the holder's cumulative amount and payout address.
+
+    cumulative(party) at moon e = cumulative at moon e−1
+                                + share(party) at moon e × what the Pot received in lunation e
+
+`share` is the party's leaf of the flattened cascade (grove → guild → picker
+reads as one row for the picker); `received` is the contract's own counter,
+so a table never declares more than the Pot has, and the rows of a token add
+up to its receipts exactly (`rights.ts` `advanceRights`, largest-remainder
+rounding in base units). Past lunations are never redone: a re-split only
+touches later income.
+
+What the contract enforces: at most one root per mean lunation; a posted
+root waits out a challenge window (3 days by default) before it pays, the
+previous root stays in force meanwhile, and the owner can veto it; the
+totals a root declares never exceed receipts and never decrease; a claim
+pays `cumulative − released` to the committed address only, bounded by the
+committed total, and a replay pays nothing. Roots are posted by a quorum of
+signers (EIP-712 `Root`, self-held wallets — never the bot's or a derived
+key). Signer changes wait out the same window.
+
+The cycle, on every surface (kiosk Flows → _The Pot_, web Flows, MCP
+`pot_*`, bot at the new moon):
+
+1. **Deposit**: send tokens to the Pot (`deposit`, or a plain transfer then
+   `sweep`; ETH by plain transfer). Deposits count toward the lunation they
+   arrive in.
+2. **Cut** (new moon): `cutRights` walks the cascade and advances the last
+   committed table by this lunation's receipts. A walk cut short publishes
+   nothing — the income rolls into the next moon. The bot does this on its
+   own for every holon with a Pot.
+3. **Publish**: the table goes on the holon's `flow_rights` log (kind 1808,
+   attesters only); its entry id is the `tableRef` the Pot stores, so every
+   claimant can build a proof and every reviewer can rebuild the table
+   during the window and compare roots (`rights-log.ts`, `rightsRegression`).
+4. **Sign and post**: each signer signs the commitment with their wallet; the
+   signature rides on an attestation of the table, so the log's quorum and
+   the contract's are one gesture. Anyone posts once the threshold is in.
+5. **Collect**: a row's holder (or anyone for them) sends `claim` with the
+   proof; the Pot pays the row's address the difference since last time.
+
+A party is paid at the address on their own settings document
+(`settings.payout`, their own key's word — "Use this wallet"); it applies
+at the next new moon, and a party with none accrues until they set one. A
+holon that keeps part of its share is paid into its own Pot on the same
+chain, where its own table divides it next moon.
+
+Value held in a Pot is collected there and nowhere else: an inbound right
+from a holon with a Pot is marked `heldAt` and left out of the downstream
+claimable pot; a Pot-held unit's pot IS the Pot's receipts (a mint in the
+same unit is the same lot); and a claim in that unit on the `flow_claims`
+log gets a zero ceiling.
+
+Open, plainly: the whole lunation's income is divided by the split as it
+stands at the cut-off, so a split moved just before the new moon captures
+the month — the window makes it visible and vetoable. A settings document
+that has not arrived looks like a holon with no split; that is also what the
+window is for.
+
 ## Where each rule lives
 
 | rule                                      | where                                                                                                                                                                                                                                                                            |
@@ -260,6 +328,7 @@ the next `reward()`.
 | the pot to divide, per unit               | `pot.ts` (`potUnits`, `potTotal`)                                                                                                                                                                                                                                                |
 | claims, attestations, payouts             | `claims.ts` (log `flow_claims`) — see [`protocol.md`](./protocol.md)                                                                                                                                                                                                             |
 | the ceiling a claim is judged against     | `ceiling.ts` (`claimCeilings`, `claimHeadroom`), `ceiling-load.ts` (`loadClaimCeilings`, for the MCP and the bot)                                                                                                                                                                 |
+| the Pot: the rights table and its root    | `rights.ts` (`advanceRights`), `rights-tree.ts`, `rights-log.ts` (log `flow_rights`), `rights-cut.ts` (`cutRights`), `pot-contract.ts`, `payout.ts`; `contracts/src/Pot.sol`                                                                                                     |
 | the value equation                        | `@holons/core/scoring` (`currencies.hour`, `currencies.euro`)                                                                                                                                                                                                                    |
 | surfaces                                  | kiosk `FlowsView.svelte` + `AllocationSettings.svelte` (Fund, Contributors, Zones, Rules), web `flows/Flows.svelte` + `AllocationEditor.svelte`, MCP `allocation_*` / `flow_*`, bot `/fundmint` `/fundmints` `/fundclaim` `/fundattest` `/funddispute` `/fundpaid` `/fundpolicy` |
 

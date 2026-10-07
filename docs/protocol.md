@@ -108,6 +108,20 @@ awaiting attestation — is the same arithmetic, so the number on screen and
 the verdict in the log cannot disagree. The worked example is
 [`flows-harvest-collective.md`](./flows-harvest-collective.md).
 
+## Rights tables
+
+A holon with a Pot (`flows-harvest-collective.md`, _The Pot_) commits its
+rights once per lunation. The table — one row per final holder and token,
+cumulative, with a payout address — is a `rights` action on the `flow_rights`
+log, attesters only, judged against the last accepted table for the same
+Pot: an epoch that does not advance, a row or a total that decreases, or a
+root that does not match the rows is rejected (`rightsRegression`); quorum
+and disputes apply. A signer's wallet signature over the Pot's EIP-712
+`Root` rides on an attestation of the table (`buildRightsSignature`), so the
+log's quorum and the contract's are gathered in one gesture, and the entry
+id is the `tableRef` the contract stores — the relays are where a claimant
+finds the rows to prove and a reviewer the table to rebuild.
+
 ## Federation: a partner's accepted entries
 
 Two holons share the event space and derive their own realities; a partner's
@@ -168,7 +182,8 @@ No ordering or double-spend protection beyond the rules above — Nostr gives
 neither, and scarce assets settle elsewhere. Content encryption is the
 private-lens track (`packages/holosphere/PRIVACY.md`) and never applies to
 the logs this reduce reads; no relay write policy (NIP-42), no anchoring of
-checkpoint roots to a chain (the root is there to be anchored). `enforce`
+checkpoint roots to a chain (the root is there to be anchored; a Pot's
+rights root is the one root that is). `enforce`
 mode in holosphere stays off: this reduce runs only over append-only lenses,
 and every replaceable lens keeps its last-writer-wins.
 
