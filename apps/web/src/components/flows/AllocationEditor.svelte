@@ -154,6 +154,10 @@
   // each seat into that holon's own split.
   $: partnerRows = partners.map((p) => ({ id: p.id, name: `${p.name} (holon)` }));
   $: nameOf = new Map<string, string>([...people, ...partnerRows].map((p) => [p.id, p.name]));
+  // One name for an id anywhere in the editor: the rosters handed in, else the
+  // dashboard's resolver — a holon holding a contributor seat is on no roster
+  // of people, and must not print as its id.
+  $: partyName = (id: string): string => nameOf.get(id) ?? resolvedName(id, $nameMap);
   $: scoredOf = new Map<string, number>(
     members.map((m) => [String(m.userId), m.percentage]),
   );
@@ -166,7 +170,7 @@
   $: shareOfTotal = interiorSharePercentages(shares);
   $: shareRows = Object.keys(shares).map((id) => ({
     id,
-    name: nameOf.get(id) ?? id,
+    name: partyName(id),
     scored: scoredOf.get(id),
     text: shareText[id] ?? num(shares[id]),
     ofTotal: shareOfTotal[id] ?? 0,
@@ -384,14 +388,13 @@
           config: { interiorMode },
           scored: members.map((m) => ({
             id: String(m.userId),
-            name: nameOf.get(String(m.userId)) ?? String(m.userId),
+            name: String(m.userId),
             percentage: m.percentage,
           })),
           shares,
-          nameOf: (id) => nameOf.get(id),
-        }).map((m) => ({ id: m.id, name: m.name })),
+        }),
         ...partners.filter((p) => (zoneOf[p.id] ?? 0) >= 1),
-      ].map((p) => [p.id, p]),
+      ].map((p) => [p.id, { id: p.id, name: partyName(p.id) }]),
     ).values(),
   ];
   $: partyIds = parties
@@ -907,7 +910,7 @@
                           <p class="bind-warn">
                             {#if w === "loop"}
                               Part of it loops back: {bindPreflight.loops[0]
-                                .map((id) => nameOf.get(id) ?? resolvedName(id, $nameMap))
+                                .map(partyName)
                                 .join(" → ")}. That part rests where the loop closes.
                             {:else if w === "large"}
                               {bindPreflight.nodes} holons in one push — a large transaction.

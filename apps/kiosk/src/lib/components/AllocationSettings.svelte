@@ -383,15 +383,22 @@
   $: for (const id of Object.keys(personZone)) {
     if (personZone[id] > nzones) personZone[id] = nzones;
   }
-  // The people on rings, named from the roster; a placed id the roster no
-  // longer knows keeps its id so it can still be removed.
+  // One name for an id anywhere on the sheet — a share row, a ring, a bind
+  // row: the board's own answer first (it re-answers as names are learned),
+  // then the rosters handed in, then the kiosk's resolver. A holon holding a
+  // contributor seat is on no roster of people, and must not print as its id.
   $: nameOfPerson = new Map(candidates.map((c) => [c.id, c.name]));
+  $: partyName = (id: string): string =>
+    nameOf(id) ??
+    nameOfPerson.get(id) ??
+    nameOfPartner.get(id) ??
+    scoredOf.get(id)?.name ??
+    $resolvedName(id);
+  // The people on rings; a placed id the roster no longer knows can still be
+  // removed.
   $: placedPeople = Object.entries(personZone)
     .filter(([, zone]) => zone >= 1)
-    .map(([id]) => ({
-      id,
-      name: nameOfPerson.get(id) ?? nameOf(id) ?? $resolvedName(id),
-    }))
+    .map(([id]) => ({ id, name: partyName(id) }))
     .sort((a, b) => a.name.localeCompare(b.name));
   $: unplaced = candidates
     .filter(
@@ -426,20 +433,15 @@
   $: rings = Array.from({ length: nzones }, (_, i) => i + 1);
   const pct = (v: number) => `${Math.round(v * 10) / 10}`;
 
-  // The custom split as rows, named from the roster (then the scored roster),
-  // with the equation's share beside each for comparison.
+  // The custom split as rows, with the equation's share beside each for
+  // comparison.
   $: scoredOf = new Map(scored.map((m) => [m.id, m]));
   // The boxes hold plain numbers — 1/2/1 or 25/50/25, either is a split —
   // and the percentage each amounts to is worked out beside it.
   $: shareOfTotal = interiorSharePercentages(shareOf);
   $: shareRows = Object.keys(shareOf).map((id) => ({
     id,
-    name:
-      nameOfPerson.get(id) ??
-      scoredOf.get(id)?.name ??
-      nameOfPartner.get(id) ??
-      nameOf(id) ??
-      $resolvedName(id),
+    name: partyName(id),
     scored: scoredOf.get(id)?.percentage,
     text: shareText[id] ?? pct(shareOf[id]),
     ofTotal: shareOfTotal[id] ?? 0,
@@ -635,11 +637,10 @@
           config: { interiorMode },
           scored,
           shares: shareOf,
-          nameOf: (id) => nameOfPerson.get(id),
-        }).map((m) => ({ id: m.id, name: m.name })),
+        }),
         ...partners.filter((p) => (zoneOf[p.id] ?? 0) >= 1),
         ...placedPeople,
-      ].map((p) => [p.id, p]),
+      ].map((p) => [p.id, { id: p.id, name: partyName(p.id) }]),
     ).values(),
   ];
   $: partyIds = parties
@@ -1460,7 +1461,7 @@
                 <div class="pline">
                   <span class="pname"
                     >{$t("alloc.inboundFrom", {
-                      name: nameOf(r.from) ?? $resolvedName(r.from),
+                      name: partyName(r.from),
                     })}</span
                   >
                   <span class="pshare">{r.right} {r.unit.toUpperCase()}</span>
@@ -1477,7 +1478,7 @@
                   <span class="pname"
                     >{m.amount}
                     {m.unit}{m.memo ? ` — ${m.memo}` : ""}{m.source
-                      ? ` · ${nameOf(m.source) ?? $resolvedName(m.source)}`
+                      ? ` · ${partyName(m.source)}`
                       : ""}</span
                   >
                   <span class="pshare" class:warn={m.status !== "issued"}
@@ -1777,12 +1778,7 @@
                             {#if w === "loop"}
                               {$t("alloc.bindWarnLoop", {
                                 names: bindPreflight.loops[0]
-                                  .map(
-                                    (id) =>
-                                      nameOfPerson.get(id) ??
-                                      nameOf(id) ??
-                                      $resolvedName(id),
-                                  )
+                                  .map(partyName)
                                   .join(" → "),
                               })}
                             {:else if w === "large"}
