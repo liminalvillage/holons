@@ -75,6 +75,9 @@
     usageUnits,
     FLOW_CLAIMS_LENS,
     FLOW_MINTS_LENS,
+    readBundleRecord,
+    readBundleTokens,
+    readPotRecord,
     buildClaim,
     buildClaimVerdict,
     buildMint,
@@ -136,6 +139,7 @@
   import PillSwitch from "./PillSwitch.svelte";
   import Sheet from "./Sheet.svelte";
   import BalancesPanel from "./BalancesPanel.svelte";
+  import PotPanel from "./PotPanel.svelte";
   import LedgerPanel from "./LedgerPanel.svelte";
   import { dateFmt, formatter, trackKey, trackLabel, type Formatter } from "./format";
 
@@ -365,10 +369,18 @@
   // What there is to divide, per unit: the collective's money, what was minted
   // here, what reaches here. One unit is drawn at a time.
   let potUnitPick = "";
+  // The holon's Pot, when it has one: what it received on chain is the pot
+  // in those units, and a right in them is collected from the Pot by its
+  // table, never claimed in the log (`held` below). The panel reads the chain.
+  $: potRecord = readPotRecord(settings);
+  $: potTokens = readBundleTokens(readBundleRecord(settings));
+  let potChain: Record<string, number> = {};
+  $: if (!potRecord && Object.keys(potChain).length) potChain = {};
   $: potSources = {
     collective: collective ? { currency: collective.currency, balance: collective.balance } : null,
     mints: mintsCtx?.folded ?? null,
     inbound,
+    chain: potChain,
   };
   $: potUnitList = potUnits(potSources);
   $: potUnit = potUnitPick && potUnitList.includes(potUnitPick) ? potUnitPick : (potUnitList[0] ?? "");
@@ -871,7 +883,8 @@
   // draws outside the log (core `claimCeilings`).
   $: rights = cascade ? cascadeRights(cascade) : allocationResult;
   $: potByUnit = Object.fromEntries(potUnitList.map((u) => [u, potTotal(u, potSources, usage)])) as Record<string, number>;
-  $: ceilings = claimCeilings({ shares: rights, pots: potByUnit, usage, claims: claimsShape?.folded ?? null });
+  $: ceilings = claimCeilings({ shares: rights, pots: potByUnit, usage, claims: claimsShape?.folded ?? null, held: Object.keys(potChain) });
+  $: myShare = selfId && cascadeShape ? (cascadeShape.leaves[selfId]?.percentage ?? 0) : 0;
   $: claimMax = selfId && claimUnit ? claimHeadroom(ceilings, claimsCtx?.folded, selfId, claimUnit) : null;
   $: claimTooBig = !fitsHeadroom(claimMax, Number(String(claimAmount).replace(",", ".")));
   $: allocationLayout = layoutSankey(allocationTrack);
@@ -1827,6 +1840,24 @@
           {/if}
           {#if mintError}<p class="note warn">{mintError}</p>{/if}
         </div>
+        <!-- The Pot: value held on chain, divided by a rights table committed
+             once per lunation; collect in one transaction. -->
+        <PotPanel
+          {holosphere}
+          {holonID}
+          pot={potRecord}
+          tokens={potTokens}
+          {settings}
+          {usersById}
+          {membersLog}
+          policyEntries={[...policyEntries.values()]}
+          {attestations}
+          {selfId}
+          {myShare}
+          {canAttest}
+          {partyName}
+          on:receipts={(e) => (potChain = e.detail)}
+        />
         <!-- Claims on the fund: signed entries in the holon's own log, judged
              by its attesters, folded the same way on every surface. -->
         <div class="claims-panel">
