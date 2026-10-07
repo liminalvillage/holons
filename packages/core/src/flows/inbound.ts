@@ -24,6 +24,7 @@
 import { getFederationSnapshot } from '../federation/snapshot.js';
 import { myHolons } from '../holons/list.js';
 import { allocate, resolveInteriorMembers, type AllocationMember } from './allocation.js';
+import { readPotRecord } from './bundle.js';
 import { loadMints } from './mints-load.js';
 import {
   hasAllocationConfig,
@@ -195,20 +196,28 @@ export async function loadInboundRights(
   if (!holosphere || !self) return out;
 
   // Total pots per holon, memoised: minted here plus inbound from above.
-  const potCache = new Map<string, Promise<UpstreamPot[]>>();
-  const potsFor = (id: string, hop: number, path: readonly string[]): Promise<UpstreamPot[]> => {
+  // A right the holon holds over a Pot further up is NOT in its pot — that
+  // value sits in the Pot and is collected there — so it is carried aside
+  // (`held`) and passed on to whoever this holon seats, still marked.
+  type Pots = { pots: UpstreamPot[]; held: InboundRight[] };
+  const potCache = new Map<string, Promise<Pots>>();
+  const potsFor = (id: string, hop: number, path: readonly string[]): Promise<Pots> => {
     const key = `${id}#${hop}`;
     const cached = potCache.get(key);
     if (cached) return cached;
     const p = (async () => {
       const own = await potsOf(id).catch(() => [] as UpstreamPot[]);
       const totals = new Map<string, number>();
+      const held: InboundRight[] = [];
       for (const pot of own) if (pot.total > 0) totals.set(pot.unit, (totals.get(pot.unit) ?? 0) + pot.total);
       if (hop < maxHops) {
         const above = await rightsInto(id, hop + 1, [...path, id]);
-        for (const r of above) totals.set(r.unit, (totals.get(r.unit) ?? 0) + r.right);
+        for (const r of above) {
+          if (r.heldAt) held.push(r);
+          else totals.set(r.unit, (totals.get(r.unit) ?? 0) + r.right);
+        }
       }
-      return [...totals.entries()].map(([unit, total]) => ({ unit, total: round(total) }));
+      return { pots: [...totals.entries()].map(([unit, total]) => ({ unit, total: round(total) })), held };
     })();
     potCache.set(key, p);
     return p;
@@ -255,9 +264,10 @@ export async function loadInboundRights(
           scored = [];
         }
       }
-      const pots = await potsFor(upstreamId, hop, path);
-      for (const pot of pots) {
-        const right = inboundRightFrom({
+      const { pots, held } = await potsFor(upstreamId, hop, path);
+      const heldAt = readPotRecord(settings);
+      const seat = (pot: UpstreamPot) =>
+        inboundRightFrom({
           upstreamId,
           upstreamSettings: settings,
           pot,
@@ -266,7 +276,24 @@ export async function loadInboundRights(
           partnerNames: snapshot?.partnerNames ?? null,
           scored,
         });
-        if (right) rights.push(right);
+      for (const pot of pots) {
+        const right = seat(pot);
+        if (right) rights.push(heldAt ? { ...right, heldAt: { chainId: heldAt.chainId, pot: heldAt.address } } : right);
+      }
+      // What the upstream holds over a Pot above it reaches `target` by the
+      // upstream's split, still held there: the Pot's table flattens it to
+      // the same leaf.
+      for (const above of held) {
+        const through = seat({ unit: above.unit, total: above.right });
+        if (!through) continue;
+        rights.push({
+          from: above.from,
+          unit: above.unit,
+          right: through.right,
+          ...(above.percentage != null && through.percentage != null ? { percentage: round((above.percentage * through.percentage) / 100) } : {}),
+          ...(above.pot != null ? { pot: above.pot } : {}),
+          heldAt: above.heldAt,
+        });
       }
       if (rights.some((r) => r.from === upstreamId) && target === self && !out.upstreams.includes(upstreamId)) {
         out.upstreams.push(upstreamId);

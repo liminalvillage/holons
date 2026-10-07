@@ -247,6 +247,12 @@ export {
   type BundleMigration,
   type BundleToken,
   type HolonBundleRecord,
+  POT_KEY,
+  loadPotRecord,
+  normalizePotRecord,
+  readPotRecord,
+  savePotRecord,
+  type PotRecord,
 } from './bundle.js';
 
 export {
@@ -350,7 +356,7 @@ export {
   type UpstreamPot,
 } from './inbound.js';
 
-export { defaultPotUnit, hasPot, mintedIn, potBalance, potTotal, potUnits, type PotSources } from './pot.js';
+export { claimableInbound, defaultPotUnit, hasPot, heldInPot, mintedIn, potBalance, potTotal, potUnits, type PotSources } from './pot.js';
 export { scoreAllocationMembers } from './score-load.js';
 
 export {
@@ -370,3 +376,74 @@ export {
 } from './ceiling-load.js';
 export { loadAllocationInputs, onwardParties, type AllocationInputs } from './cascade-load.js';
 export { defaultUpstreams } from './inbound.js';
+
+// ── The Pot: value held, rights committed once per lunation ───────────────
+
+export {
+  ZERO_ADDRESS,
+  advanceRights,
+  collectable,
+  divideExactly,
+  normalizeAddress,
+  rightsRegression,
+  rightsRow,
+  type AdvanceRightsInput,
+  type RightsRow,
+  type RightsTable,
+} from './rights.js';
+export {
+  EMPTY_RIGHTS_ROOT,
+  encodeRow,
+  partyKey,
+  rightsProof,
+  rightsRoot,
+  rowLeaf,
+  verifyRightsProof,
+} from './rights-tree.js';
+export {
+  FLOW_RIGHTS_LENS,
+  buildRightsEntry,
+  foldRights,
+  foldRightsFromLenses,
+  isRights,
+  latestRights,
+  rightsByRef,
+  tableOf,
+  type FoldRightsInput,
+  type FoldedRights,
+  type PublishedRights,
+  type RightsBody,
+  type RightsStatus,
+  type RightsFromLensesInput,
+} from './rights-log.js';
+export { DEFAULT_RIGHTS_HOLONS, cutRights, type CutRights, type CutRightsOptions } from './rights-cut.js';
+export {
+  POT_ABI,
+  POT_ETH,
+  POT_ROOT_TYPES,
+  orderSignatures,
+  potClaimArgList,
+  potClaimArgs,
+  potCommitment,
+  potDomain,
+  potPostRootArgs,
+  type PotClaimArgs,
+  type PotCommitment,
+} from './pot-contract.js';
+export {
+  DEFAULT_POT_CHALLENGE_SECONDS,
+  POT_BYTECODE,
+  POT_CONSTRUCTOR_ABI,
+  potConstructorArgList,
+  potConstructorArgs,
+  type PotConstructorArgs,
+} from './pot-artifact.js';
+export {
+  DEFAULT_PAYOUT_CONCURRENCY,
+  PAYOUT_KEY,
+  loadPayoutAddresses,
+  payoutAddressOf,
+  readPayoutAddress,
+  savePayoutAddress,
+  type PayoutRecord,
+} from './payout.js';

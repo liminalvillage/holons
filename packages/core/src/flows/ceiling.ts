@@ -49,6 +49,12 @@ export interface ClaimCeilingInput {
   usage: FundUsage | null | undefined;
   /** The fold `usage` was built from, so the log's own draws are not subtracted twice. */
   claims: FoldedClaims | null | undefined;
+  /**
+   * Units the holon holds in its Pot. A right in them is COLLECTED from the
+   * Pot by its rights table, never claimed in the log, so the ceiling is zero:
+   * the value cannot be drawn twice.
+   */
+  held?: readonly string[] | null;
 }
 
 const round = (v: number) => Math.round(v * 100) / 100;
@@ -77,11 +83,16 @@ export function claimCeilings(input: ClaimCeilingInput): ClaimCeilings {
   if (parties.size === 0) return out;
   // The usage only carries the log's draws when it was built from a fold.
   const logged = input.usage && input.usage.claimsSource !== 'expenses' ? input.claims : null;
+  const held = new Set((input.held ?? []).map(unitKey));
   for (const [unitRaw, potRaw] of Object.entries(input.pots ?? {})) {
     const unit = normalizeCurrency(unitRaw);
     const pot = Number(potRaw);
     if (!unit || !Number.isFinite(pot) || pot <= 0) continue;
     const key = unit.toUpperCase();
+    if (held.has(key)) {
+      for (const party of parties.keys()) (out[party] ??= {})[key] = 0;
+      continue;
+    }
     for (const [party, pct] of parties) {
       const right = (pct / 100) * pot;
       const life = lifetimeOf(input.usage, party, unit);

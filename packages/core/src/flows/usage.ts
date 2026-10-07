@@ -267,6 +267,13 @@ export interface InboundRight {
   pot?: number;
   /** The upstream fund's usage, for accounts and bars — see `mergeInboundUsage`. */
   usage?: FundUsage | null;
+  /**
+   * Set when the upstream holds its value in a Pot: the right is shown here
+   * but COLLECTED there, by the upstream's rights table, so it never feeds
+   * this holon's claimable pot (`potTotal`) — the same value would otherwise
+   * be claimable in two logs.
+   */
+  heldAt?: { chainId: number; pot: string };
 }
 
 /** What upstream rights add to a pot in `unit`. Other units are never converted. */

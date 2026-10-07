@@ -17,10 +17,12 @@
 import type { Expense } from '../expenses/index.js';
 import { normalizeCurrency } from '../expenses/index.js';
 import type { AllocationMember, AllocationResult } from './allocation.js';
+import { loadBundleRecord, loadPotRecord, readBundleTokens } from './bundle.js';
 import { childResolver, loadAllocationInputs, loadCascadeChildren } from './cascade-load.js';
 import { DEFAULT_CASCADE_DEPTH, cascadeRights, resolveCascade } from './cascade.js';
 import { claimCeilings, partyShares, type ClaimCeilings } from './ceiling.js';
 import type { FoldedClaims } from './claims.js';
+import { nativeUnit } from './holdings.js';
 import { loadInboundRights } from './inbound.js';
 import { loadMints } from './mints-load.js';
 import type { OpenCollectiveSnapshot } from './opencollective.js';
@@ -43,6 +45,8 @@ export interface LoadClaimCeilingsOptions {
   expenses?: Expense[] | null;
   /** Everyone in the holon, for an expense with no split; default the rights-holders. */
   members?: readonly string[];
+  /** Unit → what the holon's Pot received in it, when the surface read the chain; apps own that read. */
+  chain?: Record<string, number> | null;
   now?: number;
 }
 
@@ -55,6 +59,8 @@ export interface LoadedClaimCeilings {
   usage: FundUsage | null;
   /** The cascade or the inbound climb hit a bound. */
   truncated: boolean;
+  /** Units held in the holon's Pot: collected by its table, ceiling zero in the log. */
+  held: string[];
 }
 
 const EMPTY: LoadedClaimCeilings = {
@@ -63,6 +69,7 @@ const EMPTY: LoadedClaimCeilings = {
   pots: {},
   usage: null,
   truncated: false,
+  held: [],
 };
 
 /** The ceilings every party holds over `holonId`'s fund, per unit, read from the store. */
@@ -80,7 +87,7 @@ export async function loadClaimCeilings(
   const root = { config: inputs.config, members: inputs.members, zoned: inputs.zoned };
   const rootPartyIds = [...new Set([...inputs.members.map((m) => m.id), ...inputs.zoned.filter((p) => p.zone >= 1).map((p) => p.id)])];
 
-  const [loaded, mints, inbound, expenses] = await Promise.all([
+  const [loaded, mints, inbound, expenses, pot, bundle] = await Promise.all([
     loadCascadeChildren(holosphere, rootPartyIds, {
       rootId: holon,
       maxDepth: opts.maxDepth,
@@ -90,7 +97,11 @@ export async function loadClaimCeilings(
     quiet(loadMints(holosphere, holon).then((c) => c.folded), null),
     quiet(loadInboundRights(holosphere, holon, { scoreOf: opts.scoreOf }), { inbound: [], upstreams: [], visited: 0, truncated: false }),
     opts.expenses !== undefined ? Promise.resolve(opts.expenses ?? []) : quiet<Expense[]>(holosphere.getAll(holon, 'expenses'), []),
+    quiet(loadPotRecord(holosphere, holon), null),
+    quiet(loadBundleRecord(holosphere, holon), null),
   ]);
+  // The units the holon reads on-chain are the ones its Pot holds.
+  const held = pot ? [...new Set([nativeUnit(pot.chainId), ...readBundleTokens(bundle).map((t) => t.symbol)].map((u) => normalizeCurrency(u)))] : [];
 
   const cascade = resolveCascade({
     holonId: holon,
@@ -105,9 +116,10 @@ export async function loadClaimCeilings(
     collective: opts.collective ? { currency: opts.collective.currency, balance: opts.collective.balance } : null,
     mints,
     inbound: inbound.inbound,
+    chain: opts.chain ?? null,
   };
   const units = potUnits(sources);
-  if (units.length === 0) return { ...EMPTY, shares, truncated: loaded.truncated || inbound.truncated };
+  if (units.length === 0) return { ...EMPTY, shares, truncated: loaded.truncated || inbound.truncated, held };
 
   const parties: FundUsageParty[] = [...partyShares(shares).keys()].map((id) => ({ id, name: id }));
   const usage = buildFundUsage({
@@ -127,10 +139,11 @@ export async function loadClaimCeilings(
   }
 
   return {
-    ceilings: claimCeilings({ shares, pots, usage, claims: opts.claims ?? null }),
+    ceilings: claimCeilings({ shares, pots, usage, claims: opts.claims ?? null, held }),
     shares,
     pots,
     usage,
     truncated: loaded.truncated || inbound.truncated || cascade.truncated,
+    held,
   };
 }

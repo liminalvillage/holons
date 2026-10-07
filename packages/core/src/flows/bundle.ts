@@ -65,6 +65,45 @@ export interface HolonBundleRecord {
   tokens?: BundleToken[];
 }
 
+/**
+ * Settings field holding the deployed Pot — value held and divided by a
+ * rights table committed once per lunation (`rights.ts`). Its own key, not a
+ * Bundle field: a holon may have a Pot and no Bundle, and a Bundle reader
+ * must never mistake a Pot for one.
+ */
+export const POT_KEY = 'pot';
+
+/** The deployed Pot of a holon. */
+export interface PotRecord {
+  address: string;
+  chainId: number;
+  /** Seconds a posted root waits before it pays, as deployed. */
+  challenge?: number;
+  deployedAt?: number;
+  txHash?: string;
+}
+
+/** A stored Pot entry made whole, or null when it cannot be used. */
+export function normalizePotRecord(raw: unknown): PotRecord | null {
+  const p = (raw ?? {}) as Record<string, unknown>;
+  if (!isAddress(p.address)) return null;
+  const chainId = Number(p.chainId);
+  if (!Number.isInteger(chainId) || chainId <= 0) return null;
+  const num = (v: unknown) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const challenge = num(p.challenge);
+  const deployedAt = num(p.deployedAt);
+  return {
+    address: p.address.toLowerCase(),
+    chainId,
+    ...(challenge != null ? { challenge } : {}),
+    ...(deployedAt != null ? { deployedAt } : {}),
+    ...(p.txHash != null ? { txHash: String(p.txHash) } : {}),
+  };
+}
+
 /** A token the Bundle's holdings are read in. */
 export interface BundleToken {
   address: string;
@@ -136,6 +175,36 @@ function toBundle(raw: unknown): HolonBundleRecord | null {
     txHash: doc.txHash != null ? String(doc.txHash) : undefined,
     ...(Array.isArray(doc.tokens) ? { tokens: readBundleTokens({ tokens: doc.tokens as BundleToken[] }) } : {}),
   };
+}
+
+/** The holon's Pot as stored on the canonical settings document, or null. */
+export function readPotRecord(settings: unknown): PotRecord | null {
+  const doc = (settings ?? {}) as Record<string, unknown>;
+  return normalizePotRecord(doc[POT_KEY]);
+}
+
+/** The deployed Pot for a holon: one keyed lookup, no wallet, no contract call. */
+export async function loadPotRecord(holosphere: any, holonId: string): Promise<PotRecord | null> {
+  if (!holosphere || !holonId) return null;
+  try {
+    return readPotRecord(await holosphere.get(String(holonId), 'settings', String(holonId)));
+  } catch {
+    return null;
+  }
+}
+
+/** Persist the deployed Pot, merged onto the canonical settings document like the Bundle is. */
+export async function savePotRecord(holosphere: any, holonId: string, pot: PotRecord): Promise<PotRecord> {
+  const clean = normalizePotRecord(pot);
+  if (!clean) throw new Error('A Pot needs a 0x address and a chain id');
+  let existing: any = null;
+  try {
+    existing = await holosphere.get(String(holonId), 'settings', String(holonId));
+  } catch {
+    // A failed read must not lose the deploy: write the Pot alone rather than dropping it.
+  }
+  await holosphere.put(String(holonId), 'settings', { ...(existing ?? {}), id: String(holonId), [POT_KEY]: clean });
+  return clean;
 }
 
 /**
