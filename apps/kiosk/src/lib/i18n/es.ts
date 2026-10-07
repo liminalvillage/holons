@@ -626,8 +626,6 @@ export const es: Record<MessageKey, Msg> = {
   "settings.holon": "Holón",
   "settings.holonPlaceholder": "id del holón",
   "settings.unpinHolon": "Borrar — mostrar la página de inicio",
-  "settings.displayName": "Nombre visible",
-  "settings.displayNamePlaceholder": "se muestra en la cabecera",
   "settings.logo": "Logotipo",
   "settings.logoSub": "— opcional; si no, el nombre aparece como texto",
   "settings.logoPreview": "Vista previa del logotipo",

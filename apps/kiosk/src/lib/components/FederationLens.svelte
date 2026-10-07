@@ -1,6 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import Icon from "$lib/components/Icon.svelte";
+  import Identicon from "$lib/components/Identicon.svelte";
   import { nameOf as resolvedName } from "$lib/names";
   //
   // The flow editor for ONE pair of holons — what pops up when two circles are
@@ -129,8 +130,6 @@
 
   const nameA = () => holonName || $resolvedName(holon);
   const nameB = () => partnerName || $resolvedName(partner);
-  const initialOf = (name: string) =>
-    /[\p{L}\p{N}]/u.exec(name)?.[0]?.toUpperCase() ?? "·";
 
   $: colorA = holonColor(holon, $holonColors);
   $: colorB = holonColor(partner, $holonColors);
@@ -323,8 +322,10 @@
   <!-- The pair, drawn the way the dock draws it: two orbs overlapping 25%,
        their vesica between them — this popup edits what crosses it. -->
   <div class="pair" aria-hidden="true">
-    <span class="orb" style="--c: {colorA}">{initialOf(nameA())}</span>
-    <span class="orb second" style="--c: {colorB}">{initialOf(nameB())}</span>
+    <span class="orb" style="--c: {colorA}"><Identicon seed={holon} /></span>
+    <span class="orb second" style="--c: {colorB}"
+      ><Identicon seed={partner} /></span
+    >
   </div>
   <div class="names">
     <span class="name">{nameA()}</span>
@@ -346,7 +347,7 @@
     {#each rows as r (r.key)}
       <div class="row" class:master={r.master}>
         <span class="mini" style="--c: {colorA}" aria-hidden="true"
-          >{initialOf(nameA())}</span
+          ><Identicon seed={holon} /></span
         >
         <div class="mid">
           <span class="lens-name"
@@ -392,7 +393,7 @@
           </div>
         </div>
         <span class="mini" style="--c: {colorB}" aria-hidden="true"
-          >{initialOf(nameB())}</span
+          ><Identicon seed={partner} /></span
         >
       </div>
     {/each}

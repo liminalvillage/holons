@@ -1,14 +1,15 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import Icon from "$lib/components/Icon.svelte";
+  import Identicon from "$lib/components/Identicon.svelte";
   import {
     visibleTabs,
     activeTab,
     selectTab,
     togglePin,
     pinnedTab,
+    holonId,
     holonName,
-    brandName,
     brandLogo,
     userMenuOpen,
     searchQuery,
@@ -345,8 +346,9 @@
     month: "long",
   });
 
-  // Caretaker-set name wins over the holon's own name; logo over the default.
-  $: brandText = $brandName || $holonName;
+  // The header names the holon by ITS name — there is no caretaker override —
+  // and marks it with its identicon, the same mark its dock orb wears. An
+  // uploaded logo (an image) replaces both.
 
   // If the active tab is hidden (e.g. the library just emptied), fall back to
   // the first visible tab without counting it as a user interaction.
@@ -366,9 +368,10 @@
   <div class="top">
     <div class="brand">
       {#if $brandLogo}
-        <img class="logo" src={$brandLogo} alt={brandText || "Kiosk"} />
+        <img class="logo" src={$brandLogo} alt={$holonName || "Kiosk"} />
       {:else}
-        <span class="wordmark">{brandText || "kiosk"}</span>
+        {#if $holonId}<Identicon class="mark" seed={$holonId} />{/if}
+        <span class="wordmark">{$holonName || "kiosk"}</span>
       {/if}
     </div>
 
@@ -900,6 +903,13 @@
     object-fit: contain;
     display: block;
   }
+  /* The holon's mark, a touch taller than the wordmark's x-height, in the
+     same ink; the two read as one title. */
+  .brand :global(.mark) {
+    font-size: 1.7rem;
+    color: var(--teal-ink);
+    margin-right: 0.55rem;
+  }
   .brand .wordmark {
     display: inline-block;
     font-family: var(--font-logo);
@@ -965,14 +975,18 @@
     .clock {
       display: none;
     }
-    /* The title goes; a caretaker's custom logo (an image) stays. */
+    /* The title goes; the holon's mark and a caretaker's custom logo (an
+       image) stay — a mark is narrow enough to share the row. */
     .brand .wordmark {
       display: none;
     }
     .brand {
       min-height: 0;
     }
-    .brand:not(:has(.logo)) {
+    .brand :global(.mark) {
+      margin-right: 0;
+    }
+    .brand:not(:has(.logo)):not(:has(.mark)) {
       display: none;
     }
     .top {

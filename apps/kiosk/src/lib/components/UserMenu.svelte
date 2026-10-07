@@ -11,7 +11,6 @@
     showNotice,
     holonId,
     holonName,
-    brandName,
     settingsOpen,
     userMenuOpen,
     writeStanding,
@@ -27,7 +26,7 @@
   import { isHolonId, isTelegramChatId } from "@holons/core/protocol";
   import { t, tr } from "$lib/i18n";
 
-  $: who = $brandName || $holonName;
+  $: who = $holonName;
 
   function close() {
     userMenuOpen.set(false);

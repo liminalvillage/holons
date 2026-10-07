@@ -73,8 +73,6 @@ export const writeStanding = writable<"accepted" | "held" | "open" | null>(
   null,
 );
 
-/** Caretaker-set display name shown in the header; overrides the holon name. */
-export const brandName = writable<string>("");
 /** Caretaker-set header logo (data URL or image URL); empty → bundled logo. */
 export const brandLogo = writable<string>("");
 /** Accent colour (hex); applied as the `--teal` family across the UI. */

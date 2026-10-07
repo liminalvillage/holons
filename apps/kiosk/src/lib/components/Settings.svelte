@@ -1,6 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import Icon from "$lib/components/Icon.svelte";
+  import Identicon from "$lib/components/Identicon.svelte";
   // Caretaker settings for the kiosk, in three groups: which holon the screen
   // shows; how it looks (name, logo, the two colours, theme, language); and
   // what is true of the hub wherever it is shown (location, map, privacy,
@@ -18,7 +19,6 @@
   import {
     holonId,
     holonName,
-    brandName,
     brandLogo,
     accent,
     statusEnabled,
@@ -29,7 +29,6 @@
   import { showHomePage } from "$lib/home";
   import {
     setHolonId,
-    setBrandName,
     setBrandLogo,
     setAccent,
     setThemeMode,
@@ -102,7 +101,6 @@
   // Drafts for the free-text fields only — every other control writes through
   // on touch and renders its store.
   let draftHolon = $holonId ?? "";
-  let draftName = $brandName;
   let draftAccent = $accent || DEFAULT_ACCENT;
   let logoError = "";
 
@@ -575,11 +573,6 @@
     await showHomePage();
   }
 
-  function commitName() {
-    setBrandName(draftName);
-    brandName.set(draftName.trim());
-  }
-
   function commitLogo(value: string) {
     setBrandLogo(value || null);
     brandLogo.set(value);
@@ -692,17 +685,6 @@
   {/if}
 
   <h4 class="group">{$t("settings.groupLook")}</h4>
-  <label class="field"
-    >{$t("settings.displayName")}
-    <input
-      type="text"
-      bind:value={draftName}
-      placeholder={$holonName || $t("settings.displayNamePlaceholder")}
-      on:change={commitName}
-      on:keydown={blurOnEnter}
-    />
-  </label>
-
   <div class="field">
     {$t("settings.logo")} <span class="sub">{$t("settings.logoSub")}</span>
     <div class="logo-row">
@@ -710,11 +692,10 @@
         {#if $brandLogo}
           <img src={$brandLogo} alt={$t("settings.logoPreview")} />
         {:else}
-          <span class="wm"
-            >{draftName.trim() ||
-              $holonName ||
-              $t("settings.namePlaceholder")}</span
-          >
+          <span class="wm">
+            {#if $holonId}<Identicon seed={$holonId} />{/if}
+            {$holonName || $t("settings.namePlaceholder")}
+          </span>
         {/if}
       </div>
       <div class="logo-actions">
@@ -1367,6 +1348,9 @@
     object-fit: contain;
   }
   .logo-preview.empty .wm {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
     font-size: 0.8rem;
     font-weight: 700;
     color: var(--teal-ink);

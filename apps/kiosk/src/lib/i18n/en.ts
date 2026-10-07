@@ -622,8 +622,6 @@ export const en = {
   "settings.holon": "Holon",
   "settings.holonPlaceholder": "holon id",
   "settings.unpinHolon": "Clear — show the home page",
-  "settings.displayName": "Display name",
-  "settings.displayNamePlaceholder": "shown in the header",
   "settings.logo": "Logo",
   "settings.logoSub": "— optional; the name shows as text otherwise",
   "settings.logoPreview": "Logo preview",

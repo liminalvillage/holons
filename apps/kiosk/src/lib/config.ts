@@ -43,7 +43,6 @@ const TASKS_KEY = "kiosk_tasks";
 const CALENDAR_KEY = "kiosk_calendar";
 const PINNED_KEY = "kiosk_pinned";
 const TAB_ORDER_KEY = "kiosk_tab_order";
-const BRAND_NAME_KEY = "kiosk_brand_name";
 const BRAND_LOGO_KEY = "kiosk_brand_logo";
 const ACCENT_KEY = "kiosk_accent";
 const THEME_KEY = "kiosk_theme";
@@ -509,21 +508,6 @@ export function resolvePinnedTab(): string | null {
 export function setPinnedTab(id: string | null): void {
   if (id) persist(PINNED_KEY, id);
   else forget(PINNED_KEY);
-}
-
-/**
- * The kiosk's display name, shown in the header beside the logo. A caretaker can
- * override the holon's own name here; null means "use the holon's name".
- */
-export function resolveBrandName(): string | null {
-  return persisted(BRAND_NAME_KEY);
-}
-
-/** Persist (or clear, when blank) the custom display name. */
-export function setBrandName(name: string): void {
-  const trimmed = name.trim();
-  if (trimmed) persist(BRAND_NAME_KEY, trimmed);
-  else forget(BRAND_NAME_KEY);
 }
 
 /**

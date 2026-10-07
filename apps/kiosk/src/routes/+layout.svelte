@@ -35,7 +35,6 @@
     resolveTasksEnabled,
     resolveCalendarEnabled,
     resolveTabOrder,
-    resolveBrandName,
     resolveBrandLogo,
     resolveAccent,
     resolveThemeMode,
@@ -66,7 +65,6 @@
     holonId as holonIdStore,
     writeStanding,
     partnerNames,
-    brandName,
     brandLogo,
     accent,
     scope,
@@ -697,7 +695,6 @@
     offersViewMode.set(resolveOffersView());
     calendarMode.set(resolveCalendarView());
     libraryCalendarMode.set(resolveLibraryCalendarView());
-    brandName.set(resolveBrandName() ?? "");
     brandLogo.set(resolveBrandLogo() ?? "");
     accent.set(resolveAccent());
     themeMode.set(resolveThemeMode());
@@ -767,7 +764,7 @@
   // opening on it (lib/manifest.ts), so "Add to Home Screen" — ours in the
   // user menu or the browser's own — installs THIS hub, not the front door.
   // The static manifest in app.html stands until a holon is known.
-  $: appName = isHome || isAbout ? "" : $brandName || $holonName || "";
+  $: appName = isHome || isAbout ? "" : $holonName || "";
   $: if (mounted) {
     const start = isAbout
       ? "/"
@@ -1109,7 +1106,7 @@
   {#if isHome}
     <title>hubs network</title>
   {:else if !isAbout}
-    <title>{$brandName || $holonName || $holonIdStore || "Holons"}</title>
+    <title>{$holonName || $holonIdStore || "Holons"}</title>
   {/if}
   <!-- iOS labels the home screen icon from this, ahead of the manifest. -->
   <meta name="apple-mobile-web-app-title" content={appName || "Holons"} />
