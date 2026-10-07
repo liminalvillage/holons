@@ -9,10 +9,12 @@ import {
   forgottenBy,
   hueFor,
   labelFor,
-  lensPath,
+  matchesDock,
+  pairFlows,
+  type LensDirections,
+  liquidPath,
   linksAmong,
   orbClusters,
-  LINK_MAX_GAP,
   orbLayout,
   orbPositions,
   orbUnder,
@@ -378,13 +380,13 @@ describe("orbUnder (what a drop lands on)", () => {
     expect(orbUnder(positions, { x: 100, y: 100 }, "-1", r)).toBe(null);
   });
 
-  it("ignores a federated partner towed along at the link's full reach", () => {
-    // linkOverlap holds a partner within LINK_MAX_GAP radii of the carried
-    // orb for the whole drag. At that reach the finger is over the ground,
-    // so the drop must fall through to the hexagon beneath it.
+  it("ignores a federated partner towed along at the spring's reach", () => {
+    // The spring tows a free partner about 1.55 radii behind the carried orb
+    // for the whole drag. At that reach the finger is over the ground, so
+    // the drop must fall through to the hexagon beneath it.
     const towed = new Map([
       ["-1", { x: 100, y: 100 }],
-      ["-2", { x: 100 + r * LINK_MAX_GAP, y: 100 }],
+      ["-2", { x: 100 + r * 1.55, y: 100 }],
     ]);
     expect(orbUnder(towed, { x: 100, y: 100 }, "-1", r)).toBe(null);
     // A capture radius as wide as the leash matched it on every frame — the
@@ -536,16 +538,114 @@ describe("convexHull / boundsPath", () => {
   });
 });
 
-describe("lensPath", () => {
-  it("draws the vesica of two overlapping circles", () => {
-    const d = lensPath({ x: 100, y: 100 }, { x: 178, y: 100 }, 52);
-    expect(d).toMatch(/^M .* A 52 52 .* A 52 52 .* Z$/);
+describe("liquidPath", () => {
+  const r = 52;
+  const nums = (d: string) =>
+    d
+      .replace(/[MCAZ]/g, " ")
+      .trim()
+      .split(/\s+/)
+      .map(Number);
+
+  it("spans overlapping and separated orbs alike, closed and finite", () => {
+    for (const bx of [140, 178, 230, 400]) {
+      const d = liquidPath({ x: 100, y: 100 }, { x: bx, y: 100 }, r);
+      expect(d).toMatch(/^M /);
+      expect(d).toMatch(/Z$/);
+      expect((d.match(/ C /g) ?? []).length).toBe(4);
+      expect((d.match(/ A /g) ?? []).length).toBe(2);
+      for (const n of nums(d)) expect(Number.isFinite(n)).toBe(true);
+    }
   });
 
-  it("is empty when the circles are apart or concentric", () => {
-    expect(lensPath({ x: 0, y: 0 }, { x: 200, y: 0 }, 52)).toBe("");
-    expect(lensPath({ x: 0, y: 0 }, { x: 104, y: 0 }, 52)).toBe(""); // touching
-    expect(lensPath({ x: 5, y: 5 }, { x: 5, y: 5 }, 52)).toBe("");
+  it("is empty for concentric orbs or no radius", () => {
+    expect(liquidPath({ x: 5, y: 5 }, { x: 5, y: 5 }, r)).toBe("");
+    expect(liquidPath({ x: 0, y: 0 }, { x: 100, y: 0 }, 0)).toBe("");
+  });
+
+  it("pinches to a thread when apart and fills the vesica when overlapping", () => {
+    // The neck point ends the first cubic: M p1 C c1 c2 q → q.y is n[7].
+    const neckY = (bx: number) => {
+      const n = nums(liquidPath({ x: 100, y: 100 }, { x: bx, y: 100 }, r));
+      return Math.abs(n[7] - 100);
+    };
+    const apart = neckY(400);
+    const overlapping = neckY(178);
+    expect(apart).toBeCloseTo(r * 0.16, 0);
+    const h = Math.sqrt(r * r - (78 * 78) / 4);
+    expect(overlapping).toBeGreaterThan(h);
+    expect(overlapping).toBeLessThan(h + r * 0.2);
+  });
+
+  it("is symmetric: swapping the ends draws the same shape", () => {
+    const a = { x: 100, y: 120 };
+    const b = { x: 300, y: 260 };
+    const ab = new Set(nums(liquidPath(a, b, r)).map((v) => v.toFixed(0)));
+    const ba = new Set(nums(liquidPath(b, a, r)).map((v) => v.toFixed(0)));
+    expect(ab).toEqual(ba);
+  });
+});
+
+describe("pairFlows", () => {
+  it("folds both sides' records into two directions", () => {
+    const configs = new Map<string, Record<string, LensDirections>>([
+      ["A", { B: { inbound: ["library"], outbound: ["quests", "stock"] } }],
+      ["B", { A: { inbound: ["quests"], outbound: ["library", "roles"] } }],
+    ]);
+    expect(pairFlows("A", "B", configs)).toEqual({
+      ab: ["quests", "stock"],
+      ba: ["library", "roles"],
+    });
+    // Symmetric: asking from B's side mirrors it.
+    expect(pairFlows("B", "A", configs)).toEqual({
+      ab: ["library", "roles"],
+      ba: ["quests", "stock"],
+    });
+  });
+
+  it("tells the story from one side when the other is missing", () => {
+    const configs = new Map<string, Record<string, LensDirections>>([
+      ["A", { B: { inbound: [], outbound: ["quests"] } }],
+    ]);
+    expect(pairFlows("A", "B", configs)).toEqual({ ab: ["quests"], ba: [] });
+    expect(pairFlows("A", "C", configs)).toEqual({ ab: [], ba: [] });
+  });
+});
+
+describe("matchesDock (the search box as a filter)", () => {
+  const liminal = {
+    id: "-1003864542239",
+    name: "Liminal Village Chaordination",
+  };
+  const grove = { id: "holon_ccdhuztubkrs5thm", name: "Casa Selva grove" };
+  const oilonics = { id: "-5560750486", name: "Oilonics" };
+
+  it("a blank query filters nothing", () => {
+    expect(matchesDock(liminal, "")).toBe(true);
+    expect(matchesDock(liminal, "   ")).toBe(true);
+  });
+
+  it("matches the name, case and accents aside", () => {
+    expect(matchesDock(liminal, "limi")).toBe(true);
+    expect(matchesDock(liminal, "VILLAGE")).toBe(true);
+    expect(
+      matchesDock({ id: "x", name: "Rigenerativa Società" }, "societa"),
+    ).toBe(true);
+    expect(matchesDock(grove, "lim")).toBe(false);
+  });
+
+  it("every word must hit, in any order", () => {
+    expect(matchesDock(grove, "grove casa")).toBe(true);
+    expect(matchesDock(grove, "casa liminal")).toBe(false);
+  });
+
+  it("finds a board by id or registered label too", () => {
+    expect(matchesDock(oilonics, "-5560")).toBe(true);
+    expect(matchesDock(grove, "ccdhu")).toBe(true);
+    // The subdomain label a holon is registered under names it as well.
+    expect(
+      matchesDock({ id: "-1003864542239", name: "-1003864542239" }, "liminal"),
+    ).toBe(labelFor("-1003864542239").toLowerCase().includes("liminal"));
   });
 });
 
@@ -582,19 +682,63 @@ describe("anchors (the earth beneath the sky)", () => {
     expect(p.y).toBeCloseTo(r * 1.3, 5);
   });
 
-  it("keeps two placed orbs overlapping, each leaning toward its own place", () => {
+  it("leaves two placed partners on their places, however far apart", () => {
     const anchors = new Map([
       ["-1", { x: 200, y: 200 }],
       ["-2", { x: 600, y: 200 }],
     ]);
     const pos = orbLayout(["-1", "-2"], [["-1", "-2"]], 800, 500, r, anchors);
-    // Federated means overlapping — the places bend, the beacons still point
-    // home (each orb sits on its own side of the pair).
-    expect(dist(pos.get("-1")!, pos.get("-2")!)).toBeLessThanOrEqual(
-      r * LINK_MAX_GAP + 0.5,
-    );
-    expect(pos.get("-1")!.x).toBeLessThan(pos.get("-2")!.x);
-    expect(lensPath(pos.get("-1")!, pos.get("-2")!, r)).not.toBe("");
+    // The earth wins over the spring: the pair stays apart and the dock puts
+    // their liquid as a thread across the gap (liquidPath) instead of
+    // yanking them into overlap — which, against the places' pull, used to
+    // make them shiver every frame.
+    expect(dist(pos.get("-1")!, { x: 200, y: 200 })).toBeLessThan(1);
+    expect(dist(pos.get("-2")!, { x: 600, y: 200 })).toBeLessThan(1);
+    expect(dist(pos.get("-1")!, pos.get("-2")!)).toBeGreaterThan(2 * r);
+  });
+
+  it("settles without shivering — no frame-to-frame jerk once at rest", () => {
+    // The regression this physics was relaxed for: a hub with partners held
+    // apart by their places, a crowd of unplaced orbs, and a place parked
+    // off-screen all used to twitch forever (hard overlap snap + hard edge
+    // clamp + inverse-square shove undoing one another every frame).
+    const ids = ["-1", "-2", "-3", "-4", "-5", "-6"];
+    const links: [string, string][] = [
+      ["-1", "-2"],
+      ["-1", "-3"],
+      ["-1", "-4"],
+      ["-5", "-6"],
+    ];
+    const anchors = new Map([
+      ["-1", { x: 450, y: 280 }],
+      ["-2", { x: 80, y: 80 }],
+      ["-3", { x: 820, y: 480 }],
+      ["-6", { x: -2500, y: -1700 }],
+    ]);
+    const sim = seedOrbs(ids, 900, 560);
+    for (let i = 0; i < 500; i++)
+      stepOrbs(sim, links, 900, 560, r, i * 16, undefined, anchors);
+    let p0 = orbPositions(sim);
+    stepOrbs(sim, links, 900, 560, r, 500 * 16, undefined, anchors);
+    let p1 = orbPositions(sim);
+    let maxJerk = 0;
+    for (let i = 501; i < 800; i++) {
+      stepOrbs(sim, links, 900, 560, r, i * 16, undefined, anchors);
+      const p2 = orbPositions(sim);
+      for (const id of ids) {
+        const a = p0.get(id)!;
+        const b = p1.get(id)!;
+        const c = p2.get(id)!;
+        maxJerk = Math.max(
+          maxJerk,
+          Math.hypot(c.x - 2 * b.x + a.x, c.y - 2 * b.y + a.y),
+        );
+      }
+      p0 = p1;
+      p1 = p2;
+    }
+    // The wander alone changes a step by well under a tenth of a pixel.
+    expect(maxJerk).toBeLessThan(0.2);
   });
 
   it("a spring with one free end pulls that partner alongside", () => {
@@ -647,7 +791,7 @@ describe("anchors (the earth beneath the sky)", () => {
     );
   });
 
-  it("holds every link of a placed hub overlapping", () => {
+  it("a placed hub keeps its placed partners where they are and gathers the free one", () => {
     const ids = ["-1", "-2", "-3", "-4"];
     const links: [string, string][] = [
       ["-1", "-2"],
@@ -656,14 +800,47 @@ describe("anchors (the earth beneath the sky)", () => {
     ];
     const anchors = new Map([
       ["-1", { x: 400, y: 250 }],
-      ["-2", { x: 80, y: 80 }],
-      ["-3", { x: 720, y: 420 }],
+      ["-2", { x: 100, y: 100 }],
+      ["-3", { x: 700, y: 400 }],
     ]);
     const pos = orbLayout(ids, links, 800, 500, r, anchors);
-    for (const [a, b] of links)
-      expect(dist(pos.get(a)!, pos.get(b)!)).toBeLessThanOrEqual(
-        r * LINK_MAX_GAP + 0.5,
-      );
+    // Within a few px: the two placed partners' long-range repulsion of each
+    // other nudges them, but neither the free orb nor a spring moves a
+    // placed orb — the earth is one-way.
+    for (const id of ["-1", "-2", "-3"])
+      expect(dist(pos.get(id)!, anchors.get(id)!)).toBeLessThan(r / 4);
+    expect(dist(pos.get("-1")!, pos.get("-4")!)).toBeLessThan(2 * r);
+  });
+
+  it("a chain hung off a placed orb comes to rest instead of spinning round it", () => {
+    // A placed hub with a chain of free partners (-1 ⇄ -2 ⇄ -3 ⇄ -4 ⇄ -5)
+    // used to rotate rigidly round its place forever: -2 chased -1 by its
+    // spring, -1 was shoved round by -3's repulsion, and damping only set
+    // the speed. Same shape at any size — the rate just changed with the zoom.
+    const ids = ["-1", "-2", "-3", "-4", "-5", "-6", "-7", "-8"];
+    const links: [string, string][] = ids
+      .slice(1)
+      .map((b, i) => [ids[i], b] as [string, string]);
+    for (const [w, h, radius] of [
+      [1024, 700, 52],
+      [1800, 1000, 100],
+      [390, 700, 20],
+    ]) {
+      const anchors = new Map([["-1", { x: w / 2, y: h / 2 }]]);
+      const sim = seedOrbs(ids, w, h);
+      for (let i = 0; i < 1500; i++)
+        stepOrbs(sim, links, w, h, radius, undefined, undefined, anchors);
+      let speed = 0;
+      for (let i = 0; i < 300; i++) {
+        stepOrbs(sim, links, w, h, radius, undefined, undefined, anchors);
+        for (let k = 0; k < ids.length; k++)
+          speed = Math.max(speed, Math.hypot(sim.vx[k], sim.vy[k]));
+      }
+      expect(speed).toBeLessThan(0.01);
+      expect(
+        dist(orbPositions(sim).get("-1")!, anchors.get("-1")!),
+      ).toBeLessThan(1);
+    }
   });
 
   it("never moves the lifted orb to close a gap — the partner comes to it", () => {
@@ -676,9 +853,7 @@ describe("anchors (the earth beneath the sky)", () => {
       stepOrbs(sim, [["-1", "-2"]], 800, 500, r, undefined, "-1");
     expect(sim.px[0]).toBe(100);
     expect(sim.py[0]).toBe(100);
-    expect(Math.hypot(sim.px[1] - 100, sim.py[1] - 100)).toBeLessThanOrEqual(
-      r * LINK_MAX_GAP + 0.5,
-    );
+    expect(Math.hypot(sim.px[1] - 100, sim.py[1] - 100)).toBeLessThan(2 * r);
   });
 
   it("a lifted orb ignores its anchor", () => {

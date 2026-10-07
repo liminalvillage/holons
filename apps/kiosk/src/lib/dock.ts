@@ -205,6 +205,32 @@ export function segmentFor(id: string): string {
   return id;
 }
 
+/** Lower-case, accents stripped, whitespace squeezed — for loose matching. */
+function fold(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Does a docked board answer this search? Every word of the query must occur
+ * in the board's name, its registered label, or its id — case and accents
+ * aside — so "casa grove" finds "Casa Selva grove" and "-5560" the Oilonics
+ * group by id. A blank query answers yes: nothing is being filtered.
+ */
+export function matchesDock(
+  entry: Pick<DockEntry, "id" | "name">,
+  query: string,
+): boolean {
+  const words = fold(query).split(" ").filter(Boolean);
+  if (!words.length) return true;
+  const hay = fold(`${entry.name} ${labelFor(entry.id)} ${entry.id}`);
+  return words.every((w) => hay.includes(w));
+}
+
 /**
  * A stable angle (0–359) for a holon from the card hash every surface shares.
  * The orbs are PAINTED with `holonColor` (lib/palette), which also honours a
@@ -301,17 +327,15 @@ export type OrbSim = {
 
 const GOLDEN_ANGLE = 2.399963229728653; // spreads any orb count evenly
 // The pull toward an anchor: five times the central gravity, so a placed orb
-// holds its spot against its neighbours' repulsion yet still glides there
-// (damping 0.8 settles it in about a second, without overshoot).
+// holds its spot against its placed neighbours' repulsion yet still glides
+// there (damping 0.8 settles it in about a second, without overshoot).
 const ANCHOR_PULL = 0.02;
 /**
- * The widest a federated pair is ever drawn, in radii: 1.9 leaves 5% of a
- * diameter overlapping, so the vesica — the tappable lens that configures the
- * pair — is never empty. The spring settles a free pair far closer than this
- * (~1.5 radii, a 25% overlap); this is the hard floor for the cases a spring
- * cannot reach, above all two orbs held apart by their places on the earth.
+ * The farthest an orb may travel in one frame, in radii. Every force here is
+ * soft, but a crowded sky can still add up to a shove; capping the speed turns
+ * it into a glide. A quarter radius a frame is ~0.8 s across the field.
  */
-export const LINK_MAX_GAP = 1.9;
+const MAX_SPEED = 0.25;
 
 /** A fresh sim with `ids` seeded on a golden-angle ring around the centre. */
 export function seedOrbs(
@@ -364,10 +388,19 @@ export function syncOrbs(
 }
 
 /**
- * One physics tick: central gravity, pairwise repulsion, link springs, then
- * damped integration clamped to the field. `wobbleT` (ms, e.g. a rAF
- * timestamp) adds the gentle perpetual wander that keeps the sky alive; omit
- * it for a deterministic settle (that's what the tests and orbLayout do).
+ * One physics tick: central gravity, pairwise repulsion, link springs, soft
+ * walls, then damped integration. `wobbleT` (ms, e.g. a rAF timestamp) adds
+ * the gentle perpetual wander that keeps the sky alive; omit it for a
+ * deterministic settle (that's what the tests and orbLayout do).
+ *
+ * Every force is SOFT and bounded — there is no positional snap anywhere.
+ * The dock used to finish each frame by yanking every federated pair back
+ * into overlap and clamping the orbs to the field edge; where a place, a wall
+ * and a spring disagreed, the snap and the forces undid each other every
+ * frame and the orbs shivered on the spot. Now a placed pair the earth holds
+ * apart simply stays apart — DockView draws their link's control on the tie
+ * between them instead of in a vesica — and the edge is a cushion, not a
+ * wall.
  *
  * `liftedId` names an orb carried by a finger: it is lifted OUT of the
  * physics — it exerts and feels no forces and is not integrated (the caller
@@ -375,15 +408,19 @@ export function syncOrbs(
  * target away and dropping would become a chase.
  *
  * `anchors` (field px, by id) names the orbs with a place on the map: an
- * anchored orb is pulled to its anchor instead of the centre — firmly enough
- * that the place wins over its neighbours' repulsion — and a federation
- * spring only ever moves its free ends: a placed orb stays on its place and a
- * free partner is pulled alongside it.
+ * anchored orb is pulled to its anchor instead of the centre, and a
+ * federation spring only ever moves its free ends: a placed orb stays on its
+ * place and a free partner is pulled alongside it.
  *
- * The last word belongs to `linkOverlap`: whatever the forces worked out,
- * federated orbs are ALWAYS left overlapping, so their vesica is always there
- * to tap. Places bend to that (a placed orb yields a quarter as much as a
- * free one) and keep their beacon pointing home.
+ * The earth is ONE-WAY: a placed orb is moved by its place and by other
+ * placed orbs, never by a free one. Every force a free orb feels is then
+ * either returned by its partner or comes from a point that does not answer
+ * — a potential, which damping settles. A placed orb that answered a free
+ * orb's repulsion but not its spring broke that: the free partner chased the
+ * placed orb, the placed orb was shoved round by the partner's own neighbour,
+ * and — damping only sets the SPEED of a driven motion, it never ends it —
+ * a chain hung off a placed orb spun rigidly round it for as long as the
+ * dock stayed open, at a rate that depended on the zoom.
  */
 export function stepOrbs(
   sim: OrbSim,
@@ -409,6 +446,11 @@ export function stepOrbs(
   // a settled pair together by about that much.
   const rest = radius * 1.55;
   const repel = radius * radius * 20; // unlinked orbs drift much farther out
+  // Inside a diameter the push stops growing: an inverse-square shove between
+  // two orbs a spring has packed against the same hub was the stiffest force
+  // in the sky, and the one most prone to overshoot and shiver.
+  const core2 = 4 * radius * radius;
+  const maxSpeed = radius * MAX_SPEED;
   // A third, not a half: at a half a field narrower than 2.6 radii collapses
   // to a single line every orb is clamped onto, stacked one on the other.
   const padX = Math.min(radius * 1.3, width / 3);
@@ -452,20 +494,26 @@ export function stepOrbs(
       let dy = py[i] - py[j];
       const d2 = dx * dx + dy * dy || 1;
       const d = Math.sqrt(d2);
-      const f = repel / d2;
+      const f = repel / Math.max(d2, core2);
       dx /= d;
       dy /= d;
-      vx[i] += dx * f;
-      vy[i] += dy * f;
-      vx[j] -= dx * f;
-      vy[j] -= dy * f;
+      // A placed orb is never shoved by a FREE one (see the note on the
+      // one-way earth above): the free orb stands off, the placed one stays.
+      // Placed orbs still spread one another along a shared edge.
+      if (!anchor[i] || anchor[j]) {
+        vx[i] += dx * f;
+        vy[i] += dy * f;
+      }
+      if (!anchor[j] || anchor[i]) {
+        vx[j] -= dx * f;
+        vy[j] -= dy * f;
+      }
     }
   }
   for (const [a, b] of links) {
     const i = idx.get(a);
     const j = idx.get(b);
-    if (i == null || j == null || i === j || i === lifted || j === lifted)
-      continue;
+    if (i == null || j == null || i === j) continue;
     let dx = px[j] - px[i];
     let dy = py[j] - py[i];
     const d = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -473,12 +521,13 @@ export function stepOrbs(
     dx /= d;
     dy /= d;
     // A spring only ever moves its FREE ends: a placed orb stays on its
-    // place, and between two placed orbs it does nothing at all.
-    if (!anchor[i]) {
+    // place, a lifted one under its finger, and between two held ends it
+    // does nothing at all. This is what tows a free partner behind a drag.
+    if (!anchor[i] && i !== lifted) {
       vx[i] += dx * f;
       vy[i] += dy * f;
     }
-    if (!anchor[j]) {
+    if (!anchor[j] && j !== lifted) {
       vx[j] -= dx * f;
       vy[j] -= dy * f;
     }
@@ -497,72 +546,20 @@ export function stepOrbs(
     if (i === lifted) continue;
     vx[i] *= 0.8;
     vy[i] *= 0.8;
-    px[i] = clampX(px[i] + vx[i]);
-    py[i] = clampY(py[i] + vy[i]);
-  }
-  linkOverlap(sim, links, radius, lifted, anchor, width, height, padX, padY);
-}
-
-/**
- * The hard constraint behind the soft spring: pull any federated pair drawn
- * wider than `LINK_MAX_GAP` radii back until it overlaps again, and drop the
- * velocity that was separating them.
- *
- * Ends yield by weight — a lifted orb (under a finger) not at all, a placed
- * orb a quarter as much as a free one — so a drag stays exact, a place is
- * mostly kept, and a free partner does most of the travelling. Chains and
- * hubs need a few passes to settle, hence the sweep.
- */
-function linkOverlap(
-  sim: OrbSim,
-  links: readonly OrbLink[],
-  radius: number,
-  lifted: number,
-  anchor: readonly (Vec | undefined)[],
-  width: number,
-  height: number,
-  padX: number,
-  padY: number,
-): void {
-  if (!links.length || !(radius > 0)) return;
-  const { px, py, vx, vy } = sim;
-  const idx = new Map(sim.ids.map((id, i) => [id, i]));
-  const max = radius * LINK_MAX_GAP;
-  const clampX = (v: number) => Math.min(width - padX, Math.max(padX, v));
-  const clampY = (v: number) => Math.min(height - padY, Math.max(padY, v));
-  const weight = (i: number) => (i === lifted ? 0 : anchor[i] ? 0.25 : 1);
-  for (let pass = 0; pass < 4; pass++) {
-    let corrected = false;
-    for (const [a, b] of links) {
-      const i = idx.get(a);
-      const j = idx.get(b);
-      if (i == null || j == null || i === j) continue;
-      const dx = px[j] - px[i];
-      const dy = py[j] - py[i];
-      const d = Math.hypot(dx, dy);
-      if (d <= max) continue;
-      const wi = weight(i);
-      const wj = weight(j);
-      const sum = wi + wj;
-      if (sum <= 0) continue; // both ends pinned — nothing may move
-      const ux = dx / d;
-      const uy = dy / d;
-      const excess = d - max;
-      px[i] = clampX(px[i] + ux * excess * (wi / sum));
-      py[i] = clampY(py[i] + uy * excess * (wi / sum));
-      px[j] = clampX(px[j] - ux * excess * (wj / sum));
-      py[j] = clampY(py[j] - uy * excess * (wj / sum));
-      // Whatever was driving them apart along this axis is spent.
-      const sep = (vx[j] - vx[i]) * ux + (vy[j] - vy[i]) * uy;
-      if (sep > 0) {
-        vx[i] += ux * sep * (wi / sum);
-        vy[i] += uy * sep * (wi / sum);
-        vx[j] -= ux * sep * (wj / sum);
-        vy[j] -= uy * sep * (wj / sum);
-      }
-      corrected = true;
+    const speed = Math.hypot(vx[i], vy[i]);
+    if (speed > maxSpeed) {
+      vx[i] *= maxSpeed / speed;
+      vy[i] *= maxSpeed / speed;
     }
-    if (!corrected) return;
+    const nx = px[i] + vx[i];
+    const ny = py[i] + vy[i];
+    px[i] = clampX(nx);
+    py[i] = clampY(ny);
+    // Meeting the edge spends the momentum that was carrying the orb into
+    // it — otherwise it keeps pressing, and the next nudge off the wall is a
+    // jump rather than a drift.
+    if (px[i] !== nx) vx[i] = 0;
+    if (py[i] !== ny) vy[i] = 0;
   }
 }
 
@@ -577,12 +574,12 @@ export function orbPositions(sim: OrbSim): Map<string, Vec> {
  * The orb a dragged finger is OVER — the only thing a drop can federate with.
  *
  * The pointer must be inside the target's own circle (`radius`), not merely
- * near it. A federated partner is towed along behind the finger by
- * `linkOverlap`, which holds it within `LINK_MAX_GAP` radii of the carried
- * orb for as long as the drag lasts. A capture radius as wide as that leash
- * therefore matched the partner on every single frame, so dragging a
- * federated orb onto the earth could never reach the ground: the hexagon lit
- * up between frames and the drop always came out a federation.
+ * near it. A free federated partner is towed along behind the finger by its
+ * spring, which keeps it about a diameter from the carried orb for as long
+ * as the drag lasts. A capture radius as wide as that leash therefore matched
+ * the partner on every single frame, so dragging a federated orb onto the
+ * earth could never reach the ground: the hexagon lit up between frames and
+ * the drop always came out a federation.
  *
  * `self` (the carried orb) is never its own target.
  */
@@ -671,27 +668,121 @@ export function beaconPath(orb: Vec, ground: Vec, r: number): string {
 }
 
 /**
- * The vesica between two overlapping circles of radius `r` — the intersection
- * lens the dock highlights and makes tappable to configure a federated pair.
- * Empty when the circles don't overlap (or are concentric).
+ * The liquid bridge between two federated orbs: a glassy neck of fluid that
+ * clings to both rims and pinches in the middle — wide enough to fill the
+ * vesica when they overlap, a thin thread when the earth holds them apart.
+ * The shape is what joins a pair on the dock; its gradient (DockView) runs
+ * from one orb's colour to the other's, and hovering or tapping it tells the
+ * pair's flows. Empty when the orbs are concentric (nothing to span).
+ *
+ * Two cubic halves per edge meet at the neck with a flat tangent; each leaves
+ * its rim tangentially at `theta` from the centre line — just past the
+ * vesica's corners when the orbs overlap, a fixed shoulder when apart — and
+ * the near side of each rim closes the shape with a short arc.
  */
-export function lensPath(a: Vec, b: Vec, r: number): string {
-  const d = Math.hypot(b.x - a.x, b.y - a.y);
-  if (d >= 2 * r || d < 1e-6) return "";
+export function liquidPath(a: Vec, b: Vec, r: number): string {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const d = Math.hypot(dx, dy);
+  if (!(r > 0) || d < 1e-6) return "";
+  const ux = dx / d;
+  const uy = dy / d;
+  const nx = -uy;
+  const ny = ux;
+  // Where the rims cross (half the vesica's height), or nothing when apart.
+  const h = d < 2 * r ? Math.sqrt(r * r - (d * d) / 4) : 0;
+  const phi = d < 2 * r ? Math.acos(d / (2 * r)) : 0;
+  const theta = Math.min(1.3, phi + 0.5);
+  // The neck's half-width: the vesica's plus a lip, or the thread's.
+  const w = h + r * 0.16;
   const mx = (a.x + b.x) / 2;
   const my = (a.y + b.y) / 2;
-  const h = Math.sqrt(r * r - (d * d) / 4);
-  const ux = -(b.y - a.y) / d; // unit perpendicular to the centre line
-  const uy = (b.x - a.x) / d;
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+  // How far each attachment sits from the midpoint, along the centre line.
+  const span = d / 2 - r * cos;
+  // Handle lengths: at the neck, along the centre line; at the rim, along
+  // the rim's tangent — but never so long that the inward dive crosses the
+  // neck line, or a long thread would sway from edge to edge.
+  const Ln = span * 0.55;
+  const Lr = Math.min(Ln, (0.9 * (r * sin - w)) / Math.max(cos, 0.2));
   const rnd = (v: number) => Math.round(v * 10) / 10;
-  const p1x = rnd(mx + ux * h);
-  const p1y = rnd(my + uy * h);
-  const p2x = rnd(mx - ux * h);
-  const p2y = rnd(my - uy * h);
+  const P = (x: number, y: number) => `${rnd(x)} ${rnd(y)}`;
+  // One edge, from A's rim to B's rim, offset `s` (±1) along the normal.
+  const edge = (s: number) => {
+    const p1x = a.x + r * (cos * ux + s * sin * nx);
+    const p1y = a.y + r * (cos * uy + s * sin * ny);
+    const p2x = b.x + r * (-cos * ux + s * sin * nx);
+    const p2y = b.y + r * (-cos * uy + s * sin * ny);
+    const qx = mx + s * w * nx;
+    const qy = my + s * w * ny;
+    // Tangent leaving A's rim toward the neck: along the rim, inward.
+    const t1x = sin * ux - s * cos * nx;
+    const t1y = sin * uy - s * cos * ny;
+    const t2x = -sin * ux - s * cos * nx;
+    const t2y = -sin * uy - s * cos * ny;
+    return {
+      p1: P(p1x, p1y),
+      p2: P(p2x, p2y),
+      d:
+        `C ${P(p1x + t1x * Lr, p1y + t1y * Lr)} ${P(qx - ux * Ln, qy - uy * Ln)} ${P(qx, qy)} ` +
+        `C ${P(qx + ux * Ln, qy + uy * Ln)} ${P(p2x + t2x * Lr, p2y + t2y * Lr)} ${P(p2x, p2y)}`,
+    };
+  };
+  const top = edge(1);
+  const bottom = edge(-1);
+  // Top edge A→B, down B's near rim to the bottom edge's end, back B→A
+  // (the bottom edge reversed), and up A's near rim home.
   return (
-    `M ${p1x} ${p1y} A ${r} ${r} 0 0 1 ${p2x} ${p2y}` +
-    ` A ${r} ${r} 0 0 1 ${p1x} ${p1y} Z`
+    `M ${top.p1} ${top.d} A ${r} ${r} 0 0 1 ${bottom.p2} ` +
+    reverseCubics(bottom.d, bottom.p2, bottom.p1) +
+    ` A ${r} ${r} 0 0 1 ${top.p1} Z`
   );
+}
+
+/** Two cubic segments "C c1 c2 q C c3 c4 end", walked from `end` to `start`. */
+function reverseCubics(d: string, _end: string, start: string): string {
+  const nums = d.replace(/C/g, " ").trim().split(/\s+/);
+  // c1 c2 q c3 c4 end → C c4 c3 q C c2 c1 start
+  const pt = (i: number) => `${nums[2 * i]} ${nums[2 * i + 1]}`;
+  return `C ${pt(4)} ${pt(3)} ${pt(2)} C ${pt(1)} ${pt(0)} ${start}`;
+}
+
+/** One side's federation config toward a partner. */
+export type LensDirections = {
+  inbound: readonly string[];
+  outbound: readonly string[];
+};
+/** What flows between a pair, from either side's record. */
+export type PairFlows = {
+  /** Lenses travelling from `a` to `b`, sorted, deduped. */
+  ab: string[];
+  /** Lenses travelling from `b` to `a`. */
+  ba: string[];
+};
+
+/**
+ * The relation between two federated holons, folded from both sides: `a`
+ * sends what it marks outbound to `b` and what `b` marks inbound from `a`;
+ * likewise the other way. Either side's record may be missing (a partner
+ * the relay hasn't answered for yet) — the other still tells the story.
+ */
+export function pairFlows(
+  a: string,
+  b: string,
+  configs: ReadonlyMap<string, Readonly<Record<string, LensDirections>>>,
+): PairFlows {
+  const fromA = configs.get(a)?.[b];
+  const fromB = configs.get(b)?.[a];
+  const ab = new Set<string>([
+    ...(fromA?.outbound ?? []),
+    ...(fromB?.inbound ?? []),
+  ]);
+  const ba = new Set<string>([
+    ...(fromA?.inbound ?? []),
+    ...(fromB?.outbound ?? []),
+  ]);
+  return { ab: [...ab].sort(), ba: [...ba].sort() };
 }
 
 /** Convex hull (monotone chain), counter-clockwise, no repeated endpoint. */

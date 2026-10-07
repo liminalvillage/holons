@@ -12,8 +12,7 @@
 
 <script lang="ts">
   import Icon from "$lib/components/Icon.svelte";
-  import { ICONS } from "$lib/icons";
-  const LENS_ICON = 16;
+  import Identicon from "$lib/components/Identicon.svelte";
   // The dock: the space the board's card floats in. Each board this device
   // has opened is a circle in a little gravity field (see orbLayout): every
   // orb repels every other, federation links pull their orbs together, so
@@ -41,18 +40,21 @@
     dockView,
     forgetBoard,
     labelFor,
-    lensPath,
     linksAmong,
+    liquidPath,
+    matchesDock,
     nameBoard,
     orbClusters,
     orbLayout,
     orbPositions,
     orbUnder,
+    pairFlows,
     rememberBoard,
     requestOpen,
     setDockView,
     stepOrbs,
     syncOrbs,
+    type LensDirections,
     type Vec,
   } from "$lib/dock";
   import { getHolosphere, getWriter } from "$lib/holosphere";
@@ -313,26 +315,75 @@
       return;
     }
     if (editing) return; // in edit mode a tap is not an open
-    // A tap INSIDE the overlap of two federated circles is a tap on their
-    // intersection lens: it configures the pair instead of opening a board.
-    const other = intersectionAt(fieldPoint(e as PointerEvent), id);
-    if (other) {
-      fedPair = { home: id, partner: other };
-      return;
-    }
+    // The overlap of two federated circles is under their liquid (below),
+    // which catches that tap itself; a tap that reaches the orb opens it.
+    void e;
     requestOpen(id);
   }
 
-  /** The linked partner whose circle also covers `p`, if any. */
-  function intersectionAt(p: Vec, id: string): string | null {
-    for (const [a, b] of links) {
-      const other = a === id ? b : b === id ? a : null;
-      if (!other) continue;
-      const q = positions.get(other);
-      if (q && Math.hypot(p.x - q.x, p.y - q.y) <= ORB / 2) return other;
-    }
-    return null;
+  // ── The liquid between a pair ───────────────────────────────────────────--
+  //
+  // Each federated pair is joined by a glassy liquid (`liquidPath`) in a
+  // gradient of the two orbs' colours. Tapping it opens the pair's flows;
+  // hovering (a pointer that can hover) names them in a chip over the neck.
+  /** The pair a pointer is resting on, and where its chip goes. */
+  let hoverLink: { a: string; b: string; x: number; y: number } | null = null;
+
+  function openPair(a: string, b: string) {
+    hoverLink = null;
+    fedPair =
+      b === $holonId ? { home: b, partner: a } : { home: a, partner: b };
   }
+  function onLiquidEnter(e: PointerEvent, a: string, b: string) {
+    if (e.pointerType !== "mouse") return; // a finger taps; it never hovers
+    const pa = positions.get(a);
+    const pb = positions.get(b);
+    if (!pa || !pb) return;
+    hoverLink = { a, b, x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 };
+  }
+  function onLiquidKey(e: KeyboardEvent, a: string, b: string) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    openPair(a, b);
+  }
+
+  // What the chip (and the liquid's accessible name) says: who is joined,
+  // then each direction's lenses — the kiosk's tab names where it has them.
+  const LENS_LABEL_KEYS: Record<string, MessageKey> = {
+    quests: "tabs.tasks",
+    library: "tabs.library",
+    roles: "tabs.roles",
+    checklists: "tabs.checklists",
+    stock: "tabs.stock",
+  };
+  const lensLabel = (lens: string) =>
+    LENS_LABEL_KEYS[lens] ? $t(LENS_LABEL_KEYS[lens]) : lens;
+  /** Up to three lines: the pair, then one per direction with flows. */
+  function describePair(a: string, b: string): string[] {
+    const { ab, ba } = pairFlows(a, b, fedConfigs);
+    const lines = [$t("dock.flows", { a: nameOf(a), b: nameOf(b) })];
+    if (ab.length)
+      lines.push(
+        $t("dock.flowsTo", {
+          a: nameOf(a),
+          b: nameOf(b),
+          lenses: ab.map(lensLabel).join(", "),
+        }),
+      );
+    if (ba.length)
+      lines.push(
+        $t("dock.flowsTo", {
+          a: nameOf(b),
+          b: nameOf(a),
+          lenses: ba.map(lensLabel).join(", "),
+        }),
+      );
+    if (lines.length === 1) lines.push($t("dock.noFlows"));
+    return lines;
+  }
+  /** A gradient id the SVG will accept, unique per pair. */
+  const liquidId = (a: string, b: string) =>
+    "liquid-" + `${a}-${b}`.replace(/[^\w-]/g, "_");
 
   /**
    * What the pointer is over: another board's ORB, when the finger is INSIDE
@@ -426,6 +477,8 @@
   // Each docked board's partner list, fetched once and cached for the dock's
   // lifetime. Until (or unless) it arrives, the orbs float unlinked.
   let partnerMap = new Map<string, readonly string[]>();
+  /** Each board's per-partner lens directions — what its liquids describe. */
+  let fedConfigs = new Map<string, Record<string, LensDirections>>();
   const fetching = new Set<string>();
 
   $: ids = $dockEntries.map((e) => e.id);
@@ -444,12 +497,14 @@
           try {
             const snap = await getFederationSnapshot(hs, id);
             partnerMap.set(id, snap.federated);
+            fedConfigs.set(id, snap.lensConfig);
           } catch {
             partnerMap.set(id, []);
           }
         }),
       );
       partnerMap = partnerMap; // reassign → recompute links below
+      fedConfigs = fedConfigs;
     } catch {
       /* can't connect — the constellation just shows no ties */
     }
@@ -473,6 +528,22 @@
     matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   $: links = linksAmong(ids, partnerMap);
+
+  // ── The search box as a filter ──────────────────────────────────────────--
+  //
+  // Whatever is typed in the search narrows the sky to the orbs that answer
+  // it: the rest fade out, and with them every tie, lens, hull and beacon
+  // that has a faded end. The physics keeps running on all of them, so the
+  // survivors stay put and the others come back where they were when the
+  // box empties. `matchesDock` (lib/dock) is the one rule for what answers.
+  let searchQuery = "";
+  $: filtering = searchQuery.trim() !== "";
+  $: shown = new Set(
+    $dockEntries.filter((e) => matchesDock(e, searchQuery)).map((e) => e.id),
+  );
+  $: shownLinks = filtering
+    ? links.filter(([a, b]) => shown.has(a) && shown.has(b))
+    : links;
   $: if (reducedMotion) {
     void mapTick; // the earth settled somewhere new: the places moved
     void mapOn;
@@ -529,6 +600,7 @@
     // flush the partner cache and refetch, and the orbs pull together live.
     const onFedChanged = () => {
       partnerMap = new Map();
+      fedConfigs = new Map();
       fetching.clear();
       void loadPartners(ids);
     };
@@ -576,7 +648,10 @@
       if (raf) cancelAnimationFrame(raf);
     };
   });
-  $: bounds = orbClusters(ids, links)
+  $: bounds = orbClusters(
+    filtering ? ids.filter((id) => shown.has(id)) : ids,
+    shownLinks,
+  )
     .filter((c) => c.length > 1)
     .map((c) => ({
       key: c.join("|"),
@@ -586,11 +661,6 @@
       ),
     }))
     .filter((b) => b.d);
-
-  // A board named by a raw id starts with "-" — no initial to show there, so
-  // take the first letter or digit anywhere in the name.
-  const initialOf = (name: string) =>
-    /[\p{L}\p{N}]/u.exec(name)?.[0]?.toUpperCase() ?? "·";
 
   // The "+" flips into a small add form in place. What the line becomes
   // depends on what the earth has selected: with a cell AND an addable lens
@@ -662,8 +732,10 @@
 
   /** The search box picked a hub: dock it, or fly to it if it is here. */
   function pickHub(hit: { id: string; name: string; docked: boolean }) {
-    if (hit.docked) void dockMap?.showBoard(hit.id);
-    else void addHub({ id: hit.id, name: hit.name }, { stay: true });
+    if (!hit.docked)
+      void addHub({ id: hit.id, name: hit.name }, { stay: true });
+    else if (mapOn) void dockMap?.showBoard(hit.id);
+    else requestOpen(hit.id); // no earth to fly: open the board itself
   }
   /** The search box picked a place: the earth flies there. */
   function pickPlace(place: PlaceHit) {
@@ -752,7 +824,7 @@
         {#each $dockEntries as e, i (e.id)}
           {@const p = positions.get(e.id)}
           {@const g = grounds.get(e.id)}
-          {#if p && g && nearField(g)}
+          {#if p && g && nearField(g) && (!filtering || shown.has(e.id))}
             {@const tan = beaconTangents(p, g, ORB / 2)}
             {#if tan}
               {@const gid = gradId(e.id)}
@@ -841,7 +913,7 @@
           {#each bounds as b (b.key)}
             <path class="bound" d={b.d} />
           {/each}
-          {#each links as l (l[0] + "|" + l[1])}
+          {#each shownLinks as l (l[0] + "|" + l[1])}
             <!-- Read `positions` directly: a helper closure would hide the
                dependency from the compiler and freeze the orbs in place. -->
             {@const pa = positions.get(l[0])}
@@ -852,33 +924,80 @@
           {/each}
         </svg>
 
-        <!-- The intersection lenses, drawn ABOVE the orbs (they are opaque):
-           each federated pair's vesica, tinted and marked ⇅ — tap it to
-           configure the pair's flow. Hit detection lives in onOrbClick. -->
-        <svg
-          class="overlaps"
-          viewBox="0 0 {fieldW} {fieldH}"
-          aria-hidden="true"
-        >
-          {#each links as l (l[0] + "|" + l[1])}
+        <!-- The liquids, drawn ABOVE the orbs (they are opaque): each
+           federated pair joined by a neck of glass in a gradient of their
+           two colours — filling their overlap, or a thread across the gap
+           the earth holds open. Tap it (or Enter on it) for the pair's
+           flows; hover names them. Read `positions` inline. -->
+        <svg class="overlaps" viewBox="0 0 {fieldW} {fieldH}">
+          <defs>
+            {#each shownLinks as l (l[0] + "|" + l[1])}
+              {@const pa = positions.get(l[0])}
+              {@const pb = positions.get(l[1])}
+              {#if pa && pb}
+                <linearGradient
+                  id={liquidId(l[0], l[1])}
+                  gradientUnits="userSpaceOnUse"
+                  x1={pa.x}
+                  y1={pa.y}
+                  x2={pb.x}
+                  y2={pb.y}
+                >
+                  <stop
+                    offset="0"
+                    stop-color={holonColor(l[0], $holonColors)}
+                  />
+                  <stop
+                    offset="1"
+                    stop-color={holonColor(l[1], $holonColors)}
+                  />
+                </linearGradient>
+                <!-- The rim: the same run, in each orb's rim ink (.rim-stop). -->
+                <linearGradient
+                  id={liquidId(l[0], l[1]) + "-rim"}
+                  gradientUnits="userSpaceOnUse"
+                  x1={pa.x}
+                  y1={pa.y}
+                  x2={pb.x}
+                  y2={pb.y}
+                >
+                  <stop
+                    class="rim-stop"
+                    offset="0"
+                    style="--c: {holonColor(l[0], $holonColors)}"
+                  />
+                  <stop
+                    class="rim-stop"
+                    offset="1"
+                    style="--c: {holonColor(l[1], $holonColors)}"
+                  />
+                </linearGradient>
+              {/if}
+            {/each}
+          </defs>
+          {#each shownLinks as l (l[0] + "|" + l[1])}
             {@const pa = positions.get(l[0])}
             {@const pb = positions.get(l[1])}
             {#if pa && pb}
-              {@const vesica = lensPath(pa, pb, ORB / 2)}
-              {#if vesica}
-                <path class="vesica" d={vesica} />
-                <svg
-                  class="vesica-glyph"
-                  x={(pa.x + pb.x) / 2 - LENS_ICON / 2}
-                  y={(pa.y + pb.y) / 2 - LENS_ICON / 2}
-                  width={LENS_ICON}
-                  height={LENS_ICON}
-                  viewBox="0 0 24 24"
-                >
-                  {#each ICONS["swap-vertical"].paths as p, i (i)}<path
-                      d={p.d}
-                    />{/each}
-                </svg>
+              {@const d = liquidPath(pa, pb, ORB / 2)}
+              {#if d}
+                <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+                <path
+                  class="liquid"
+                  class:lit={hoverLink?.a === l[0] && hoverLink?.b === l[1]}
+                  {d}
+                  style="--grad: url(#{liquidId(
+                    l[0],
+                    l[1],
+                  )}); --rim: url(#{liquidId(l[0], l[1])}-rim)"
+                  role="button"
+                  tabindex="0"
+                  aria-label={describePair(l[0], l[1]).join(". ")}
+                  on:click={() => openPair(l[0], l[1])}
+                  on:keydown={(e) => onLiquidKey(e, l[0], l[1])}
+                  on:pointerenter={(e) => onLiquidEnter(e, l[0], l[1])}
+                  on:pointerleave={() => (hoverLink = null)}
+                />
               {/if}
             {/if}
           {/each}
@@ -890,6 +1009,7 @@
             <div
               class="slot"
               class:front={dragId === e.id}
+              class:faded={filtering && !shown.has(e.id)}
               role="listitem"
               style="{paintOf(
                 e.id,
@@ -909,7 +1029,7 @@
                 on:pointerleave={onOrbLeave}
                 on:pointercancel={onOrbUp}
               >
-                <span class="initial">{initialOf(e.name)}</span>
+                <Identicon class="mark" seed={e.id} />
               </button>
               {#if editing}
                 <button
@@ -934,11 +1054,26 @@
             <span
               class="name"
               class:front={dragId === e.id}
+              class:faded={filtering && !shown.has(e.id)}
               aria-hidden="true"
               style="left: {p.x}px; top: {p.y}px">{e.name}</span
             >
           {/if}
         {/each}
+
+        <!-- The hover chip: what flows across the liquid the pointer rests
+           on, hung just above its neck. Last in the layer, over the names. -->
+        {#if hoverLink}
+          <div
+            class="liquid-tip"
+            role="tooltip"
+            style="left: {hoverLink.x}px; top: {hoverLink.y}px"
+          >
+            {#each describePair(hoverLink.a, hoverLink.b) as line, i (i)}
+              <span class:head={i === 0}>{line}</span>
+            {/each}
+          </div>
+        {/if}
       {/if}
     </div>
     {#if $dockEntries.length === 0 && !adding}
@@ -958,13 +1093,16 @@
        all inside the earth's pane. -->
   <div class="topbar" class:onmap={mapOn}>
     <div class="topbar__left">
-      {#if mapOn}
-        <MapSearch
-          onpick={pickHub}
-          onplace={pickPlace}
-          near={() => dockMap?.center() ?? null}
-        />
-      {/if}
+      <!-- In every sky: finds hubs to dock, and narrows the orbs on screen
+           to the ones that answer what is typed. Places only with the earth
+           up — there is nothing to fly without it. -->
+      <MapSearch
+        bind:query={searchQuery}
+        places={mapOn}
+        onpick={pickHub}
+        onplace={pickPlace}
+        near={() => dockMap?.center() ?? null}
+      />
     </div>
     <div class="viewtoggle" role="radiogroup" aria-label={$t("dock.boards")}>
       <button
@@ -1123,7 +1261,7 @@
       <span
         class="orb-chip"
         style={paintOf(target, $holonColors)}
-        aria-hidden="true">{initialOf(nameOf(target))}</span
+        aria-hidden="true"><Identicon seed={target} /></span
       >
       <h3>{$t("dock.removeTitle", { name: nameOf(target) })}</h3>
       <p>{$t("dock.removeBody", { n: forgetRetinue.length })}</p>
@@ -1312,9 +1450,13 @@
     stroke-linecap: round;
   }
 
-  /* The intersection layer rides above the (opaque) orbs so each federated
-     pair's vesica reads as a glassy lens between them — the tap target that
-     opens the pair's flow settings. */
+  /* The liquid layer rides above the (opaque) orbs: each federated pair is
+     joined by a neck of glass in the gradient of its two colours, the fill
+     a wash so the orbs show through it, the rim the same gradient drawn
+     firmer. Only the liquid itself takes the pointer — the layer lets a
+     finger through to the earth. A thin thread is still a 44px-wide target
+     thanks to the stroke the hit test counts (visible stroke stays slim:
+     paint-order puts the fill over most of it). */
   .overlaps {
     position: absolute;
     inset: 0;
@@ -1323,18 +1465,60 @@
     pointer-events: none;
     z-index: 2; /* over resting orbs, under a carried one (.slot.front, z 3) */
   }
-  .vesica {
-    fill: color-mix(in srgb, var(--teal) 24%, transparent);
-    stroke: color-mix(in srgb, var(--teal) 55%, transparent);
-    stroke-width: 1.5;
-  }
-  .vesica-glyph {
-    fill: none;
-    stroke: color-mix(in srgb, var(--teal) 80%, var(--ink));
-    stroke-width: 2.4;
-    stroke-linecap: round;
+  .liquid {
+    pointer-events: auto;
+    cursor: pointer;
+    fill: var(--grad);
+    fill-opacity: 0.6;
+    stroke: var(--rim);
+    stroke-opacity: 0.85;
+    stroke-width: 2;
     stroke-linejoin: round;
-    overflow: visible;
+    transition:
+      fill-opacity 0.2s ease,
+      stroke-opacity 0.2s ease;
+  }
+  .liquid.lit,
+  .liquid:hover {
+    fill-opacity: 0.85;
+    stroke-opacity: 1;
+  }
+  /* Each rim stop is its orb's colour pulled toward the ink, like the orb's
+     own border — a colour the gradient attribute can't mix, CSS can. */
+  .rim-stop {
+    stop-color: color-mix(in srgb, var(--c, var(--teal)) 70%, var(--ink));
+  }
+  .liquid:focus-visible {
+    outline: none;
+    stroke: var(--teal);
+    stroke-width: 3;
+  }
+  /* What flows across the liquid under the pointer: a card like the name
+     chips, hung above the neck, over everything but a carried orb. */
+  .liquid-tip {
+    position: absolute;
+    z-index: 3;
+    transform: translate(-50%, calc(-100% - 0.9rem));
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    max-width: 18rem;
+    padding: 0.4rem 0.7rem;
+    border-radius: 0.7rem;
+    background: color-mix(in srgb, var(--card) 94%, transparent);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(6px);
+    font-size: 0.78rem;
+    color: var(--ink);
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .liquid-tip .head {
+    font-weight: 700;
+    color: var(--teal-ink);
+  }
+  .liquid-tip span:not(.head) {
+    color: var(--ink-soft);
   }
 
   .slot {
@@ -1354,6 +1538,17 @@
   }
   .slot.front {
     z-index: 3; /* the carried orb rides above the rest of the sky */
+  }
+  /* Filtered out by the search: still in the physics, gone from the eye and
+     from under the finger. */
+  .slot,
+  .name {
+    transition: opacity 0.25s ease;
+  }
+  .slot.faded,
+  .name.faded {
+    opacity: 0;
+    pointer-events: none;
   }
 
   .orb {
@@ -1511,10 +1706,10 @@
       transform: scale(1);
     }
   }
-  .orb .initial {
-    font-size: 2.4rem;
-    font-weight: 700;
-    line-height: 1;
+  /* The holon's mark (its identicon), in the ink that reads on its colour:
+     half the orb wide, so the rim and the glass still frame it. */
+  .orb :global(.mark) {
+    font-size: calc(var(--orb) / 2);
     color: var(--on-c, var(--ink));
   }
 
@@ -1637,26 +1832,26 @@
   }
   /* Too narrow for three abreast: the switch keeps the top line, and the
      search + locate share a second line beneath it, the search taking the
-     width the button leaves. */
+     width the button leaves (all of it, in the bare sky). */
   @media (max-width: 40rem) {
-    .topbar.onmap {
+    .topbar {
       grid-template-columns: 1fr auto;
       grid-template-areas:
         "toggle toggle"
         "left right";
       row-gap: 0.45rem;
     }
-    .topbar.onmap .viewtoggle {
+    .topbar .viewtoggle {
       grid-area: toggle;
       justify-self: center;
     }
-    .topbar.onmap .topbar__left {
+    .topbar .topbar__left {
       grid-area: left;
     }
-    .topbar.onmap .topbar__right {
+    .topbar .topbar__right {
       grid-area: right;
     }
-    .topbar.onmap :global(.mapsearch) {
+    .topbar :global(.mapsearch) {
       flex: 1 1 auto;
     }
   }

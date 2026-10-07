@@ -7,7 +7,8 @@
   // — and PLACES, by name, from the geocoder (lib/placesearch). Owns nothing
   // but the query: a pick is handed back to whoever holds the map (the
   // dock's bar → DockView), which docks the hub or flies to it when it is
-  // docked already, and flies the earth to the place.
+  // docked already, and flies the earth to the place. The query itself is
+  // bindable: the dock reads it live to show only the orbs that answer it.
   import { onDestroy } from "svelte";
   import { searchHolons } from "@holons/core/holosphere";
   import { getHolosphere } from "$lib/holosphere";
@@ -23,10 +24,13 @@
   export let onplace: (place: PlaceHit) => void;
   /** Where the map is looking, so nearby places rank first. */
   export let near: () => { lat: number; lng: number } | null = () => null;
+  /** Look places up too — only worth it with the earth on screen. */
+  export let places = true;
 
-  let query = "";
+  /** The live text in the box, for whoever filters by it. */
+  export let query = "";
   let hits: HubHit[] = [];
-  let places: PlaceHit[] = [];
+  let spots: PlaceHit[] = [];
   let searching = false;
   let searched = ""; // the query the rows on screen answer
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -43,7 +47,7 @@
     // a beat later. Places already listed stay until their answer replaces
     // them — emptying the list on every keystroke made it jump.
     hits = mergeHits(q, [], $dockEntries);
-    if (q.length < 3) places = [];
+    if (q.length < 3) spots = [];
     searched = q;
     timer = setTimeout(() => void search(q), 250);
   }
@@ -62,10 +66,10 @@
       if (fresh()) hits = mergeHits(q, found, $dockEntries);
     })();
     // A place needs a little more to go on than a hub's name does.
-    const spots = (async () => {
+    const geo = (async () => {
       let found: PlaceHit[] = [];
       try {
-        if (q.length >= 3)
+        if (places && q.length >= 3)
           found = await searchPlaces(q, MAPBOX_TOKEN, {
             proximity: near(),
             language: $locale,
@@ -73,9 +77,9 @@
       } catch {
         found = [];
       }
-      if (fresh()) places = found;
+      if (fresh()) spots = found;
     })();
-    await Promise.all([hubs, spots]);
+    await Promise.all([hubs, geo]);
     if (mine === seq) searching = false;
   }
 
@@ -84,8 +88,14 @@
     seq += 1;
     searching = false;
     hits = [];
-    places = [];
+    spots = [];
     searched = "";
+  }
+
+  /** Escape empties the box: the list closes and the filter lifts. */
+  function clear() {
+    reset();
+    query = "";
   }
 
   function pick(hit: HubHit) {
@@ -108,7 +118,7 @@
     type="search"
     bind:value={query}
     on:input={onInput}
-    on:keydown={(e) => e.key === "Escape" && reset()}
+    on:keydown={(e) => e.key === "Escape" && clear()}
     placeholder={$t("dock.searchPlaceholder")}
     aria-label={$t("dock.searchPlaceholder")}
     autocomplete="off"
@@ -119,7 +129,7 @@
   {#if searching}
     <span class="searching">{$t("hex.searching")}</span>
   {/if}
-  {#if hits.length || places.length}
+  {#if hits.length || spots.length}
     <div class="hits" role="listbox">
       {#if hits.length}
         <div role="group" aria-label={$t("dock.searchHubs")}>
@@ -142,10 +152,10 @@
           {/each}
         </div>
       {/if}
-      {#if places.length}
+      {#if spots.length}
         <div role="group" aria-label={$t("dock.searchPlaces")}>
           <p class="sect" aria-hidden="true">{$t("dock.searchPlaces")}</p>
-          {#each places as place (place.id)}
+          {#each spots as place (place.id)}
             <button
               type="button"
               role="option"
