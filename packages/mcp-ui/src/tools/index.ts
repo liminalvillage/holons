@@ -30,6 +30,7 @@ const DOMAINS = [
   'inventory',
   'offers',
   'flows',
+  'pot',
   'governance',
   'protocol',
   'privacy',

@@ -421,6 +421,7 @@ export {
   type RightsFromLensesInput,
 } from './rights-log.js';
 export { DEFAULT_RIGHTS_HOLONS, cutRights, type CutRights, type CutRightsOptions } from './rights-cut.js';
+export { loadRights, type RightsContext } from './rights-load.js';
 export {
   POT_ABI,
   POT_ETH,
