@@ -28,18 +28,30 @@
 
 import { getholonId, getUserId } from './utilities.js';
 import { createIdentityContext } from '@holons/core/holosphere';
+import { ethers } from 'ethers';
 import {
   FLOW_CLAIMS_LENS,
   FLOW_MINTS_LENS,
+  FLOW_RIGHTS_LENS,
+  POT_ABI,
+  POT_ETH,
   buildClaim,
   buildClaimVerdict,
   buildMint,
   buildPayout,
+  buildRightsEntry,
   claimHeadroom,
+  cutRights,
+  describeChain,
   fitsHeadroom,
   foldClaimsFromLenses,
   foldMintsFromLenses,
+  loadBundleRecord,
   loadClaimCeilings,
+  loadPotRecord,
+  loadRights,
+  lunationAt,
+  readBundleTokens,
   scoreAllocationMembers,
 } from '@holons/core/flows';
 import {
@@ -502,10 +514,14 @@ export default class FundClaims {
   // ---------------------------------------------------------------- checkpoints
 
   startCheckpoints(everyMs) {
-    const run = () =>
+    const run = () => {
       this.checkpointClosedEpoch().catch(e =>
         console.warn('[fundclaims] checkpoint failed:', e?.message)
       );
+      this.cutRightsAtNewMoon().catch(e =>
+        console.warn('[fundclaims] rights cut failed:', e?.message)
+      );
+    };
     this.timer = setInterval(run, everyMs);
     if (typeof this.timer.unref === 'function') this.timer.unref();
     setTimeout(run, 30_000).unref?.();
@@ -580,5 +596,92 @@ export default class FundClaims {
         `[fundclaims] checkpointed epoch ${closed}: ${done.length} lens(es)`
       );
     return { checkpointed: done };
+  }
+
+  // ---------------------------------------------------------------- the Pot
+
+  /**
+   * The Pot's cumulative receipts per token, read off the chain's public
+   * endpoint: the chain's coin and every token the holon's record lists.
+   * Null when the chain cannot be read from here.
+   */
+  async potReceipts(pot, tokens) {
+    const rpc = describeChain(pot.chainId)?.rpc;
+    if (!rpc) return null;
+    const provider = new ethers.JsonRpcProvider(rpc, pot.chainId, {
+      staticNetwork: true,
+    });
+    const contract = new ethers.Contract(pot.address, [...POT_ABI], provider);
+    const received = {};
+    for (const token of [
+      POT_ETH,
+      ...tokens.map(t => t.address.toLowerCase()),
+    ]) {
+      const v = BigInt(String(await contract.received(token)));
+      if (v > 0n) received[token] = v;
+    }
+    return received;
+  }
+
+  /**
+   * At the new moon, cut and publish the lunation's rights table for every
+   * holon with a Pot whose latest published table is older than this
+   * lunation. Signed by the holon key (an attester); the signers then sign
+   * the root with their wallets and post it (kiosk, web, MCP). A walk that
+   * could not complete publishes nothing: the income rolls into the next
+   * moon, and the log says why.
+   */
+  async cutRightsAtNewMoon() {
+    const db = this.db;
+    if (!db.signingEnabled) return { cut: [] };
+    const epoch = lunationAt(this.now()).index;
+    const done = [];
+    for (const holon of await db.listHolons()) {
+      const h = String(holon);
+      const pot = await loadPotRecord(db, h).catch(() => null);
+      if (!pot) continue;
+      const ctx = await loadRights(db, h);
+      if (ctx.latest && ctx.latest.epoch >= epoch) continue;
+      const tokens = readBundleTokens(
+        await loadBundleRecord(db, h).catch(() => null)
+      );
+      const received = await this.potReceipts(pot, tokens).catch(() => null);
+      if (!received) continue;
+      const cut = await cutRights(db, h, {
+        previous: ctx.latest?.table ?? null,
+        epoch,
+        chainId: pot.chainId,
+        received,
+        scoreOf: id => scoreAllocationMembers(db, id),
+      });
+      if (!cut.complete || !cut.table) {
+        console.warn(
+          `[fundclaims] ${h}: table for lunation ${epoch} not cut — ${cut.problems.join('; ')}`
+        );
+        continue;
+      }
+      const entry = buildRightsEntry({
+        table: cut.table,
+        chainId: pot.chainId,
+        pot: pot.address,
+      });
+      const event = await db.append(h, FLOW_RIGHTS_LENS, entry.item, {
+        refs: entry.refs,
+      });
+      done.push({ holon: h, epoch, id: event.id, rows: cut.table.rows.length });
+      if (/^-?\d+$/.test(h)) {
+        this.bot?.telegram
+          ?.sendMessage(
+            h,
+            `🌑 New moon: the rights table for lunation ${epoch} is published (${cut.table.rows.length} rows). Signers, sign and post it from the kiosk or the dashboard; it applies after the challenge window.`
+          )
+          .catch(() => {});
+      }
+    }
+    if (done.length)
+      console.log(
+        `[fundclaims] cut lunation ${epoch} rights: ${done.length} holon(s)`
+      );
+    return { cut: done };
   }
 }
