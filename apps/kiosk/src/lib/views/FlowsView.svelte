@@ -845,7 +845,8 @@
     claims: claimsShape?.folded ?? null,
     held: Object.keys(potChain),
   });
-  $: myShare = selfId && cascade ? (cascade.leaves[selfId]?.percentage ?? 0) : 0;
+  $: myShare =
+    selfId && cascade ? (cascade.leaves[selfId]?.percentage ?? 0) : 0;
   $: myAccount = selfId ? fundAccount(rights, usageJudged, selfId) : null;
   $: myPassesTo = selfId ? namesOf(cascadeFlows.to.get(selfId)) : "";
   // A statement shows cents; the diagram rounds to whole units.
@@ -2077,7 +2078,8 @@
               {canAttest}
               nameFor={(id) => nameFor(id) ?? undefined}
               on:receipts={(e) => (potChain = e.detail)}
-              on:changed={() => hsRef && hid && void loadHolonSettings(hsRef, hid)}
+              on:changed={() =>
+                hsRef && hid && void loadHolonSettings(hsRef, hid)}
             />
           {/if}
           {#if canAttest && reviewClaims.length}

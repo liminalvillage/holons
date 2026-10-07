@@ -1925,7 +1925,8 @@ export const en = {
 
   // ── The Pot: rights committed at each new moon ──────────────────────
   "pot.title": "Pot",
-  "pot.none": "This holon holds no value on chain yet. A Pot holds it and divides it by a rights table committed at each new moon.",
+  "pot.none":
+    "This holon holds no value on chain yet. A Pot holds it and divides it by a rights table committed at each new moon.",
   "pot.deploy": "Create a Pot",
   "pot.deploying": "Creating…",
   "pot.reading": "Reading the chain…",
@@ -1938,7 +1939,8 @@ export const en = {
   "pot.noRow": "The committed table has no row for you yet.",
   "pot.accruing": "Accruing {amounts}, committed at the new moon on {when}.",
   "pot.paidAt": "Paid at {address}.",
-  "pot.noPayout": "No payout address yet — set one and it applies at the next new moon.",
+  "pot.noPayout":
+    "No payout address yet — set one and it applies at the next new moon.",
   "pot.noPayoutShort": "no address",
   "pot.useWallet": "Use this wallet",
   "pot.payoutSaved": "Payout address saved; it applies at the next new moon.",
@@ -1963,7 +1965,8 @@ export const en = {
   "pot.publish": "Publish",
   "pot.publishing": "Publishing…",
   "pot.discard": "Discard",
-  "pot.upToDate": "Committed up to date; the next table is cut at the new moon on {when}.",
+  "pot.upToDate":
+    "Committed up to date; the next table is cut at the new moon on {when}.",
   "pot.published": "Table published; signers can now sign it.",
   "pot.signed": "Signed.",
   "pot.posted": "Root posted; it applies after the challenge window.",

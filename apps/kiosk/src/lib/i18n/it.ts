@@ -1964,7 +1964,8 @@ export const it: Record<MessageKey, Msg> = {
 
   // ── The Pot: rights committed at each new moon ──────────────────────
   "pot.title": "Pot",
-  "pot.none": "Questo holon non custodisce ancora valore on chain. Un Pot lo custodisce e lo divide con una tabella di diritti impegnata a ogni luna nuova.",
+  "pot.none":
+    "Questo holon non custodisce ancora valore on chain. Un Pot lo custodisce e lo divide con una tabella di diritti impegnata a ogni luna nuova.",
   "pot.deploy": "Crea un Pot",
   "pot.deploying": "Creazione…",
   "pot.reading": "Lettura della chain…",
@@ -1975,14 +1976,17 @@ export const it: Record<MessageKey, Msg> = {
   "pot.collect": "Riscuoti",
   "pot.collecting": "Riscossione…",
   "pot.noRow": "La tabella impegnata non ha ancora una riga per te.",
-  "pot.accruing": "In maturazione {amounts}, impegnati alla luna nuova del {when}.",
+  "pot.accruing":
+    "In maturazione {amounts}, impegnati alla luna nuova del {when}.",
   "pot.paidAt": "Pagato a {address}.",
-  "pot.noPayout": "Nessun indirizzo di pagamento — impostane uno e varrà dalla prossima luna nuova.",
+  "pot.noPayout":
+    "Nessun indirizzo di pagamento — impostane uno e varrà dalla prossima luna nuova.",
   "pot.noPayoutShort": "nessun indirizzo",
   "pot.useWallet": "Usa questo wallet",
   "pot.payoutSaved": "Indirizzo salvato; vale dalla prossima luna nuova.",
   "pot.pending": "Lunazione {epoch} pubblicata, in vigore dal {when}.",
-  "pot.tableMissing": "La tabella dietro questa radice non è arrivata a questo lettore.",
+  "pot.tableMissing":
+    "La tabella dietro questa radice non è arrivata a questo lettore.",
   "pot.review": "Verifica",
   "pot.reviewSame": "Ricostruita qui: stessa radice.",
   "pot.reviewDiffers": "Ricostruita qui: radice diversa.",
@@ -2002,7 +2006,8 @@ export const it: Record<MessageKey, Msg> = {
   "pot.publish": "Pubblica",
   "pot.publishing": "Pubblicazione…",
   "pot.discard": "Scarta",
-  "pot.upToDate": "Impegni aggiornati; la prossima tabella si taglia alla luna nuova del {when}.",
+  "pot.upToDate":
+    "Impegni aggiornati; la prossima tabella si taglia alla luna nuova del {when}.",
   "pot.published": "Tabella pubblicata; i firmatari possono firmarla.",
   "pot.signed": "Firmata.",
   "pot.posted": "Radice pubblicata; vale dopo la finestra di contestazione.",

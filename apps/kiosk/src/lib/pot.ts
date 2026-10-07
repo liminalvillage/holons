@@ -134,18 +134,27 @@ export async function readPotState(
   const code = await provider.getCode(pot.address).catch(() => "0x");
   if (!code || code === "0x") return null;
   const c = new ethers.Contract(pot.address, [...POT_ABI], provider);
-  const [owner, challenge, threshold, signers, lastEpoch, lastLunation, active, pending, block] =
-    await Promise.all([
-      c.owner().catch(() => null),
-      big(c.challenge()),
-      big(c.threshold()),
-      c.signers().catch(() => []),
-      big(c.lastEpoch()),
-      big(c.lastLunation()),
-      c.active().catch(() => null),
-      c.pending().catch(() => null),
-      provider.getBlock("latest").catch(() => null),
-    ]);
+  const [
+    owner,
+    challenge,
+    threshold,
+    signers,
+    lastEpoch,
+    lastLunation,
+    active,
+    pending,
+    block,
+  ] = await Promise.all([
+    c.owner().catch(() => null),
+    big(c.challenge()),
+    big(c.threshold()),
+    c.signers().catch(() => []),
+    big(c.lastEpoch()),
+    big(c.lastLunation()),
+    c.active().catch(() => null),
+    c.pending().catch(() => null),
+    provider.getBlock("latest").catch(() => null),
+  ]);
   const key = viewerId ? partyKey(String(viewerId)) : null;
   const unitOf = async (
     unit: string,
@@ -192,7 +201,11 @@ export async function readPotState(
     signers: (signers as string[]).map((s) => String(s).toLowerCase()),
     lastEpoch: Number(lastEpoch),
     lastLunation: Number(lastLunation),
-    lunationNow: Number(await big(c.lunationAt(block?.timestamp ?? Math.floor(Date.now() / 1000)))),
+    lunationNow: Number(
+      await big(
+        c.lunationAt(block?.timestamp ?? Math.floor(Date.now() / 1000)),
+      ),
+    ),
     active: commitmentOf(active, ch),
     pending: commitmentOf(pending, ch),
     units,
@@ -200,9 +213,12 @@ export async function readPotState(
 }
 
 /** Unit → what the Pot received in it, in that unit: `PotSources.chain`. */
-export function potReceipts(state: PotState | null | undefined): Record<string, number> {
+export function potReceipts(
+  state: PotState | null | undefined,
+): Record<string, number> {
   const out: Record<string, number> = {};
-  for (const u of state?.units ?? []) if (u.received > 0n) out[u.unit] = u.receivedIn;
+  for (const u of state?.units ?? [])
+    if (u.received > 0n) out[u.unit] = u.receivedIn;
   return out;
 }
 
@@ -210,8 +226,13 @@ async function writer(pot: Pick<PotRecord, "address" | "chainId">) {
   await connectedWallet();
   const provider = new ethers.BrowserProvider((window as any).ethereum);
   await ensureChain(provider, pot.address, pot.chainId);
-  const signer = await new ethers.BrowserProvider((window as any).ethereum).getSigner();
-  return { signer, contract: new ethers.Contract(pot.address, [...POT_ABI], signer) };
+  const signer = await new ethers.BrowserProvider(
+    (window as any).ethereum,
+  ).getSigner();
+  return {
+    signer,
+    contract: new ethers.Contract(pot.address, [...POT_ABI], signer),
+  };
 }
 
 async function sent(label: string, run: () => Promise<any>): Promise<string> {
@@ -224,7 +245,8 @@ async function sent(label: string, run: () => Promise<any>): Promise<string> {
     return String(tx.hash);
   } catch (err: any) {
     if (err instanceof ChainError) throw err;
-    if (isRejection(err)) throw new ChainError("Transaction rejected.", "rejected");
+    if (isRejection(err))
+      throw new ChainError("Transaction rejected.", "rejected");
     throw new ChainError(
       err?.reason ?? err?.shortMessage ?? err?.message ?? `${label} failed.`,
       "failed",
@@ -236,7 +258,11 @@ async function sent(label: string, run: () => Promise<any>): Promise<string> {
 export async function deployPotOnChain(
   store: any,
   holonId: string,
-  input: { signers: readonly string[]; threshold: number; challengeSeconds?: number },
+  input: {
+    signers: readonly string[];
+    threshold: number;
+    challengeSeconds?: number;
+  },
 ): Promise<PotRecord> {
   const owner = await connectedWallet();
   const args = potConstructorArgs({
@@ -248,7 +274,11 @@ export async function deployPotOnChain(
   });
   const provider = new ethers.BrowserProvider((window as any).ethereum);
   const signer = await provider.getSigner();
-  const factory = new ethers.ContractFactory([POT_CONSTRUCTOR_ABI], POT_BYTECODE, signer);
+  const factory = new ethers.ContractFactory(
+    [POT_CONSTRUCTOR_ABI],
+    POT_BYTECODE,
+    signer,
+  );
   let address = "";
   let txHash = "";
   try {
@@ -256,12 +286,17 @@ export async function deployPotOnChain(
     const tx = contract.deploymentTransaction();
     txHash = String(tx?.hash ?? "");
     const receipt = await tx?.wait();
-    if (receipt?.status !== 1) throw new ChainError("The deployment failed on chain.", "failed");
+    if (receipt?.status !== 1)
+      throw new ChainError("The deployment failed on chain.", "failed");
     address = String(receipt.contractAddress ?? (await contract.getAddress()));
   } catch (err: any) {
     if (err instanceof ChainError) throw err;
-    if (isRejection(err)) throw new ChainError("Transaction rejected.", "rejected");
-    throw new ChainError(err?.shortMessage ?? err?.message ?? "Deployment failed.", "failed");
+    if (isRejection(err))
+      throw new ChainError("Transaction rejected.", "rejected");
+    throw new ChainError(
+      err?.shortMessage ?? err?.message ?? "Deployment failed.",
+      "failed",
+    );
   }
   const chainId = Number((await provider.getNetwork()).chainId);
   return savePotRecord(store, holonId, {
@@ -281,19 +316,29 @@ export async function signCommitment(
   const address = await connectedWallet();
   const provider = new ethers.BrowserProvider((window as any).ethereum);
   await ensureChain(provider, pot.address, pot.chainId);
-  const signer = await new ethers.BrowserProvider((window as any).ethereum).getSigner();
+  const signer = await new ethers.BrowserProvider(
+    (window as any).ethereum,
+  ).getSigner();
   try {
-    const signature = await signer.signTypedData(potDomain(pot.chainId, pot.address), POT_ROOT_TYPES as never, {
-      epoch: commitment.epoch,
-      root: commitment.root,
-      tableRef: commitment.tableRef,
-      tokens: commitment.tokens,
-      totals: commitment.totals,
-    });
+    const signature = await signer.signTypedData(
+      potDomain(pot.chainId, pot.address),
+      POT_ROOT_TYPES as never,
+      {
+        epoch: commitment.epoch,
+        root: commitment.root,
+        tableRef: commitment.tableRef,
+        tokens: commitment.tokens,
+        totals: commitment.totals,
+      },
+    );
     return { signer: address.toLowerCase(), signature };
   } catch (err: any) {
-    if (isRejection(err)) throw new ChainError("Signature rejected.", "rejected");
-    throw new ChainError(err?.shortMessage ?? err?.message ?? "Signing failed.", "failed");
+    if (isRejection(err))
+      throw new ChainError("Signature rejected.", "rejected");
+    throw new ChainError(
+      err?.shortMessage ?? err?.message ?? "Signing failed.",
+      "failed",
+    );
   }
 }
 
@@ -309,7 +354,9 @@ export async function postRootOnChain(
 }
 
 /** The owner withdraws the pending root. */
-export async function vetoOnChain(pot: Pick<PotRecord, "address" | "chainId">): Promise<string> {
+export async function vetoOnChain(
+  pot: Pick<PotRecord, "address" | "chainId">,
+): Promise<string> {
   const { contract } = await writer(pot);
   return sent("Veto", () => contract.veto());
 }
@@ -340,9 +387,15 @@ export async function depositOnChain(
 ): Promise<string> {
   const { signer, contract } = await writer(pot);
   if (!token) {
-    return sent("Deposit", () => signer.sendTransaction({ to: pot.address, value: amount }));
+    return sent("Deposit", () =>
+      signer.sendTransaction({ to: pot.address, value: amount }),
+    );
   }
-  const erc = new ethers.Contract(token, ["function approve(address, uint256) returns (bool)", ...ERC20_META_ABI], signer);
+  const erc = new ethers.Contract(
+    token,
+    ["function approve(address, uint256) returns (bool)", ...ERC20_META_ABI],
+    signer,
+  );
   await sent("Approve", () => erc.approve(pot.address, amount));
   return sent("Deposit", () => contract.deposit(token, amount));
 }

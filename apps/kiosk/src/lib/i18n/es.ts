@@ -1951,7 +1951,8 @@ export const es: Record<MessageKey, Msg> = {
 
   // ── The Pot: rights committed at each new moon ──────────────────────
   "pot.title": "Pot",
-  "pot.none": "Este holon aún no guarda valor en cadena. Un Pot lo guarda y lo reparte con una tabla de derechos comprometida en cada luna nueva.",
+  "pot.none":
+    "Este holon aún no guarda valor en cadena. Un Pot lo guarda y lo reparte con una tabla de derechos comprometida en cada luna nueva.",
   "pot.deploy": "Crear un Pot",
   "pot.deploying": "Creando…",
   "pot.reading": "Leyendo la cadena…",
@@ -1962,14 +1963,17 @@ export const es: Record<MessageKey, Msg> = {
   "pot.collect": "Cobrar",
   "pot.collecting": "Cobrando…",
   "pot.noRow": "La tabla comprometida aún no tiene una fila para ti.",
-  "pot.accruing": "Acumulando {amounts}, comprometidos en la luna nueva del {when}.",
+  "pot.accruing":
+    "Acumulando {amounts}, comprometidos en la luna nueva del {when}.",
   "pot.paidAt": "Pagado en {address}.",
-  "pot.noPayout": "Sin dirección de pago — pon una y valdrá desde la próxima luna nueva.",
+  "pot.noPayout":
+    "Sin dirección de pago — pon una y valdrá desde la próxima luna nueva.",
   "pot.noPayoutShort": "sin dirección",
   "pot.useWallet": "Usar esta cartera",
   "pot.payoutSaved": "Dirección guardada; vale desde la próxima luna nueva.",
   "pot.pending": "Lunación {epoch} publicada, en vigor desde {when}.",
-  "pot.tableMissing": "La tabla detrás de esta raíz no ha llegado a este lector.",
+  "pot.tableMissing":
+    "La tabla detrás de esta raíz no ha llegado a este lector.",
   "pot.review": "Comprobar",
   "pot.reviewSame": "Reconstruida aquí: misma raíz.",
   "pot.reviewDiffers": "Reconstruida aquí: raíz distinta.",
@@ -1989,7 +1993,8 @@ export const es: Record<MessageKey, Msg> = {
   "pot.publish": "Publicar",
   "pot.publishing": "Publicando…",
   "pot.discard": "Descartar",
-  "pot.upToDate": "Compromisos al día; la próxima tabla se corta en la luna nueva del {when}.",
+  "pot.upToDate":
+    "Compromisos al día; la próxima tabla se corta en la luna nueva del {when}.",
   "pot.published": "Tabla publicada; los firmantes ya pueden firmarla.",
   "pot.signed": "Firmada.",
   "pot.posted": "Raíz publicada; vale tras la ventana de impugnación.",
