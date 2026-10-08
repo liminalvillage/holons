@@ -8,8 +8,12 @@
 //                                       the member's own derived key (or, with
 //                                       no derivation secret, by the holon key
 //                                       on the member's behalf — `delegated`)
-//   /fundclaims                         the holon's claims, judged: approved,
-//                                       pending, disputed, over, settled …
+//   /fundgive <amount> [UNIT] <@user|id> [memo]
+//                                       give part of your access to another
+//                                       party — burns yours, opens theirs;
+//                                       judged like a claim, never taken back
+//   /fundclaims                         the holon's claims and gives, judged:
+//                                       approved, pending, disputed, over, settled …
 //   /fundattest <id> · /funddispute <id> [reason]   an attester's word
 //   /fundpaid <id> [amount]             an attester records the payout
 //   /fundmint <amount> [UNIT] [memo]    an attester brings value into the fund
@@ -40,6 +44,7 @@ import {
   buildMint,
   buildPayout,
   buildRightsEntry,
+  buildTransfer,
   claimHeadroom,
   cutRights,
   describeChain,
@@ -75,6 +80,9 @@ import {
 } from './protocolContext.js';
 
 const HEX64 = /^[0-9a-f]{64}$/i;
+/** A word that names a party: an @mention, a Telegram id, a hex key, a keyed holon. */
+const isPartyWord = w =>
+  w.startsWith('@') || /^-?\d+$/.test(w) || HEX64.test(w) || /^holon_/.test(w);
 
 // A unit is a currency code or a measure: EUR, L, KG, KWH — one to five letters.
 const UNIT_RE = /^[A-Za-z]{1,5}$/;
@@ -114,6 +122,7 @@ export default class FundClaims {
     this.timer = null;
     if (bot) {
       bot.command('fundclaim', ctx => this.claim(ctx));
+      bot.command('fundgive', ctx => this.give(ctx));
       bot.command('fundclaims', ctx => this.list(ctx));
       bot.command('fundattest', ctx => this.verdict(ctx, 'attest'));
       bot.command('funddispute', ctx => this.verdict(ctx, 'dispute'));
@@ -229,6 +238,107 @@ export default class FundClaims {
   }
 
   /**
+   * /fundgive <amount> [UNIT] <@user|id> [memo] — give part of your access
+   * to another party. A `transfer` in the claims log, signed as the member
+   * (or by the holon key on their behalf), judged under the same access as
+   * a claim: past it, nothing is written. The receiver is a reply's author,
+   * an @mention the bot has seen, or a party id.
+   */
+  async give(ctx) {
+    const holon = getholonId(ctx);
+    const userId = String(getUserId(ctx));
+    const args = (ctx.message?.text || '').split(/\s+/).slice(1);
+    const amount = Number(String(args[0] || '').replace(',', '.'));
+    if (!(amount > 0)) {
+      return ctx.reply('Usage: /fundgive <amount> [L|EUR|…] <@user|id> [note]');
+    }
+    let unit = 'EUR';
+    let rest = args.slice(1);
+    if (rest[0] && UNIT_RE.test(rest[0])) {
+      unit = rest[0].toUpperCase();
+      rest = rest.slice(1);
+    }
+    // The receiver: the word after the amount when it names someone, else
+    // the author of the message replied to. The rest is the note.
+    const named = !!rest[0] && isPartyWord(rest[0]);
+    const replied = ctx.message?.reply_to_message?.from?.id;
+    const to = named
+      ? await this.receiver(ctx, rest[0])
+      : replied
+        ? String(replied)
+        : null;
+    if (!to) {
+      return ctx.reply(
+        'Who receives it? Reply to their message, @mention them, or give their id.'
+      );
+    }
+    if (to === userId) return ctx.reply('A give names someone else.');
+    const memo = rest
+      .slice(named ? 1 : 0)
+      .join(' ')
+      .trim();
+    try {
+      const { folded, ceilings } = await this.context(holon);
+      const headroom = claimHeadroom(ceilings, folded, userId, unit);
+      if (!fitsHeadroom(headroom, amount)) {
+        return ctx.reply(
+          `You can give up to ${headroom} ${unit} here — your access after what was already claimed, paid or given.`
+        );
+      }
+    } catch (err) {
+      return ctx.reply(`Could not read the fund: ${err?.message || err}`);
+    }
+    const delegated = !this.identity.memberSigner(userId);
+    const appendable = buildTransfer({
+      party: userId,
+      to,
+      amount,
+      unit,
+      memo: memo || undefined,
+      at: this.now(),
+      ...(delegated ? { onBehalfOf: userId } : {}),
+    });
+    try {
+      const event = await this.appendAs(userId, holon, appendable);
+      const ctxFold = await this.context(holon);
+      const mine = ctxFold.folded.transfers.find(t => t.id === event.id);
+      const names = await this.names(holon, [to]);
+      return ctx.reply(
+        `Given: ${amount} ${unit} to ${names.get(to) || to}${memo ? ` — ${memo}` : ''}\n` +
+          `#${event.id.slice(0, 8)} · ${mine ? this.describe(mine) : 'recorded'}${delegated ? ' (signed by the holon on your behalf)' : ''}`
+      );
+    } catch (err) {
+      return ctx.reply(`Could not record the give: ${err?.message || err}`);
+    }
+  }
+
+  /** The party a give's word names: a bare id as it is, an @mention through the message's entities or the roster. */
+  async receiver(ctx, word) {
+    if (!word) return null;
+    if (/^-?\d+$/.test(word) || HEX64.test(word) || /^holon_/.test(word))
+      return word;
+    if (word.startsWith('@')) {
+      const handle = word.slice(1).toLowerCase();
+      const entity = (ctx.message?.entities || []).find(
+        e =>
+          e.type === 'text_mention' &&
+          e.user?.username?.toLowerCase() === handle
+      );
+      if (entity?.user?.id) return String(entity.user.id);
+      try {
+        const users = await this.db.getAll(getholonId(ctx), 'users');
+        const hit = (users || []).find(
+          u => String(u?.username || '').toLowerCase() === handle
+        );
+        if (hit?.id != null) return String(hit.id);
+      } catch {
+        // No roster to look the handle up in.
+      }
+    }
+    return null;
+  }
+
+  /**
    * /fundmint <amount> [UNIT] [memo] — bring value into the fund. Signed as
    * the member; it counts only if they are an attester of the mints log
    * (admins by default), and the reply says so.
@@ -325,18 +435,28 @@ export default class FundClaims {
     const holon = getholonId(ctx);
     try {
       const { folded, actors, policy } = await this.context(holon);
-      if (!folded.claims.length)
+      if (!folded.claims.length && !folded.transfers.length)
         return ctx.reply(
-          'No claims on this fund yet. Raise one with /fundclaim <amount>.'
+          'No claims on this fund yet. Raise one with /fundclaim <amount>, or pass access on with /fundgive.'
         );
-      const names = await this.names(
-        holon,
-        folded.claims.map(c => c.party)
-      );
-      const lines = folded.claims.slice(-25).map(c => {
-        const who = names.get(c.party) || c.party;
-        return `#${c.id.slice(0, 8)} <b>${escapeHtml(who)}</b> ${c.amount} ${c.unit}${c.memo ? ` — ${escapeHtml(c.memo)}` : ''}\n   ${this.describe(c)}`;
-      });
+      const names = await this.names(holon, [
+        ...folded.claims.map(c => c.party),
+        ...folded.transfers.flatMap(t => [t.party, t.to]),
+      ]);
+      const name = id => escapeHtml(names.get(id) || id);
+      const rows = [
+        ...folded.claims.map(c => ({
+          at: c.createdAt,
+          id: c.id,
+          text: `<b>${name(c.party)}</b> ${c.amount} ${c.unit}${c.memo ? ` — ${escapeHtml(c.memo)}` : ''}\n   ${this.describe(c)}`,
+        })),
+        ...folded.transfers.map(t => ({
+          at: t.createdAt,
+          id: t.id,
+          text: `<b>${name(t.party)}</b> → <b>${name(t.to)}</b> ${t.amount} ${t.unit}${t.memo ? ` — ${escapeHtml(t.memo)}` : ''}\n   ${this.describe(t)}`,
+        })),
+      ].sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1));
+      const lines = rows.slice(-25).map(r => `#${r.id.slice(0, 8)} ${r.text}`);
       const head =
         `<b>Fund claims</b> · quorum ${policy.quorum}, ${policy.conflict} wins` +
         (actors.source === 'bootstrap'
