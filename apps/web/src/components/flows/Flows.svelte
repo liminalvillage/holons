@@ -79,6 +79,7 @@
     readBundleTokens,
     readPotRecord,
     buildClaim,
+    buildTransfer,
     buildClaimVerdict,
     buildMint,
     buildPayout,
@@ -95,6 +96,7 @@
     scoreAllocationMembers,
     type InboundRight,
     type Claim,
+    type Transfer,
     type AllocationSlice,
     type BreakdownRow,
     type ChordGroup,
@@ -203,6 +205,11 @@
   let claimMemo = "";
   let claimBusy = false;
   let claimError = "";
+  // The give: part of your access handed to another party — a `transfer`
+  // in the same log, judged under the same access.
+  let giveTo = "";
+  let giveAmount = "";
+  let giveMemo = "";
   $: if (holonID && holonID !== claimsBoundTo) bindClaims(holonID);
   function bindClaims(id: string) {
     unbindClaims();
@@ -475,11 +482,21 @@
     approved: "Approved",
     pending: "Awaiting attestation",
     disputed: "Disputed",
-    over: "Over the right",
+    over: "Over the access",
     conflict: "Conflict",
     settled: "Paid",
     rejected: "Not counted",
   };
+  // Claims and gives in one list, newest first: a give shows who it went to.
+  type LogRow = { kind: "claim"; c: Claim } | { kind: "give"; g: Transfer };
+  $: logRows = ((): LogRow[] => {
+    const rows: LogRow[] = [
+      ...(claimsCtx?.folded.claims ?? []).map((c) => ({ kind: "claim", c }) as LogRow),
+      ...(claimsCtx?.folded.transfers ?? []).map((g) => ({ kind: "give", g }) as LogRow),
+    ];
+    const at = (r: LogRow) => (r.kind === "claim" ? r.c.createdAt : r.g.createdAt);
+    return rows.sort((a, b) => at(a) - at(b)).slice(-20).reverse();
+  })();
   // A person from the roster, a partner from the federation record, anyone
   // else through the app's resolver — never a raw id.
   const partyName = (id: string) => {
@@ -502,6 +519,33 @@
       await holosphere.append(holonID, FLOW_CLAIMS_LENS, a.item, { refs: a.refs });
       claimAmount = "";
       claimMemo = "";
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    } finally {
+      claimBusy = false;
+    }
+  }
+  async function submitGive() {
+    if (!holonID || !selfId || claimBusy) return;
+    const amount = Number(String(giveAmount).replace(",", "."));
+    const to = giveTo.trim();
+    if (!(amount > 0) || !claimUnit || !to) return;
+    if (to === selfId) {
+      claimError = "A give names someone else.";
+      return;
+    }
+    if (!fitsHeadroom(claimMax, amount)) {
+      claimError = `That is more than your access (${claimMax} ${claimUnit.toUpperCase()}).`;
+      return;
+    }
+    claimBusy = true;
+    claimError = "";
+    try {
+      const a = buildTransfer({ party: selfId, to, amount, unit: claimUnit, memo: giveMemo.trim() || undefined });
+      await holosphere.append(holonID, FLOW_CLAIMS_LENS, a.item, { refs: a.refs });
+      giveAmount = "";
+      giveMemo = "";
+      giveTo = "";
     } catch (err) {
       claimError = err instanceof Error ? err.message : String(err);
     } finally {
@@ -1872,35 +1916,68 @@
               <button type="submit" disabled={claimBusy || !claimUnit || claimTooBig}>Record a claim{claimUnit ? ` (${claimUnit})` : ""}</button>
             </form>
             {#if claimMax != null}
-              <p class="note" class:warn={claimTooBig}>Up to {claimMax} {claimUnit.toUpperCase()} — what is left of your right after what was claimed, paid or is awaiting attestation.</p>
+              <p class="note" class:warn={claimTooBig}>Up to {claimMax} {claimUnit.toUpperCase()} — your access after what was claimed, paid, given or is awaiting attestation.</p>
             {/if}
+            <!-- A give: a `transfer` in the same log. It burns part of your
+                 access and opens the same amount for whoever it names; judged
+                 like a claim, never taken back. -->
+            <form class="claim-form give-form" on:submit|preventDefault={submitGive}>
+              <label class="grow">Give to
+                <input type="text" list="give-parties" maxlength="80" bind:value={giveTo} placeholder="a member, a partner holon, or an id" required />
+                <datalist id="give-parties">
+                  {#each Object.keys(ceilings ?? {}).filter((id) => id !== selfId) as id (id)}<option value={id}>{partyName(id)}</option>{/each}
+                </datalist>
+              </label>
+              <label>Amount <input type="number" min="0.01" step="0.01" max={claimMax ?? undefined} bind:value={giveAmount} required /></label>
+              <label class="grow">Note <input type="text" maxlength="140" bind:value={giveMemo} /></label>
+              <button type="submit" disabled={claimBusy || !claimUnit || !giveTo.trim() || !fitsHeadroom(claimMax, Number(String(giveAmount).replace(",", ".")))}>Give{claimUnit ? ` (${claimUnit})` : ""}</button>
+            </form>
           {/if}
           {#if claimError}<p class="note warn">{claimError}</p>{/if}
-          {#if claimsCtx && claimsCtx.folded.claims.length}
+          {#if logRows.length}
             <table class="claims">
               <thead><tr><th>Who</th><th>Amount</th><th>What for</th><th>Status</th>{#if canAttest}<th></th>{/if}</tr></thead>
               <tbody>
-                {#each claimsCtx.folded.claims.slice(-20).reverse() as c (c.id)}
-                  <tr class={c.status}>
-                    <th scope="row">{partyName(c.party)}</th>
-                    <td>{c.amount} {c.unit}</td>
-                    <td class="memo">{c.memo ?? ""}</td>
-                    <td><span class="badge">{claimStatusLabel[c.status]}</span>{#if c.reason && c.status !== "approved" && c.status !== "settled"} <small>({c.reason})</small>{/if}</td>
-                    {#if canAttest}
-                      <td class="acts">
-                        {#if c.status !== "settled" && c.status !== "rejected"}
-                          {#if c.status !== "approved"}<button type="button" disabled={claimBusy} on:click={() => judgeClaim(c, "attest")}>Attest</button>{/if}
-                          {#if c.status !== "disputed"}<button type="button" disabled={claimBusy} on:click={() => judgeClaim(c, "dispute")}>Dispute</button>{/if}
-                          {#if c.status === "approved"}<button type="button" disabled={claimBusy} on:click={() => markPaid(c)}>Paid</button>{/if}
-                        {/if}
-                      </td>
-                    {/if}
-                  </tr>
+                {#each logRows as row (row.kind === "claim" ? row.c.id : row.g.id)}
+                  {#if row.kind === "give"}
+                    {@const g = row.g}
+                    <tr class={`give ${g.status}`}>
+                      <th scope="row">{partyName(g.party)} → {partyName(g.to)}</th>
+                      <td>{g.amount} {g.unit}</td>
+                      <td class="memo">{g.memo ?? ""}</td>
+                      <td><span class="badge">{claimStatusLabel[g.status]}</span>{#if g.reason && g.status !== "approved"} <small>({g.reason})</small>{/if}</td>
+                      {#if canAttest}
+                        <td class="acts">
+                          {#if g.status !== "rejected"}
+                            {#if g.status !== "approved"}<button type="button" disabled={claimBusy} on:click={() => judgeClaim({ id: g.id } as Claim, "attest")}>Attest</button>{/if}
+                            {#if g.status !== "disputed"}<button type="button" disabled={claimBusy} on:click={() => judgeClaim({ id: g.id } as Claim, "dispute")}>Dispute</button>{/if}
+                          {/if}
+                        </td>
+                      {/if}
+                    </tr>
+                  {:else}
+                    {@const c = row.c}
+                    <tr class={c.status}>
+                      <th scope="row">{partyName(c.party)}</th>
+                      <td>{c.amount} {c.unit}</td>
+                      <td class="memo">{c.memo ?? ""}</td>
+                      <td><span class="badge">{claimStatusLabel[c.status]}</span>{#if c.reason && c.status !== "approved" && c.status !== "settled"} <small>({c.reason})</small>{/if}</td>
+                      {#if canAttest}
+                        <td class="acts">
+                          {#if c.status !== "settled" && c.status !== "rejected"}
+                            {#if c.status !== "approved"}<button type="button" disabled={claimBusy} on:click={() => judgeClaim(c, "attest")}>Attest</button>{/if}
+                            {#if c.status !== "disputed"}<button type="button" disabled={claimBusy} on:click={() => judgeClaim(c, "dispute")}>Dispute</button>{/if}
+                            {#if c.status === "approved"}<button type="button" disabled={claimBusy} on:click={() => markPaid(c)}>Paid</button>{/if}
+                          {/if}
+                        </td>
+                      {/if}
+                    </tr>
+                  {/if}
                 {/each}
               </tbody>
             </table>
           {:else}
-            <p class="empty">No claims recorded in the log yet.</p>
+            <p class="empty">No claims or gives recorded in the log yet.</p>
           {/if}
           {#if claimsCtx?.folded.imports.length}
             <p class="note">
@@ -2383,6 +2460,11 @@
   }
   .claim-form label.grow {
     flex: 1 1 10rem;
+  }
+  .give-form {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed rgba(128, 128, 128, 0.4);
   }
   .claim-form input {
     padding: 0.4rem 0.6rem;
