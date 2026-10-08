@@ -25,9 +25,9 @@ derive the same state. Checkpoints let them check that they did.
 ## The five record types
 
 - **Action** — something a member says happened or should happen; the domain
-  gives it a `kind` and a body (`claim`, `payout`, …). May carry `prev` (the
-  author's previous entry: a chain that must not fork) and `basis` (what it
-  consumes: spent twice is a conflict).
+  gives it a `kind` and a body (`claim`, `transfer`, `payout`, …). May carry
+  `prev` (the author's previous entry: a chain that must not fork) and
+  `basis` (what it consumes: spent twice is a conflict).
 - **Attestation** — a signer's verdict on one action, `attests` or
   `disputes` on the `e` tag. Quorum and disputes are counted at reduce time;
   an attester's own action carries their attestation.
@@ -95,16 +95,20 @@ person, the hubs they keep in their own `holons` lens, since nobody is
 federated with their collective). A right cut from that pot is claimed in the
 same unit.
 
-A claim is judged against a CEILING: the party's share of the pot less the
-draws the log does not record (fund payments on the expenses lens, the
-collective's paid or open expenses). The fold subtracts its own accepted
-claims — approved and settled, in log order — so a claim that would push the
-party past the ceiling is held as `over`: kept and shown, never counted,
-and counted the day a new mint grows the pot. Every reader passes the same
+A claim is judged against the party's ACCESS: a CEILING — their share of the
+pot less the draws the log does not record (fund payments on the expenses
+lens, the collective's paid or open expenses) — plus what other parties gave
+them, less what they gave away. A `transfer` is the give: the giver's entry,
+judged exactly like a claim (signer, quorum, disputes), that burns their
+access and opens the same amount for the party it names; a receiver with no
+seat on the allocation has exactly what reached them. The fold subtracts its
+own accepted claims — approved and settled, in log order — so a claim or a
+give that would push the party past their access is held as `over`: kept
+and shown, never counted, and counted the day a new mint grows the pot. Every reader passes the same
 ceiling (`ceiling.ts`: `claimCeilings` from the allocation, the pot and the
 usage; `loadClaimCeilings` reads it off the store for the MCP and the bot),
-and the headroom a form shows — the ceiling less what is approved, paid or
-awaiting attestation — is the same arithmetic, so the number on screen and
+and the headroom a form shows — the access less what is approved, paid or
+awaiting attestation, a pending give included — is the same arithmetic, so the number on screen and
 the verdict in the log cannot disagree. The worked example is
 [`flows-harvest-collective.md`](./flows-harvest-collective.md).
 

@@ -56,11 +56,15 @@ Three ideas carry the whole thing:
   only. Now an attester appends a `mint` (amount, unit, memo) and that is
   what the split divides, in that unit. Litres stay litres: nothing converts,
   and a holon holding euros and oil has two pots.
-- **A right is redeemed, never transferred.** Every person and holon on the
-  cascade sees their litres as a right in their Fund account. They `claim`
-  it in the holon where they are a member; an attester attests and records
-  the `payout` when the oil is handed over. Same log, same rules, same fold
-  as money claims.
+- **Access is burned or given, never converted.** A mint opens access; the
+  cascade says how much of it each party has; a `claim` burns some of it and
+  a `transfer` (a _give_) burns yours and opens the same amount for someone
+  else. Every person and holon on the cascade sees their litres as access in
+  their Fund account. They claim it in the holon where they are a member; an
+  attester attests and records the `payout` when the oil is handed over. A
+  give is judged the same way and never taken back; whoever received it —
+  seated on the split or not — claims it or passes it on. Same log, same
+  rules, same fold as money.
 
 ## Setting it up
 
@@ -187,7 +191,11 @@ The cascade stops three hops below the root and never goes round a loop.
    An attester attests if the rules ask for it and records `/fundpaid <id>`
    when the oil is handed over. The Collectors as a whole, and each location,
    claim their half from the grove in the same way, in their own log; the
-   grove's admins mark it paid when the oil moves.
+   grove's admins mark it paid when the oil moves. A picker who wants a
+   neighbour to collect for them gives part of their access instead
+   (`/fundgive 5 L @neighbour`, or _Give_ beside _Claim_ on the kiosk and
+   the web): their access drops by five litres, the neighbour's rises by five,
+   and the neighbour claims as anyone does.
 8. **New moon.** The bot checkpoints each log per lunar cycle; readers can
    compare their fold against the holon's root.
 
@@ -326,11 +334,11 @@ window is for.
 | what the fund holds                       | `mints.ts` (log `flow_mints`, kind 1808), `mints-load.ts`                                                                                                                                                                                                                        |
 | what reaches a holon from upstream        | `inbound.ts` (`inboundRightFrom`, `loadInboundRights`)                                                                                                                                                                                                                           |
 | the pot to divide, per unit               | `pot.ts` (`potUnits`, `potTotal`)                                                                                                                                                                                                                                                |
-| claims, attestations, payouts             | `claims.ts` (log `flow_claims`) — see [`protocol.md`](./protocol.md)                                                                                                                                                                                                             |
-| the ceiling a claim is judged against     | `ceiling.ts` (`claimCeilings`, `claimHeadroom`), `ceiling-load.ts` (`loadClaimCeilings`, for the MCP and the bot)                                                                                                                                                                 |
+| claims, gives, attestations, payouts      | `claims.ts` (log `flow_claims`: `claim`, `transfer`, `payout`) — see [`protocol.md`](./protocol.md)                                                                                                                                                                              |
+| the access a claim or a give is judged by | `ceiling.ts` (`claimCeilings`, `claimHeadroom`: the ceiling plus received less given), `ceiling-load.ts` (`loadClaimCeilings`, for the MCP and the bot); `usage.ts` `movedOf`, `fundAccount`                                                                                      |
 | the Pot: the rights table and its root    | `rights.ts` (`advanceRights`), `rights-tree.ts`, `rights-log.ts` (log `flow_rights`), `rights-cut.ts` (`cutRights`), `pot-contract.ts`, `payout.ts`; `contracts/src/Pot.sol`                                                                                                     |
 | the value equation                        | `@holons/core/scoring` (`currencies.hour`, `currencies.euro`)                                                                                                                                                                                                                    |
-| surfaces                                  | kiosk `FlowsView.svelte` + `AllocationSettings.svelte` (Fund, Contributors, Zones, Rules), web `flows/Flows.svelte` + `AllocationEditor.svelte`, MCP `allocation_*` / `flow_*`, bot `/fundmint` `/fundmints` `/fundclaim` `/fundattest` `/funddispute` `/fundpaid` `/fundpolicy` |
+| surfaces                                  | kiosk `FlowsView.svelte` + `AllocationSettings.svelte` (Fund, Contributors, Zones, Rules), web `flows/Flows.svelte` + `AllocationEditor.svelte`, MCP `allocation_*` / `flow_*` (`flow_transfer_record` for a give), bot `/fundmint` `/fundmints` `/fundclaim` `/fundgive` `/fundattest` `/funddispute` `/fundpaid` `/fundpolicy` |
 
 ## Limits, plainly
 
@@ -340,6 +348,9 @@ window is for.
   two rights, and a claim names its unit.
 - No double-spend protection beyond the log's rules: a payout consumes one
   claim once; scarce goods settle in the world, the log records that they did.
+- A give is not bearer: it names a party the holon can name (a member, a
+  linked key, a partner holon). A key nobody vouches for cannot claim what
+  it received until it is linked.
 - A right reached only through ANOTHER member's split (the picker seated by
   the Collectors, not by a grove) shows on the upstream boards, not under
   _Reaching you_ on the picker's own board: the climb reads the hubs a person
