@@ -23,6 +23,7 @@ import {
   buildClaimVerdict,
   buildMint,
   buildPayout,
+  buildTransfer,
   childResolver,
   claimHeadroom,
   fitsHeadroom,
@@ -132,11 +133,16 @@ async function judgedClaims(hs: any, holon: string) {
 /** What every party may still claim, per unit, under `ceilings`. */
 function headroomOf(ceilings: ClaimCeilings, folded: Parameters<typeof claimHeadroom>[1]): Record<string, Record<string, number>> {
   const out: Record<string, Record<string, number>> = {};
-  for (const [party, perUnit] of Object.entries(ceilings)) {
-    for (const unit of Object.keys(perUnit)) {
-      const h = claimHeadroom(ceilings, folded, party, unit);
-      if (h != null) (out[party] ??= {})[unit] = h;
-    }
+  // Every seat, and every party a give reached: they have access with no ceiling of their own.
+  const pairs = new Set<string>();
+  for (const [party, perUnit] of Object.entries(ceilings)) for (const unit of Object.keys(perUnit)) pairs.add(`${party}|${unit}`);
+  for (const [party, perUnit] of Object.entries(folded?.byParty ?? {})) {
+    for (const [unit, t] of Object.entries(perUnit)) if (t.received > 0) pairs.add(`${party}|${unit}`);
+  }
+  for (const pair of pairs) {
+    const [party, unit] = pair.split('|');
+    const h = claimHeadroom(ceilings, folded, party, unit);
+    if (h != null) (out[party] ??= {})[unit] = h;
   }
   return out;
 }
@@ -295,9 +301,51 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
   );
 
   server.registerTool(
+    'flow_transfer_record',
+    {
+      description:
+        'GIVE part of a party\'s access to another party: append a `transfer` to the holon\'s signed claims log (lens "flow_claims", kind 1808). It burns the giver\'s access in that unit and opens the same amount for the receiver, who may then claim it or pass it on — a receiver with no seat on the allocation has exactly what reached them. Judged like a claim (signer, quorum, disputes; held `over` past the access), never settled or taken back. Refused with `over-right` (and the giver\'s `headroom`) past what is left of their access; `force` records it anyway. Signed with this MCP instance key; counts only if the holon accepts that key for the giver. Wraps @holons/core/flows buildTransfer + claimHeadroom.',
+      inputSchema: {
+        holon: z.string().describe('Holon id.'),
+        party: z.string().describe('The giver (member id or partner holon id).'),
+        to: z.string().describe('The receiver: a member id, a partner holon id, or any party id the holon can name. Never the giver.'),
+        amount: z.number().positive(),
+        unit: z.string().describe('Unit, e.g. L or EUR.'),
+        memo: z.string().optional(),
+        onBehalfOf: z.string().optional().describe('Only the holon key may give for a party; sets the delegated flag.'),
+        force: z.boolean().optional().describe('Record the give even past the headroom; it folds as `over`.'),
+      },
+    },
+    async (args) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        const unit = String(args.unit).trim().toUpperCase();
+        const { ctx, ceilings } = await judgedClaims(hs, args.holon);
+        const headroom = claimHeadroom(ceilings, ctx.folded, args.party, unit);
+        if (!args.force && !fitsHeadroom(headroom, args.amount)) {
+          return fail('over-right', { party: args.party, unit, headroom, amount: args.amount });
+        }
+        const a = buildTransfer({ party: args.party, to: args.to, amount: args.amount, unit, memo: args.memo, onBehalfOf: args.onBehalfOf });
+        const event = await hs.append(args.holon, FLOW_CLAIMS_LENS, a.item, { refs: a.refs });
+        return ok({
+          success: true,
+          id: event.id,
+          pubkey: event.pubkey,
+          created_at: event.created_at,
+          item: a.item,
+          headroom,
+          headroomAfter: headroom == null ? null : Math.max(0, Math.round((headroom - args.amount) * 100) / 100),
+        });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  server.registerTool(
     'flow_claim_verdict',
     {
-      description: 'Attest or dispute a claim (an attester\'s word; the policy\'s quorum decides). Wraps buildClaimVerdict.',
+      description: 'Attest or dispute a claim or a give (an attester\'s word; the policy\'s quorum decides). Wraps buildClaimVerdict.',
       inputSchema: {
         holon: z.string(),
         claimId: z.string().describe('The claim entry id (event id).'),
@@ -346,7 +394,7 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
     'flow_claims_state',
     {
       description:
-        'Fold the holon\'s claims log under its ceilings: every claim judged (approved | pending | disputed | over | conflict | settled | rejected), payouts, totals per party and unit, the `ceilings` each party holds per unit (their share of the pot less draws outside the log) and the `headroom` left to each, the policy in force and whether the signer set is founded (log) or provisional (bootstrap). Wraps foldClaimsFromLenses + loadClaimCeilings.',
+        'Fold the holon\'s claims log under its ceilings: every claim judged (approved | pending | disputed | over | conflict | settled | rejected), every give (`transfers`, same statuses but settled), payouts, totals per party and unit (claimed, settled, pending, over, given, received), the `ceilings` each party holds per unit (their share of the pot less draws outside the log) and the `headroom` left to each — their access: ceiling plus received less given, less what the log holds — the policy in force and whether the signer set is founded (log) or provisional (bootstrap). Wraps foldClaimsFromLenses + loadClaimCeilings.',
       inputSchema: { holon: z.string() },
     },
     async (args) => {
@@ -358,6 +406,7 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
           ...Object.keys(ctx.folded.byParty),
           ...ctx.folded.claims.map((c) => c.party),
           ...ctx.folded.claims.map((c) => c.pubkey),
+          ...ctx.folded.transfers.flatMap((t) => [t.party, t.to]),
           ...ctx.folded.imports.map((i) => i.holon),
         ]);
         return ok({
@@ -370,6 +419,7 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
           names,
           imports: ctx.folded.imports,
           claims: ctx.folded.claims,
+          transfers: ctx.folded.transfers,
           payouts: ctx.folded.payouts,
           byParty: ctx.folded.byParty,
           pots,

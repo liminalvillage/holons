@@ -206,5 +206,38 @@ describe('claim tools under the ceiling', () => {
     // No pot in EUR: no ceiling, any amount goes through.
     expect(payload(await tools.get('flow_claim_record')!({ holon: 'olive', party: 'u2', amount: 999, unit: 'EUR', onBehalfOf: 'u2' })).success).toBe(true);
   });
-});
 
+  it('a give burns the giver\'s access and opens it for the receiver, seated or not', async () => {
+    const { server, tools } = capture();
+    const { deps } = logDeps({
+      'olive/settings': {
+        olive: { id: 'olive', holonPubkey: 'a'.repeat(64), allocation: { interiorPercent: 100, interiorMode: 'custom', shares: { u1: 1, u2: 1 } } },
+      },
+    });
+    registerFlowsTools(server, deps);
+    await tools.get('flow_mint_record')!({ holon: 'olive', amount: 200, unit: 'L' });
+
+    const tooMuch = await tools.get('flow_transfer_record')!({ holon: 'olive', party: 'u1', to: 'u3', amount: 150, unit: 'L', onBehalfOf: 'u1' });
+    expect(tooMuch.isError).toBe(true);
+    expect(payload(tooMuch)).toMatchObject({ error: 'over-right', headroom: 100 });
+
+    const given = payload(await tools.get('flow_transfer_record')!({ holon: 'olive', party: 'u1', to: 'u3', amount: 30, unit: 'L', onBehalfOf: 'u1' }));
+    expect(given.success).toBe(true);
+    expect(given.headroomAfter).toBe(70);
+
+    const state = payload(await tools.get('flow_claims_state')!({ holon: 'olive' }));
+    expect(state.transfers.map((t: any) => [t.party, t.to, t.amount, t.status])).toEqual([['u1', 'u3', 30, 'approved']]);
+    expect(state.byParty.u1.L).toMatchObject({ given: 30 });
+    expect(state.byParty.u3.L).toMatchObject({ received: 30 });
+    // The receiver has no seat: no ceiling, a headroom of exactly what reached them.
+    expect(state.ceilings.u3).toBeUndefined();
+    expect(state.headroom).toMatchObject({ u1: { L: 70 }, u3: { L: 30 } });
+
+    expect(payload(await tools.get('flow_claim_record')!({ holon: 'olive', party: 'u3', amount: 30, unit: 'L', onBehalfOf: 'u3' })).success).toBe(true);
+    const more = await tools.get('flow_claim_record')!({ holon: 'olive', party: 'u3', amount: 0.01, unit: 'L', onBehalfOf: 'u3' });
+    expect(more.isError).toBe(true);
+    expect(() => tools.get('flow_transfer_record')!({ holon: 'olive', party: 'u1', to: 'u1', amount: 1, unit: 'L' })).rejects;
+    const self = await tools.get('flow_transfer_record')!({ holon: 'olive', party: 'u1', to: 'u1', amount: 1, unit: 'L' });
+    expect(self.isError).toBe(true);
+  });
+});
