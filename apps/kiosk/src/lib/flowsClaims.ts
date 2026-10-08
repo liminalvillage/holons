@@ -38,6 +38,7 @@ import {
   buildClaimVerdict,
   buildMint,
   buildPayout,
+  buildTransfer,
 } from "@holons/core/flows";
 import { attestationsFrom, SHIFT_IDENTITY_LENS } from "@holons/core/shifts";
 import type { IdentityAttestation } from "@holons/core/shifts";
@@ -278,6 +279,25 @@ export function recordClaim(
     holon,
     FLOW_CLAIMS_LENS,
     buildClaim(input) as never,
+  );
+}
+/** Give part of your access to another party: a `transfer` in the claims log, signed as you. */
+export function recordTransfer(
+  hs: HoloSphere,
+  holon: string,
+  input: {
+    party: string;
+    to: string;
+    amount: number;
+    unit: string;
+    memo?: string;
+  },
+) {
+  return recordLogEntry(
+    hs,
+    holon,
+    FLOW_CLAIMS_LENS,
+    buildTransfer(input) as never,
   );
 }
 export function recordVerdict(

@@ -82,6 +82,7 @@
     claimCeilings,
     claimHeadroom,
     fitsHeadroom,
+    partyShares,
     hasAllocationConfig,
     loadCascadeChildren,
     resolveCascade,
@@ -163,6 +164,7 @@
     claimSigner,
     recordPolicy,
     recordClaim,
+    recordTransfer,
     recordVerdict,
     recordPayout,
     recordMint,
@@ -174,6 +176,7 @@
     foldClaimsFromLenses,
     foldMintsFromLenses,
     type Claim,
+    type Transfer,
   } from "@holons/core/flows";
   import type { Policy } from "@holons/core/protocol";
 
@@ -234,6 +237,13 @@
   let claimMemo = "";
   let claimBusy = false;
   let claimError = "";
+  // The give: part of your access handed to another party, a `transfer` in
+  // the same log, under the same ceiling. Opened on demand beside the claim.
+  let giveOpen = false;
+  let giveTo = "";
+  let giveToOther = "";
+  let giveAmount = "";
+  let giveMemo = "";
   $: if (hsRef && hid && hid !== claimsBoundTo) bindClaims(hsRef, hid);
   $: if (!hid && claimsBoundTo) unbindClaims();
   function bindClaims(hs: HoloSphere, holon: string) {
@@ -384,6 +394,23 @@
     claimsCtx && selfId
       ? claimsCtx.folded.claims.filter((c) => c.party === selfId)
       : [];
+  // Gives I made or that reached me, judged like my claims.
+  $: myTransfers =
+    claimsCtx && selfId
+      ? claimsCtx.folded.transfers.filter(
+          (t) => t.party === selfId || t.to === selfId,
+        )
+      : [];
+  // Who a give can name: every seat on the allocation and every member,
+  // never yourself; anyone else by id.
+  $: giveCandidates = [
+    ...new Set([...partyShares(rights).keys(), ...memberIds]),
+  ].filter((id) => id && id !== selfId);
+  $: giveReceiver = giveTo === "__other" ? giveToOther.trim() : giveTo;
+  $: giveTooBig = !fitsHeadroom(
+    claimMax,
+    Number(String(giveAmount).replace(",", ".")),
+  );
   $: myLogRole =
     claimsCtx && logSigner
       ? claimsCtx.actors.roleAt(
@@ -441,6 +468,39 @@
       });
       claimAmount = "";
       claimMemo = "";
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    } finally {
+      claimBusy = false;
+    }
+  }
+  async function submitGive() {
+    if (!hsRef || !hid || !selfId || claimBusy) return;
+    const amount = Number(String(giveAmount).replace(",", "."));
+    if (!(amount > 0) || !claimUnit || !giveReceiver) return;
+    if (giveReceiver === selfId) {
+      claimError = $t("flows.giveSelf");
+      return;
+    }
+    if (!fitsHeadroom(claimMax, amount)) {
+      claimError = $t("flows.giveOverMax", {
+        max: formatAccount(claimMax ?? 0),
+      });
+      return;
+    }
+    claimBusy = true;
+    claimError = "";
+    try {
+      await recordTransfer(hsRef, hid, {
+        party: selfId,
+        to: giveReceiver,
+        amount,
+        unit: claimUnit,
+        memo: giveMemo.trim() || undefined,
+      });
+      giveAmount = "";
+      giveMemo = "";
+      giveOpen = false;
     } catch (err) {
       claimError = err instanceof Error ? err.message : String(err);
     } finally {
@@ -1963,7 +2023,85 @@
                     >
                       {$t("flows.claimRecord")}
                     </button>
+                    <button
+                      class="claim ghost"
+                      type="button"
+                      aria-expanded={giveOpen}
+                      disabled={!logSigner || !claimUnit}
+                      on:click={() => (giveOpen = !giveOpen)}
+                    >
+                      {$t("flows.giveAction")}
+                    </button>
                   </form>
+                  {#if giveOpen}
+                    <!-- A give: a `transfer` in the same log, judged like a
+                         claim, under the same access. It burns yours and
+                         opens the same amount for whoever it names. -->
+                    <form
+                      class="claim-form give-form"
+                      on:submit|preventDefault={submitGive}
+                    >
+                      <label class="claim-field grow">
+                        <span class="k">{$t("flows.giveTo")}</span>
+                        <select bind:value={giveTo} required>
+                          <option value="" disabled selected hidden></option>
+                          {#each giveCandidates as id (id)}
+                            <option value={id}>{partyName(id)}</option>
+                          {/each}
+                          <option value="__other"
+                            >{$t("flows.giveToOther")}</option
+                          >
+                        </select>
+                      </label>
+                      {#if giveTo === "__other"}
+                        <label class="claim-field grow">
+                          <span class="k">{$t("flows.giveToOther")}</span>
+                          <input
+                            type="text"
+                            maxlength="80"
+                            bind:value={giveToOther}
+                            required
+                          />
+                        </label>
+                      {/if}
+                      <label class="claim-field">
+                        <span class="k">{$t("flows.claimAmount")}</span>
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          max={claimMax ?? undefined}
+                          inputmode="decimal"
+                          bind:value={giveAmount}
+                          required
+                        />
+                      </label>
+                      <label class="claim-field grow">
+                        <span class="k">{$t("flows.claimMemo")}</span>
+                        <input
+                          type="text"
+                          maxlength="140"
+                          bind:value={giveMemo}
+                        />
+                      </label>
+                      <button
+                        class="claim"
+                        type="submit"
+                        disabled={claimBusy ||
+                          !logSigner ||
+                          !claimUnit ||
+                          !giveReceiver ||
+                          giveTooBig}
+                      >
+                        {$t("flows.giveRecord")}
+                      </button>
+                    </form>
+                    <p class="claim-hint" class:error={giveTooBig}>
+                      {claimMax != null
+                        ? `${$t("flows.giveMax", { amount: formatAccount(claimMax) })} · `
+                        : ""}{$t("flows.giveHint")}
+                    </p>
+                  {/if}
                   {#if claimMax != null}
                     <p class="claim-hint" class:error={claimTooBig}>
                       {$t("flows.claimMax", {
@@ -1980,7 +2118,7 @@
                   {#if claimsProvisional && myClaims.length}
                     <p class="claim-hint">{$t("flows.claimsProvisional")}</p>
                   {/if}
-                  {#if myClaims.length}
+                  {#if myClaims.length || myTransfers.length}
                     <ul class="claims">
                       {#each myClaims.slice(-6).reverse() as c (c.id)}
                         <li class={`claim-row ${c.status}`}>
@@ -1988,6 +2126,26 @@
                           <span class="memo">{c.memo ?? ""}</span>
                           <span class="badge"
                             >{$t(`flows.claimStatus.${c.status}`)}</span
+                          >
+                        </li>
+                      {/each}
+                      {#each myTransfers.slice(-6).reverse() as g (g.id)}
+                        <li class={`claim-row give ${g.status}`}>
+                          <span class="amt"
+                            >{g.party === selfId ? "−" : "+"}{g.amount}
+                            {g.unit}</span
+                          >
+                          <span class="memo"
+                            >{g.party === selfId
+                              ? $t("flows.giveRow", {
+                                  name: partyName(g.to) ?? g.to,
+                                })
+                              : $t("flows.receiveRow", {
+                                  name: partyName(g.party) ?? g.party,
+                                })}{g.memo ? ` · ${g.memo}` : ""}</span
+                          >
+                          <span class="badge"
+                            >{$t(`flows.claimStatus.${g.status}`)}</span
                           >
                         </li>
                       {/each}
@@ -2012,6 +2170,20 @@
                     <dt>{$t("flows.claimed")}</dt>
                     <dd class="debit">−{formatAccount(myAccount.claimed)}</dd>
                   </div>
+                  {#if myAccount.received > 0}
+                    <div>
+                      <dt>{$t("flows.accountReceived")}</dt>
+                      <dd class="credit">
+                        +{formatAccount(myAccount.received)}
+                      </dd>
+                    </div>
+                  {/if}
+                  {#if myAccount.given > 0}
+                    <div>
+                      <dt>{$t("flows.accountGiven")}</dt>
+                      <dd class="debit">−{formatAccount(myAccount.given)}</dd>
+                    </div>
+                  {/if}
                   {#each myAccount.otherUnits as other (other.unit)}
                     {#if other.spent > 0}
                       <div class="foot">
@@ -3064,6 +3236,29 @@
   }
   .statement .debit {
     color: var(--danger);
+  }
+  .statement .credit {
+    color: var(--teal-ink);
+  }
+  .claim.ghost {
+    background: transparent;
+    color: inherit;
+    border: 1px solid var(--line, rgba(128, 128, 128, 0.35));
+  }
+  .claim-field select {
+    min-height: 44px;
+    box-sizing: border-box;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--line, rgba(128, 128, 128, 0.35));
+    border-radius: 10px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    width: 100%;
+  }
+  .give-form {
+    padding-top: 0.4rem;
+    border-top: 1px dashed var(--line, rgba(128, 128, 128, 0.35));
   }
   .statement .foot dt,
   .statement .foot dd {
