@@ -49,6 +49,7 @@ import {
 
 const LENSES = new Set<string>([
   FLOW_CLAIMS_LENS,
+  FLOW_MINTS_LENS,
   GOVERNANCE_VOTES_LENS,
   POLICY_LENS,
 ]);
