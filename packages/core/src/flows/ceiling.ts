@@ -114,9 +114,12 @@ export function ceilingOf(ceilings: RightsLookup | null | undefined, party: stri
 }
 
 /**
- * What `party` may still claim in `unit`: the ceiling less what the log
- * already holds for them — approved, settled, and still awaiting a verdict.
- * Floored at zero; null when no ceiling is known for that unit.
+ * What `party` may still claim or give in `unit`: their access — the ceiling
+ * plus what they received less what they gave — less what the log already
+ * holds for them: approved, settled, and still awaiting a verdict (a pending
+ * give included). A party with no ceiling of their own but something
+ * received has exactly that, the same rule the fold applies. Floored at
+ * zero; null when no ceiling is known for that unit and nothing was received.
  */
 export function claimHeadroom(
   ceilings: RightsLookup | null | undefined,
@@ -124,10 +127,10 @@ export function claimHeadroom(
   party: string,
   unit: string,
 ): number | null {
-  const ceiling = ceilingOf(ceilings, party, unit);
-  if (ceiling == null) return null;
   const t = claimTotalsOf(claims, String(party), unitKey(unit));
-  return Math.max(0, round(ceiling - t.claimed - t.settled - t.pending));
+  const ceiling = ceilingOf(ceilings, party, unit) ?? (t.received > 0 ? 0 : null);
+  if (ceiling == null) return null;
+  return Math.max(0, round(ceiling + t.received - t.given - t.claimed - t.settled - t.pending));
 }
 
 /** Whether `amount` fits under the headroom, with the fold's own tolerance. */

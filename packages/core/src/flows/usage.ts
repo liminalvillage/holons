@@ -61,6 +61,14 @@ export interface FundUse {
   claimed: number;
 }
 
+/** Access moved by gives, in one unit — cumulative, like `lifetime`. */
+export interface FundMoved {
+  /** Given to others, accepted. */
+  given: number;
+  /** Received from others, accepted. */
+  received: number;
+}
+
 /** A collective payee matched to no rights-holder, and what they got. */
 export interface FundPayee {
   name: string;
@@ -86,6 +94,15 @@ export interface FundUsage {
    * `parties` answers "what moved in this period"; this answers "what is gone".
    */
   lifetime: Record<string, Record<string, FundUse>>;
+  /**
+   * Access moved between parties by accepted gives (`claims.transfers`),
+   * party → normalized unit → moved. A give is not a draw on the pot: it
+   * changes who may draw, so it is kept apart from `lifetime` and the pot
+   * arithmetic never sees it. Every party that gave or received is here,
+   * seated on the allocation or not — that is how a receiver with no right
+   * of their own gets an account.
+   */
+  moved: Record<string, Record<string, FundMoved>>;
   /** Normalized unit → use, for collective payees matched to no party. */
   unattributed: Record<string, FundUse>;
   /** The unmatched payees with their amounts, largest first, so a reader can see who was missed. */
@@ -157,6 +174,16 @@ export function lifetimeOf(
   // Tolerate a usage object built before this field existed (a hand-made
   // fixture, a stale build across the package boundary) rather than throwing.
   return { ...(usage.lifetime?.[partyId]?.[want] ?? EMPTY_USE) };
+}
+
+const EMPTY_MOVED: FundMoved = { given: 0, received: 0 };
+
+/** What a party gave and received in one unit; zeros when nothing moved. */
+export function movedOf(usage: FundUsage | null | undefined, partyId: string, unit?: string): FundMoved {
+  if (!usage) return { ...EMPTY_MOVED };
+  const want = normalizeCurrency(unit ?? usage.unit);
+  // Tolerate a usage object built before this field existed, as `lifetimeOf` does.
+  return { ...(usage.moved?.[partyId]?.[want] ?? EMPTY_MOVED) };
 }
 
 /** Cumulative totals across every rights-holder in one unit. */
@@ -330,10 +357,17 @@ export function mergeInboundUsage(
     }
   };
 
+  const moved: FundUsage['moved'] = {};
+  for (const [id, perUnit] of Object.entries(own?.moved ?? {})) {
+    moved[id] = {};
+    for (const [u, m] of Object.entries(perUnit)) moved[id][u] = { ...m };
+  }
   const merged: FundUsage = {
     unit,
     parties: copy(own?.parties),
     lifetime: copy(own?.lifetime),
+    // What moved upstream moved upstream's access, not this fund's.
+    moved,
     unattributed: { ...(own?.unattributed ?? {}) },
     unattributedPayees: [...(own?.unattributedPayees ?? [])],
     // Where claims came from is this fund's own answer; what upstream
@@ -408,6 +442,7 @@ export function buildFundUsage(input: BuildFundUsageInput): FundUsage {
     unit: normalizeCurrency(input.unit),
     parties: {},
     lifetime: {},
+    moved: {},
     unattributed: {},
     unattributedPayees: [],
     claimsSource: claims ? claims.source : 'expenses',
@@ -491,9 +526,13 @@ export function buildFundUsage(input: BuildFundUsageInput): FundUsage {
   }
 
   // ── The signed claims log: approved claims owed, payouts spent ──────────
+  // A party counts when they hold a right, or when a give reached them: a
+  // receiver with no seat draws on what they received, and that is a draw.
   if (claims) {
+    const counts = (partyId: string) =>
+      partyIds.has(partyId) || Object.values(claims.byParty[partyId] ?? {}).some((t) => t.received > 0);
     for (const [partyId, perUnit] of Object.entries(claims.byParty)) {
-      if (!partyIds.has(partyId)) continue;
+      if (!counts(partyId)) continue;
       for (const [rawUnit, t] of Object.entries(perUnit)) {
         const unit = normalizeCurrency(rawUnit);
         if (!unit || t.claimed <= 0) continue;
@@ -502,11 +541,20 @@ export function buildFundUsage(input: BuildFundUsageInput): FundUsage {
       }
     }
     for (const p of claims.payouts) {
-      if (!partyIds.has(p.party)) continue;
+      if (!counts(p.party)) continue;
       const unit = normalizeCurrency(p.unit);
       if (!unit) continue;
       touchLife(p.party, unit).spent += p.amount;
       if (inWindow(p.createdAt * 1000)) touch(p.party, unit).spent += p.amount;
+    }
+    // Gives: whoever gave or received, seated or not. A receiver outside the
+    // allocation has no right, only what reached them — still an account.
+    for (const [partyId, perUnit] of Object.entries(claims.byParty)) {
+      for (const [rawUnit, t] of Object.entries(perUnit)) {
+        const unit = normalizeCurrency(rawUnit);
+        if (!unit || (!(t.given > 0) && !(t.received > 0))) continue;
+        (usage.moved[partyId] ??= {})[unit] = { given: round(t.given), received: round(t.received) };
+      }
     }
   }
 
@@ -599,7 +647,11 @@ export interface FundAccount {
   lifetimeSpent: number;
   /** Claimed and still owed, in the pot's unit. */
   claimed: number;
-  /** right − lifetimeSpent − claimed, floored at zero; null without a right. */
+  /** Received from other parties by accepted gives, in the pot's unit. */
+  received: number;
+  /** Given to other parties by accepted gives, in the pot's unit. */
+  given: number;
+  /** right + received − given − lifetimeSpent − claimed, floored at zero; null without a right. */
   available: number | null;
   /** How far past the right the party has gone; 0 while within it. */
   over: number;
@@ -620,13 +672,15 @@ function slicesOf(allocation: AllocationResult, partyId: string): AllocationSlic
 }
 
 /**
- * One party's statement: their right and what is left of it.
+ * One party's statement: their access and what is left of it.
  *
- * Returns null when the party holds no right — a zoned partner not placed
- * on a ring, a member who scored nothing — so the caller can say so instead
- * of printing zeros that look like an empty account. A party seated twice
- * (contributor share AND a zone seat) has one account: the seats add up,
- * and the statement names the contributor side with the zone alongside.
+ * Returns null when the party holds no right and nothing was given to them
+ * — a zoned partner not placed on a ring, a member who scored nothing — so
+ * the caller can say so instead of printing zeros that look like an empty
+ * account. A party seated twice (contributor share AND a zone seat) has one
+ * account: the seats add up, and the statement names the contributor side
+ * with the zone alongside. A party with no seat who received a give has an
+ * account too: no share, no right, and exactly what reached them.
  */
 export function fundAccount(
   allocation: AllocationResult,
@@ -635,13 +689,14 @@ export function fundAccount(
 ): FundAccount | null {
   const id = String(partyId ?? '');
   if (!id) return null;
+  const unit = usage?.unit ?? normalizeCurrency(allocation.unit);
+  const moved = movedOf(usage, id, unit);
   const slices = slicesOf(allocation, id);
-  if (!slices.length) return null;
-  const slice = slices[0];
+  if (!slices.length && !(moved.received > 0)) return null;
+  const slice: AllocationSlice = slices[0] ?? { id, label: id, side: 'exterior', percentage: 0, amount: allocation.total == null ? null : 0 };
   const zoned = slices.find((s) => s.zone != null);
   const percentage = slices.reduce((sum, s) => sum + s.percentage, 0);
 
-  const unit = usage?.unit ?? normalizeCurrency(allocation.unit);
   const use = usageOf(usage, id, unit);
   // What is left of a right is measured against everything ever drawn on it,
   // never against the period on screen: narrowing the window must not hand
@@ -649,7 +704,7 @@ export function fundAccount(
   const drawn = lifetimeOf(usage, id, unit);
   const right =
     slice.amount == null ? null : round(slices.reduce((sum, s) => sum + (s.amount ?? 0), 0));
-  const left = right == null ? null : round(right - drawn.spent - drawn.claimed);
+  const left = right == null ? null : round(right + moved.received - moved.given - drawn.spent - drawn.claimed);
 
   // The footnotes are part of the statement, so they are cumulative too.
   const otherUnits: FundAccountOtherUse[] = Object.keys(usage?.lifetime?.[id] ?? {})
@@ -669,6 +724,8 @@ export function fundAccount(
     spent: use.spent,
     lifetimeSpent: drawn.spent,
     claimed: drawn.claimed,
+    received: moved.received,
+    given: moved.given,
     available: left == null ? null : Math.max(0, left),
     over: left == null || left >= 0 ? 0 : -left,
     otherUnits,

@@ -6,7 +6,7 @@ import { bootstrapActors } from '../protocol/membership.js';
 import { membershipOp, shuffled, signedEntry, testKey } from '../protocol/testing.js';
 import { importPartnerLog } from '../protocol/federation.js';
 import type { LogEvent } from '../protocol/types.js';
-import { buildClaim, buildClaimVerdict, buildPayout, claimTotalsOf, foldClaims, foldClaimsFromLenses } from './claims.js';
+import { buildClaim, buildClaimVerdict, buildPayout, buildTransfer, claimTotalsOf, foldClaims, foldClaimsFromLenses } from './claims.js';
 import { lunationAt } from './lunation.js';
 import { buildFundUsage, fundAccount } from './usage.js';
 import { allocate } from './allocation.js';
@@ -35,7 +35,7 @@ describe('foldClaims', () => {
     const f = foldClaims({ entries: shuffled([c1, c2, c3]), actors: actors(), partyOf, rights });
     expect(f.claims.map((c) => [c.party, c.amount, c.status])).toEqual([['ada', 30, 'approved'], ['ada', 20, 'approved'], ['bob', 10, 'approved']]);
     expect(f.claims[0]).toMatchObject({ memo: 'seeds', unit: 'EUR', epoch: lunationAt(T0 * 1000).index, delegated: false });
-    expect(claimTotalsOf(f, 'ada', 'eur')).toEqual({ claimed: 50, settled: 0, pending: 0, over: 0 });
+    expect(claimTotalsOf(f, 'ada', 'eur')).toEqual({ claimed: 50, settled: 0, pending: 0, over: 0, given: 0, received: 0 });
     expect(f.source).toBe('bootstrap');
   });
 
@@ -59,7 +59,7 @@ describe('foldClaims', () => {
     const c = entry(bob.sk, buildClaim({ party: 'bob', amount: 10, unit: 'eur', at: T0 * 1000 }) as never, T0 + 2);
     const f = foldClaims({ entries: [a, b, c], actors: actors(), partyOf, rights });
     expect(f.claims.map((x) => x.status)).toEqual(['approved', 'over', 'approved']);
-    expect(claimTotalsOf(f, 'bob', 'EUR')).toEqual({ claimed: 50, settled: 0, pending: 0, over: 20 });
+    expect(claimTotalsOf(f, 'bob', 'EUR')).toEqual({ claimed: 50, settled: 0, pending: 0, over: 20, given: 0, received: 0 });
     // No right known → no ceiling.
     expect(foldClaims({ entries: [a, b, c], actors: actors(), partyOf }).claims.every((x) => x.status === 'approved')).toBe(true);
   });
@@ -85,7 +85,7 @@ describe('foldClaims', () => {
     expect(f.claims[0]).toMatchObject({ status: 'settled', settledBy: paid.id });
     expect(f.payouts).toHaveLength(1);
     expect(f.payouts[0]).toMatchObject({ claimId: claim.id, amount: 30, memo: 'bank', pubkey: treasurer.pk });
-    expect(claimTotalsOf(f, 'ada', 'eur')).toEqual({ claimed: 0, settled: 30, pending: 0, over: 0 });
+    expect(claimTotalsOf(f, 'ada', 'eur')).toEqual({ claimed: 0, settled: 30, pending: 0, over: 0, given: 0, received: 0 });
 
     // Paying out is attester work: a member's payout does not count, nor does one naming no approved claim.
     const byMember = entry(bob.sk, buildPayout({ claimId: claim.id, party: 'ada', amount: 30, unit: 'eur' }) as never, T0 + 7);
@@ -103,6 +103,96 @@ describe('foldClaims', () => {
     // caller passes the remaining right when it wants a per-epoch ceiling.
     expect(foldClaims({ entries: [c1, paid, c2], actors: actors(), partyOf, rights }).claims[1].status).toBe('over');
     expect(foldClaims({ entries: [c1, paid, c2], actors: actors(), partyOf, rights: () => 60 }).claims[1].status).toBe('approved');
+  });
+});
+
+describe('gives: a transfer burns the giver\'s access and opens it for the receiver', () => {
+  const give = (sk: Uint8Array, party: string, to: string, amount: number, at: number, extra: Record<string, unknown> = {}) =>
+    entry(sk, buildTransfer({ party, to, amount, unit: 'eur', at: T0 * 1000, ...extra }) as never, at);
+
+  it('within access it is approved; the receiver may then claim what they got and no more', () => {
+    const g = give(ada.sk, 'ada', 'bob', 40, T0, { memo: 'for the press' });
+    const bobClaims = entry(bob.sk, buildClaim({ party: 'bob', amount: 90, unit: 'eur', at: T0 * 1000 }) as never, T0 + 1);
+    const bobOver = entry(bob.sk, buildClaim({ party: 'bob', amount: 1, unit: 'eur', at: T0 * 1000 }) as never, T0 + 2);
+    const f = foldClaims({ entries: shuffled([g, bobClaims, bobOver]), actors: actors(), partyOf, rights });
+    expect(f.transfers).toHaveLength(1);
+    expect(f.transfers[0]).toMatchObject({ party: 'ada', to: 'bob', amount: 40, unit: 'EUR', memo: 'for the press', status: 'approved', delegated: false, epoch: lunationAt(T0 * 1000).index });
+    expect(f.claims.map((c) => c.status)).toEqual(['approved', 'over']);
+    expect(claimTotalsOf(f, 'ada', 'eur')).toEqual({ claimed: 0, settled: 0, pending: 0, over: 0, given: 40, received: 0 });
+    expect(claimTotalsOf(f, 'bob', 'eur')).toEqual({ claimed: 90, settled: 0, pending: 0, over: 1, given: 0, received: 40 });
+  });
+
+  it('a give past the giver\'s access is held over, like a claim; the receiver gets nothing from it', () => {
+    const spent = entry(ada.sk, buildClaim({ party: 'ada', amount: 80, unit: 'eur', at: T0 * 1000 }) as never, T0);
+    const tooMuch = give(ada.sk, 'ada', 'bob', 30, T0 + 1);
+    const fits = give(ada.sk, 'ada', 'bob', 20, T0 + 2);
+    const f = foldClaims({ entries: [spent, tooMuch, fits], actors: actors(), partyOf, rights });
+    expect(f.transfers.map((t) => t.status)).toEqual(['over', 'approved']);
+    expect(claimTotalsOf(f, 'ada', 'eur')).toMatchObject({ claimed: 80, over: 30, given: 20 });
+    expect(claimTotalsOf(f, 'bob', 'eur')).toMatchObject({ received: 20 });
+    // No right known and nothing received → no ceiling, as for claims.
+    expect(foldClaims({ entries: [spent, tooMuch], actors: actors(), partyOf }).transfers[0].status).toBe('approved');
+  });
+
+  it('a receiver with no seat has exactly what reached them, and may pass it on', () => {
+    const toTre = give(ada.sk, 'ada', 'tre', 25, T0);
+    const treClaims = entry(treasurer.sk, buildClaim({ party: 'tre', amount: 10, unit: 'eur', at: T0 * 1000 }) as never, T0 + 1);
+    const treGives = give(treasurer.sk, 'tre', 'bob', 15, T0 + 2);
+    const treOver = give(treasurer.sk, 'tre', 'bob', 0.01, T0 + 3);
+    const f = foldClaims({ entries: [toTre, treClaims, treGives, treOver], actors: actors(), partyOf, rights });
+    expect(f.claims[0].status).toBe('approved');
+    expect(f.transfers.map((t) => t.status)).toEqual(['approved', 'approved', 'over']);
+    expect(claimTotalsOf(f, 'tre', 'eur')).toMatchObject({ claimed: 10, given: 15, received: 25, over: 0.01 });
+    expect(claimTotalsOf(f, 'bob', 'eur')).toMatchObject({ received: 15 });
+  });
+
+  it('rejects a give to oneself, to nobody, for someone else, or from a key nobody claims; the holon key may give on behalf', () => {
+    const self = entry(ada.sk, { item: { t: 'action', kind: 'transfer', party: 'ada', to: 'ada', amount: 1, unit: 'EUR', epoch: 1 } } as never, T0);
+    const nobody = entry(ada.sk, { item: { t: 'action', kind: 'transfer', party: 'ada', to: ' ', amount: 1, unit: 'EUR', epoch: 1 } } as never, T0 + 1);
+    const forBob = give(ada.sk, 'bob', 'ada', 1, T0 + 2);
+    const stranger_ = give(stranger.sk, 'ada', 'bob', 1, T0 + 3);
+    const viaBot = give(holon.sk, 'bob', 'ada', 5, T0 + 4, { onBehalfOf: 'bob' });
+    const botMismatch = give(holon.sk, 'bob', 'ada', 5, T0 + 5, { onBehalfOf: 'ada' });
+    const f = foldClaims({ entries: [self, nobody, forBob, stranger_, viaBot, botMismatch], actors: actors(), partyOf, rights, holonPubkey: holon.pk });
+    expect(f.transfers.map((t) => [t.status, t.reason ?? null, t.delegated])).toEqual([
+      ['rejected', 'self', false],
+      ['rejected', 'no-receiver', false],
+      ['rejected', 'party-mismatch', false],
+      ['rejected', 'unaccepted-signer', false],
+      ['approved', null, true],
+      ['rejected', 'party-mismatch', true],
+    ]);
+    expect(() => buildTransfer({ party: 'ada', to: 'ada', amount: 1, unit: 'eur' })).toThrow();
+    expect(() => buildTransfer({ party: 'ada', to: '', amount: 1, unit: 'eur' })).toThrow();
+  });
+
+  it('under quorum a give is pending: it already counts against the giver, and the receiver cannot claim it yet', () => {
+    const g = give(ada.sk, 'ada', 'bob', 40, T0);
+    const bobClaims = entry(bob.sk, buildClaim({ party: 'bob', amount: 60, unit: 'eur', at: T0 * 1000 }) as never, T0 + 1);
+    const base = { actors: actors(), partyOf, rights, policy: { quorum: 1 } };
+    const held = foldClaims({ entries: [g, bobClaims], ...base });
+    expect(held.transfers[0]).toMatchObject({ status: 'pending', reason: 'quorum' });
+    expect(claimTotalsOf(held, 'ada', 'eur')).toMatchObject({ pending: 40, given: 0 });
+    expect(claimTotalsOf(held, 'bob', 'eur')).toMatchObject({ received: 0 });
+    // Bob's own right is 50: without the give accepted, 60 is past his access.
+    expect(held.claims[0].status).toBe('over');
+    const ok = entry(treasurer.sk, buildClaimVerdict(g.id, 'attest') as never, T0 + 2);
+    const okClaim = entry(treasurer.sk, buildClaimVerdict(bobClaims.id, 'attest') as never, T0 + 3);
+    const f = foldClaims({ entries: shuffled([g, bobClaims, ok, okClaim]), ...base });
+    expect(f.transfers[0].status).toBe('approved');
+    expect(f.claims[0].status).toBe('approved');
+    expect(claimTotalsOf(f, 'bob', 'eur')).toMatchObject({ claimed: 60, received: 40 });
+    const no = entry(treasurer.sk, buildClaimVerdict(g.id, 'dispute', 'who?') as never, T0 + 4);
+    expect(foldClaims({ entries: [g, ok, no], ...base }).transfers[0].status).toBe('disputed');
+  });
+
+  it('a settled claim and a give both stay drawn: access is cumulative', () => {
+    const c = entry(ada.sk, buildClaim({ party: 'ada', amount: 50, unit: 'eur', at: T0 * 1000 }) as never, T0);
+    const paid = entry(treasurer.sk, buildPayout({ claimId: c.id, party: 'ada', amount: 50, unit: 'eur' }) as never, T0 + 1);
+    const g = give(ada.sk, 'ada', 'bob', 50, T0 + 2);
+    const more = give(ada.sk, 'ada', 'bob', 1, T0 + 3);
+    const f = foldClaims({ entries: [c, paid, g, more], actors: actors(), partyOf, rights });
+    expect(f.transfers.map((t) => t.status)).toEqual(['approved', 'over']);
   });
 });
 
@@ -192,7 +282,7 @@ describe('foldClaims with partner imports', () => {
     // A partner key is a member here, never an attester: its payout does not settle anything.
     expect(f.payouts).toEqual([]);
     expect(f.claims[1].status).toBe('approved');
-    expect(claimTotalsOf(f, 'P', 'EUR')).toEqual({ claimed: 30, settled: 0, pending: 0, over: 30 });
+    expect(claimTotalsOf(f, 'P', 'EUR')).toEqual({ claimed: 30, settled: 0, pending: 0, over: 30, given: 0, received: 0 });
     // Our attester pays the partner's claim out.
     const paid = entry(treasurer.sk, buildPayout({ claimId: theirs.id, party: 'P', amount: 30, unit: 'eur' }) as never, T0 + 5);
     const g = foldClaims({ entries: [own, paid], actors: actors(), partyOf, rights: { ...rights, P: { EUR: 50 } }, imports: [imported([theirs])] });

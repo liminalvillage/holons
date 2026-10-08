@@ -5,21 +5,32 @@
  * Fund claims as signed, append-only actions — the first log the protocol
  * reduces.
  *
- * A right over the fund (`allocation.ts`) is drawn down by CLAIMS. Until now
- * a claim was inferred from the expenses lens (a member fronting money and
- * splitting it with the holon) and from the collective's expense queue, and
- * the two knowingly double-counted (`usage.ts`). Here a claim is a record of
- * its own: a member appends `claim` to the `flow_claims` log, attesters
- * (the policy's roles; admins by default) attest or dispute it, and an
- * attester's `payout` consumes it. Every reader folds the same log to the
- * same statement; nothing is ever overwritten.
+ * The model in one breath: a MINT opens access (`mints.ts`), the cascade
+ * says how much of it each party has (`allocation.ts`, `cascade.ts`), a
+ * CLAIM burns some of it, and a GIVE burns yours and opens the same amount
+ * for someone else. Nothing converts, nothing is bearer: every movement is
+ * a signed entry in the holon's own `flow_claims` log, judged by the fold.
+ *
+ * Until now a claim was inferred from the expenses lens (a member fronting
+ * money and splitting it with the holon) and from the collective's expense
+ * queue, and the two knowingly double-counted (`usage.ts`). Here a claim is
+ * a record of its own: a member appends `claim`, attesters (the policy's
+ * roles; admins by default) attest or dispute it, and an attester's `payout`
+ * consumes it. A `transfer` is the give. Every reader folds the same log to
+ * the same statement; nothing is ever overwritten.
  *
  * The rules, in log order:
  *   - the signer must act for the party (`partyOf`), unless the holon key
- *     claims on someone's behalf (`onBehalfOf`, marked `delegated`);
- *   - a claim that would push the party past their right in that unit is
- *     held as `over` — kept and shown, never counted as available money;
- *   - the policy's quorum and disputes apply (`protocol.collapse`);
+ *     claims or gives on someone's behalf (`onBehalfOf`, marked `delegated`);
+ *   - a party's ACCESS in a unit is their right (`RightsLookup`, the ceiling
+ *     the surface sized) plus what was given to them, less what they gave;
+ *     a party with no right of their own has exactly what they received;
+ *   - a claim or a give that would push the party past their access in that
+ *     unit is held as `over` — kept and shown, never counted;
+ *   - a give names someone else: giving to yourself is rejected;
+ *   - the policy's quorum and disputes apply (`protocol.collapse`), to a
+ *     give as to a claim, so a received amount is not claimable until the
+ *     give itself is accepted;
  *   - a payout names the claim it settles as `basis`; a second payout for
  *     the same claim is a double-consume and does not count;
  *   - a partner holon with a right on this fund claims it in ITS OWN log:
@@ -42,6 +53,7 @@ import {
   type Appendable,
   type AttestationRecord,
   type CollapseResult,
+  type Judged,
   type LensContextInput,
   type LogEvent,
   type PartnerImport,
@@ -78,7 +90,48 @@ export interface PayoutBody {
   memo?: string;
 }
 
+/** A give: `party` burns `amount` of their access in `unit` and `to` gains it. */
+export interface TransferBody {
+  t: 'action';
+  kind: 'transfer';
+  /** The giver. */
+  party: string;
+  /** The receiver — any party the holon can name; never the giver. */
+  to: string;
+  amount: number;
+  unit: string;
+  /** The lunar cycle the give was made in (`lunationAt().index`). */
+  epoch: number;
+  memo?: string;
+  /** Set when the holon key gives for a party (the bot on a member's word). */
+  onBehalfOf?: string;
+}
+
 export type ClaimStatus = 'pending' | 'approved' | 'disputed' | 'over' | 'conflict' | 'settled' | 'rejected';
+
+/** A give is never settled: once accepted it has already moved the access. */
+export type TransferStatus = Exclude<ClaimStatus, 'settled'>;
+
+export interface Transfer {
+  id: string;
+  party: string;
+  to: string;
+  amount: number;
+  unit: string;
+  epoch: number;
+  memo?: string;
+  /** Unix seconds. */
+  createdAt: number;
+  pubkey: string;
+  /** True when the holon key gave for the party. */
+  delegated: boolean;
+  /** The partner holon whose log the give came from, when imported. */
+  origin?: string;
+  status: TransferStatus;
+  reason?: string;
+  attests: number;
+  disputes: number;
+}
 
 export interface Claim {
   id: string;
@@ -123,13 +176,19 @@ export interface ClaimTotals {
   settled: number;
   /** Raised but not yet counting: awaiting quorum, disputed, or conflicting. */
   pending: number;
-  /** Held past the party's right. */
+  /** Held past the party's access — claims and gives alike. */
   over: number;
+  /** Given away, accepted. */
+  given: number;
+  /** Received from others, accepted. */
+  received: number;
 }
 
 export interface FoldedClaims {
   /** Every claim in log order, judged. */
   claims: Claim[];
+  /** Every give in log order, judged. */
+  transfers: Transfer[];
   payouts: Payout[];
   /** The entries that count (claims and payouts), in log order — what a checkpoint covers. */
   accepted: LogEvent<unknown>[];
@@ -179,6 +238,40 @@ export function buildClaim(input: BuildClaimInput): Appendable<ClaimBody> {
   return action('claim', body as Record<string, unknown>, input.prev ? { prev: input.prev } : undefined) as unknown as Appendable<ClaimBody>;
 }
 
+export interface BuildTransferInput {
+  /** The giver. */
+  party: string;
+  /** The receiver. */
+  to: string;
+  amount: number;
+  unit: string;
+  memo?: string;
+  /** When the give is made (ms). Default now. Sets the epoch. */
+  at?: number;
+  /** The party's previous entry, to chain. */
+  prev?: string;
+  onBehalfOf?: string;
+}
+
+/** The `transfer` action a party appends to give part of their access away. */
+export function buildTransfer(input: BuildTransferInput): Appendable<TransferBody> {
+  const at = input.at ?? Date.now();
+  const party = String(input.party ?? '');
+  const to = String(input.to ?? '').trim();
+  if (!to) throw new Error('A give names who receives it');
+  if (to === party) throw new Error('A give names someone else');
+  const body: Omit<TransferBody, 't' | 'kind'> = {
+    party,
+    to,
+    amount: round(Number(input.amount)),
+    unit: unitOf(input.unit),
+    epoch: lunationAt(at).index,
+    ...(input.memo ? { memo: String(input.memo) } : {}),
+    ...(input.onBehalfOf ? { onBehalfOf: String(input.onBehalfOf) } : {}),
+  };
+  return action('transfer', body as Record<string, unknown>, input.prev ? { prev: input.prev } : undefined) as unknown as Appendable<TransferBody>;
+}
+
 /** The `payout` an attester appends once a claim is paid; it consumes the claim. */
 export function buildPayout(input: { claimId: string; party: string; amount: number; unit: string; memo?: string }): Appendable<PayoutBody> {
   const body = {
@@ -197,6 +290,7 @@ export function buildClaimVerdict(claimId: string, verdict: 'attest' | 'dispute'
 
 export const isClaim = (item: unknown): item is ClaimBody => isAction(item) && item.kind === 'claim';
 export const isPayout = (item: unknown): item is PayoutBody => isAction(item) && item.kind === 'payout';
+export const isTransfer = (item: unknown): item is TransferBody => isAction(item) && item.kind === 'transfer';
 
 export interface FoldClaimsInput {
   entries: Iterable<LogEvent<unknown>>;
@@ -218,6 +312,10 @@ interface FoldState {
   /** Approved, unsettled amount per `party|unit`. */
   open: Map<string, number>;
   payouts: Payout[];
+  /** Received less given per `party|unit`, accepted gives only. */
+  net: Map<string, number>;
+  /** Received per `party|unit`: a party who received anything has access even with no right. */
+  received: Map<string, number>;
 }
 
 const rightOf = (rights: RightsLookup | null | undefined, party: string, unit: string): number | null => {
@@ -243,31 +341,62 @@ export function foldClaims(input: FoldClaimsInput): FoldedClaims {
   const entries: LogEvent<unknown>[] = [...input.entries];
   for (const p of imports) entries.push(...p.accepted);
 
+  /** Does the signer act for `party`? Null when yes, the reason when not. */
+  const signerFor = (e: LogEvent<unknown>, party: string, onBehalfOf: unknown): string | null => {
+    const delegated = !!holonKey && e.pubkey.toLowerCase() === holonKey && !!onBehalfOf;
+    if (delegated) return String(onBehalfOf) === party ? null : 'party-mismatch';
+    const actsFor = partyOf(e.pubkey, e.created_at);
+    if (!actsFor) return 'unknown-party';
+    return actsFor === party ? null : 'party-mismatch';
+  };
+
+  /**
+   * A party's access in a unit: their right plus what they received less what
+   * they gave. No right and nothing received means no ceiling at all (the
+   * surface sized none); no right but something received means exactly that.
+   */
+  const accessOf = (state: FoldState, party: string, unit: string): number | null => {
+    const key = `${party}|${unit}`;
+    const right = rightOf(input.rights, party, unit);
+    const net = state.net.get(key) ?? 0;
+    if (right == null) return (state.received.get(key) ?? 0) > 0 ? net : null;
+    return right + net;
+  };
+
+  /** Would drawing `amount` more push `party` past their access? */
+  const overAccess = (state: FoldState, party: string, unit: string, amount: number): boolean => {
+    const access = accessOf(state, party, unit);
+    if (access == null) return false;
+    const key = `${party}|${unit}`;
+    const drawn = (state.open.get(key) ?? 0) + settledOf(state, key);
+    return drawn + amount > access + 0.005;
+  };
+
   const result: CollapseResult<unknown, FoldState> = collapse<unknown, FoldState>({
     entries,
     actors,
     policy: input.policy,
-    initial: { claims: new Map(), open: new Map(), payouts: [] },
+    initial: { claims: new Map(), open: new Map(), payouts: [], net: new Map(), received: new Map() },
     validate: (e, state) => {
       if (isClaim(e.item)) {
         const c = e.item;
         if (!(Number(c.amount) > 0) || !Number.isFinite(Number(c.amount))) return 'bad-amount';
         if (!unitOf(c.unit)) return 'no-unit';
-        const actsFor = partyOf(e.pubkey, e.created_at);
-        const delegated = !!holonKey && e.pubkey.toLowerCase() === holonKey && !!c.onBehalfOf;
-        if (delegated) {
-          if (String(c.onBehalfOf) !== String(c.party)) return 'party-mismatch';
-        } else if (!actsFor) {
-          return 'unknown-party';
-        } else if (actsFor !== String(c.party)) {
-          return 'party-mismatch';
-        }
-        const right = rightOf(input.rights, String(c.party), unitOf(c.unit));
-        if (right != null) {
-          const key = `${c.party}|${unitOf(c.unit)}`;
-          const drawn = (state.open.get(key) ?? 0) + settledOf(state, key);
-          if (drawn + Number(c.amount) > right + 0.005) return { status: 'pending', reason: 'over-right' };
-        }
+        const who = signerFor(e, String(c.party), c.onBehalfOf);
+        if (who) return who;
+        if (overAccess(state, String(c.party), unitOf(c.unit), Number(c.amount))) return { status: 'pending', reason: 'over-right' };
+        return null;
+      }
+      if (isTransfer(e.item)) {
+        const t = e.item;
+        if (!(Number(t.amount) > 0) || !Number.isFinite(Number(t.amount))) return 'bad-amount';
+        if (!unitOf(t.unit)) return 'no-unit';
+        const to = String(t.to ?? '').trim();
+        if (!to) return 'no-receiver';
+        if (to === String(t.party)) return 'self';
+        const who = signerFor(e, String(t.party), t.onBehalfOf);
+        if (who) return who;
+        if (overAccess(state, String(t.party), unitOf(t.unit), Number(t.amount))) return { status: 'pending', reason: 'over-right' };
         return null;
       }
       if (isPayout(e.item)) {
@@ -292,6 +421,16 @@ export function foldClaims(input: FoldClaimsInput): FoldedClaims {
         const key = `${e.item.party}|${unitOf(e.item.unit)}`;
         state.claims.set(e.id, { entry: e as LogEvent<ClaimBody> });
         state.open.set(key, (state.open.get(key) ?? 0) + Number(e.item.amount));
+        return state;
+      }
+      if (isTransfer(e.item)) {
+        const unit = unitOf(e.item.unit);
+        const amount = Number(e.item.amount);
+        const from = `${e.item.party}|${unit}`;
+        const to = `${String(e.item.to).trim()}|${unit}`;
+        state.net.set(from, (state.net.get(from) ?? 0) - amount);
+        state.net.set(to, (state.net.get(to) ?? 0) + amount);
+        state.received.set(to, (state.received.get(to) ?? 0) + amount);
         return state;
       }
       if (isPayout(e.item)) {
@@ -319,30 +458,61 @@ export function foldClaims(input: FoldClaimsInput): FoldedClaims {
   const byParty: FoldedClaims['byParty'] = {};
   const totals = (party: string, unit: string): ClaimTotals => {
     const perUnit = (byParty[party] ??= {});
-    return (perUnit[unit] ??= { claimed: 0, settled: 0, pending: 0, over: 0 });
+    return (perUnit[unit] ??= { claimed: 0, settled: 0, pending: 0, over: 0, given: 0, received: 0 });
+  };
+  /** The judged status of a claim or a give, in the domain's words. */
+  const statusOf = (j: Judged<unknown>, settled: boolean): { status: ClaimStatus; reason?: string } => {
+    if (j.status === 'accepted') return { status: settled ? 'settled' : 'approved' };
+    if (j.status === 'rejected') return { status: 'rejected', reason: j.detail ?? j.reason ?? undefined };
+    if (j.reason === 'disputed') return { status: 'disputed' };
+    if (j.reason === 'conflict') return { status: 'conflict' };
+    if (j.reason === 'held' && j.detail === 'over-right') return { status: 'over' };
+    return { status: 'pending', reason: j.detail ?? j.reason ?? undefined };
   };
   const claims: Claim[] = [];
+  const transfers: Transfer[] = [];
   const epochs = new Set<number>();
   for (const j of result.judged.values()) {
+    if (isTransfer(j.entry.item)) {
+      const t = j.entry.item;
+      const unit = unitOf(t.unit);
+      const amount = Number(t.amount);
+      const to = String(t.to ?? '').trim();
+      const { status, reason } = statusOf(j, false);
+      epochs.add(Number(t.epoch));
+      const origin = actors.originOf(j.entry.pubkey, j.entry.created_at);
+      transfers.push({
+        id: j.entry.id,
+        party: String(t.party),
+        to,
+        amount,
+        unit,
+        epoch: Number(t.epoch),
+        ...(t.memo ? { memo: String(t.memo) } : {}),
+        createdAt: j.entry.created_at,
+        pubkey: j.entry.pubkey,
+        delegated: !!holonKey && j.entry.pubkey.toLowerCase() === holonKey && !!t.onBehalfOf,
+        ...(origin ? { origin } : {}),
+        status: status as TransferStatus,
+        ...(reason ? { reason } : {}),
+        attests: j.attests,
+        disputes: j.disputes,
+      });
+      if (status === 'rejected') continue;
+      const giver = totals(String(t.party), unit);
+      if (status === 'approved') {
+        giver.given += amount;
+        totals(to, unit).received += amount;
+      } else if (status === 'over') giver.over += amount;
+      else giver.pending += amount;
+      continue;
+    }
     if (!isClaim(j.entry.item)) continue;
     const c = j.entry.item;
     const unit = unitOf(c.unit);
     const amount = Number(c.amount);
     const folded = result.state.claims.get(j.entry.id);
-    let status: ClaimStatus;
-    let reason: string | undefined;
-    if (j.status === 'accepted') status = folded?.settledBy ? 'settled' : 'approved';
-    else if (j.status === 'rejected') {
-      status = 'rejected';
-      reason = j.detail ?? j.reason ?? undefined;
-    } else if (j.reason === 'disputed') status = 'disputed';
-    else if (j.reason === 'conflict') status = 'conflict';
-    else if (j.reason === 'held' && j.detail === 'over-right') status = 'over';
-    else {
-      status = 'pending';
-      reason = j.detail ?? j.reason ?? undefined;
-    }
-    if (status === 'pending' && !reason) reason = j.reason ?? undefined;
+    const { status, reason } = statusOf(j, !!folded?.settledBy);
     epochs.add(Number(c.epoch));
     const origin = actors.originOf(j.entry.pubkey, j.entry.created_at);
     claims.push({
@@ -376,12 +546,17 @@ export function foldClaims(input: FoldClaimsInput): FoldedClaims {
       t.settled = round(t.settled);
       t.pending = round(t.pending);
       t.over = round(t.over);
+      t.given = round(t.given);
+      t.received = round(t.received);
     }
   }
-  claims.sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1));
+  const byLog = <T extends { createdAt: number; id: string }>(a: T, b: T) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1);
+  claims.sort(byLog);
+  transfers.sort(byLog);
 
   return {
     claims,
+    transfers,
     payouts: [...result.state.payouts],
     accepted: result.accepted,
     byParty,
@@ -401,7 +576,7 @@ function settledOf(state: FoldState, key: string): number {
 
 /** A party's totals in a unit; zeros when it never claimed in it. */
 export function claimTotalsOf(folded: FoldedClaims | null | undefined, party: string, unit: string): ClaimTotals {
-  return { ...(folded?.byParty[String(party)]?.[unitOf(unit)] ?? { claimed: 0, settled: 0, pending: 0, over: 0 }) };
+  return { claimed: 0, settled: 0, pending: 0, over: 0, given: 0, received: 0, ...(folded?.byParty[String(party)]?.[unitOf(unit)] ?? {}) };
 }
 
 // ── From lens data to a folded statement ─────────────────────────────────

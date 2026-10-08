@@ -6,8 +6,8 @@ import { bootstrapActors } from '../protocol/membership.js';
 import { signedEntry, testKey } from '../protocol/testing.js';
 import { allocate } from './allocation.js';
 import { ceilingOf, claimCeilings, claimHeadroom, fitsHeadroom, partyShares } from './ceiling.js';
-import { buildClaim, buildClaimVerdict, buildPayout, foldClaims } from './claims.js';
-import { buildFundUsage, fundAccount } from './usage.js';
+import { buildClaim, buildClaimVerdict, buildPayout, buildTransfer, foldClaims } from './claims.js';
+import { buildFundUsage, fundAccount, movedOf } from './usage.js';
 
 const T0 = 1_760_000_000;
 const NOW = T0 * 1000 + 10_000;
@@ -153,5 +153,55 @@ describe('the fold under the ceiling', () => {
     const ok = entry(treasurer.sk, buildClaimVerdict(first.id, 'attest') as never, T0 + 2);
     const afterAttest = foldClaims({ entries: [first, second, ok], actors: actors(), partyOf, rights: ceilings, policy: quorum });
     expect(afterAttest.claims.map((c) => c.status)).toEqual(['approved', 'over']);
+  });
+});
+
+describe('gives under the ceiling', () => {
+  const sized = () => allocate({ total: 200, unit: 'L', config: shares.config, members: [{ id: 'ada', name: 'Ada', percentage: 50 }, { id: 'bob', name: 'Bob', percentage: 50 }], zoned: [] });
+
+  it('headroom and the account card agree for the giver and the receiver', () => {
+    const g = entry(ada.sk, buildTransfer({ party: 'ada', to: 'bob', amount: 30, unit: 'L', at: T0 * 1000 }) as never, T0);
+    const c = entry(bob.sk, buildClaim({ party: 'bob', amount: 20, unit: 'L', at: T0 * 1000 }) as never, T0 + 1);
+    const claims = fold([g, c]);
+    const usage = usageOf(claims);
+    expect(movedOf(usage, 'ada', 'L')).toEqual({ given: 30, received: 0 });
+    expect(movedOf(usage, 'bob', 'L')).toEqual({ given: 0, received: 30 });
+    const ceilings = claimCeilings({ shares, pots: { L: 200 }, usage, claims });
+    // The ceiling is the seat; the give lives in the fold and the headroom.
+    expect(ceilings.ada.L).toBe(100);
+    expect(ceilings.bob.L).toBe(100);
+    const ada_ = fundAccount(sized(), usage, 'ada')!;
+    const bob_ = fundAccount(sized(), usage, 'bob')!;
+    expect(ada_).toMatchObject({ right: 100, given: 30, received: 0, available: 70 });
+    expect(bob_).toMatchObject({ right: 100, given: 0, received: 30, claimed: 20, available: 110 });
+    expect(claimHeadroom(ceilings, claims, 'ada', 'L')).toBe(70);
+    expect(claimHeadroom(ceilings, claims, 'bob', 'L')).toBe(110);
+    // The pot did not move: a give changes who may draw, not what there is.
+    const f = fold([g, c], ceilings);
+    expect(f.transfers[0].status).toBe('approved');
+    expect(f.claims[0].status).toBe('approved');
+  });
+
+  it('a receiver with no seat gets an account and a headroom of exactly what reached them', () => {
+    const g = entry(ada.sk, buildTransfer({ party: 'ada', to: 'tre', amount: 12.5, unit: 'L', at: T0 * 1000 }) as never, T0);
+    const c = entry(treasurer.sk, buildClaim({ party: 'tre', amount: 2.5, unit: 'L', at: T0 * 1000 }) as never, T0 + 1);
+    const claims = fold([g, c]);
+    const usage = usageOf(claims);
+    const ceilings = claimCeilings({ shares, pots: { L: 200 }, usage, claims });
+    expect(ceilingOf(ceilings, 'tre', 'L')).toBeNull();
+    expect(claimHeadroom(ceilings, claims, 'tre', 'L')).toBe(10);
+    expect(fundAccount(sized(), usage, 'tre')).toMatchObject({ percentage: 0, right: 0, received: 12.5, claimed: 2.5, available: 10, side: 'exterior' });
+    expect(fundAccount(sized(), usage, 'nobody')).toBeNull();
+    // Percentage-only allocation: the account exists but carries no amounts.
+    expect(fundAccount(shares, usage, 'tre')).toMatchObject({ right: null, available: null, received: 12.5 });
+  });
+
+  it('a pending give is already spoken for in the giver\'s headroom', () => {
+    const g = entry(ada.sk, buildTransfer({ party: 'ada', to: 'bob', amount: 60, unit: 'L', at: T0 * 1000 }) as never, T0);
+    const claims = foldClaims({ entries: [g], actors: actors(), partyOf, policy: { quorum: 1 } });
+    expect(claims.transfers[0].status).toBe('pending');
+    const ceilings = claimCeilings({ shares, pots: { L: 200 }, usage: usageOf(claims), claims });
+    expect(claimHeadroom(ceilings, claims, 'ada', 'L')).toBe(40);
+    expect(claimHeadroom(ceilings, claims, 'bob', 'L')).toBe(100);
   });
 });
