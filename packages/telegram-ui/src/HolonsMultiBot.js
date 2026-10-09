@@ -8,7 +8,6 @@ import MultiBot from './MultiBot.js';
 import createHoloSphere from "./createHoloSphere.js";
 import UI from './UI.js';
 import H3 from './H3.js';
-import Holons from './Holons.js';
 import Quests from './Quests.js';
 import Shopping from './Shopping.js';
 import Lunation from "./Lunation.js";
@@ -45,7 +44,6 @@ if (fs.existsSync('./orbitdb/repo.lock')) {
  * @property {Quests} quests - Quest management
  * @property {Expenses} expenses - Expense tracking
  * @property {Users} users - User management
- * @property {Holons} holons - Blockchain integration
  * @property {Library} library - Library system
  * @property {Roles} roles - Role management
  *
@@ -68,7 +66,6 @@ class HolonsBot {
     this.users = null;
     this.expenses = null;
     this.onboarding = null;
-    this.holons = null;
     this.h3 = null;
     this.tags = null;
     this.participation = null;
@@ -120,7 +117,6 @@ class HolonsBot {
     this.users = new Users(this.bot, this.db);
     this.expenses = new Expenses(this.bot, this.db, this.ui, this.settings);
     this.onboarding = new Onboarding(this.bot, this.db);
-    this.holons = new Holons(this.bot, this.db, this.settings);
     this.h3 = new H3(this.bot, this.db);
     this.tags = new Tags(this.bot, this.db);
     this.participation = new Participation(this.bot, this.db);

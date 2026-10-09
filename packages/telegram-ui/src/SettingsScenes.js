@@ -14,19 +14,13 @@
  * @property {DB} db - Database instance
  * @property {Telegraf} bot - The Telegraf bot instance
  * @property {Settings} settings - Settings module reference
- * @property {string} network - Blockchain network name
- * @property {number} chainId - Blockchain chain ID
- * @property {ethers.Wallet} wallet - Ethereum wallet for transactions
  *
  * @example
  * const scenes = new SettingsScenes(bot, db, settings);
  * scenes.registerScenes(stage);
  */
-import { ethers } from 'ethers';
-
 import i18next from 'i18next';
 import { Scenes } from 'telegraf';
-import * as fs from 'fs';
 
 export default class SettingsScenes {
   /**
@@ -39,36 +33,6 @@ export default class SettingsScenes {
   constructor(bot, db, settings) {
     this.db = db;
     this.bot = bot;
-
-    // spagheti
-    this.network = process.env.ETH_NETWORK;
-    this.chainId = parseInt(process.env.ETH_CHAIN_ID);
-    this.bot = bot;
-    this.db = db;
-    this.settings = settings;
-    this.privateKey = process.env.ETH_PRIVATE_KEY;
-    this.provider = new ethers.JsonRpcProvider(process.env.ETH_RPC_URL);
-    this.wallet = new ethers.Wallet(this.privateKey, this.provider);
-    // this.holons = new Holons(this.bot, this.db, this.settings);
-    // spagheti
-
-    // more spagheti
-    const deploymentData = JSON.parse(
-      fs.readFileSync('./contracts/deployment.json', 'utf-8')
-    )[this.network];
-    const holonsAddress = deploymentData.Holons;
-    const holonsABI = JSON.parse(
-      fs.readFileSync('./contracts/Holons.json', 'utf-8')
-    ).abi;
-    this.holonsContract = new ethers.Contract(
-      holonsAddress,
-      holonsABI,
-      this.wallet
-    );
-
-    // Create Holons instance and pass the contract
-    this.holons = null;
-    // this.holons.setHolons(this.holons);
 
     // Scenes migrated to InputScene:
     // - purpose_scene, name_scene, domains_scene, values_scene, roles_scene, hex_scene

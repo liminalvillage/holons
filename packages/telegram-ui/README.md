@@ -99,7 +99,6 @@ HolonsBot/
 │   ├── Settings.js         # Configuration
 │   ├── Users.js            # User management
 │   ├── Expenses.js         # Expense tracking
-│   ├── Holons.js           # Blockchain operations
 │   ├── Scheduler.js        # Task scheduling
 │   ├── Checklists.js       # List management
 │   ├── Shopping.js         # Shopping lists

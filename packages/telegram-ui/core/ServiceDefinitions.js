@@ -8,7 +8,6 @@ import Server from '../src/Server.js';
 // HoloSphere comes from src/createHoloSphere.js (env-driven: backend/relays/projections)
 import UI from '../src/UI.js';
 import H3 from '../src/H3.js';
-import Holons from '../src/Holons.js';
 import Quests from '../src/Quests.js';
 import Shopping from '../src/Shopping.js';
 import Lunation from '../src/Lunation.js';
@@ -378,24 +377,6 @@ export const serviceDefinitions = {
     dependencies: ['telebot', 'database', 'ui', 'settings'],
   },
 
-  // Holons
-  holons: {
-    factory: ({ telebot, database, settings, expenses, ui }) => {
-      const holons = new Holons(telebot, database, settings);
-
-      // Set cross-references
-      holons.setExpensesInstance(expenses);
-      if (typeof holons.setUIInstance === 'function') {
-        holons.setUIInstance(ui);
-        log.debug('UI instance passed to Holons');
-      }
-
-      return holons;
-    },
-    singleton: true,
-    dependencies: ['telebot', 'database', 'settings', 'expenses', 'ui'],
-  },
-
   // Checklists
   checklists: {
     factory: ({ telebot, database }) => {
@@ -661,8 +642,6 @@ export const postInitHooks = {
   // Setup Settings cross-references
   settings: async (settings, container) => {
     if (typeof settings.setHolonsInstance === 'function') {
-      const holons = await container.get('holons');
-      settings.setHolonsInstance(holons);
       log.debug('Holons instance passed to Settings');
     }
     if (typeof settings.setKeysInstance === 'function') {

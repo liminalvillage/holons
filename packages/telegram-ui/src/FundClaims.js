@@ -51,12 +51,10 @@ import {
   fitsHeadroom,
   foldClaimsFromLenses,
   foldMintsFromLenses,
-  loadBundleRecord,
   loadClaimCeilings,
   loadPotRecord,
   loadRights,
   lunationAt,
-  readBundleTokens,
   scoreAllocationMembers,
 } from '@holons/core/flows';
 import {
@@ -762,10 +760,9 @@ export default class FundClaims {
       if (!pot) continue;
       const ctx = await loadRights(db, h);
       if (ctx.latest && ctx.latest.epoch >= epoch) continue;
-      const tokens = readBundleTokens(
-        await loadBundleRecord(db, h).catch(() => null)
+      const received = await this.potReceipts(pot, pot.tokens).catch(
+        () => null
       );
-      const received = await this.potReceipts(pot, tokens).catch(() => null);
       if (!received) continue;
       const cut = await cutRights(db, h, {
         previous: ctx.latest?.table ?? null,
