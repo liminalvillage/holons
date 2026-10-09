@@ -17,7 +17,7 @@
 import type { Expense } from '../expenses/index.js';
 import { normalizeCurrency } from '../expenses/index.js';
 import type { AllocationMember, AllocationResult } from './allocation.js';
-import { loadBundleRecord, loadPotRecord, readBundleTokens } from './bundle.js';
+import { loadPotRecord } from './pot-record.js';
 import { childResolver, loadAllocationInputs, loadCascadeChildren } from './cascade-load.js';
 import { DEFAULT_CASCADE_DEPTH, cascadeRights, resolveCascade } from './cascade.js';
 import { claimCeilings, partyShares, type ClaimCeilings } from './ceiling.js';
@@ -87,7 +87,7 @@ export async function loadClaimCeilings(
   const root = { config: inputs.config, members: inputs.members, zoned: inputs.zoned };
   const rootPartyIds = [...new Set([...inputs.members.map((m) => m.id), ...inputs.zoned.filter((p) => p.zone >= 1).map((p) => p.id)])];
 
-  const [loaded, mints, inbound, expenses, pot, bundle] = await Promise.all([
+  const [loaded, mints, inbound, expenses, pot] = await Promise.all([
     loadCascadeChildren(holosphere, rootPartyIds, {
       rootId: holon,
       maxDepth: opts.maxDepth,
@@ -98,10 +98,9 @@ export async function loadClaimCeilings(
     quiet(loadInboundRights(holosphere, holon, { scoreOf: opts.scoreOf }), { inbound: [], upstreams: [], visited: 0, truncated: false }),
     opts.expenses !== undefined ? Promise.resolve(opts.expenses ?? []) : quiet<Expense[]>(holosphere.getAll(holon, 'expenses'), []),
     quiet(loadPotRecord(holosphere, holon), null),
-    quiet(loadBundleRecord(holosphere, holon), null),
   ]);
   // The units the holon reads on-chain are the ones its Pot holds.
-  const held = pot ? [...new Set([nativeUnit(pot.chainId), ...readBundleTokens(bundle).map((t) => t.symbol)].map((u) => normalizeCurrency(u)))] : [];
+  const held = pot ? [...new Set([nativeUnit(pot.chainId), ...pot.tokens.map((t) => t.symbol)].map((u) => normalizeCurrency(u)))] : [];
 
   const cascade = resolveCascade({
     holonId: holon,

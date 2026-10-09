@@ -6,7 +6,7 @@
  *
  * Every surface that deploys a holon's Pot must deploy the SAME contract, so
  * the bytes live here rather than in one app. Regenerated from
- * `liminalvillage/contracts` (`FOUNDRY_PROFILE=bundle forge build`,
+ * `liminalvillage/contracts` (`FOUNDRY_PROFILE=pot forge build`,
  * `out/Pot.sol/Pot.json` → `bytecode.object`), never hand-edited.
  *
  * Build: solc 0.8.20, optimizer 200 runs, evm shanghai. Source branch `pot`

@@ -28,7 +28,6 @@
 
 import { getFederationSnapshot } from '../federation/snapshot.js';
 import { allocate, resolveInteriorMembers, type AllocationMember, type InteriorShares } from './allocation.js';
-import { readBundleRecord } from './bundle.js';
 import { DEFAULT_CASCADE_DEPTH, type CascadeInputs, type ResolveChild } from './cascade.js';
 import {
   hasAllocationConfig,
@@ -51,12 +50,6 @@ export interface LoadCascadeOptions {
   maxHolons?: number;
   /** Settings reads in flight at once. */
   concurrency?: number;
-  /**
-   * `rights` (default) follows every configured split. `chain` follows only
-   * holons that deployed a bundle — the ones value can actually be pushed
-   * into on-chain — and reports their addresses.
-   */
-  rail?: 'rights' | 'chain';
   /** A display name for a person placed on someone's ring. */
   nameOf?: (id: string) => string | undefined;
   /** Optional scorer for equation-mode children. Absent: no roster (see above). */
@@ -66,8 +59,6 @@ export interface LoadCascadeOptions {
 export interface LoadedCascade {
   /** Holon id → its split, for every holon that passes something on. */
   children: Record<string, CascadeInputs>;
-  /** Holon id → bundle address, for the children that deployed one. */
-  bundles: Record<string, string>;
   /** Settings reads made. */
   visited: number;
   /** `maxHolons` stopped the walk before it ran out of holons to read. */
@@ -100,8 +91,6 @@ export interface AllocationInputs extends CascadeInputs {
   zones: Record<string, number>;
   /** Person id → ring. */
   people: Record<string, number>;
-  /** The deployed Bundle's address, when the holon has one. */
-  bundle: string | null;
 }
 
 /**
@@ -122,7 +111,6 @@ export async function loadAllocationInputs(
     settings = null;
   }
   const configured = hasAllocationConfig(settings);
-  const bundle = readBundleRecord(settings)?.address ?? null;
   const config = readAllocationConfig(settings);
   const shares = readInteriorShares(settings);
   const zones = readZoneAssignments(settings);
@@ -164,7 +152,6 @@ export async function loadAllocationInputs(
     shares,
     zones,
     people,
-    bundle,
     config,
     members: resolveInteriorMembers({ config, scored, shares, nameOf: opts.nameOf }),
     zoned: toAllocationPartners(federated, partnerNames, zones, people, peopleNames),
@@ -189,15 +176,14 @@ async function readChild(
   holosphere: any,
   holonId: string,
   opts: LoadCascadeOptions,
-): Promise<{ inputs: CascadeInputs; onward: string[]; bundle: string | null } | null> {
+): Promise<{ inputs: CascadeInputs; onward: string[] } | null> {
   const read = await loadAllocationInputs(holosphere, holonId, opts);
   if (!read.configured) return null;
-  const { configured: _c, settings: _s, shares: _sh, zones: _z, people: _p, bundle, ...inputs } = read;
-  if (opts.rail === 'chain' && !bundle) return null;
+  const { configured: _c, settings: _s, shares: _sh, zones: _z, people: _p, ...inputs } = read;
 
   const onward = onwardParties(inputs, holonId);
   if (onward.length === 0) return null;
-  return { inputs, onward, bundle };
+  return { inputs, onward };
 }
 
 /**
@@ -214,11 +200,10 @@ export async function loadCascadeChildren(
   const concurrency = Math.max(1, Math.floor(opts.concurrency ?? DEFAULT_CASCADE_CONCURRENCY));
 
   const children: Record<string, CascadeInputs> = {};
-  const bundles: Record<string, string> = {};
   const seen = new Set<string>(opts.rootId ? [String(opts.rootId)] : []);
   let visited = 0;
   let truncated = false;
-  if (!holosphere) return { children, bundles, visited, truncated };
+  if (!holosphere) return { children, visited, truncated };
 
   const fresh = (ids: readonly string[]): string[] => {
     const out: string[] = [];
@@ -247,13 +232,12 @@ export async function loadCascadeChildren(
       if (!child) return;
       const id = level[index];
       children[id] = child.inputs;
-      if (child.bundle) bundles[id] = child.bundle;
       next.push(...child.onward);
     });
     frontier = fresh(next);
   }
 
-  return { children, bundles, visited, truncated };
+  return { children, visited, truncated };
 }
 
 /** A loaded snapshot as the synchronous lookup `resolveCascade` takes. */

@@ -17,7 +17,7 @@
  *   exterior — the remainder, divided among the federated partners placed in
  *              `nzones` rings: each partner carries its ring's geometric decay
  *              weight and shares are normalized over placed partners only,
- *              exactly as the Bundle contract distributes on-chain
+ *              the same rule the retired Bundle contract applied on-chain
  *
  * The on-chain contract remains the authority wherever a bundle is deployed;
  * `readAllocationConfig` is the off-chain mirror that wallet-less surfaces read,
@@ -304,7 +304,7 @@ export function allocate(input: {
     }
   }
 
-  // Exterior: contract parity. The Bundle contract weighs each PLACED member
+  // Exterior: contract parity. The (retired) Bundle contract weighed each PLACED member
   // by its zone's geometric decay and normalizes over those members only —
   // an empty zone pays nothing and the whole exterior pot reaches actual
   // partners (verified against the deployed contract on Sepolia, 2026-08-30).

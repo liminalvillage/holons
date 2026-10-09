@@ -17,7 +17,7 @@
  * paid like anyone else, at its `payout` address.
  */
 
-import { readPotRecord } from './bundle.js';
+import { readPotRecord } from './pot-record.js';
 import { normalizeAddress } from './rights.js';
 
 /** Settings field holding a party's payout address. */

@@ -13,8 +13,7 @@
  *   collective ──equal──▶ member ──their zones──▶ the people they give to
  *                           └─ their contributors share: what they keep
  *
- * This is the same thing the Bundle contract does on-chain when a member's
- * bound address is another Bundle, and the same thing the rights bookkeeping
+ * This is the same thing the rights bookkeeping
  * needs off-chain — so it lives here once, rail-agnostic and pure. The caller
  * supplies `resolveChild`, which says whether a party has a split of its own;
  * `cascade-load.ts` builds one from the settings lens.
@@ -281,8 +280,7 @@ export interface CascadeSummary {
   maxDepth: number;
   /**
    * Holons whose split names nobody for part of what they receive. Off-chain
-   * that part simply stays with the holon; on-chain a Bundle has no withdraw,
-   * so the same part is stranded in the contract. A pre-flight warns on these.
+   * that part simply stays with the holon. A pre-flight warns on these.
    */
   stuck: string[];
 }

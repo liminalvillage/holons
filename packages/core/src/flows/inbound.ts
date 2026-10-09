@@ -24,7 +24,7 @@
 import { getFederationSnapshot } from '../federation/snapshot.js';
 import { myHolons } from '../holons/list.js';
 import { allocate, resolveInteriorMembers, type AllocationMember } from './allocation.js';
-import { readPotRecord } from './bundle.js';
+import { readPotRecord } from './pot-record.js';
 import { loadMints } from './mints-load.js';
 import {
   hasAllocationConfig,

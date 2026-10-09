@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest';
 import { childResolver, loadCascadeChildren } from './cascade-load.js';
 import { resolveCascade } from './cascade.js';
 import { hasAllocationConfig } from './settings.js';
-import { loadBundleRecord } from './bundle.js';
 
 /** Settings documents and federation records by holon id, with a read log. */
 function fakeHolosphere(
@@ -47,19 +46,6 @@ describe('hasAllocationConfig', () => {
     expect(hasAllocationConfig({ name: 'Casa' })).toBe(false);
     expect(hasAllocationConfig({ allocation: null })).toBe(false);
     expect(hasAllocationConfig({ allocation: { interiorPercent: 60 } })).toBe(true);
-  });
-});
-
-describe('loadBundleRecord', () => {
-  it('reads the bundle off the canonical settings document', async () => {
-    const hs = fakeHolosphere({ h1: { bundle: { address: '0x' + 'a'.repeat(40), chainId: 11155111 } } });
-    expect((await loadBundleRecord(hs, 'h1'))?.address).toBe('0x' + 'a'.repeat(40));
-  });
-
-  it('is null for a missing holosphere, an unset holon or a failed read', async () => {
-    expect(await loadBundleRecord(null, 'h1')).toBeNull();
-    expect(await loadBundleRecord(fakeHolosphere({}), 'h1')).toBeNull();
-    expect(await loadBundleRecord(fakeHolosphere({}, {}, ['h1']), 'h1')).toBeNull();
   });
 });
 
@@ -159,17 +145,6 @@ describe('loadCascadeChildren', () => {
     const hs = fakeHolosphere({ u1: passesOn(0, { u3: 1 }), u2: passesOn(0, { u3: 1 }) }, {}, ['u1']);
     const { children } = await loadCascadeChildren(hs, ['u1', 'u2']);
     expect(Object.keys(children)).toEqual(['u2']);
-  });
-
-  it("rail 'chain' only follows holons that deployed a bundle, and reports the addresses", async () => {
-    const address = '0x' + 'b'.repeat(40);
-    const hs = fakeHolosphere({
-      u1: { ...passesOn(0, { u3: 1 }), bundle: { address, chainId: 11155111 } },
-      u2: passesOn(0, { u3: 1 }),
-    });
-    const { children, bundles } = await loadCascadeChildren(hs, ['u1', 'u2'], { rail: 'chain' });
-    expect(Object.keys(children)).toEqual(['u1']);
-    expect(bundles).toEqual({ u1: address });
   });
 
   it('feeds resolveCascade end to end', async () => {

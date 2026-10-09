@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'vitest';
-import { loadPotRecord, readPotRecord, savePotRecord } from './bundle.js';
+import { loadPotRecord, readPotRecord, savePotRecord } from './pot-record.js';
 import { claimCeilings } from './ceiling.js';
 import { loadInboundRights } from './inbound.js';
 import { loadPayoutAddresses, payoutAddressOf, readPayoutAddress, savePayoutAddress } from './payout.js';
@@ -133,15 +133,15 @@ describe('payout and Pot records', () => {
   });
 
   it('a Pot record needs an address and a chain, and merges onto the settings document', async () => {
-    expect(readPotRecord({ pot: { address: POT, chainId: '11155111', challenge: 10, txHash: '0x1' } })).toEqual({ address: POT, chainId: CHAIN, challenge: 10, txHash: '0x1' });
+    expect(readPotRecord({ pot: { address: POT, chainId: '11155111', challenge: 10, txHash: '0x1' } })).toEqual({ address: POT, chainId: CHAIN, challenge: 10, txHash: '0x1', tokens: [] });
     expect(readPotRecord({ pot: { address: POT } })).toBeNull();
     expect(readPotRecord({ bundle: { address: POT, chainId: CHAIN } })).toBeNull();
     const settings: Record<string, any> = { [GROVE]: { id: GROVE, name: 'Grove' } };
     const hs = fakeHolosphere(settings);
-    await savePotRecord(hs, GROVE, { address: POT.toUpperCase().replace('0X', '0x'), chainId: CHAIN, deployedAt: 5 });
-    expect(settings[GROVE]).toEqual({ id: GROVE, name: 'Grove', pot: { address: POT, chainId: CHAIN, deployedAt: 5 } });
-    expect(await loadPotRecord(hs, GROVE)).toEqual({ address: POT, chainId: CHAIN, deployedAt: 5 });
-    await expect(savePotRecord(hs, GROVE, { address: 'nope', chainId: CHAIN })).rejects.toThrow(/0x/);
+    await savePotRecord(hs, GROVE, { address: POT.toUpperCase().replace('0X', '0x'), chainId: CHAIN, deployedAt: 5, tokens: [] });
+    expect(settings[GROVE]).toEqual({ id: GROVE, name: 'Grove', pot: { address: POT, chainId: CHAIN, deployedAt: 5, tokens: [] } });
+    expect(await loadPotRecord(hs, GROVE)).toEqual({ address: POT, chainId: CHAIN, deployedAt: 5, tokens: [] });
+    await expect(savePotRecord(hs, GROVE, { address: 'nope', chainId: CHAIN, tokens: [] })).rejects.toThrow(/0x/);
   });
 });
 

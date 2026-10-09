@@ -9,7 +9,7 @@
 
 import { MEMBERS_LENS, POLICY_LENS, readMembersLog, type AcceptedActors, type LogEvent, type Policy } from '../protocol/index.js';
 import { SHIFT_IDENTITY_LENS, attestationsFrom } from '../shifts/wire.js';
-import { loadPotRecord, type PotRecord } from './bundle.js';
+import { loadPotRecord, type PotRecord } from './pot-record.js';
 import { FLOW_RIGHTS_LENS, foldRightsFromLenses, latestRights, rootSignatures, type FoldedRights, type PublishedRights } from './rights-log.js';
 
 export interface RightsContext {
