@@ -75,8 +75,6 @@
     usageUnits,
     FLOW_CLAIMS_LENS,
     FLOW_MINTS_LENS,
-    readBundleRecord,
-    readBundleTokens,
     readPotRecord,
     buildClaim,
     buildTransfer,
@@ -380,7 +378,6 @@
   // in those units, and a right in them is collected from the Pot by its
   // table, never claimed in the log (`held` below). The panel reads the chain.
   $: potRecord = readPotRecord(settings);
-  $: potTokens = readBundleTokens(readBundleRecord(settings));
   let potChain: Record<string, number> = {};
   $: if (!potRecord && Object.keys(potChain).length) potChain = {};
   $: potSources = {
@@ -1810,13 +1807,11 @@
         </div>
 
         <!-- The same split, editable: sliders feed `allocate()` above, and the
-             panel saves off-chain and (with a wallet and a deployed bundle) on
-             it, through the same path Flow Management syncs with. -->
+             panel saves the settings lens every surface reads. -->
         <div class="editor">
           <AllocationEditor
             holonId={holonID}
             {holosphere}
-            {selfId}
             bind:interiorPercent={allocationConfig.interiorPercent}
             bind:steepness={allocationConfig.steepness}
             bind:nzones={allocationConfig.nzones}
@@ -1826,7 +1821,6 @@
             partners={partners.map((p) => ({ id: p.id, name: p.name }))}
             members={memberShares.map((m) => ({ userId: m.id, percentage: m.percentage }))}
             {people}
-            {cascade}
             saved={savedAllocation}
             on:saved={() => {
               savedAllocation = {
@@ -1890,7 +1884,6 @@
           {holosphere}
           {holonID}
           pot={potRecord}
-          tokens={potTokens}
           {settings}
           {usersById}
           {membersLog}
@@ -2040,10 +2033,6 @@
             </div>
           </details>
         </div>
-        <p class="note">
-          The concentric editor, deploys and per-contributor detail live in
-          <a href={`/${holonID}/flow`}>Flow Management</a>.
-        </p>
       {/if}
     </section>
   {:else}

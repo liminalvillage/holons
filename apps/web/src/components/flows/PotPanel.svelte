@@ -26,9 +26,12 @@
     rightsByRef,
     rightsRoot,
     rootSignatures,
+    addPotToken,
+    removePotToken,
+    safeAppUrl,
     savePayoutAddress,
+    savePotTreasury,
     scoreAllocationMembers,
-    type BundleToken,
     type CutRights,
     type FoldedRights,
     type PotRecord,
@@ -39,6 +42,8 @@
   import {
     collectOnChain,
     deployPotOnChain,
+    describeToken,
+    readTreasury,
     postRootOnChain,
     potReceipts,
     readPotState,
@@ -46,12 +51,12 @@
     sweepOnChain,
     vetoOnChain,
     type PotState,
+    type TreasuryState,
   } from "$lib/holons/pot";
 
   export let holosphere: HoloSphere;
   export let holonID: string;
   export let pot: PotRecord | null;
-  export let tokens: BundleToken[] = [];
   export let settings: any = null;
   export let usersById: Record<string, any> = {};
   /** The holon's membership log, policy entries and identity attestations, as the board already holds them. */
@@ -66,6 +71,7 @@
   const dispatch = createEventDispatcher<{ changed: void; receipts: Record<string, number> }>();
 
   let state: PotState | null = null;
+  let treasury: TreasuryState | null = null;
   let stateFor = "";
   let reading = false;
   async function refreshState() {
@@ -75,7 +81,8 @@
     }
     reading = true;
     try {
-      state = await readPotState(pot, tokens, selfId);
+      state = await readPotState(pot, pot.tokens, selfId);
+      treasury = await readTreasury(pot).catch(() => null);
       dispatch("receipts", potReceipts(state));
     } catch {
       state = null;
@@ -84,7 +91,7 @@
     }
   }
   $: {
-    const key = pot ? `${pot.chainId}:${pot.address}:${tokens.map((t) => t.address).join(",")}:${selfId ?? ""}` : "";
+    const key = pot ? `${pot.chainId}:${pot.address}:${pot.tokens.map((t) => t.address).join(",")}:${pot.treasury?.address ?? ""}:${selfId ?? ""}` : "";
     if (key !== stateFor) {
       stateFor = key;
       void refreshState();
@@ -262,6 +269,54 @@
       dispatch("changed");
     });
 
+  // The treasury and the tokens the Pot is read in.
+  let treasuryAddress = "";
+  let treasuryOpen = false;
+  let tokenAddress = "";
+  async function setTreasury(address: string | null) {
+    if (!pot) return;
+    busy = "treasury";
+    error = "";
+    try {
+      await savePotTreasury(holosphere, holonID, address ? { address } : null);
+      treasuryAddress = "";
+      treasuryOpen = false;
+      dispatch("changed");
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = "";
+    }
+  }
+  async function trackToken() {
+    if (!pot || !tokenAddress.trim()) return;
+    busy = "token";
+    error = "";
+    try {
+      await addPotToken(holosphere, holonID, await describeToken(pot.chainId, tokenAddress));
+      tokenAddress = "";
+      dispatch("changed");
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = "";
+    }
+  }
+  async function untrackToken(address: string) {
+    if (!pot) return;
+    busy = "token";
+    error = "";
+    try {
+      await removePotToken(holosphere, holonID, address);
+      dispatch("changed");
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = "";
+    }
+  }
+  $: safeLink = pot?.treasury ? safeAppUrl(pot.chainId, pot.treasury.address) : null;
+
   const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
   const when = (sec: number) => new Date(sec * 1000).toLocaleDateString();
   const fmt = (v: bigint, decimals: number, unit: string) => `${fromBaseUnits(v, decimals)} ${unit}`;
@@ -303,6 +358,43 @@
           </li>
         {/each}
       </ul>
+      <!-- The treasury: the owners' reserve, read and linked; funding the Pot is their transaction. -->
+      <p>
+        <strong>Treasury</strong>
+        {#if pot.treasury}
+          <a class="addr" href={explorer ? `${explorer}/address/${pot.treasury.address}` : undefined} target="_blank" rel="noreferrer">{short(pot.treasury.address)}</a>
+          {#if treasury && !treasury.contract}<span class="note">a plain address, not a Safe</span>{/if}
+          {#if safeLink}<a href={safeLink} target="_blank" rel="noreferrer">Open in Safe Wallet ↗</a>{/if}
+        {:else}
+          <span class="note">None set. A Safe under the owners' threshold holds what is not yet distributed.</span>
+        {/if}
+        {#if canAttest}<button type="button" disabled={busy !== ""} on:click={() => (treasuryOpen = !treasuryOpen)}>{pot.treasury ? "Change" : "Set a treasury"}</button>{/if}
+      </p>
+      {#if pot.treasury}
+        <ul class="rows">
+          {#each treasury?.lines ?? [] as line (line.unit + (line.address ?? ""))}
+            <li><strong>{line.balance} {line.unit}</strong> <span class="note">in the treasury</span></li>
+          {/each}
+        </ul>
+        <p class="note">To distribute, send from the treasury to the Pot <code>{pot.address}</code> and then count it into the pool.</p>
+      {/if}
+      {#if treasuryOpen}
+        <p>
+          <input type="text" spellcheck="false" placeholder="Safe or wallet address (0x…) on this chain" bind:value={treasuryAddress} />
+          <button type="button" disabled={busy !== "" || !/^0x[0-9a-fA-F]{40}$/.test(treasuryAddress.trim())} on:click={() => setTreasury(treasuryAddress.trim())}>Use this address</button>
+          {#if pot.treasury}<button type="button" disabled={busy !== ""} on:click={() => setTreasury(null)}>Remove</button>{/if}
+        </p>
+      {/if}
+      {#if canAttest}
+        <p>
+          <strong>Read in</strong>
+          {#each pot.tokens as tk (tk.address)}
+            <span class="token">{tk.symbol} <button type="button" aria-label={`Stop reading in ${tk.symbol}`} disabled={busy !== ""} on:click={() => untrackToken(tk.address)}>×</button></span>
+          {/each}
+          <input type="text" spellcheck="false" placeholder="Token address (0x…) to read the Pot in" bind:value={tokenAddress} />
+          <button type="button" disabled={busy !== "" || !/^0x[0-9a-fA-F]{40}$/.test(tokenAddress.trim())} on:click={trackToken}>{busy === "token" ? "Reading…" : "Track"}</button>
+        </p>
+      {/if}
       {#if selfId}
         {#each myRows as r (r.unit.token)}
           <p>
@@ -398,5 +490,20 @@
   }
   .warn {
     color: var(--danger, #b00);
+  }
+  .token {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.1rem 0.5rem;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+  }
+  .token button {
+    padding: 0 0.3rem;
+  }
+  code {
+    word-break: break-all;
+    user-select: all;
   }
 </style>

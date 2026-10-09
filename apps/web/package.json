@@ -29,11 +29,6 @@
     "test:unit": "vitest",
     "lint": "prettier --plugin-search-dir . --check . && eslint .",
     "format": "prettier --plugin-search-dir . --write .",
-    "deploy": "node scripts/deploy.mjs",
-    "deploy:localhost": "node scripts/deploy.mjs --network localhost --all",
-    "deploy:sepolia": "node scripts/deploy.mjs --network sepolia --all",
-    "deploy:gnosis": "node scripts/deploy.mjs --network gnosis --all",
-    "deploy:mainnet": "node scripts/deploy.mjs --network mainnet --all",
     "docs": "typedoc"
   },
   "devDependencies": {

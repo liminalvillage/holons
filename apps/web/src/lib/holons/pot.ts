@@ -24,14 +24,73 @@ import {
   potConstructorArgs,
   potDomain,
   potPostRootArgs,
+  ERC20_META_ABI,
+  describeChain,
+  requiredChainId,
   savePotRecord,
-  type BundleToken,
+  treasuryLines,
   type PotClaimArgs,
   type PotCommitment,
   type PotRecord,
+  type PotToken,
+  type TreasuryLine,
 } from "@holons/core/flows";
-import { ensureChain } from "./bindings";
-import { readProvider } from "./holdings";
+
+/**
+ * A read-only provider on `chainId`: the wallet's when it is there, else
+ * the chain's public endpoint; null when neither can be had.
+ */
+export async function readProvider(
+  wallet: ethers.Provider | null,
+  chainId: number | null,
+): Promise<ethers.Provider | null> {
+  if (wallet) {
+    try {
+      const actual = Number((await wallet.getNetwork()).chainId);
+      if (chainId == null || actual === chainId) return wallet;
+    } catch {
+      // Fall through to the public endpoint.
+    }
+  }
+  const rpc = chainId != null ? describeChain(chainId)?.rpc : null;
+  return rpc
+    ? new ethers.JsonRpcProvider(rpc, chainId!, { staticNetwork: true })
+    : null;
+}
+
+/**
+ * Value never crosses chains: before a write the wallet must be on the
+ * chain the record names. The wallet is asked to switch; a refusal ends the
+ * write. Returns the chain and a fresh provider on it (ethers caches the
+ * network a provider first saw).
+ */
+export async function ensureChain(
+  record: { chainId?: number | null } | null | undefined,
+): Promise<{ chainId: number; provider: ethers.BrowserProvider }> {
+  const eth = (window as any).ethereum;
+  let provider = new ethers.BrowserProvider(eth);
+  let actual = Number((await provider.getNetwork()).chainId);
+  const want = requiredChainId(record);
+  if (want != null && actual !== want) {
+    try {
+      await provider.send("wallet_switchEthereumChain", [
+        { chainId: "0x" + want.toString(16) },
+      ]);
+    } catch {
+      // Refused, or unknown to the wallet: said below.
+    }
+    provider = new ethers.BrowserProvider(eth);
+    actual = Number((await provider.getNetwork()).chainId);
+    if (actual !== want) {
+      throw new Error(
+        `This contract is on ${describeChain(want)?.name}; the wallet is on ${
+          describeChain(actual)?.name
+        }. Switch the wallet to ${describeChain(want)?.name} first.`,
+      );
+    }
+  }
+  return { chainId: actual, provider };
+}
 
 export interface PotCommitmentState {
   epoch: number;
@@ -112,7 +171,7 @@ const walletProvider = (): ethers.BrowserProvider | null =>
 /** Everything the Pot says about itself and the units it holds. */
 export async function readPotState(
   pot: PotRecord,
-  tokens: readonly BundleToken[],
+  tokens: readonly PotToken[],
   viewerId?: string | null,
 ): Promise<PotState | null> {
   const provider = await readProvider(walletProvider(), pot.chainId);
@@ -270,6 +329,7 @@ export async function deployPotOnChain(
     challenge: Number(args.challenge),
     deployedAt: Date.now(),
     txHash: String(tx?.hash ?? ""),
+    tokens: [],
   });
 }
 
@@ -327,4 +387,81 @@ export async function sweepOnChain(
 ): Promise<string> {
   const { contract } = await writer(pot);
   return sent(() => contract.sweep(token));
+}
+
+// ── The treasury ─────────────────────────────────────────────────────────
+// Where the holon keeps value before it decides to distribute it. Read
+// without an account; funding the Pot is the owners' own transaction in
+// Safe Wallet, then "count into the pool" on the Pot.
+
+export interface TreasuryState {
+  address: string;
+  /** Whether there is code at the address (a Safe is a contract). */
+  contract: boolean;
+  lines: TreasuryLine[];
+}
+
+export async function readTreasury(
+  pot: Pick<PotRecord, "chainId" | "tokens" | "treasury">,
+): Promise<TreasuryState | null> {
+  const treasury = pot.treasury;
+  if (!treasury) return null;
+  const provider = await readProvider(walletProvider(), pot.chainId);
+  if (!provider) return null;
+  const big = async (p: Promise<unknown>) => {
+    try {
+      return BigInt(String(await p));
+    } catch {
+      return 0n;
+    }
+  };
+  const [code, native, ...tokenBalances] = await Promise.all([
+    provider.getCode(treasury.address).catch(() => "0x"),
+    provider.getBalance(treasury.address).catch(() => 0n),
+    ...pot.tokens.map((t) =>
+      big(
+        new ethers.Contract(t.address, [...ERC20_META_ABI], provider).balanceOf(
+          treasury.address,
+        ),
+      ),
+    ),
+  ]);
+  const tokens: Record<string, bigint> = {};
+  pot.tokens.forEach(
+    (t, i) => (tokens[t.address.toLowerCase()] = tokenBalances[i]),
+  );
+  return {
+    address: treasury.address,
+    contract: !!code && code !== "0x",
+    lines: treasuryLines(pot.chainId, pot.tokens, { native, tokens }),
+  };
+}
+
+/** An ERC-20 described by its own contract, on the Pot's chain. */
+export async function describeToken(
+  chainId: number | null,
+  address: string,
+): Promise<PotToken> {
+  const addr = String(address ?? "").trim();
+  if (!/^0x[0-9a-fA-F]{40}$/.test(addr))
+    throw new Error("That is not a token address.");
+  const provider = await readProvider(walletProvider(), chainId);
+  if (!provider) throw new Error("No way to read this chain.");
+  const code = await provider.getCode(addr).catch(() => "0x");
+  if (!code || code === "0x")
+    throw new Error("No contract at that address on this chain.");
+  const erc = new ethers.Contract(addr, [...ERC20_META_ABI], provider);
+  const [symbol, decimals, name] = await Promise.all([
+    erc.symbol().catch(() => ""),
+    erc.decimals().catch(() => null),
+    erc.name().catch(() => ""),
+  ]);
+  if (!symbol || decimals == null)
+    throw new Error("That contract is not an ERC-20 token.");
+  return {
+    address: addr,
+    symbol: String(symbol),
+    decimals: Number(decimals),
+    ...(name ? { name: String(name) } : {}),
+  };
 }

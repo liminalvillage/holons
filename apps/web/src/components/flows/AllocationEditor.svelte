@@ -9,68 +9,30 @@
   // next to the Sankey it feeds — move a slider and the diagram above answers
   // immediately, because the parent's `allocate()` runs off these very values.
   //
-  // Saving has two halves, and they are deliberately separable:
-  //
-  //   Save            — writes the settings mirror only. No wallet needed, and
-  //                     it is what every wallet-less surface reads (the kiosk
-  //                     board, this page).
-  //   Update on chain — the Bundle contract's `syncAll`, then the same mirror,
-  //                     both through `lib/holons/allocationSync` so this panel
-  //                     and Flow Management cannot push different things.
-  //
-  // Deploying a bundle is NOT here: it mints a contract and belongs with the
-  // rest of the deploy flow in Flow Management, which this panel links to.
+  // Save writes the settings lens and nothing else: the split lives in one
+  // place, and every surface — and the Pot's rights table — reads it there.
 
-  import { createEventDispatcher, onMount } from "svelte";
-  import { ethers } from "ethers";
+  import { createEventDispatcher } from "svelte";
   import type { HoloSphere } from "holosphere";
-  import { walletAddress } from "../../dashboard/store";
-  import { HolonsManager } from "../../lib/holons/HolonsManager";
   import {
     mirrorAllocation,
-    syncAllocation,
     type SyncMember,
     type SyncPartner,
-  } from "../../lib/holons/allocationSync";
+  } from "../../lib/holons/allocationMirror";
   import {
     allocate,
-    bindingAuthority,
-    bindingPreflight,
-    bundleExplorerUrl,
-    bundlesSameChain,
-    chainStanding,
-    describeChain,
-    addBundleToken,
-    formatHolding,
-    holdingLines,
-    loadBundleRecord,
     normalizeInteriorShares,
     resolveInteriorMembers,
     sharesFromMembers,
     interiorSharePercentages,
   } from "@holons/core/flows";
-  import {
-    bindMember,
-    ensureChain,
-    readBindings,
-    WrongNetworkError,
-    type BundleBindings,
-  } from "../../lib/holons/bindings";
-  import { describeToken, readHoldings } from "../../lib/holons/holdings";
-  import type { BundleHoldings } from "@holons/core/flows";
-  import { ZONE_COLORS } from "../flow/types";
-  import type {
-    CascadeResult,
-    HolonBundleRecord,
-    InteriorMode,
-    InteriorShares,
-  } from "@holons/core/flows";
+  import type { InteriorMode, InteriorShares } from "@holons/core/flows";
+
+  /** One colour per ring, outermost first — the same palette the old concentric editor drew. */
+  const ZONE_COLORS = ["#2dd4bf", "#38bdf8", "#818cf8", "#c084fc", "#f472b6", "#fb923c", "#facc15", "#a3e635"];
 
   export let holonId = "";
   export let holosphere: HoloSphere | null = null;
-  /** The person looking, so the panel can say what the contract holds for them. */
-  export let selfId: string | null = null;
-
   /** The live draft. Bound, so the diagram above moves with the sliders. */
   export let interiorPercent = 50;
   export let steepness = 50;
@@ -97,23 +59,11 @@
     interiorMode?: InteriorMode;
     shares?: InteriorShares;
   } = { interiorPercent: 50, steepness: 50, nzones: 6, zones: {} };
-  /** The cascade the board resolved, for the pre-flight before a bind. */
-  export let cascade: CascadeResult | null = null;
-
   const dispatch = createEventDispatcher<{
-    saved: { onChain: boolean };
+    saved: void;
     reset: void;
   }>();
 
-  let manager: HolonsManager | null = null;
-  let bundle: HolonBundleRecord | null = null;
-  let provider: ethers.BrowserProvider | null = null;
-  let signer: ethers.Signer | null = null;
-  let walletChain: number | null = null;
-  $: bundleChain = describeChain(bundle?.chainId);
-  $: explorer = bundleExplorerUrl(bundle);
-  $: standing = chainStanding(bundle, walletChain);
-  let connecting = false;
   let busy = false;
   let notice = "";
   let noticeKind: "info" | "error" | "success" = "info";
@@ -241,8 +191,6 @@
     !sameShares(normalizeInteriorShares(shares), saved.shares ?? {}) ||
     partners.some((p) => (zoneOf[p.id] ?? 0) !== (saved.zones[p.id] ?? 0));
 
-  $: connected = !!$walletAddress && !!manager;
-
   function say(message: string, kind: "info" | "error" | "success" = "info") {
     notice = message;
     noticeKind = kind;
@@ -268,40 +216,7 @@
     return partners.map((p) => ({ id: p.id, zone: zoneOf[p.id] ?? 0 }));
   }
 
-  async function connect() {
-    if (typeof window === "undefined" || !(window as any).ethereum) {
-      say("No web3 wallet found in this browser.", "error");
-      return;
-    }
-    try {
-      connecting = true;
-      provider = new ethers.BrowserProvider((window as any).ethereum);
-      const accounts = await provider.send("eth_requestAccounts", []);
-      if (!accounts.length) return;
-
-      signer = await provider.getSigner();
-      walletAddress.set(await signer.getAddress());
-
-      const network = await provider.getNetwork();
-      walletChain = Number(network.chainId);
-
-      if (holosphere) {
-        manager = new HolonsManager(provider, holosphere);
-        await manager.connectWallet(signer);
-      }
-      say("");
-    } catch (err: any) {
-      if (err?.code === 4001 || err?.code === "ACTION_REJECTED") {
-        say("Wallet connection rejected.", "error");
-      } else {
-        say(err?.message ?? "Could not connect the wallet.", "error");
-      }
-    } finally {
-      connecting = false;
-    }
-  }
-
-  /** Off-chain only: the record every wallet-less surface reads. */
+  /** Save the split: the settings lens, which every surface reads. */
   async function save() {
     if (!holosphere || !holonId) return;
     try {
@@ -313,188 +228,12 @@
         partnersForSync(),
         shares,
       );
-      say("Saved. Every wallet-less surface reads this.", "success");
-      dispatch("saved", { onChain: false });
+      say("Saved. Every surface reads this.", "success");
+      dispatch("saved");
     } catch (err: any) {
       say(err?.message ?? "Could not save the split.", "error");
     } finally {
       busy = false;
-    }
-  }
-
-  /** The contract, then the same mirror. */
-  async function updateOnChain() {
-    if (!manager || !bundle) return;
-    try {
-      busy = true;
-      // Value never crosses chains: the wallet must be on the Bundle's. A
-      // switch leaves the manager's provider on the old chain — reconnect.
-      const before = walletChain;
-      const { chainId } = await ensureChain(bundle);
-      if (chainId !== before) await connect();
-      if (!manager) return;
-      say("Confirm the transaction in your wallet…");
-      const tx = await syncAllocation({
-        manager,
-        holosphere,
-        holonId,
-        bundleAddress: bundle.address,
-        draft: { interiorPercent, steepness, nzones, interiorMode },
-        members,
-        partners: partnersForSync(),
-        shares,
-      });
-      say(`Submitted — ${tx.hash.slice(0, 10)}… Waiting for confirmation.`);
-      const receipt = await tx.wait();
-      if (receipt?.status === 1) {
-        say("Updated on chain, and mirrored off it.", "success");
-        dispatch("saved", { onChain: true });
-      } else {
-        say("The transaction failed on chain.", "error");
-      }
-    } catch (err: any) {
-      if (err?.code === 4001 || err?.code === "ACTION_REJECTED") {
-        say("Transaction rejected.", "error");
-      } else if (err instanceof WrongNetworkError) {
-        say(err.message, "error");
-      } else {
-        say(err?.message ?? "Could not update on chain.", "error");
-      }
-    } finally {
-      busy = false;
-    }
-  }
-
-  // ── Bindings: who each share is paid to on chain ───────────────────────
-  // Read once the wallet is connected (reads prompt nothing), re-read after
-  // a bind. The contract decides who may bind — the owner wallet or the
-  // wallet already bound — and `bindingAuthority` is that same rule, so the
-  // panel can say so before the chain refuses.
-  let bindings: BundleBindings | null = null;
-  let bindingsKey = "";
-  let bindFor = "";
-  let bindAddress = "";
-  let bindOwnBundle: string | null = null;
-  /** Their Bundle's record as found, so its chain can be held against ours. */
-  let bindOwnRecord: HolonBundleRecord | null = null;
-  let bindBusy = false;
-  $: ownElsewhere = bindOwnRecord ? bundlesSameChain(bundle, bindOwnRecord) : "same";
-
-  // Everyone the root pays, as the draft stands.
-  $: parties = [
-    ...new Map(
-      [
-        ...resolveInteriorMembers({
-          config: { interiorMode },
-          scored: members.map((m) => ({
-            id: String(m.userId),
-            name: String(m.userId),
-            percentage: m.percentage,
-          })),
-          shares,
-        }),
-        ...partners.filter((p) => (zoneOf[p.id] ?? 0) >= 1),
-      ].map((p) => [p.id, { id: p.id, name: partyName(p.id) }]),
-    ).values(),
-  ];
-  $: partyIds = parties
-    .map((p) => p.id)
-    .sort()
-    .join("|");
-  $: if (open && provider && bundle) void loadBindings(bundle.address, partyIds);
-
-  async function loadBindings(address: string, ids: string) {
-    const want = `${address}#${ids}`;
-    if (!provider || want === bindingsKey) return;
-    bindingsKey = want;
-    try {
-      const read = await readBindings(
-        provider,
-        address,
-        ids ? ids.split("|") : [],
-        bundle?.chainId,
-      );
-      if (bindingsKey === want) bindings = read;
-    } catch (err) {
-      console.warn("[flows] bindings read failed", err);
-      if (bindingsKey === want) bindings = null;
-    }
-  }
-
-  const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
-
-  function boundLabel(read: BundleBindings, id: string): string {
-    const addr = read.bound[id];
-    if (!addr && !read.member[id]) return "Not on the contract yet — update on chain first";
-    if (!addr) return "Not bound — held in the contract until claimed";
-    return read.isContract[id] ? `Their Bundle ${short(addr)}` : `Wallet ${short(addr)}`;
-  }
-
-  /** Open the form for one party; their own Bundle is offered first. */
-  async function openBind(id: string) {
-    bindFor = id;
-    bindOwnBundle = null;
-    bindOwnRecord = null;
-    bindAddress = "";
-    if (!holosphere) return;
-    try {
-      const own = await loadBundleRecord(holosphere, id);
-      if (bindFor !== id) return;
-      bindOwnRecord = own;
-      // Their Bundle is a cascade target only on THIS Bundle's chain: value
-      // never crosses chains. Another chain, or one never recorded, is only
-      // said, not offered.
-      bindOwnBundle = own && bundlesSameChain(bundle, own) === "same" ? own.address : null;
-      bindAddress = bindOwnBundle ?? bindings?.bound[id] ?? "";
-    } catch {
-      // No settings for that holon: a plain address can still be typed.
-    }
-  }
-
-  $: bindToOwnBundle =
-    !!bindOwnBundle && bindAddress.trim().toLowerCase() === bindOwnBundle.toLowerCase();
-  $: bindPreflight = bindingPreflight(cascade, bindFor, { toContract: bindToOwnBundle });
-  $: bindAuthority = bindings
-    ? bindingAuthority({
-        wallet: $walletAddress,
-        owner: bindings.owner,
-        bound: bindings.bound[bindFor],
-      })
-    : "none";
-  $: bindValid = /^0x[0-9a-fA-F]{40}$/.test(bindAddress.trim());
-
-  async function sendBind() {
-    if (!signer || !bundle || !bindFor || bindBusy || !bindValid) return;
-    try {
-      bindBusy = true;
-      say("Confirm the transaction in your wallet…");
-      const tx = await bindMember(bundle, {
-        userId: bindFor,
-        beneficiary: bindAddress.trim(),
-      });
-      say(`Submitted — ${tx.hash.slice(0, 10)}… Waiting for confirmation.`);
-      const receipt = await tx.wait();
-      if (receipt?.status === 1) {
-        say("Bound on chain.", "success");
-        bindFor = "";
-        bindingsKey = "";
-        holdingsKey = "";
-        void loadBindings(bundle.address, partyIds);
-      } else {
-        say("The transaction failed on chain.", "error");
-      }
-    } catch (err: any) {
-      if (err?.code === 4001 || err?.code === "ACTION_REJECTED") {
-        say("Transaction rejected.", "error");
-      } else if (err instanceof WrongNetworkError) {
-        say(err.message, "error");
-      } else if (/not authorized/i.test(String(err?.reason ?? err?.message ?? ""))) {
-        say("This wallet can't bind that share.", "error");
-      } else {
-        say(err?.reason ?? err?.shortMessage ?? err?.message ?? "Could not bind.", "error");
-      }
-    } finally {
-      bindBusy = false;
     }
   }
 
@@ -510,79 +249,6 @@
     dispatch("reset");
   }
 
-  // ── What the contract holds ─────────────────────────────────────────
-  // Read whenever a Bundle is known: the wallet's provider when it is on
-  // the Bundle's chain, else the chain's public endpoint, so the panel
-  // shows the litres without a wallet. Re-read after a bind (it pays out
-  // what was held) and after a token is listed.
-  let holdings: BundleHoldings | null = null;
-  let holdingsLoading = false;
-  let holdingsKey = "";
-  $: holdingsWant = bundle
-    ? `${bundle.address}#${bundle.chainId ?? ""}#${(bundle.tokens ?? [])
-        .map((t) => t.address)
-        .join(",")}#${selfId ?? ""}#${!!provider}`
-    : "";
-  $: if (open && bundle) void loadHoldings(bundle, holdingsWant);
-  async function loadHoldings(record: HolonBundleRecord, want: string) {
-    if (want === holdingsKey) return;
-    holdingsKey = want;
-    holdingsLoading = true;
-    try {
-      const read = await readHoldings(provider, record, selfId);
-      if (holdingsKey === want) holdings = read;
-    } catch (err) {
-      console.warn("[flows] holdings read failed", err);
-      if (holdingsKey === want) holdings = null;
-    } finally {
-      if (holdingsKey === want) holdingsLoading = false;
-    }
-  }
-  $: holdingRows = holdingLines(holdings);
-
-  let tokenAddress = "";
-  let tokenBusy = false;
-  let tokenError = "";
-  /** List an ERC-20 on the record: from then on the fund is read in it too. */
-  async function trackToken() {
-    if (!bundle || !holosphere || tokenBusy) return;
-    tokenBusy = true;
-    tokenError = "";
-    try {
-      const token = await describeToken(provider, bundle.chainId ?? null, tokenAddress);
-      bundle = await addBundleToken(holosphere, holonId, token);
-      tokenAddress = "";
-      holdingsKey = "";
-    } catch (err: any) {
-      tokenError = err?.message ?? "Couldn't add that token.";
-    } finally {
-      tokenBusy = false;
-    }
-  }
-
-  // The bundle address is a plain settings read — no wallet, so the panel can
-  // say whether there is anything on chain before anyone connects one.
-  $: void refreshBundle(holonId, holosphere);
-  let lastBundleKey = "";
-  async function refreshBundle(id: string, hs: HoloSphere | null) {
-    const key = `${id}`;
-    if (!id || !hs || key === lastBundleKey) return;
-    lastBundleKey = key;
-    bundle = await loadBundleRecord(hs, id);
-  }
-
-  onMount(async () => {
-    // Only reconnect a wallet the browser already authorised — never prompt.
-    if (typeof window === "undefined" || !(window as any).ethereum) return;
-    try {
-      const accounts = await (window as any).ethereum.request({
-        method: "eth_accounts",
-      });
-      if (accounts?.length) await connect();
-    } catch {
-      // An unavailable wallet is not an error here; the button still offers it.
-    }
-  });
 </script>
 
 <div class="editor" class:open>
@@ -836,190 +502,7 @@
         </p>
       {/if}
 
-      {#if bundle && connected}
-        <!-- ── Who each share is paid to on chain ──────────────────────── -->
-        <div class="bindings">
-          <div class="bindings-head">
-            <span class="bindings-title">Paid on chain to</span>
-            <span class="muted">
-              The contract pushes each share to the address bound to that
-              member; bound to their own Bundle, it is divided again there.
-              Only the owner wallet, or the wallet already bound, can bind.
-            </span>
-          </div>
-          {#if !bindings}
-            <p class="muted empty">Reading the contract…</p>
-          {:else if !parties.length}
-            <p class="muted empty">Nobody in the split yet.</p>
-          {:else}
-            <ul class="bind-list">
-              {#each parties as p (p.id)}
-                <li class="bind-row">
-                  <div class="bind-head">
-                    <span class="bind-name">{p.name}</span>
-                    <span class="bind-status" class:bound={!!bindings.bound[p.id]}
-                      >{boundLabel(bindings, p.id)}</span
-                    >
-                    <button
-                      type="button"
-                      class="btn ghost"
-                      disabled={bindBusy || !bindings.member[p.id]}
-                      aria-expanded={bindFor === p.id}
-                      on:click={() => (bindFor === p.id ? (bindFor = "") : openBind(p.id))}
-                      >{bindings.bound[p.id] ? "Rebind" : "Bind"}</button
-                    >
-                  </div>
-                  {#if bindFor === p.id}
-                    <div class="bind-form">
-                      <label class="bind-field">
-                        <span class="muted">Pay to</span>
-                        <input
-                          type="text"
-                          spellcheck="false"
-                          placeholder="0x…"
-                          bind:value={bindAddress}
-                        />
-                      </label>
-                      {#if bindOwnBundle}
-                        <button
-                          type="button"
-                          class="bind-own"
-                          class:on={bindToOwnBundle}
-                          on:click={() => (bindAddress = bindOwnBundle ?? "")}
-                          >{p.name}'s own Bundle — {short(bindOwnBundle)}</button
-                        >
-                      {/if}
-                      {#if bindOwnRecord && ownElsewhere !== "same"}
-                        <p class="bind-warn">
-                          {#if ownElsewhere === "different"}
-                            {p.name}'s own Bundle is on {describeChain(bindOwnRecord.chainId)
-                              ?.name}; this one is on {bundleChain?.name}. Value never crosses
-                            chains, so it cannot receive this share — bind a wallet, or a
-                            Bundle on {bundleChain?.name}.
-                          {:else}
-                            {p.name}'s own Bundle did not record its network, so it is not
-                            offered: value never crosses chains.
-                          {/if}
-                        </p>
-                      {/if}
-                      {#if bindToOwnBundle}
-                        <p class="muted">
-                          Divided again on chain across {bindPreflight.nodes} holons.
-                        </p>
-                        {#each bindPreflight.warnings as w (w)}
-                          <p class="bind-warn">
-                            {#if w === "loop"}
-                              Part of it loops back: {bindPreflight.loops[0]
-                                .map(partyName)
-                                .join(" → ")}. That part rests where the loop closes.
-                            {:else if w === "large"}
-                              {bindPreflight.nodes} holons in one push — a large transaction.
-                            {:else}
-                              {bindPreflight.depth} hops deep — a large transaction.
-                            {/if}
-                          </p>
-                        {/each}
-                      {/if}
-                      {#if bindAuthority === "none"}
-                        <p class="bind-warn">
-                          This wallet can't bind that share.
-                          {#if bindings.owner}The owner wallet is {short(bindings.owner)}.{/if}
-                        </p>
-                      {/if}
-                      <div class="buttons">
-                        <button
-                          type="button"
-                          class="btn ghost"
-                          disabled={bindBusy}
-                          on:click={() => (bindFor = "")}>Cancel</button
-                        >
-                        <button
-                          type="button"
-                          class="btn primary"
-                          disabled={bindBusy || !bindValid || bindAuthority === "none"}
-                          on:click={sendBind}>Bind on chain</button
-                        >
-                      </div>
-                    </div>
-                  {/if}
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </div>
-      {/if}
-
       <div class="actions">
-        <div class="chain">
-          {#if bundle}
-            <!-- Where the contract is: network first, address in full. -->
-            <span class="chain-net" class:unknown={!bundleChain}
-              >{bundleChain ? bundleChain.name : "Network not recorded"}</span
-            >
-            <code class="chain-addr" title={bundle.address}>{bundle.address}</code>
-            {#if explorer}
-              <a class="chain-link" href={explorer} target="_blank" rel="noopener noreferrer"
-                >explorer ↗</a
-              >
-            {/if}
-            <!-- The contract's own books: per unit, what it holds, how much
-                 waits for members who have not bound a wallet, and what
-                 waits for the person looking. -->
-            <div class="holds">
-              {#if holdingRows.length}
-                {#each holdingRows as line (line.unit + (line.address ?? ""))}
-                  <div class="hold-row">
-                    <span class="hold-total">{formatHolding(line.total, line.unit)}</span>
-                    <span class="muted">
-                      {#if line.held > 0}{formatHolding(line.held, line.unit)} waiting for members to bind{/if}
-                      {#if line.held > 0 && line.free > 0} · {/if}
-                      {#if line.free > 0}{formatHolding(line.free, line.unit)} not divided yet{/if}
-                    </span>
-                    {#if (line.mine ?? 0) > 0}
-                      <span class="hold-mine">{formatHolding(line.mine ?? 0, line.unit)} waiting for you</span>
-                    {/if}
-                  </div>
-                {/each}
-              {:else if holdingsLoading}
-                <span class="muted">Reading the contract…</span>
-              {:else if holdings}
-                <span class="muted">Holds nothing yet.</span>
-              {:else}
-                <span class="muted">Couldn't read the contract from here.</span>
-              {/if}
-              <div class="token-form">
-                <input
-                  type="text"
-                  spellcheck="false"
-                  placeholder="Token address (0x…) to read the fund in"
-                  bind:value={tokenAddress}
-                  disabled={tokenBusy || !holosphere}
-                />
-                <button
-                  type="button"
-                  class="btn ghost"
-                  disabled={tokenBusy || !holosphere || !/^0x[0-9a-fA-F]{40}$/.test(tokenAddress.trim())}
-                  on:click={trackToken}>{tokenBusy ? "Reading…" : "Track token"}</button
-                >
-              </div>
-              {#if tokenError}<span class="chain-warn">{tokenError}</span>{/if}
-            </div>
-            {#if standing.kind === "elsewhere"}
-              <span class="chain-warn"
-                >Your wallet is on {standing.wallet.name}; this Bundle is on {standing
-                  .bundle.name}.</span
-              >
-            {:else if standing.kind === "unrecorded" && connected}
-              <span class="muted">Wallet on {standing.wallet.name}.</span>
-            {/if}
-          {:else}
-            <span class="muted">
-              Nothing deployed yet — deploy a bundle in
-              <a href="/{holonId}/flow">Flow Management</a>.
-            </span>
-          {/if}
-        </div>
-
         <div class="buttons">
           <button
             type="button"
@@ -1032,27 +515,9 @@
             class="btn"
             on:click={save}
             disabled={!changed || busy || !holosphere}
-            title="Save off-chain, where every wallet-less surface reads it"
+            title="Save the split; every surface reads it"
             >Save</button
           >
-          {#if bundle}
-            {#if connected}
-              <button
-                type="button"
-                class="btn primary"
-                on:click={updateOnChain}
-                disabled={busy}>Update on chain</button
-              >
-            {:else}
-              <button
-                type="button"
-                class="btn primary"
-                on:click={connect}
-                disabled={connecting}
-                >{connecting ? "Connecting…" : "Connect wallet"}</button
-              >
-            {/if}
-          {/if}
         </div>
       </div>
 
@@ -1500,172 +965,6 @@
     display: flex;
     gap: 0.5rem;
     margin-left: auto;
-  }
-
-  .chain {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.35rem 0.5rem;
-    font-size: 0.78rem;
-  }
-  .chain-net {
-    font-size: 0.66rem;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    padding: 0.1rem 0.45rem;
-    border-radius: 0.3rem;
-    background: #0f766e;
-    color: #f0fdfa;
-  }
-  .chain-net.unknown {
-    background: #92400e;
-  }
-  .chain-addr {
-    font-family: ui-monospace, monospace;
-    color: #cbd5e1;
-    word-break: break-all;
-    user-select: all;
-  }
-  .chain-link {
-    color: #5eead4;
-  }
-  .chain-warn {
-    flex-basis: 100%;
-    color: #fbbf24;
-  }
-  .holds {
-    flex-basis: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-    margin-top: 0.3rem;
-  }
-  .hold-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.2rem 0.6rem;
-  }
-  .hold-total {
-    font-weight: 700;
-    color: #f1f5f9;
-  }
-  .hold-mine {
-    flex-basis: 100%;
-    color: #5eead4;
-  }
-  .token-form {
-    display: flex;
-    gap: 0.4rem;
-    margin-top: 0.2rem;
-  }
-  .token-form input {
-    flex: 1;
-    min-width: 0;
-    padding: 0.35rem 0.5rem;
-    border: 1px solid #334155;
-    border-radius: 0.4rem;
-    background: #0f172a;
-    color: #e2e8f0;
-    font: inherit;
-    font-size: 0.78rem;
-  }
-
-  /* ── Bindings ───────────────────────────────────────────────────────── */
-  .bindings {
-    margin: 1rem 0 0.4rem;
-    padding-top: 0.8rem;
-    border-top: 1px solid #1e293b;
-  }
-  .bindings-head {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    margin-bottom: 0.4rem;
-  }
-  .bindings-title {
-    color: #e2e8f0;
-    font-size: 0.85rem;
-    font-weight: 500;
-  }
-  .bind-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  .bind-row {
-    border-top: 1px solid #1e293b;
-    padding: 0.45rem 0;
-  }
-  .bind-head {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      "name btn"
-      "status btn";
-    align-items: center;
-    column-gap: 0.6rem;
-  }
-  .bind-name {
-    grid-area: name;
-    color: #e2e8f0;
-    font-size: 0.85rem;
-    font-weight: 500;
-  }
-  .bind-status {
-    grid-area: status;
-    color: #94a3b8;
-    font-size: 0.78rem;
-  }
-  .bind-status.bound {
-    color: #5eead4;
-  }
-  .bind-head .btn {
-    grid-area: btn;
-  }
-  .bind-form {
-    padding: 0.4rem 0 0.2rem;
-  }
-  .bind-field {
-    display: block;
-  }
-  .bind-field input {
-    display: block;
-    width: 100%;
-    margin-top: 0.25rem;
-    padding: 0.45rem 0.6rem;
-    font-size: 0.82rem;
-    font-family: ui-monospace, monospace;
-    color: #e2e8f0;
-    background: #0f172a;
-    border: 1px solid #334155;
-    border-radius: 0.45rem;
-  }
-  .bind-own {
-    display: block;
-    width: 100%;
-    margin-top: 0.4rem;
-    padding: 0.4rem 0.6rem;
-    text-align: left;
-    font-size: 0.8rem;
-    color: #94a3b8;
-    background: transparent;
-    border: 1px solid #334155;
-    border-radius: 0.45rem;
-  }
-  .bind-own.on {
-    color: #5eead4;
-    border-color: #0f766e;
-  }
-  .bind-warn {
-    margin: 0.4rem 0 0;
-    font-size: 0.8rem;
-    color: #fbbf24;
-  }
-  .bind-form .buttons {
-    margin-top: 0.5rem;
   }
 
   .btn {

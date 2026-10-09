@@ -4,7 +4,6 @@
     import { ID, walletAddress } from "../dashboard/store";
     import { page } from "$app/stores";
     import type { HoloSphere } from "holosphere";
-    import { ethers } from 'ethers';
     import User from "./User.svelte";
     import PieChart3D from "./PieChart3D.svelte";
     import { expenseCurrency } from "../utils/expenseCalculations";
@@ -14,7 +13,6 @@
     import { readHolonSettings } from "@holons/core/settings";
     import TitleBar from "./shared/TitleBar.svelte";
     import { nameMap, resolvedName, resolveName, resolvedInitials } from '$lib/stores/nameResolver';
-    import { HolonsManager } from "../lib/holons/HolonsManager";
     interface User {
         id?: string;
         username?: string;
@@ -60,9 +58,6 @@
     }
 
     // Contract share state
-    let manager: HolonsManager | null = null;
-    let contractShares: Record<string, { sharePercent: number; etherFormatted: string }> = {};
-    let contractSharesLoaded = false;
 
     // Initialize with the core default: egalitarian, every weight 0, until
     // the holon's saved equation loads.
@@ -265,15 +260,12 @@
                 valueEquationLoaded = false;
                 currenciesLoaded = false;
                 expensesLoaded = false;
-                contractSharesLoaded = false;
                 expenseStore = {};
                 availableCurrencies = [];
-                contractShares = {};
                 aggregatesByUser = {};
                 aggregatesLoaded = false;
                 reaSubscribedFor = null;
                 loadEquation();
-                loadContractShares();
                 fetchInitialUsersAndSubscribe();
                 subscribeToSettings();
                 subscribeToExpenses();
@@ -301,15 +293,12 @@
                 valueEquationLoaded = false;
                 currenciesLoaded = false;
                 expensesLoaded = false;
-                contractSharesLoaded = false;
                 expenseStore = {};
                 availableCurrencies = [];
-                contractShares = {};
                 aggregatesByUser = {};
                 aggregatesLoaded = false;
                 reaSubscribedFor = null;
                 loadEquation();
-                loadContractShares();
                 fetchInitialUsersAndSubscribe();
                 subscribeToSettings();
                 subscribeToExpenses();
@@ -329,7 +318,6 @@
         // Initial load if we have an ID
         if (holonID) {
             loadEquation();
-            loadContractShares();
             fetchInitialUsersAndSubscribe();
             subscribeToSettings();
             subscribeToExpenses();
@@ -375,39 +363,6 @@
         } catch (error) {
             console.error('Error loading equation settings:', error);
             valueEquationLoaded = true;
-        }
-    }
-
-    // Load contract shares for interior members
-    async function loadContractShares() {
-        if (!holosphere || !holonID) {
-            contractSharesLoaded = true;
-            return;
-        }
-
-        try {
-            // Initialize manager if we have a wallet connection
-            if ($walletAddress && window.ethereum) {
-                const provider = new ethers.BrowserProvider(window.ethereum);
-                manager = new HolonsManager(provider, holosphere);
-                await manager.initialize();
-
-                // Get interior members with their shares
-                const members = await manager.getInteriorMembersWithBalances(holonID);
-
-                // Convert to lookup by userId
-                contractShares = {};
-                for (const member of members) {
-                    contractShares[member.userId] = {
-                        sharePercent: member.sharePercent,
-                        etherFormatted: member.etherFormatted
-                    };
-                }
-            }
-            contractSharesLoaded = true;
-        } catch (error) {
-            console.error('Error loading contract shares:', error);
-            contractSharesLoaded = true;
         }
     }
 
@@ -1003,7 +958,6 @@
                                     {/each}
                                     <th class="p-2 font-semibold vertical-header"><span>Score</span></th>
                                     <th class="p-2 font-semibold vertical-header"><span>%</span></th>
-                                    <th class="p-2 font-semibold vertical-header"><span>Share</span></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1098,17 +1052,6 @@
                                                     {percentage.toFixed(1)}%
                                                 </span>
                                             </div>
-                                        </td>
-                                        <td class="p-2 text-center">
-                                            {#if contractShares[userId] || contractShares[user.id]}
-                                                {@const share = contractShares[userId] || contractShares[user.id]}
-                                                <div class="flex flex-col">
-                                                    <span class="text-green-400 text-xs font-semibold">{share.sharePercent.toFixed(1)}%</span>
-                                                    <span class="text-[10px] text-gray-400">{share.etherFormatted}</span>
-                                                </div>
-                                            {:else}
-                                                <span class="text-gray-500 text-xs">--</span>
-                                            {/if}
                                         </td>
                                     </tr>
                                 {/each}
