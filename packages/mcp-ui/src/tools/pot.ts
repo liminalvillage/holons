@@ -7,7 +7,10 @@
 // deployed Pot, cuts and publishes tables from what the caller read off the
 // contract (`received`), hands back the exact commitment to sign and post,
 // records the signatures that come back, and hands a party the arguments of
-// their one-transaction collect. Every rule lives in core.
+// their one-transaction collect. It also keeps the Pot's record: the tokens
+// it is read in and the TREASURY that feeds it — a Safe under the owners'
+// threshold, or any address, where value waits before the owners move it
+// into the Pot. Every rule lives in core.
 
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -28,8 +31,12 @@ import {
   potPostRootArgs,
   rightsByRef,
   rootSignatures,
+  addPotToken,
+  removePotToken,
+  safeAppUrl,
   savePayoutAddress,
   savePotRecord,
+  savePotTreasury,
   scoreAllocationMembers,
   type RightsTable,
 } from '@holons/core/flows';
@@ -65,26 +72,109 @@ export function registerPotTools(server: McpServer, deps: ToolDeps): void {
     'pot_record_set',
     {
       description:
-        'Record a holon\'s deployed Pot (address + chain) on its settings document, so every surface reads the same contract. Deploying is a wallet\'s job (kiosk, web); this only records. Wraps @holons/core/flows savePotRecord.',
+        'Record a holon\'s deployed Pot (address + chain) on its settings document, so every surface reads the same contract — optionally with the ERC-20 `tokens` it is read in and the `treasury` (a Safe or any address on the same chain) that feeds it. Deploying is a wallet\'s job (kiosk, web); this only records. Wraps @holons/core/flows savePotRecord.',
       inputSchema: {
         holon: z.string(),
         address: z.string().describe('0x address of the Pot.'),
         chainId: z.number().int().positive(),
         challenge: z.number().int().nonnegative().optional().describe('Challenge window in seconds, as deployed.'),
         txHash: z.string().optional(),
+        tokens: z
+          .array(z.object({ address: z.string(), symbol: z.string(), decimals: z.number().int().min(0).max(36), name: z.string().optional() }))
+          .optional()
+          .describe('The ERC-20s the Pot is read in besides the chain\'s coin (the EVO voucher, say). Omit to keep what is recorded.'),
+        treasury: z
+          .object({ address: z.string(), kind: z.enum(['safe', 'address']).optional() })
+          .optional()
+          .describe('Where the holon keeps value before it is distributed. Omit to keep what is recorded.'),
       },
     },
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
+        const existing = await loadPotRecord(hs, args.holon);
         const pot = await savePotRecord(hs, args.holon, {
           address: args.address,
           chainId: args.chainId,
           ...(args.challenge != null ? { challenge: args.challenge } : {}),
           ...(args.txHash ? { txHash: args.txHash } : {}),
-          deployedAt: Date.now(),
+          deployedAt: existing?.deployedAt ?? Date.now(),
+          tokens: args.tokens ?? existing?.tokens ?? [],
+          ...(args.treasury
+            ? { treasury: { address: args.treasury.address, kind: args.treasury.kind ?? 'safe', setAt: Date.now() } }
+            : existing?.treasury
+              ? { treasury: existing.treasury }
+              : {}),
         });
         return ok({ success: true, holon: args.holon, pot });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  server.registerTool(
+    'pot_treasury_set',
+    {
+      description:
+        'Set, or clear with no address, the TREASURY that feeds a holon\'s Pot: a Safe under the owners\' threshold (or any address) on the Pot\'s chain, where value waits until the owners move a lunation\'s income into the Pot. The treasury never appears in the log — only what reaches the Pot is income. Returns the Safe Wallet link when Safe runs on that chain. Wraps @holons/core/flows savePotTreasury.',
+      inputSchema: {
+        holon: z.string(),
+        address: z.string().optional().describe('0x address; omit to clear.'),
+        kind: z.enum(['safe', 'address']).optional().describe("'safe' (default) or a plain 'address'."),
+      },
+    },
+    async (args) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        const pot = await savePotTreasury(hs, args.holon, args.address ? { address: args.address, kind: args.kind } : null);
+        return ok({
+          success: true,
+          holon: args.holon,
+          treasury: pot.treasury ?? null,
+          safeApp: pot.treasury ? safeAppUrl(pot.chainId, pot.treasury.address) : null,
+          fund: pot.treasury ? `Send from ${pot.treasury.address} to the Pot ${pot.address}, then sweep the token on the Pot.` : null,
+        });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  server.registerTool(
+    'pot_token_add',
+    {
+      description: 'List an ERC-20 on the holon\'s Pot record, so every surface reads the Pot in it from then on (address, symbol, decimals as the token contract says). Wraps addPotToken.',
+      inputSchema: {
+        holon: z.string(),
+        address: z.string(),
+        symbol: z.string(),
+        decimals: z.number().int().min(0).max(36),
+        name: z.string().optional(),
+      },
+    },
+    async (args) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        const pot = await addPotToken(hs, args.holon, { address: args.address, symbol: args.symbol, decimals: args.decimals, ...(args.name ? { name: args.name } : {}) });
+        return ok({ success: true, holon: args.holon, tokens: pot.tokens });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  server.registerTool(
+    'pot_token_remove',
+    {
+      description: 'Drop a token from the holon\'s Pot record. Wraps removePotToken.',
+      inputSchema: { holon: z.string(), address: z.string() },
+    },
+    async (args) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        const pot = await removePotToken(hs, args.holon, args.address);
+        return ok({ success: true, holon: args.holon, tokens: pot.tokens });
       } catch (err) {
         return fail((err as Error).message);
       }

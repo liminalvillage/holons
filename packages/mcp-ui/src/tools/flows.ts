@@ -208,13 +208,12 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
     'allocation_cascade',
     {
       description:
-        "Follow a holon's fund allocation down through its recipients' OWN splits: a member's id is their personal holon's id, so a member who configured an allocation there passes part of what they receive further. Returns the tree, where the pot finally rests per party (`leaves`, summing to 100% / to `total`), any loops, and a pre-flight summary (`stuck` = holons where an on-chain Bundle would strand funds). Read-only. Wraps @holons/core/flows: loadCascadeChildren + resolveCascade.",
+        "Follow a holon's fund allocation down through its recipients' OWN splits: a member's id is their personal holon's id, so a member who configured an allocation there passes part of what they receive further. Returns the tree, where the pot finally rests per party (`leaves`, summing to 100% / to `total`), any loops, and a pre-flight summary (`stuck` = holons whose split names nobody for part of what they receive). Read-only. Wraps @holons/core/flows: loadCascadeChildren + resolveCascade.",
       inputSchema: {
         holon: z.string(),
         total: z.number().positive().optional().describe('The pot to divide; omit for percentages only.'),
         unit: z.string().optional(),
         maxDepth: z.number().int().min(0).max(6).optional(),
-        rail: z.enum(['rights', 'chain']).optional().describe("'chain' follows only holons that deployed a Bundle."),
       },
     },
     async (args) => {
@@ -228,7 +227,6 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
         const loaded = await loadCascadeChildren(hs, rootPartyIds, {
           rootId: args.holon,
           maxDepth: args.maxDepth,
-          rail: args.rail,
           scoreOf: scoreOf(hs),
         });
         const pot = args.total == null ? await potOf(hs, args.holon, args.unit) : null;
@@ -251,7 +249,6 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
           truncated: cascade.truncated || loaded.truncated,
           holonsRead: loaded.visited,
           ...(pot ? { pot } : {}),
-          ...(args.rail === 'chain' ? { bundles: loaded.bundles } : {}),
         });
       } catch (err) {
         return fail((err as Error).message);

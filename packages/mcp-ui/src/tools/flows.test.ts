@@ -93,11 +93,6 @@ describe('allocation tools', () => {
       ['u3', 'terminal'],
       ['u1', 'retained'],
     ]);
-
-    // On the chain rail nobody deployed a bundle, so nothing cascades.
-    const chain = payload(await tools.get('allocation_cascade')!({ holon: 'C', rail: 'chain' }));
-    expect(chain.leaves.u1.percentage).toBeCloseTo(50);
-    expect(chain.bundles).toEqual({});
   });
 });
 

@@ -134,4 +134,28 @@ describe('pot tools', () => {
     expect(bad.isError).toBe(true);
     expect(payload(bad).problems[0]).toMatch(/not after/);
   });
+
+  it('keeps the tokens and the treasury on the Pot record', async () => {
+    const { server, tools } = capture();
+    const { deps, db } = fakeDeps();
+    registerPotTools(server, deps);
+    const SAFE = '0x' + 'c'.repeat(40);
+    const rec = payload(await tools.get('pot_record_set')!({ holon: GROVE, address: POT, chainId: 11155111, tokens: [{ address: EVO, symbol: 'EVO', decimals: 18 }] }));
+    expect(rec.pot.tokens).toEqual([{ address: EVO, symbol: 'EVO', decimals: 18 }]);
+    const set = payload(await tools.get('pot_treasury_set')!({ holon: GROVE, address: SAFE }));
+    expect(set.treasury).toMatchObject({ address: SAFE, kind: 'safe' });
+    expect(set.safeApp).toBe(`https://app.safe.global/home?safe=sep:${SAFE}`);
+    expect(set.fund).toMatch(/then sweep/);
+    // A later record write without tokens or treasury keeps both.
+    const again = payload(await tools.get('pot_record_set')!({ holon: GROVE, address: POT, chainId: 11155111, challenge: 10 }));
+    expect(again.pot.tokens).toHaveLength(1);
+    expect(again.pot.treasury.address).toBe(SAFE);
+    expect(payload(await tools.get('pot_token_remove')!({ holon: GROVE, address: EVO })).tokens).toEqual([]);
+    expect(payload(await tools.get('pot_token_add')!({ holon: GROVE, address: EVO, symbol: 'EVO', decimals: 18, name: 'Olive oil' })).tokens[0].name).toBe('Olive oil');
+    const cleared = payload(await tools.get('pot_treasury_set')!({ holon: GROVE }));
+    expect(cleared.treasury).toBeNull();
+    expect(((db[`${GROVE}/settings`][GROVE] as any).pot as any).treasury).toBeUndefined();
+    const state = payload(await tools.get('pot_rights_state')!({ holon: GROVE }));
+    expect(state.pot.tokens).toHaveLength(1);
+  });
 });
