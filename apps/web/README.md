@@ -57,14 +57,14 @@ npm run dev
 
 ### Available Scripts
 
-| Command                    | Description                         |
-| -------------------------- | ----------------------------------- |
-| `npm run dev`              | Start development server            |
-| `npm run build`            | Build for production                |
-| `npm run preview`          | Preview production build            |
-| `npm run check`            | Run type checking                   |
-| `npm run lint`             | Run linter                          |
-| `npm run format`           | Format code with Prettier           |
+| Command           | Description               |
+| ----------------- | ------------------------- |
+| `npm run dev`     | Start development server  |
+| `npm run build`   | Build for production      |
+| `npm run preview` | Preview production build  |
+| `npm run check`   | Run type checking         |
+| `npm run lint`    | Run linter                |
+| `npm run format`  | Format code with Prettier |
 
 ## Top 30 Features
 
@@ -110,7 +110,7 @@ npm run dev
 
 22. **The Pot and its treasury** - A holon's value held on chain (`Pot.sol`), divided by a rights table committed at each new moon and collected by proof; a Safe treasury feeds it (Flows → The Pot)
 
-24. **Flow Split Management** - Adjust flow distribution between interior (members) and exterior (federated holons) with steepness and zone parameters
+23. **Flow Split Management** - Adjust flow distribution between interior (members) and exterior (federated holons) with steepness and zone parameters
 
 ### Federation & Integration
 
@@ -149,11 +149,11 @@ src/
 
 ## Key Services
 
-| Service           | Description                                          |
-| ----------------- | ---------------------------------------------------- |
-| `QueryManager`    | Centralized HoloSphere data queries with caching     |
-| `SessionManager`  | Design Streams session lifecycle management          |
-| `QRActionService` | QR code action processing and dispatch               |
+| Service           | Description                                      |
+| ----------------- | ------------------------------------------------ |
+| `QueryManager`    | Centralized HoloSphere data queries with caching |
+| `SessionManager`  | Design Streams session lifecycle management      |
+| `QRActionService` | QR code action processing and dispatch           |
 
 ## Quick Start for Users
 
