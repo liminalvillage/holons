@@ -27,9 +27,12 @@
     rightsByRef,
     rightsRoot,
     rootSignatures,
+    addPotToken,
+    removePotToken,
+    safeAppUrl,
     savePayoutAddress,
+    savePotTreasury,
     scoreAllocationMembers,
-    type BundleToken,
     type CutRights,
     type FoldedRights,
     type PotRecord,
@@ -48,19 +51,21 @@
   import {
     collectOnChain,
     deployPotOnChain,
+    describeToken,
     postRootOnChain,
     potReceipts,
     readPotState,
+    readTreasury,
     signCommitment,
     sweepOnChain,
     vetoOnChain,
     type PotState,
+    type TreasuryState,
   } from "$lib/pot";
 
   export let hs: HoloSphere;
   export let holon: string;
   export let pot: PotRecord | null;
-  export let tokens: BundleToken[] = [];
   export let settings: any = null;
   export let usersById: Record<string, any> = {};
   export let selfId: string | null = null;
@@ -77,6 +82,7 @@
 
   // ── The chain ───────────────────────────────────────────────────────────
   let state: PotState | null = null;
+  let treasury: TreasuryState | null = null;
   let stateFor = "";
   let reading = false;
   async function refreshState() {
@@ -86,8 +92,9 @@
     }
     reading = true;
     try {
-      state = await readPotState(pot, tokens, selfId);
+      state = await readPotState(pot, pot.tokens, selfId);
       dispatch("receipts", potReceipts(state));
+      treasury = await readTreasury(pot).catch(() => null);
     } catch {
       state = null;
     } finally {
@@ -96,7 +103,7 @@
   }
   $: {
     const key = pot
-      ? `${pot.chainId}:${pot.address}:${tokens.map((t) => t.address).join(",")}:${selfId ?? ""}`
+      ? `${pot.chainId}:${pot.address}:${pot.tokens.map((t) => t.address).join(",")}:${pot.treasury?.address ?? ""}:${selfId ?? ""}`
       : "";
     if (key !== stateFor) {
       stateFor = key;
@@ -394,6 +401,73 @@
     }
   }
 
+  // ── The treasury and the tokens ─────────────────────────────────────────
+  // The treasury is the owners' reserve; the panel reads it and links out.
+  // Funding the Pot is a transfer from there (in Safe{Wallet}) and, for a
+  // token, the "count into the pool" sweep above. Tokens listed here are the
+  // units the Pot is read in on every surface.
+  let treasuryAddress = "";
+  let treasuryOpen = false;
+  let tokenAddress = "";
+  let copied = false;
+  async function setTreasury(address: string | null) {
+    if (!pot) return;
+    busy = "treasury";
+    error = "";
+    try {
+      await savePotTreasury(hs, holon, address ? { address } : null);
+      treasuryAddress = "";
+      treasuryOpen = false;
+      dispatch("changed");
+    } catch (err) {
+      fail(err);
+    } finally {
+      busy = "";
+    }
+  }
+  async function trackToken() {
+    if (!pot || !tokenAddress.trim()) return;
+    busy = "token";
+    error = "";
+    try {
+      const token = await describeToken(pot.chainId, tokenAddress);
+      await addPotToken(hs, holon, token);
+      tokenAddress = "";
+      dispatch("changed");
+    } catch (err) {
+      fail(err);
+    } finally {
+      busy = "";
+    }
+  }
+  async function untrackToken(address: string) {
+    if (!pot) return;
+    busy = "token";
+    error = "";
+    try {
+      await removePotToken(hs, holon, address);
+      dispatch("changed");
+    } catch (err) {
+      fail(err);
+    } finally {
+      busy = "";
+    }
+  }
+  async function copyPotAddress() {
+    if (!pot) return;
+    try {
+      await navigator.clipboard.writeText(pot.address);
+      copied = true;
+      setTimeout(() => (copied = false), 1500);
+    } catch {
+      // No clipboard on this device: the address is selectable text anyway.
+    }
+  }
+  $: safeLink = pot?.treasury
+    ? safeAppUrl(pot.chainId, pot.treasury.address)
+    : null;
+  $: treasuryValid = /^0x[0-9a-fA-F]{40}$/.test(treasuryAddress.trim());
+
   const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
   const when = (sec: number) => new Date(sec * 1000).toLocaleDateString();
   const fmt = (v: bigint, decimals: number, unit: string) =>
@@ -461,6 +535,122 @@
           </li>
         {/each}
       </ul>
+
+      <!-- The treasury: the owners' reserve, read and linked, never moved from here -->
+      <div class="treasury">
+        <div class="trow">
+          <span class="k">{$t("pot.treasury")}</span>
+          {#if pot.treasury}
+            <a
+              class="addr"
+              href={explorer
+                ? `${explorer}/address/${pot.treasury.address}`
+                : undefined}
+              target="_blank"
+              rel="noreferrer">{short(pot.treasury.address)}</a
+            >
+            {#if treasury && !treasury.contract}
+              <span class="memo">{$t("pot.treasuryPlain")}</span>
+            {/if}
+            {#if safeLink}
+              <a
+                class="chip link"
+                href={safeLink}
+                target="_blank"
+                rel="noreferrer">{$t("pot.treasuryOpen")}</a
+              >
+            {/if}
+          {:else}
+            <span class="memo">{$t("pot.treasuryNone")}</span>
+          {/if}
+          {#if canAttest}
+            <button
+              class="chip"
+              disabled={busy !== ""}
+              on:click={() => (treasuryOpen = !treasuryOpen)}
+              >{pot.treasury
+                ? $t("pot.treasuryChange")
+                : $t("pot.treasurySet")}</button
+            >
+          {/if}
+        </div>
+        {#if pot.treasury}
+          <ul class="units">
+            {#each treasury?.lines ?? [] as line (line.unit + (line.address ?? ""))}
+              <li>
+                <span class="amt">{line.balance} {line.unit}</span>
+                <span class="memo">{$t("pot.treasuryHolds")}</span>
+              </li>
+            {/each}
+          </ul>
+          <p class="sub fund">
+            {$t("pot.fundHint")}
+            <code class="addr" title={pot.address}>{pot.address}</code>
+            <button class="chip" on:click={copyPotAddress}
+              >{copied ? $t("pot.copied") : $t("pot.copy")}</button
+            >
+          </p>
+        {/if}
+        {#if treasuryOpen}
+          <div class="trow">
+            <input
+              type="text"
+              autocapitalize="none"
+              spellcheck="false"
+              placeholder={$t("pot.treasuryHint")}
+              bind:value={treasuryAddress}
+            />
+            <button
+              class="btn"
+              disabled={busy !== "" || !treasuryValid}
+              on:click={() => setTreasury(treasuryAddress.trim())}
+              >{$t("pot.treasurySave")}</button
+            >
+            {#if pot.treasury}
+              <button
+                class="chip danger"
+                disabled={busy !== ""}
+                on:click={() => setTreasury(null)}
+                >{$t("pot.treasuryClear")}</button
+              >
+            {/if}
+          </div>
+        {/if}
+      </div>
+
+      <!-- The tokens the Pot is read in -->
+      {#if canAttest}
+        <div class="trow tokens">
+          <span class="k">{$t("pot.tokens")}</span>
+          {#each pot.tokens as tk (tk.address)}
+            <span class="chip static"
+              >{tk.symbol}
+              <button
+                class="x"
+                aria-label={$t("pot.tokenRemove", { symbol: tk.symbol })}
+                disabled={busy !== ""}
+                on:click={() => untrackToken(tk.address)}>×</button
+              ></span
+            >
+          {/each}
+          <input
+            type="text"
+            autocapitalize="none"
+            spellcheck="false"
+            placeholder={$t("pot.tokenHint")}
+            bind:value={tokenAddress}
+          />
+          <button
+            class="chip"
+            disabled={busy !== "" ||
+              !/^0x[0-9a-fA-F]{40}$/.test(tokenAddress.trim())}
+            on:click={trackToken}
+            >{busy === "token"
+              ? $t("pot.tokenReading")
+              : $t("pot.tokenTrack")}</button
+          >
+        </div>
+      {/if}
 
       <!-- The viewer -->
       {#if selfId}
@@ -750,5 +940,60 @@
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
+  }
+  .treasury {
+    display: grid;
+    gap: 6px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px dashed currentColor;
+  }
+  .trow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .trow input {
+    flex: 1 1 14rem;
+    min-height: 44px;
+    box-sizing: border-box;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid currentColor;
+    border-radius: 10px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+  }
+  .chip.link {
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
+  }
+  .chip.static {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: default;
+  }
+  .chip.static .x {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    min-width: 28px;
+    min-height: 28px;
+  }
+  .fund {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .fund code.addr {
+    word-break: break-all;
+    user-select: all;
+    -webkit-user-select: all;
   }
 </style>

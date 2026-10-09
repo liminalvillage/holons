@@ -107,8 +107,6 @@
     combineTracks,
     readAllocationConfig,
     describeChain,
-    readBundleRecord,
-    readBundleTokens,
     readPotRecord,
     readInteriorShares,
     resolveInteriorMembers,
@@ -358,7 +356,6 @@
   // in them is collected from the Pot by its table, never claimed in the
   // log (`held` below). The panel reads the chain and reports the receipts.
   $: potRecord = readPotRecord(settings);
-  $: potTokens = readBundleTokens(bundle);
   let potChain: Record<string, number> = {};
   $: if (!potRecord && Object.keys(potChain).length) potChain = {};
   $: potSources = {
@@ -676,9 +673,6 @@
   // equation, the custom shares under a custom split — the same resolver the
   // dashboard reads with and the contract is synced by.
   $: interiorShares = allocationDraft?.shares ?? savedShares;
-  /** The deployed Bundle contract, if this holon has one — and its chain. */
-  $: bundle = readBundleRecord(settings);
-  $: bundleChain = describeChain(bundle?.chainId);
   $: interiorMembers = resolveInteriorMembers({
     config: allocationConfig,
     scored: memberShares,
@@ -2242,7 +2236,6 @@
               hs={hsRef}
               holon={hid}
               pot={potRecord}
-              tokens={potTokens}
               {settings}
               {usersById}
               {selfId}
@@ -2447,20 +2440,6 @@
                 {/each}
               </div>
             {/if}
-            {#if bundle}
-              <!-- Where the contract is: the network first, because the
-                   address alone says nothing about which chain to look on. -->
-              <p class="chainline">
-                <span class="chain-net" class:unknown={!bundleChain}
-                  >{bundleChain
-                    ? bundleChain.name
-                    : $t("flows.onChainUnknownNetwork")}</span
-                >
-                <code class="chain-addr" title={bundle.address}
-                  >{bundle.address}</code
-                >
-              </p>
-            {/if}
           </div>
         </header>
         {#if hasAllocation}
@@ -2564,9 +2543,6 @@
     candidates={people.filter((p) => p.id !== hid)}
     scored={memberShares}
     shares={savedShares}
-    {bundle}
-    {selfId}
-    {cascade}
     collectiveSlug={readCollectiveSlug(settings)}
     units={unitOptions}
     unit={trackId}
@@ -3002,37 +2978,6 @@
     margin: 0.1rem 0 0;
     font-size: 0.82rem;
     color: var(--muted);
-  }
-
-  /* Where the Bundle is: network as a chip, address in full. */
-  .chainline {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.4rem 0.6rem;
-    margin: 0.4rem 0 0;
-    font-size: 0.82rem;
-  }
-  .chain-net {
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    font-size: 0.7rem;
-    padding: 0.15rem 0.5rem;
-    border-radius: 6px;
-    background: var(--teal);
-    color: var(--on-teal);
-  }
-  .chain-net.unknown {
-    background: #a3540d;
-    color: #fff;
-  }
-  .chain-addr {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: var(--muted);
-    word-break: break-all;
-    user-select: all;
-    -webkit-user-select: all;
   }
 
   /* A loop in the cascade: said in words, above the diagram that cuts it. */

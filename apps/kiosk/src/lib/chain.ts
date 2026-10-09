@@ -1,39 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 //
-// Pushing the allocation split to the holon's Bundle contract from the kiosk.
-//
-// The kiosk has no contract manager of its own: it needs exactly one call,
-// `syncAll`, on an address the settings lens already records. So this is a
-// bare wallet call — the injected provider (MetaMask, Rabby, Brave …) signs,
-// core encodes (`bundleSyncArgs`, the same numbers the dashboard sends), and
-// the mirror is written afterwards through `saveAllocationConfig` so what the
-// wallet-less readers see is what actually went on chain.
+// The kiosk's one door to a chain: the browser wallet when there is one, the
+// chain's public endpoint when there is not. Everything that touches a
+// contract (`pot.ts`) goes through here; nothing here knows a contract.
 
 import { ethers } from "ethers";
-import {
-  BUNDLE_BINDING_ABI,
-  BUNDLE_BYTECODE,
-  BUNDLE_CLAIM_ABI,
-  BUNDLE_CONSTRUCTOR_ABI,
-  BUNDLE_SYNC_ALL_ABI,
-  bundleClaimArgs,
-  bundleConstructorArgList,
-  bundleConstructorArgs,
-  bundleSyncArgList,
-  bundleSyncArgs,
-  chainInteriorRoster,
-  describeChain,
-  readBoundAddress,
-  requiredChainId,
-  resolveInteriorMembers,
-  saveAllocationConfig,
-  saveBundleRecord,
-  type AllocationConfig,
-  type AllocationMember,
-  type HolonBundleRecord,
-  type InteriorShares,
-} from "@holons/core/flows";
+import { describeChain, requiredChainId } from "@holons/core/flows";
 import { isWalletAvailable } from "./login/ethereum";
 
 export { isWalletAvailable };
@@ -53,60 +26,17 @@ export class ChainError extends Error {
   }
 }
 
-export interface ChainSyncInput {
-  bundleAddress: string;
-  /**
-   * The chain the Bundle is recorded on. The write is refused unless the
-   * wallet is on it (after asking the wallet to switch). Absent for a record
-   * that never said, where "is there code at the address" is all there is.
-   */
-  chainId?: number;
-  /**
-   * The holon being synced. With it, a split that has an interior share but
-   * nobody in it seats the holon itself (core `chainInteriorRoster`) — the
-   * Bundle has no withdraw, so a pot paid to no one would be stranded.
-   */
-  holonId?: string;
-  config: AllocationConfig;
-  /** The equation's roster; swapped for `shares` under a custom split. */
-  scored: AllocationMember[];
-  shares: InteriorShares;
-  /** Partners AND people on rings — the contract does not tell them apart. */
-  placed: { id: string; zone: number }[];
-}
-
-/** The transaction-ready call for one draft. Pure, so the sheet can preview it. */
-export function encodeChainSync(input: ChainSyncInput): unknown[] {
-  const members = resolveInteriorMembers({
-    config: input.config,
-    scored: input.scored,
-    shares: input.shares,
-  }).map((m) => ({ userId: m.id, percentage: m.percentage }));
-  return bundleSyncArgList(
-    bundleSyncArgs({
-      config: input.config,
-      members: chainInteriorRoster(
-        input.holonId ?? "",
-        members,
-        input.config.interiorPercent,
-      ),
-      partners: input.placed,
-    }),
-  );
-}
-
 /**
- * Value never crosses chains. Before any write to a Bundle the wallet must be
- * on the chain the Bundle is recorded on: the same address holds a different
- * contract — or nothing — on another network (a deployer's nth deployment
- * lands on the same address on every chain). The wallet is asked to switch;
+ * Value never crosses chains. Before any write to a contract the wallet must
+ * be on the chain the record names: the same address holds a different
+ * contract — or nothing — on another network. The wallet is asked to switch;
  * a refusal, or a wallet that cannot, ends the write. A record that never
  * said its chain is checked for code only, and the chain found is returned
  * so the caller can record it.
  */
 export async function ensureChain(
   provider: ethers.BrowserProvider,
-  bundleAddress: string,
+  address: string,
   expected: number | null | undefined,
 ): Promise<number> {
   const want = requiredChainId({ chainId: expected ?? undefined });
@@ -133,7 +63,7 @@ export async function ensureChain(
       );
     }
   }
-  const code = await provider.getCode(bundleAddress).catch(() => "0x");
+  const code = await provider.getCode(address).catch(() => "0x");
   if (!code || code === "0x") {
     throw new ChainError(
       `No contract at that address on ${describeChain(actual)?.name}.`,
@@ -141,236 +71,6 @@ export async function ensureChain(
     );
   }
   return actual;
-}
-
-/**
- * Send `syncAll` and wait for it to be mined.
- *
- * The dashboard's manager uses a fixed 5M gas limit for this batch call
- * because lagging RPC nodes under-estimate it; the same limit is used here.
- * Returns the transaction hash.
- */
-export async function syncAllocationOnChain(
-  input: ChainSyncInput,
-): Promise<string> {
-  if (!isWalletAvailable()) {
-    throw new ChainError("No Ethereum wallet in this browser.", "no-wallet");
-  }
-  const provider = new ethers.BrowserProvider((window as any).ethereum);
-  let signer: ethers.Signer;
-  try {
-    await provider.send("eth_requestAccounts", []);
-    signer = await provider.getSigner();
-  } catch (err: any) {
-    if (isRejection(err))
-      throw new ChainError("Wallet connection rejected.", "rejected");
-    throw new ChainError(
-      err?.message ?? "Could not connect the wallet.",
-      "failed",
-    );
-  }
-
-  const chainId = await ensureChain(
-    provider,
-    input.bundleAddress,
-    input.chainId,
-  );
-  // The switch above may have moved the wallet: sign on the chain we checked.
-  const onChain = new ethers.BrowserProvider((window as any).ethereum);
-  signer = await onChain.getSigner();
-  lastWriteChainId = chainId;
-
-  const contract = new ethers.Contract(
-    input.bundleAddress,
-    [BUNDLE_SYNC_ALL_ABI],
-    signer,
-  );
-  try {
-    const tx = await contract.syncAll(...encodeChainSync(input), {
-      gasLimit: 5_000_000n,
-    });
-    const receipt = await tx.wait();
-    if (receipt?.status !== 1) {
-      throw new ChainError("The transaction failed on chain.", "failed");
-    }
-    return String(tx.hash);
-  } catch (err: any) {
-    if (err instanceof ChainError) throw err;
-    if (isRejection(err))
-      throw new ChainError("Transaction rejected.", "rejected");
-    throw new ChainError(
-      err?.shortMessage ?? err?.message ?? "Sync failed.",
-      "failed",
-    );
-  }
-}
-
-/** The chain the last successful write went to — see `recordChainIfUnknown`. */
-let lastWriteChainId: number | null = null;
-
-/**
- * A record from before chains were recorded learns its chain from the first
- * write that reached it, so every later write is held to it.
- */
-async function recordChainIfUnknown(
-  store: any,
-  holonId: string,
-  bundle: HolonBundleRecord | null | undefined,
-): Promise<void> {
-  if (!bundle || requiredChainId(bundle) != null || lastWriteChainId == null)
-    return;
-  await saveBundleRecord(store, holonId, {
-    ...bundle,
-    chainId: lastWriteChainId,
-  });
-}
-
-/** The chain first, then the mirror every wallet-less surface reads. */
-export async function syncAllocationOnChainAndMirror(
-  store: any,
-  holonId: string,
-  input: ChainSyncInput,
-  zones: Record<string, number>,
-  people: Record<string, number>,
-  bundle?: HolonBundleRecord | null,
-): Promise<string> {
-  const hash = await syncAllocationOnChain({ ...input, holonId });
-  await recordChainIfUnknown(store, holonId, bundle);
-  await saveAllocationConfig(
-    store,
-    holonId,
-    input.config,
-    zones,
-    people,
-    input.shares,
-  );
-  return hash;
-}
-
-// ── Deploying ────────────────────────────────────────────────────────────
-// A holon with no Bundle yet gets one from the kiosk the way the dashboard
-// makes it: the connected wallet owns it, the holon id is its creator member
-// and its name (core `bundleConstructorArgs`), and the record lands on the
-// canonical settings document through core `saveBundleRecord`.
-
-/**
- * Deploy a Bundle for `holonId` and record it. Returns the record, which is
- * what the split is then synced to. Gas is estimated — a deploy is not
- * state-dependent the way a cascade is, so the estimate holds.
- */
-export async function deployBundleOnChain(
-  store: any,
-  holonId: string,
-  config: Pick<AllocationConfig, "steepness" | "nzones">,
-): Promise<HolonBundleRecord> {
-  const owner = await connectedWallet();
-  const args = bundleConstructorArgs({ owner, holonId, config });
-  const provider = new ethers.BrowserProvider((window as any).ethereum);
-  const signer = await provider.getSigner();
-  const factory = new ethers.ContractFactory(
-    [BUNDLE_CONSTRUCTOR_ABI],
-    BUNDLE_BYTECODE,
-    signer,
-  );
-  let address = "";
-  let txHash = "";
-  try {
-    const contract = await factory.deploy(...bundleConstructorArgList(args));
-    const tx = contract.deploymentTransaction();
-    txHash = String(tx?.hash ?? "");
-    const receipt = await tx?.wait();
-    if (receipt?.status !== 1) {
-      throw new ChainError("The deployment failed on chain.", "failed");
-    }
-    address = String(receipt.contractAddress ?? (await contract.getAddress()));
-  } catch (err: any) {
-    if (err instanceof ChainError) throw err;
-    if (isRejection(err))
-      throw new ChainError("Transaction rejected.", "rejected");
-    throw new ChainError(
-      err?.shortMessage ?? err?.message ?? "Deployment failed.",
-      "failed",
-    );
-  }
-  const chainId = Number((await provider.getNetwork()).chainId);
-  const record: HolonBundleRecord = {
-    address,
-    chainId,
-    creatorUserId: args.creatorUserId,
-    steepness: args.steepness.toString(),
-    nzones: Number(args.nzones),
-    deployedAt: Date.now(),
-    txHash,
-  };
-  await saveBundleRecord(store, holonId, record);
-  return record;
-}
-
-// ── Bindings ─────────────────────────────────────────────────────────────
-// Who a member's share is paid to on chain. `claim(userId, beneficiary)` on
-// the guarded Bundle binds it — and re-binds it — and only the holon's owner
-// wallet or the wallet already bound may send it. Bound to another Bundle,
-// the share is divided again there: the on-chain cascade.
-
-export interface BundleBindings {
-  /** The chain the wallet is on — which is the chain these were read from. */
-  chainId: number;
-  owner: string | null;
-  /** By member id; null when unbound. Lower-case. */
-  bound: Record<string, string | null>;
-  /** Which bound addresses hold code — a sub-holon rather than a wallet. */
-  isContract: Record<string, boolean>;
-  /**
-   * Whether the contract knows the id at all. Only a synced split seats a
-   * member; a party added in the sheet since is not on chain yet and cannot
-   * be bound until the split is updated there.
-   */
-  member: Record<string, boolean>;
-}
-
-/**
- * Read the owner and every listed member's binding. Reads need no account,
- * only a provider, so nothing is prompted; without a wallet in the browser
- * there is no provider and the answer is null.
- */
-export async function readBindings(
-  bundleAddress: string,
-  userIds: string[],
-  expectedChainId?: number,
-): Promise<BundleBindings | null> {
-  if (!isWalletAvailable()) return null;
-  const provider = new ethers.BrowserProvider((window as any).ethereum);
-  const chainId = Number((await provider.getNetwork()).chainId);
-  // Never read the wrong chain's contract as this one: the panel says the
-  // wallet is elsewhere instead (`chainStanding`).
-  const want = requiredChainId({ chainId: expectedChainId });
-  if (want != null && chainId !== want) return null;
-  const code = await provider.getCode(bundleAddress).catch(() => "0x");
-  if (!code || code === "0x") return null;
-  const contract = new ethers.Contract(
-    bundleAddress,
-    [...BUNDLE_BINDING_ABI],
-    provider,
-  );
-  const owner = readBoundAddress(await contract.owner().catch(() => null));
-  const bound: Record<string, string | null> = {};
-  const isContract: Record<string, boolean> = {};
-  const member: Record<string, boolean> = {};
-  await Promise.all(
-    userIds.map(async (id) => {
-      const addr = readBoundAddress(
-        await contract.userIdToAddress(String(id)).catch(() => null),
-      );
-      bound[id] = addr;
-      isContract[id] = addr
-        ? (await provider.getCode(addr).catch(() => "0x")) !== "0x"
-        : false;
-      member[id] = Boolean(
-        await contract.isBundleMember(String(id)).catch(() => false),
-      );
-    }),
-  );
-  return { chainId, owner, bound, isContract, member };
 }
 
 /** The chain the browser wallet is on, without prompting; null without one. */
@@ -403,74 +103,9 @@ export async function connectedWallet(): Promise<string> {
   }
 }
 
-/**
- * Bind a member's share to `beneficiary` and pay out what is stored for them.
- *
- * A contract beneficiary re-distributes in the same transaction, so the gas
- * is set explicitly: lagging nodes under-estimate a cascade and the call
- * would run out mid-way. Returns the transaction hash.
- */
-export async function bindOnChain(input: {
-  bundleAddress: string;
-  /** The Bundle's recorded chain; the write is refused elsewhere. */
-  chainId?: number;
-  userId: string;
-  beneficiary: string;
-}): Promise<string> {
-  const args = bundleClaimArgs(input);
-  await connectedWallet();
-  const provider = new ethers.BrowserProvider((window as any).ethereum);
-  lastWriteChainId = await ensureChain(
-    provider,
-    input.bundleAddress,
-    input.chainId,
-  );
-  const signer = await new ethers.BrowserProvider(
-    (window as any).ethereum,
-  ).getSigner();
-  const contract = new ethers.Contract(
-    input.bundleAddress,
-    [BUNDLE_CLAIM_ABI],
-    signer,
-  );
-  try {
-    const tx = await contract.claim(...args, { gasLimit: 2_000_000n });
-    const receipt = await tx.wait();
-    if (receipt?.status !== 1) {
-      throw new ChainError("The transaction failed on chain.", "failed");
-    }
-    return String(tx.hash);
-  } catch (err: any) {
-    if (err instanceof ChainError) throw err;
-    if (isRejection(err))
-      throw new ChainError("Transaction rejected.", "rejected");
-    throw new ChainError(
-      err?.reason ?? err?.shortMessage ?? err?.message ?? "Binding failed.",
-      "failed",
-    );
-  }
-}
-
 export function isRejection(err: any): boolean {
   return err?.code === 4001 || err?.code === "ACTION_REJECTED";
 }
-
-// ── Holdings ─────────────────────────────────────────────────────────────
-// What the Bundle holds, in the chain's coin and in every token the record
-// lists: held for unbound members, free, and held for the viewer. Reads
-// need no account: the wallet's provider when it is on the Bundle's chain,
-// else the chain's public endpoint, so a kiosk without a wallet still shows
-// the litres are there.
-
-import {
-  BUNDLE_HOLDINGS_ABI,
-  ERC20_META_ABI,
-  foldHoldings,
-  readBundleTokens,
-  type BundleHoldings,
-  type BundleToken,
-  type RawHolding,
-} from "@holons/core/flows";
 
 /** A read-only provider on `chainId`: the wallet's if it is there, else public. */
 export async function readProvider(
@@ -489,90 +124,4 @@ export async function readProvider(
   return rpc
     ? new ethers.JsonRpcProvider(rpc, chainId!, { staticNetwork: true })
     : null;
-}
-
-/**
- * The Bundle's balances. `viewerId` adds what is held for that member.
- * Null when there is no way to read the chain, or no contract there.
- */
-export async function readHoldings(
-  bundle: Pick<HolonBundleRecord, "address" | "chainId" | "tokens">,
-  viewerId?: string | null,
-): Promise<BundleHoldings | null> {
-  const chainId = requiredChainId(bundle);
-  const provider = await readProvider(chainId);
-  if (!provider) return null;
-  const actual = Number((await provider.getNetwork()).chainId);
-  const code = await provider.getCode(bundle.address).catch(() => "0x");
-  if (!code || code === "0x") return null;
-  const c = new ethers.Contract(
-    bundle.address,
-    [...BUNDLE_HOLDINGS_ABI],
-    provider,
-  );
-  const big = async (p: Promise<unknown>) => {
-    try {
-      return BigInt(String(await p));
-    } catch {
-      return 0n;
-    }
-  };
-  const id = viewerId ? String(viewerId) : "";
-  const native: RawHolding = {
-    balance: await provider.getBalance(bundle.address).catch(() => 0n),
-    deposited: await big(c.totalEtherDeposited()),
-    mine: id ? await big(c.etherBalance(id)) : null,
-  };
-  const tokens = await Promise.all(
-    readBundleTokens(bundle).map(async (token) => {
-      const erc = new ethers.Contract(
-        token.address,
-        [...ERC20_META_ABI],
-        provider,
-      );
-      const holding: RawHolding = {
-        balance: await big(erc.balanceOf(bundle.address)),
-        deposited: await big(c.totalDeposited(token.address)),
-        mine: id ? await big(c.tokenBalance(id, token.address)) : null,
-      };
-      return { token, holding };
-    }),
-  );
-  return foldHoldings({ chainId: actual, native, tokens });
-}
-
-/** An ERC-20 described by its own contract, on the Bundle's chain. */
-export async function describeToken(
-  chainId: number | null,
-  address: string,
-): Promise<BundleToken> {
-  const addr = String(address ?? "").trim();
-  if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) {
-    throw new ChainError("That is not a token address.", "failed");
-  }
-  const provider = await readProvider(chainId);
-  if (!provider)
-    throw new ChainError("No way to read this chain.", "no-wallet");
-  const code = await provider.getCode(addr).catch(() => "0x");
-  if (!code || code === "0x") {
-    throw new ChainError(
-      "No contract at that address on this chain.",
-      "no-contract",
-    );
-  }
-  const erc = new ethers.Contract(addr, [...ERC20_META_ABI], provider);
-  const [symbol, decimals, name] = await Promise.all([
-    erc.symbol().catch(() => ""),
-    erc.decimals().catch(() => null),
-    erc.name().catch(() => ""),
-  ]);
-  if (!symbol || decimals == null) {
-    throw new ChainError("That contract is not an ERC-20 token.", "failed");
-  }
-  return {
-    address: addr,
-    symbol: String(symbol),
-    decimals: Number(decimals),
-    ...(name ? { name: String(name) } : {}),
-  };
 }

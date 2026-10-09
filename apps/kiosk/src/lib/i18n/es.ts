@@ -1239,7 +1239,6 @@ export const es: Record<MessageKey, Msg> = {
   "draft.unavailable":
     "Rellenar necesita una clave de OpenAI — ponla en el deploy o pégala en Ajustes.",
   // Flows board
-  "flows.onChainUnknownNetwork": "Red no registrada",
   "flows.loading": "Leyendo el registro\u2026",
   "flows.empty": "Aqu\u00ed todav\u00eda no se ha movido nada.",
   "flows.emptyTrack": "No se movi\u00f3 nada en este periodo.",
@@ -1517,78 +1516,6 @@ export const es: Record<MessageKey, Msg> = {
   "alloc.splitEmpty":
     "Nadie en el reparto todavía — la ecuación sigue vigente hasta que añadas a alguien.",
   "alloc.splitCopy": "Copiar de la ecuación de valor",
-  "alloc.chainNetwork": "Red",
-  "alloc.chainAddress": "Dirección del contrato",
-  "alloc.chainTestnet": "red de prueba",
-  "alloc.chainNetworkUnknown":
-    "No registrada — este Bundle se desplegó antes de que se guardara la red con él",
-  "alloc.chainCopy": "Copiar dirección",
-  "alloc.chainCopied": "Copiado",
-  "alloc.chainExplorer": "Ver en el explorador",
-  "alloc.chainElsewhere":
-    "Tu wallet está en {wallet}; este Bundle está en {bundle}. Cambia la wallet a {bundle} para leerlo o modificarlo.",
-  "alloc.chainFoundOn": "Encontrado en {network}, la red de tu wallet.",
-  "alloc.chainNotFoundOn":
-    "Nada en esta dirección en {network}, la red de tu wallet — prueba otra red.",
-  "alloc.chainSaveHint":
-    "Guardar envía el reparto a este contrato y lo refleja aquí.",
-  "alloc.chainWillDeployTo": "Tu wallet está en {network}: ahí se desplegará.",
-  "alloc.chainTitle": "En cadena",
-  "alloc.chainNone":
-    "Aún no hay contrato — Guardar con una wallet despliega el Bundle de este holón y le envía el reparto.",
-  "alloc.deployConfirm": "Desplegando el Bundle — confirma en tu wallet…",
-  "alloc.deployDone": "Bundle desplegado en {address} — enviando el reparto…",
-  "alloc.saveOnChain": "Guardar en cadena",
-  "alloc.saveOffChain": "Guardar solo fuera de cadena",
-  "alloc.chainSyncing": "Confirma en tu monedero…",
-  "alloc.chainConfirm": "Confirma la transacción en tu monedero…",
-  "alloc.chainDone": "Actualizado en cadena — {hash}…",
-  "alloc.chainRejected": "Transacción rechazada.",
-  "alloc.chainNoWallet": "No hay monedero Ethereum en este navegador.",
-  "alloc.holdsTitle": "Contiene",
-  "alloc.holdsHeld":
-    "{amount} esperando a que los miembros vinculen una cartera",
-  "alloc.holdsFree": "{amount} aún sin repartir",
-  "alloc.holdsMine": "{amount} esperándote",
-  "alloc.holdsReading": "Leyendo el contrato…",
-  "alloc.holdsNothing": "Nada todavía.",
-  "alloc.holdsUnreadable": "No se pudo leer el contrato desde aquí.",
-  "alloc.tokenHint": "Dirección del token (0x…) en que leer el fondo",
-  "alloc.tokenTrack": "Seguir",
-  "alloc.tokenReading": "Leyendo…",
-  "alloc.tokenFailed": "No se pudo añadir ese token.",
-  "alloc.chainNoContract":
-    "No hay contrato en esa dirección en la red de tu monedero — cambia de red e inténtalo de nuevo.",
-  "alloc.chainFailed": "No se pudo actualizar en cadena: {reason}",
-  "alloc.bindTitle": "Pagado en cadena a",
-  "alloc.bindAbout":
-    "El contrato envía cada parte a la dirección vinculada a ese miembro. Vinculada a su propio Bundle, la parte se divide de nuevo allí — la cascada en cadena. Solo la wallet propietaria del holón, o la ya vinculada, puede vincular.",
-  "alloc.bindReading": "Leyendo el contrato…",
-  "alloc.bindNobody": "Nadie en el reparto todavía.",
-  "alloc.bindNotOnChain":
-    "Aún no está en el contrato — actualiza en cadena primero",
-  "alloc.bindNone": "Sin vincular — se guarda en el contrato hasta reclamarla",
-  "alloc.bindWallet": "Wallet {address}",
-  "alloc.bindBundle": "Su Bundle {address}",
-  "alloc.bind": "Vincular",
-  "alloc.rebind": "Revincular",
-  "alloc.bindTo": "Pagar a",
-  "alloc.bindOwnElsewhere":
-    "El Bundle de {name} está en {theirs}; este está en {ours}. El valor nunca cruza redes, así que no puede recibir esta parte — vincula una wallet, o un Bundle en {ours}.",
-  "alloc.bindOwnUnknownChain":
-    "El Bundle de {name} no registró su red, así que no se ofrece aquí: el valor nunca cruza redes. Vincula una wallet, o vuelve a desplegar su Bundle desde un quiosco que la registre.",
-  "alloc.bindOwn": "El Bundle de {name} — {address}",
-  "alloc.bindCascade": "Dividida de nuevo en cadena entre {n} holones.",
-  "alloc.bindWarnLoop":
-    "Una parte vuelve atrás: {names}. Esa parte se queda donde se cierra el bucle.",
-  "alloc.bindWarnLarge":
-    "{n} holones en un solo envío — una transacción grande.",
-  "alloc.bindWarnDeep": "{n} saltos de profundidad — una transacción grande.",
-  "alloc.bindNotAllowed": "Esta wallet no puede vincular esa parte.",
-  "alloc.bindOwnerIs": "La wallet propietaria es {address}.",
-  "alloc.bindSend": "Vincular en cadena",
-  "alloc.bindDone": "Vinculada en cadena — {hash}…",
-  "alloc.bindFailed": "No se pudo vincular: {reason}",
   "alloc.tabSplit": "Reparto",
   "alloc.tabContributors": "Contribuidores",
   "alloc.tabZones": "Zonas",
@@ -2011,5 +1938,25 @@ export const es: Record<MessageKey, Msg> = {
     "Compromisos al día; la próxima tabla se corta en la luna nueva del {when}.",
   "pot.published": "Tabla publicada; los firmantes ya pueden firmarla.",
   "pot.signed": "Firmada.",
+  "pot.tokens": "Leído en",
+  "pot.tokenHint": "Dirección del token (0x…) en que leer el Pot",
+  "pot.tokenTrack": "Seguir",
+  "pot.tokenReading": "Leyendo…",
+  "pot.tokenRemove": "Dejar de leer en {symbol}",
+  "pot.treasury": "Tesorería",
+  "pot.treasuryNone":
+    "Sin tesorería. Un Safe bajo el umbral de sus dueños guarda lo que aún no se reparte.",
+  "pot.treasuryPlain": "una dirección simple, no un Safe",
+  "pot.treasuryOpen": "Abrir en Safe Wallet",
+  "pot.treasurySet": "Definir tesorería",
+  "pot.treasuryChange": "Cambiar",
+  "pot.treasuryHolds": "en la tesorería",
+  "pot.treasuryHint": "Dirección del Safe o la cartera (0x…) en esta cadena",
+  "pot.treasurySave": "Usar esta dirección",
+  "pot.treasuryClear": "Quitar",
+  "pot.fundHint":
+    "Para repartir, envía de la tesorería al Pot y luego cuéntalo en el fondo:",
+  "pot.copy": "Copiar dirección",
+  "pot.copied": "Copiado",
   "pot.posted": "Raíz publicada; vale tras la ventana de impugnación.",
 };

@@ -1247,7 +1247,6 @@ export const it: Record<MessageKey, Msg> = {
   "draft.unavailable":
     "Per compilare serve una chiave OpenAI — impostala sul deploy o incollala nelle Impostazioni.",
   // Flows board
-  "flows.onChainUnknownNetwork": "Rete non registrata",
   "flows.loading": "Lettura del registro\u2026",
   "flows.empty": "Qui non si \u00e8 ancora mosso nulla.",
   "flows.emptyTrack": "Nulla si \u00e8 mosso in questo periodo.",
@@ -1527,79 +1526,6 @@ export const it: Record<MessageKey, Msg> = {
   "alloc.splitEmpty":
     "Nessuno nella divisione — resta valida l'equazione finché non inserisci qualcuno.",
   "alloc.splitCopy": "Copia dall'equazione del valore",
-  "alloc.chainNetwork": "Rete",
-  "alloc.chainAddress": "Indirizzo del contratto",
-  "alloc.chainTestnet": "rete di prova",
-  "alloc.chainNetworkUnknown":
-    "Non registrata — questo Bundle è stato distribuito prima che la rete venisse salvata con esso",
-  "alloc.chainCopy": "Copia indirizzo",
-  "alloc.chainCopied": "Copiato",
-  "alloc.chainExplorer": "Vedi sull'explorer",
-  "alloc.chainElsewhere":
-    "Il tuo wallet è su {wallet}; questo Bundle è su {bundle}. Passa il wallet a {bundle} per leggerlo o modificarlo.",
-  "alloc.chainFoundOn": "Trovato su {network}, la rete del tuo wallet.",
-  "alloc.chainNotFoundOn":
-    "Niente a questo indirizzo su {network}, la rete del tuo wallet — prova un'altra rete.",
-  "alloc.chainSaveHint":
-    "Salva invia la ripartizione a questo contratto e la rispecchia qui.",
-  "alloc.chainWillDeployTo":
-    "Il tuo wallet è su {network}: verrà distribuito lì.",
-  "alloc.chainTitle": "On-chain",
-  "alloc.chainNone":
-    "Nessun contratto, per ora — Salvare con un wallet distribuisce il Bundle di questo holon e gli invia la ripartizione.",
-  "alloc.deployConfirm": "Distribuzione del Bundle — conferma nel wallet…",
-  "alloc.deployDone":
-    "Bundle distribuito a {address} — ora invio la ripartizione…",
-  "alloc.saveOnChain": "Salva on-chain",
-  "alloc.saveOffChain": "Salva solo off-chain",
-  "alloc.chainSyncing": "Conferma nel portafoglio…",
-  "alloc.chainConfirm": "Conferma la transazione nel portafoglio…",
-  "alloc.chainDone": "Aggiornato on-chain — {hash}…",
-  "alloc.chainRejected": "Transazione rifiutata.",
-  "alloc.chainNoWallet": "Nessun portafoglio Ethereum in questo browser.",
-  "alloc.holdsTitle": "Contiene",
-  "alloc.holdsHeld":
-    "{amount} in attesa che i membri colleghino un portafoglio",
-  "alloc.holdsFree": "{amount} non ancora divisi",
-  "alloc.holdsMine": "{amount} in attesa per te",
-  "alloc.holdsReading": "Lettura del contratto…",
-  "alloc.holdsNothing": "Ancora niente.",
-  "alloc.holdsUnreadable": "Impossibile leggere il contratto da qui.",
-  "alloc.tokenHint": "Indirizzo del token (0x…) in cui leggere il fondo",
-  "alloc.tokenTrack": "Segui",
-  "alloc.tokenReading": "Lettura…",
-  "alloc.tokenFailed": "Impossibile aggiungere quel token.",
-  "alloc.chainNoContract":
-    "Nessun contratto a quell'indirizzo sulla rete del portafoglio — cambia rete e riprova.",
-  "alloc.chainFailed": "Aggiornamento on-chain non riuscito: {reason}",
-  "alloc.bindTitle": "Pagato on-chain a",
-  "alloc.bindAbout":
-    "Il contratto invia ogni quota all'indirizzo legato a quel membro. Legata al suo Bundle, la quota viene divisa di nuovo lì — la cascata on-chain. Solo il wallet proprietario dell'holon, o quello già legato, può legare.",
-  "alloc.bindReading": "Lettura del contratto…",
-  "alloc.bindNobody": "Nessuno nella ripartizione, per ora.",
-  "alloc.bindNotOnChain": "Non ancora nel contratto — prima aggiorna on-chain",
-  "alloc.bindNone":
-    "Non legata — resta nel contratto finché non viene riscossa",
-  "alloc.bindWallet": "Wallet {address}",
-  "alloc.bindBundle": "Il suo Bundle {address}",
-  "alloc.bind": "Lega",
-  "alloc.rebind": "Rilega",
-  "alloc.bindTo": "Paga a",
-  "alloc.bindOwnElsewhere":
-    "Il Bundle di {name} è su {theirs}; questo è su {ours}. Il valore non attraversa mai le reti, quindi non può ricevere questa quota — lega un wallet, o un Bundle su {ours}.",
-  "alloc.bindOwnUnknownChain":
-    "Il Bundle di {name} non ha registrato la sua rete, perciò non viene proposto qui: il valore non attraversa mai le reti. Lega un wallet, o ridistribuisci il suo Bundle da un chiosco che la registra.",
-  "alloc.bindOwn": "Il Bundle di {name} — {address}",
-  "alloc.bindCascade": "Divisa di nuovo on-chain tra {n} holon.",
-  "alloc.bindWarnLoop":
-    "Una parte torna indietro: {names}. Quella parte si ferma dove il ciclo si chiude.",
-  "alloc.bindWarnLarge": "{n} holon in un solo invio — una transazione grande.",
-  "alloc.bindWarnDeep": "{n} passaggi di profondità — una transazione grande.",
-  "alloc.bindNotAllowed": "Questo wallet non può legare quella quota.",
-  "alloc.bindOwnerIs": "Il wallet proprietario è {address}.",
-  "alloc.bindSend": "Lega on-chain",
-  "alloc.bindDone": "Legata on-chain — {hash}…",
-  "alloc.bindFailed": "Impossibile legare: {reason}",
   "alloc.tabSplit": "Divisione",
   "alloc.tabContributors": "Contributori",
   "alloc.tabZones": "Zone",
@@ -2024,5 +1950,26 @@ export const it: Record<MessageKey, Msg> = {
     "Impegni aggiornati; la prossima tabella si taglia alla luna nuova del {when}.",
   "pot.published": "Tabella pubblicata; i firmatari possono firmarla.",
   "pot.signed": "Firmata.",
+  "pot.tokens": "Letto in",
+  "pot.tokenHint": "Indirizzo del token (0x…) in cui leggere il Pot",
+  "pot.tokenTrack": "Segui",
+  "pot.tokenReading": "Lettura…",
+  "pot.tokenRemove": "Smetti di leggere in {symbol}",
+  "pot.treasury": "Tesoreria",
+  "pot.treasuryNone":
+    "Nessuna tesoreria. Un Safe sotto la soglia dei proprietari custodisce ciò che non è ancora distribuito.",
+  "pot.treasuryPlain": "un indirizzo semplice, non un Safe",
+  "pot.treasuryOpen": "Apri in Safe Wallet",
+  "pot.treasurySet": "Imposta una tesoreria",
+  "pot.treasuryChange": "Cambia",
+  "pot.treasuryHolds": "in tesoreria",
+  "pot.treasuryHint":
+    "Indirizzo del Safe o del portafoglio (0x…) su questa catena",
+  "pot.treasurySave": "Usa questo indirizzo",
+  "pot.treasuryClear": "Rimuovi",
+  "pot.fundHint":
+    "Per distribuire, invia dalla tesoreria al Pot e poi contalo nel fondo:",
+  "pot.copy": "Copia indirizzo",
+  "pot.copied": "Copiato",
   "pot.posted": "Radice pubblicata; vale dopo la finestra di contestazione.",
 };

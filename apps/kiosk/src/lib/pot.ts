@@ -28,7 +28,9 @@ import {
   potDomain,
   potPostRootArgs,
   savePotRecord,
-  type BundleToken,
+  treasuryLines,
+  type PotToken,
+  type TreasuryLine,
   type PotClaimArgs,
   type PotCommitment,
   type PotRecord,
@@ -126,7 +128,7 @@ function commitmentOf(raw: any, challenge: number): PotCommitmentState | null {
  */
 export async function readPotState(
   pot: PotRecord,
-  tokens: readonly BundleToken[],
+  tokens: readonly PotToken[],
   viewerId?: string | null,
 ): Promise<PotState | null> {
   const provider = await readProvider(pot.chainId);
@@ -305,6 +307,7 @@ export async function deployPotOnChain(
     challenge: Number(args.challenge),
     deployedAt: Date.now(),
     txHash,
+    tokens: [],
   });
 }
 
@@ -398,4 +401,90 @@ export async function depositOnChain(
   );
   await sent("Approve", () => erc.approve(pot.address, amount));
   return sent("Deposit", () => contract.deposit(token, amount));
+}
+
+// ── The treasury ─────────────────────────────────────────────────────────
+// Where the holon keeps value before it decides to distribute it: a Safe
+// under the owners' threshold, or any address. Read without an account; the
+// panel only shows the balances and links out to Safe{Wallet} — moving
+// value into the Pot is the owners' own transaction there.
+
+export interface TreasuryState {
+  address: string;
+  /** Whether there is code at the address (a Safe is a contract; a plain address is not). */
+  contract: boolean;
+  lines: TreasuryLine[];
+}
+
+/** What the treasury holds, per unit the Pot is read in. Null when the chain cannot be read. */
+export async function readTreasury(
+  pot: Pick<PotRecord, "chainId" | "tokens" | "treasury">,
+): Promise<TreasuryState | null> {
+  const treasury = pot.treasury;
+  if (!treasury) return null;
+  const provider = await readProvider(pot.chainId);
+  if (!provider) return null;
+  const big = async (p: Promise<unknown>) => {
+    try {
+      return BigInt(String(await p));
+    } catch {
+      return 0n;
+    }
+  };
+  const [code, native, ...tokenBalances] = await Promise.all([
+    provider.getCode(treasury.address).catch(() => "0x"),
+    provider.getBalance(treasury.address).catch(() => 0n),
+    ...pot.tokens.map((t) =>
+      big(
+        new ethers.Contract(t.address, [...ERC20_META_ABI], provider).balanceOf(
+          treasury.address,
+        ),
+      ),
+    ),
+  ]);
+  const tokens: Record<string, bigint> = {};
+  pot.tokens.forEach(
+    (t, i) => (tokens[t.address.toLowerCase()] = tokenBalances[i]),
+  );
+  return {
+    address: treasury.address,
+    contract: !!code && code !== "0x",
+    lines: treasuryLines(pot.chainId, pot.tokens, { native, tokens }),
+  };
+}
+
+/** An ERC-20 described by its own contract, on the Pot's chain. */
+export async function describeToken(
+  chainId: number | null,
+  address: string,
+): Promise<PotToken> {
+  const addr = String(address ?? "").trim();
+  if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) {
+    throw new ChainError("That is not a token address.", "failed");
+  }
+  const provider = await readProvider(chainId);
+  if (!provider)
+    throw new ChainError("No way to read this chain.", "no-wallet");
+  const code = await provider.getCode(addr).catch(() => "0x");
+  if (!code || code === "0x") {
+    throw new ChainError(
+      "No contract at that address on this chain.",
+      "no-contract",
+    );
+  }
+  const erc = new ethers.Contract(addr, [...ERC20_META_ABI], provider);
+  const [symbol, decimals, name] = await Promise.all([
+    erc.symbol().catch(() => ""),
+    erc.decimals().catch(() => null),
+    erc.name().catch(() => ""),
+  ]);
+  if (!symbol || decimals == null) {
+    throw new ChainError("That contract is not an ERC-20 token.", "failed");
+  }
+  return {
+    address: addr,
+    symbol: String(symbol),
+    decimals: Number(decimals),
+    ...(name ? { name: String(name) } : {}),
+  };
 }
