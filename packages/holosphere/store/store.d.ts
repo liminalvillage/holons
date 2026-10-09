@@ -35,13 +35,17 @@ export type StoreOp =
     | { t: 'evt-del'; id: string }
     | { t: 'priv'; k: string; v: string }
     | { t: 'priv-del'; k: string }
-    | { t: 'cur'; k: string; v: Cursor };
+    | { t: 'cur'; k: string; v: Cursor }
+    | { t: 'out'; v: NostrEvent }
+    | { t: 'out-del'; id: string };
 
 export interface StoreSnapshot {
     records: StoreRecord[];
     events: NostrEvent[];
     private: [string, string][];
     cursors: [string, Cursor][];
+    /** Published events awaiting a relay OK (absent in snapshots written before v3). */
+    outbox?: NostrEvent[];
 }
 
 export interface StoreAdapter {
@@ -119,7 +123,7 @@ export class Store {
     clear(): Promise<void>;
     close(): Promise<void>;
     snapshot(): StoreSnapshot;
-    stats(): { records: number; events: number; private: number; cursors: number; lenses: number; holons: number; watchers: number; adapter: string | null };
+    stats(): { records: number; events: number; private: number; cursors: number; outbox: number; lenses: number; holons: number; watchers: number; adapter: string | null };
 
     apply(event: NostrEvent, opts?: { origin?: RecordOrigin; verify?: boolean }): ApplyResult;
     putRaw<T extends object>(holon: string | null, lens: string, id: string, item: T, opts?: { origin?: RecordOrigin }): StoreRecord<T>;
@@ -139,6 +143,13 @@ export class Store {
 
     getCursor(holon: string | null, lens: string): Cursor | null;
     setCursor(holon: string | null, lens: string, since: number): Cursor;
+
+    /** Keep a published event until a relay acknowledges it; returns the ids of unsent older claims at the same replaceable coordinate it evicted. */
+    outboxAdd(event: NostrEvent): string[];
+    outboxRemove(id: string): boolean;
+    /** Events awaiting a relay, oldest first. */
+    outboxList(): NostrEvent[];
+    outboxSize(): number;
 
     privatePut(scope: string, lens: string, key: string, cipher: string): void;
     privateGet(scope: string, lens: string, key: string): string | undefined;

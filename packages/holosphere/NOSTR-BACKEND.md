@@ -6,6 +6,10 @@ network, and a local event-sourced store (`STORE.md`) is the cache.
 - **write** — every non-private `put`/`delete` is signed and applied to the
   local store, then published as a NIP-01 event (kind 30078, NIP-33
   replaceable per location). This includes **holograms** and **globals**.
+  The event waits in the store's **outbox** until a relay acknowledges it;
+  what no relay took is resent on reconnect, on a backoff timer and at the
+  next start (see `STORE.md` → *Outbox*), so an offline write is never
+  stranded on one device.
 - **read** — a pull. `get`/`getAll` catch the `(holon, lens)` up from the
   relay (paginated backfill the first time, cursor catch-up afterwards,
   bounded by `nostr.syncTimeoutMs` so an unreachable relay degrades to a
@@ -245,8 +249,8 @@ reverse sync ignores private scopes. See `PRIVACY.md`.
 - **Relay policy**: the spike relay config is open; production should
   restrict writes (NIP-42 auth / allow-list) — see `spike/README.md`.
 - **Browser storage**: the IndexedDB adapter (`holosphere:<appName>`)
-  holds records, events, cursors, private lenses and received keys; a quota
-  error degrades to memory with a warning.
+  holds records, events, cursors, the outbox, private lenses and received
+  keys; a quota error degrades to memory with a warning.
 
 ## Wiring in the monorepo
 

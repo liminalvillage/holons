@@ -12,9 +12,11 @@
 //   { t: 'priv',     k, v }             private ciphertext stored
 //   { t: 'priv-del', k }                private ciphertext dropped
 //   { t: 'cur',      k, v }             sync cursor for a lens key
+//   { t: 'out',      v: event }         signed event awaiting a relay OK
+//   { t: 'out-del',  id }               event reached a relay (or was given up)
 //
 // Snapshot:
-//   { records: record[], events: event[], private: [k, v][], cursors: [k, v][] }
+//   { records: record[], events: event[], private: [k, v][], cursors: [k, v][], outbox: event[] }
 
 export function emptyState() {
     return {
@@ -22,6 +24,7 @@ export function emptyState() {
         events: new Map(),
         private: new Map(),
         cursors: new Map(),
+        outbox: new Map(),
     };
 }
 
@@ -32,6 +35,7 @@ export function stateFromSnapshot(snapshot) {
     for (const evt of snapshot.events || []) state.events.set(evt.id, evt);
     for (const [k, v] of snapshot.private || []) state.private.set(k, v);
     for (const [k, v] of snapshot.cursors || []) state.cursors.set(k, v);
+    for (const evt of snapshot.outbox || []) state.outbox.set(evt.id, evt);
     return state;
 }
 
@@ -41,6 +45,7 @@ export function toSnapshot(state) {
         events: Array.from(state.events.values()),
         private: Array.from(state.private.entries()),
         cursors: Array.from(state.cursors.entries()),
+        outbox: Array.from(state.outbox.values()),
     };
 }
 
@@ -52,6 +57,8 @@ export function applyOp(state, op) {
         case 'priv': state.private.set(op.k, op.v); break;
         case 'priv-del': state.private.delete(op.k); break;
         case 'cur': state.cursors.set(op.k, op.v); break;
+        case 'out': state.outbox.set(op.v.id, op.v); break;
+        case 'out-del': state.outbox.delete(op.id); break;
         default: break; // unknown ops are ignored so newer logs stay readable
     }
 }

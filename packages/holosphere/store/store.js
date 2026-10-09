@@ -14,6 +14,12 @@
 //             `_events` sidecar: signing reads its envelopes from here.
 //   private   NIP-44 ciphertext of password lenses (see private.js).
 //   cursors   lens key → { since, syncedAt }: how far a lens has been synced.
+//   outbox    id → signed event (any kind) this instance published but no
+//             relay has acknowledged yet. The transport replays it until one
+//             does, so a write made offline still travels once the network is
+//             back — and survives a reload in between. One entry per
+//             replaceable coordinate: a newer write to the same address drops
+//             the unsent older one (the relay would keep only the newest).
 //   backlinks source soul → Set<pointer soul>: derived from the records that
 //             are hologram pointers; rebuilt on open, maintained on write.
 //             This is the `_holograms` cascade index, no longer a sub-node.
@@ -59,6 +65,18 @@ function claimKey(event) {
 
 export { decodeEvent };
 
+/**
+ * The NIP-01 replaceable coordinate of an event, or null when every copy is
+ * kept: `kind|pubkey` for kinds 0, 3 and 10000–19999, `kind|pubkey|d` for
+ * 30000–39999.
+ */
+export function replaceableCoordinate(event) {
+    const k = event.kind;
+    if (k === 0 || k === 3 || (k >= 10000 && k < 20000)) return `${k}|${event.pubkey}`;
+    if (k >= 30000 && k < 40000) return `${k}|${event.pubkey}|${tag(event, 'd') ?? ''}`;
+    return null;
+}
+
 export class Store {
     /**
      * @param {object} opts
@@ -91,6 +109,7 @@ export class Store {
         this.eventIdsByLens = new Map(); // lens key → Set<id>
         this.private = new Map();
         this.cursors = new Map();
+        this.outbox = new Map();         // event id → event awaiting a relay OK
         this.backlinks = new Map();      // soul → Set<soul>
         this.lensIndex = new Map();      // lens key → Map<id, record>
         this.holonIndex = new Map();     // holon key → Set<lens>
@@ -120,6 +139,7 @@ export class Store {
             for (const evt of snapshot.events || []) this._indexEvent(evt);
             for (const [k, v] of snapshot.private || []) this.private.set(k, v);
             for (const [k, v] of snapshot.cursors || []) this.cursors.set(k, v);
+            for (const evt of snapshot.outbox || []) if (evt && evt.id) this.outbox.set(evt.id, evt);
         }
         this._opened = true;
         return this;
@@ -141,7 +161,7 @@ export class Store {
     /** Drop everything, in memory and in the adapter. */
     async clear() {
         this.records.clear(); this.events.clear(); this.eventsByAddr.clear(); this.eventIdsByLens.clear();
-        this.private.clear(); this.cursors.clear(); this.backlinks.clear();
+        this.private.clear(); this.cursors.clear(); this.outbox.clear(); this.backlinks.clear();
         this.lensIndex.clear(); this.holonIndex.clear();
         this._ops = [];
         if (this.adapter) await this.adapter.clear();
@@ -162,6 +182,7 @@ export class Store {
             events: Array.from(this.events.values()),
             private: Array.from(this.private.entries()),
             cursors: Array.from(this.cursors.entries()),
+            outbox: Array.from(this.outbox.values()),
         };
     }
 
@@ -171,6 +192,7 @@ export class Store {
             events: this.events.size,
             private: this.private.size,
             cursors: this.cursors.size,
+            outbox: this.outbox.size,
             lenses: this.lensIndex.size,
             holons: this.listHolons().length,
             watchers: Array.from(this.watchers.values()).reduce((n, s) => n + s.size, 0),
@@ -397,6 +419,48 @@ export class Store {
         this.cursors.set(lk, value);
         this._enqueue({ t: 'cur', k: lk, v: value });
         return value;
+    }
+
+    // ------------------------------------------------------------------ outbox
+
+    /**
+     * Remember a signed event until a relay acknowledges it. A replaceable
+     * event (kinds 10000–19999, 30000–39999, 0, 3) evicts the unsent older
+     * one at the same coordinate: the relay keeps only the newest, so sending
+     * the older one would be a wasted round trip. Returns the ids evicted.
+     */
+    outboxAdd(event) {
+        if (!event || typeof event !== 'object' || !event.id) return [];
+        const evicted = [];
+        const coord = replaceableCoordinate(event);
+        if (coord) {
+            for (const other of this.outbox.values()) {
+                if (other.id === event.id || replaceableCoordinate(other) !== coord) continue;
+                if (other.created_at > event.created_at) return evicted; // a newer claim is already waiting
+                this.outbox.delete(other.id);
+                this._enqueue({ t: 'out-del', id: other.id });
+                evicted.push(other.id);
+            }
+        }
+        this.outbox.set(event.id, event);
+        this._enqueue({ t: 'out', v: event });
+        return evicted;
+    }
+
+    /** A relay took the event (or it will never be taken): forget it. */
+    outboxRemove(id) {
+        const had = this.outbox.delete(id);
+        if (had) this._enqueue({ t: 'out-del', id });
+        return had;
+    }
+
+    /** Events still awaiting a relay, oldest first. */
+    outboxList() {
+        return Array.from(this.outbox.values()).sort((a, b) => (a.created_at - b.created_at) || (a.id < b.id ? -1 : 1));
+    }
+
+    outboxSize() {
+        return this.outbox.size;
     }
 
     // ------------------------------------------------------------------ private lenses

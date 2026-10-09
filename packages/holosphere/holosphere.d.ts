@@ -570,8 +570,12 @@ declare class HoloSphere {
     subscribe(holon: string, lens: string, callback: (data: any, key?: string) => void, options?: SubscribeOptions): { unsubscribe: () => void };
     /** @deprecated no-op: the store's change feed notifies subscribers. */
     notifySubscribers(data: any): void;
-    /** Re-fetch every synced lens from the relays (e.g. from an `online` handler). */
+    /** Re-fetch every synced lens from the relays and resend the outbox (e.g. from an `online` handler). */
     resyncSubscriptions(): Promise<void>;
+    /** Published events no relay has acknowledged yet, oldest first. */
+    getOutbox(): Promise<NostrEvent[]>;
+    /** Resend the outbox now; resolves to how many events a relay took. */
+    flushOutbox(): Promise<number>;
     getHolonName(holonId: string): Promise<string | null>;
 
     // Federation - v1 style

@@ -4,7 +4,11 @@
 //
 //   write  →  every non-private put/delete is a signed kind-30078 event
 //             (NIP-33 replaceable per location) published to the relay set —
-//             holograms and globals included.
+//             holograms and globals included. The event goes into the store's
+//             OUTBOX first and leaves it only once a relay says OK; what no
+//             relay took is replayed on reconnect, on wake, on a backoff
+//             timer and at the next start, so a write made offline is never
+//             stranded in one device's store.
 //   read   →  a PULL. `ensureSync(holon, lens)` catches the pair up from the
 //             relays (paginated backfill on a cold store, a `since` query from
 //             the persisted cursor on a warm one) and resolves; reads then
@@ -74,6 +78,19 @@ const REOPEN_BACKOFF_MS = [3000, 10000, 30000, 60000];
 
 /** Watch/release bursts (a view mounting ten components) coalesce into one REQ. */
 const FIRE_DEBOUNCE_MS = 50;
+
+/** Backoff between outbox replays while no relay takes our events. */
+const OUTBOX_RETRY_MS = [5000, 15000, 60000, 300000];
+
+/** A relay verdict that will not change on retry: the event is dropped from
+ *  the outbox (with a warning) instead of being resent forever. `duplicate`
+ *  and `replaced` only reach here as an OK=false (the relay already holds this
+ *  or a newer claim — an OK=true duplicate counts as acknowledged). Anything
+ *  else — connection failure, rate limit, an unexplained refusal — is retried. */
+const TERMINAL_VERDICT = /^(invalid|blocked|pow|restricted|duplicate|replaced):/i;
+
+/** What nostr-tools' pool FULFILS a publish with when a relay cannot be reached. */
+const UNREACHABLE = /^connection (failure|skipped)/i;
 
 const MAX_BACKFILL_PAGES = 2000;
 
@@ -223,15 +240,91 @@ export function createRelayTransport(holo, {
 
   // ---- publishing ------------------------------------------------------------
 
+  // The outbox: every event we publish sits in the store until ONE relay
+  // acknowledges it. `send` is the wire attempt; `publishEvent` is enqueue +
+  // send; `flushOutbox` resends whatever is still waiting.
+  const outbox = { timer: null, attempts: 0, flushing: null, inflight: new Set() };
+
+  function sent(event) {
+    outbox.attempts = 0;
+    store.outboxRemove(event.id);
+  }
+
+  function scheduleOutboxRetry() {
+    if (closed || outbox.timer || !store.outboxSize()) return;
+    const delay = OUTBOX_RETRY_MS[Math.min(outbox.attempts++, OUTBOX_RETRY_MS.length - 1)];
+    outbox.timer = setTimeout(() => { outbox.timer = null; flushOutbox().catch(() => {}); }, delay);
+    if (typeof outbox.timer.unref === 'function') outbox.timer.unref();
+  }
+
+  /**
+   * One wire attempt. Resolves true when at least one relay said OK (the
+   * event leaves the outbox), false when none did (it stays, and a retry is
+   * scheduled). A terminal verdict from every relay drops it as well.
+   */
+  async function send(event) {
+    if (closed || !event) return false;
+    if (outbox.inflight.has(event.id)) return false;
+    outbox.inflight.add(event.id);
+    try {
+      const p = await poolReady;
+      if (closed) return false;
+      const results = await Promise.allSettled(p.publish(relays, event));
+      // nostr-tools: a relay's OK fulfils with its message, an unreachable
+      // relay FULFILS with "connection failure: …", and an OK=false or a
+      // timeout rejects. Only the first is an acknowledgement.
+      if (results.some((x) => x.status === 'fulfilled' && !UNREACHABLE.test(String(x.value ?? '')))) {
+        sent(event);
+        return true;
+      }
+      const reasons = results.map((x) => String(x.status === 'fulfilled' ? x.value : (x.reason?.message ?? x.reason ?? '')));
+      if (reasons.length && reasons.every((r) => TERMINAL_VERDICT.test(r))) {
+        console.warn(`[nostr-transport] every relay refused ${event.id} (${reasons[0]}); dropped from the outbox`);
+        store.outboxRemove(event.id);
+        return false;
+      }
+      vlog('publish reached no relay:', event.id, reasons[0]);
+      scheduleOutboxRetry();
+      return false;
+    } catch (e) {
+      vlog('publish failed:', e?.message);
+      scheduleOutboxRetry();
+      return false;
+    } finally {
+      outbox.inflight.delete(event.id);
+    }
+  }
+
   function publishEvent(event) {
     if (closed || !event) return;
-    poolReady
-      .then((p) => Promise.allSettled(p.publish(relays, event)))
-      .then((r) => {
-        if (!r.some((x) => x.status === 'fulfilled')) vlog('publish reached no relay:', event.id);
-      })
-      .catch((e) => vlog('publish failed:', e?.message));
+    store.outboxAdd(event);
+    send(event).catch(() => {});
   }
+
+  /**
+   * Resend every event still awaiting a relay, oldest first. Runs once at a
+   * time; a call during a run returns the running one. Resolves to the
+   * number of events acknowledged.
+   */
+  function flushOutbox() {
+    if (closed) return Promise.resolve(0);
+    if (outbox.flushing) return outbox.flushing;
+    if (outbox.timer) { clearTimeout(outbox.timer); outbox.timer = null; }
+    outbox.flushing = (async () => {
+      let ok = 0;
+      for (const event of store.outboxList()) {
+        if (closed) break;
+        if (outbox.inflight.has(event.id)) continue; // its own first attempt is still out
+        if (await send(event)) ok++;
+        else break; // the wire is down: the retry timer picks the rest up
+      }
+      return ok;
+    })().finally(() => { outbox.flushing = null; });
+    return outbox.flushing;
+  }
+
+  // What the last run left behind goes out as soon as the pool is up.
+  poolReady.then(() => { if (store.outboxSize()) flushOutbox().catch(() => {}); }).catch(() => {});
 
   function buildFor(holon, lens, item, content) {
     return buildEvent({
@@ -447,12 +540,12 @@ export function createRelayTransport(holo, {
     return st.bounded;
   }
 
-  /** Mark every pair stale and re-pull the watched ones now (reconnect / wake). */
+  /** Mark every pair stale, re-pull the watched ones and resend the outbox (reconnect / wake). */
   let resyncing = null;
   function resync() {
     if (closed || resyncing) return resyncing || Promise.resolve();
     resyncing = (async () => {
-      const work = [];
+      const work = [flushOutbox().catch(() => 0)];
       for (const st of pairs.values()) {
         st.freshAt = 0;
         if (st.watchers > 0) {
@@ -640,6 +733,11 @@ export function createRelayTransport(holo, {
     publishDelete,
     ensureSync,
     resync,
+    /** Resend every event no relay has acknowledged yet; resolves to how many got through. */
+    flushOutbox,
+    /** Events published here that no relay has acknowledged (oldest first). */
+    outboxList: () => store.outboxList(),
+    outboxCount: () => store.outboxSize(),
     /** Test/diagnostic hook: number of (holon, lens) pairs ever pulled. */
     syncCount: () => pairs.size,
     /** Pairs currently held live by a watcher. */
@@ -652,6 +750,8 @@ export function createRelayTransport(holo, {
       closed = true;
       if (live.timer) clearTimeout(live.timer);
       live.timer = null;
+      if (outbox.timer) clearTimeout(outbox.timer);
+      outbox.timer = null;
       closeLive();
       raws.clear();
       reverse?.close();

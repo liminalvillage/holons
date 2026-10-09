@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Browser adapter on the raw IndexedDB API (no dependency). One database per
-// app (`holosphere:<app>`), four object stores mirroring the persistence
+// app (`holosphere:<app>`), five object stores mirroring the persistence
 // tables. Each `append` is one read-write transaction. A quota or corruption
 // error degrades the adapter to a no-op with a single warning: the store keeps
 // running from memory rather than taking the app down.
 
-const DB_VERSION = 2;
-const STORES = ['records', 'events', 'private', 'cursors'];
+// v3 added `outbox` (events awaiting a relay OK). Opening an older database
+// upgrades it in place: `onupgradeneeded` only creates what is missing.
+const DB_VERSION = 3;
+const STORES = ['records', 'events', 'private', 'cursors', 'outbox'];
 
 const req = (r) => new Promise((resolve, reject) => {
     r.onsuccess = () => resolve(r.result);
@@ -48,6 +50,7 @@ export function createIndexedDbAdapter({ appName = 'holosphere', dbName, indexed
             if (!d.objectStoreNames.contains('events')) d.createObjectStore('events', { keyPath: 'id' });
             if (!d.objectStoreNames.contains('private')) d.createObjectStore('private', { keyPath: 'k' });
             if (!d.objectStoreNames.contains('cursors')) d.createObjectStore('cursors', { keyPath: 'k' });
+            if (!d.objectStoreNames.contains('outbox')) d.createObjectStore('outbox', { keyPath: 'id' });
         };
         return req(r);
     }
@@ -65,7 +68,7 @@ export function createIndexedDbAdapter({ appName = 'holosphere', dbName, indexed
                 db = await openDb();
                 db.onversionchange = () => { try { db.close(); } catch { /* ignore */ } };
                 const tx = db.transaction(STORES, 'readonly');
-                const [records, events, priv, cursors] = await Promise.all(
+                const [records, events, priv, cursors, outbox] = await Promise.all(
                     STORES.map((s) => req(tx.objectStore(s).getAll())),
                 );
                 await done(tx);
@@ -74,6 +77,7 @@ export function createIndexedDbAdapter({ appName = 'holosphere', dbName, indexed
                     events,
                     private: priv.map((row) => [row.k, row.v]),
                     cursors: cursors.map((row) => [row.k, row.v]),
+                    outbox,
                 };
             } catch (e) {
                 degrade('open', e);
@@ -94,6 +98,8 @@ export function createIndexedDbAdapter({ appName = 'holosphere', dbName, indexed
                             case 'priv': tx.objectStore('private').put({ k: op.k, v: op.v }); break;
                             case 'priv-del': tx.objectStore('private').delete(op.k); break;
                             case 'cur': tx.objectStore('cursors').put({ k: op.k, v: op.v }); break;
+                            case 'out': tx.objectStore('outbox').put(op.v); break;
+                            case 'out-del': tx.objectStore('outbox').delete(op.id); break;
                             default: break;
                         }
                     }
@@ -114,6 +120,7 @@ export function createIndexedDbAdapter({ appName = 'holosphere', dbName, indexed
                     for (const evt of full.events) tx.objectStore('events').put(evt);
                     for (const [k, v] of full.private) tx.objectStore('private').put({ k, v });
                     for (const [k, v] of full.cursors) tx.objectStore('cursors').put({ k, v });
+                    for (const evt of full.outbox || []) tx.objectStore('outbox').put(evt);
                     await done(tx);
                 } catch (e) {
                     degrade('snapshot', e);

@@ -732,10 +732,26 @@ class HoloSphere {
         return Utils.notifySubscribers(this, data);
     }
 
-    /** Re-pull every watched lens and mark the rest stale (e.g. from an `online` handler). */
+    /** Re-pull every watched lens, mark the rest stale and resend the outbox (e.g. from an `online` handler). */
     async resyncSubscriptions() {
         await this._awaitBackend();
         if (this._relayTransport) await this._relayTransport.resync();
+    }
+
+    /**
+     * Events this instance published that no relay has acknowledged yet
+     * (oldest first). Empty when every write has reached the wire; the
+     * transport keeps resending these on reconnect, wake and a backoff timer.
+     */
+    async getOutbox() {
+        await this._awaitBackend();
+        return this.store.outboxList();
+    }
+
+    /** Resend the outbox now; resolves to how many events a relay took. */
+    async flushOutbox() {
+        await this._awaitBackend();
+        return this._relayTransport ? this._relayTransport.flushOutbox() : 0;
     }
 
     /**

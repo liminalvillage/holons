@@ -13,6 +13,7 @@ Nothing else holds data any more — there is no graph database underneath.
                                    ┌──────────── store ────────────┐
    put/get/getAll/subscribe ◄────► │ records  events  backlinks    │
    (content.js, signing.js)        │ private  cursors  watch feed  │
+                                   │ outbox                        │
                                    └───────────────┬───────────────┘
                                                    │ ops
                                                    ▼
@@ -27,6 +28,7 @@ Nothing else holds data any more — there is no graph database underneath.
 | `events` | event id | the signed envelope; only each author's latest claim per address (NIP-33) — except on an append-only lens, where every entry is its own address and all are kept. This is what signing/enforce and `getLog` read — the old `_events` sidecar is gone | yes |
 | `private` | `scope\|lens\|key` | NIP-44 ciphertext of password lenses | yes |
 | `cursors` | `holon\|lens` | `{ since, syncedAt }` — how far the lens is synced | yes |
+| `outbox` | event id | a published event (any kind) no relay has acknowledged yet — see *Outbox* | yes |
 | `backlinks` | source soul | set of hologram-pointer souls | derived (rebuilt on open) |
 
 ## One ordering rule
@@ -107,12 +109,32 @@ store asks only for `since: cursor − 60 s` and then keeps a live subscription
 open. Cursors are set by the transport once a backfill is complete, never by
 the store on its own, so a crash mid-backfill cannot skip history.
 
+## Outbox — a write made offline still travels
+
+Every event the transport publishes (30078 envelopes, projections, kind-1808
+log entries, NIP-17 wraps) goes into `outbox` BEFORE the wire attempt and is
+removed only once one relay answers OK. What no relay took is resent — oldest
+first, one failure stops the pass — on reconnect (`resync`, which the
+browser's `online` and `visibilitychange` handlers call), on a backoff timer
+(5 s → 15 s → 60 s → 5 min while the wire stays down) and when the next
+instance opens the same store. So a tick made on an iPad with no network lands
+locally at once, survives a reload, and reaches the relays whenever the
+network is back.
+
+Two rules keep it small: a newer claim at the same replaceable coordinate
+(`kind|pubkey[|d]`) evicts the unsent older one — the relay would keep only
+the newest anyway — and a verdict every relay agrees will not change on retry
+(`invalid:`, `blocked:`, `pow:`, `restricted:`) drops the event with a
+warning. Anything else (connection failure, timeout, rate limit, an
+unexplained refusal) is retried. `holosphere.getOutbox()` lists what is
+waiting; `holosphere.flushOutbox()` resends now.
+
 ## Adapter interface
 
 ```ts
 interface StoreAdapter {
-  open(): Promise<Snapshot | null>;   // { records[], events[], private[], cursors[] }
-  append(ops: Op[]): Promise<void>;   // rec | evt | evt-del | priv | priv-del | key | key-del | cur
+  open(): Promise<Snapshot | null>;   // { records[], events[], private[], cursors[], outbox[] }
+  append(ops: Op[]): Promise<void>;   // rec | evt | evt-del | priv | priv-del | cur | out | out-del
   snapshot(full: Snapshot): Promise<void>;
   clear(): Promise<void>;
   close(): Promise<void>;
