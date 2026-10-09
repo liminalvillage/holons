@@ -199,71 +199,46 @@ The cascade stops three hops below the root and never goes round a loop.
 8. **New moon.** The bot checkpoints each log per lunar cycle; readers can
    compare their fold against the holon's root.
 
-## On chain (Sepolia)
+## On chain (Sepolia): the treasury and the Pot
 
-The same splits run on Sepolia as Bundle contracts, deployed by the
-collective's wallet `0xb2DA94d13735aF2DDCF5a3c797547290221f3DBb` (the
-`ETH_PRIVATE_KEY` in the root `.env`; the same key in MetaMask shows every
-payout land). Each address is recorded on its holon's settings document
-(`bundle`), so the kiosk Fund tab and the web editor read it, and every
-one is a Sourcify exact match.
+Two addresses, two jobs. The **treasury** is where a holon keeps value
+before it decides to distribute it — a Safe under the owners' threshold, or
+any address. The **Pot** is the distribution machine: what reaches it is
+income, divided by the rights table at the next new moon and collected by
+proof. Moving a lunation's income from the treasury into the Pot is the
+owners' one decision, made in Safe Wallet; from there the cycle below runs
+by the table. The treasury never appears in the log — what the owners keep
+back is simply not yet income — so nobody can spend "outside the books":
+the books start at the Pot.
 
-| holon             | Bundle                                       |
-| ----------------- | -------------------------------------------- |
-| Liminal grove     | `0xdf96fd6F85A63212730669fd43Fd80Be91e526E1` |
-| Casa Selva grove  | `0xe54721403752054dA3AaDcD923550095FbBC060B` |
-| Collector's guild | `0x277A9981c3214819eE0204Ee5f4D35f4D7897C27` |
-| Liminal           | `0xDd6862Cd372376e6BBfED08172652eBd0aad3E85` |
-| Casa Selva        | `0x8dCBf6F22b3F6f23032d0522D76cd61121A35172` |
-
-The grove ids are `holon_fig33pftaepw96i4` (Liminal) and
-`holon_ccdhuztubkrs5thm` (Casa Selva), key-founded on 2026-10-06; their
-Bundles were deployed the same day. The retired mother's Bundle,
-`0xB634A9352cb6dc7905A7a51240095C9F9123802C`, stays on chain with the demo
-vouchers it holds; the mother's split and links were cleared and nothing
-new goes to it.
-
-Bound: each grove pays its two seats to the location's and the guild's
-Bundles; Liminal pays its Casa Selva ring to the Casa Selva Bundle;
-Roberto's seat is bound to the wallet in the guild, Liminal and Casa Selva.
+Both live on the holon's settings document (`settings.pot`: the Pot's
+address and chain, the `tokens` it is read in, and its `treasury`). The
+Pot panel (kiosk Flows → _The Pot_, web Flows) shows the treasury's
+balances per unit, links to Safe Wallet, and offers the Pot's address to
+copy; MCP `pot_treasury_set`, `pot_token_add` / `pot_token_remove` and
+`pot_record_set` keep the record.
 
 **The oil itself is the EVO voucher**, an ERC-20 at
 `0x46CfAd0408Fe97042E7f16f6dC82B12978Fea6d3` (`contracts/src/EvoVoucher.sol`,
-Sourcify exact match): one EVO is one litre, 18 decimals. Only its owner, the
-collective's wallet, mints — one `mint(to, litres, memo)` per pressed lot,
-the on-chain twin of the `flow_mints` entry in that lot's grove. The lot is
-then handed to the grove's Bundle (`transfer`) and `reward(evo, litres)`
-there divides it in one transaction: half into the location's Bundle, half
-into the guild's, each divided again. Because the grove's split is static
-and the lot already names its grove, no re-sync is needed per lot. A holder
-`redeem(litres, memo)`s by burning when the oil is collected — the on-chain
-twin of a `payout`. Vouchers held by a Bundle for an unbound member are
-released with `claim(id, wallet)` (kiosk Fund tab → Bind). ETH sent to a
-Bundle flows the same way, but the collective's unit is litres.
+Sourcify exact match): one EVO is one litre, 18 decimals. Only its owner
+mints — one `mint(to, litres, memo)` per pressed lot, the on-chain twin of
+the `flow_mints` entry in that lot's grove — to the grove's treasury, or
+straight to its Pot when the lot is to be divided at the next moon. A
+holder `redeem(litres, memo)`s by burning when the oil is collected — the
+on-chain twin of a `payout`. EVO is listed on every Pot record ("Read in").
 
-**What the contract holds is on the Fund tab** (kiosk Flows → gear → Fund,
-web Fund allocation editor), read live from the chain without a wallet: per
-unit — ETH and every token the Bundle record lists — the balance, how much
-of it waits for members who have not bound a wallet, how much was received
-but not divided, and what waits for the person looking. "Track" with a
-token address lists another ERC-20 on the record (core `addBundleToken`);
-EVO is listed on every record. These are the Bundle's own books, shown
-beside the split, never added to the pot: the lot in the mints log and its
-vouchers in the contract are one lot.
-
-Two things the chain cannot know on its own: an equation-mode roster is a
-snapshot, so re-sync ("Save on chain") after hours are logged; and an
-exterior share with nobody on the rings (the guild's 20 %, Casa Selva's 14 %)
-stays as free balance in that contract, pushed through the split again by
-the next `reward()`.
+The push rail that came before — the **Bundle** contracts, `reward()`
+splitting on chain, `syncAll` mirroring the split, bind rows — is retired
+(2026-10-09): the split lives only in settings, and the chain only holds
+and pays. The Bundles deployed on Sepolia stay where they are with the demo
+vouchers they hold; nothing new goes to them.
 
 ## The Pot: rights committed at each new moon, collected in one transfer
 
-The Bundle pushes: `reward()` pays every seat and a seat that is a contract
-runs its own `reward()` in the same transaction, so gas grows with the chain,
-everyone is paid whether they want it or not, and every re-split needs a
-`syncAll` at every level. The **Pot** (`contracts/src/Pot.sol`, bytes in
-`pot-artifact.ts`) holds instead. It never splits: who holds a right over
+A contract that splits on its own (the retired Bundle's `reward()`) pays
+everyone whether they want it or not, and every re-split has to reach every
+level. The **Pot** (`contracts/src/Pot.sol`, bytes in `pot-artifact.ts`)
+holds instead. It never splits: who holds a right over
 the pool is decided off-chain and committed once per lunation as the Merkle
 root of a **rights table** — one row per final holder and token, carrying
 the holder's cumulative amount and payout address.
@@ -337,6 +312,7 @@ window is for.
 | claims, gives, attestations, payouts      | `claims.ts` (log `flow_claims`: `claim`, `transfer`, `payout`) — see [`protocol.md`](./protocol.md)                                                                                                                                                                              |
 | the access a claim or a give is judged by | `ceiling.ts` (`claimCeilings`, `claimHeadroom`: the ceiling plus received less given), `ceiling-load.ts` (`loadClaimCeilings`, for the MCP and the bot); `usage.ts` `movedOf`, `fundAccount`                                                                                      |
 | the Pot: the rights table and its root    | `rights.ts` (`advanceRights`), `rights-tree.ts`, `rights-log.ts` (log `flow_rights`), `rights-cut.ts` (`cutRights`), `pot-contract.ts`, `payout.ts`; `contracts/src/Pot.sol`                                                                                                     |
+| the Pot record, its tokens, its treasury  | `pot-record.ts` (`settings.pot`: `tokens`, `treasury`; `savePotTreasury`, `addPotToken`), `holdings.ts` (`treasuryLines`), `chain.ts` (`safeAppUrl`)                                                                                                                           |
 | the value equation                        | `@holons/core/scoring` (`currencies.hour`, `currencies.euro`)                                                                                                                                                                                                                    |
 | surfaces                                  | kiosk `FlowsView.svelte` + `AllocationSettings.svelte` (Fund, Contributors, Zones, Rules), web `flows/Flows.svelte` + `AllocationEditor.svelte`, MCP `allocation_*` / `flow_*` (`flow_transfer_record` for a give), bot `/fundmint` `/fundmints` `/fundclaim` `/fundgive` `/fundattest` `/funddispute` `/fundpaid` `/fundpolicy` |
 

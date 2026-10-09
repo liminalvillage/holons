@@ -65,9 +65,6 @@ npm run dev
 | `npm run check`            | Run type checking                   |
 | `npm run lint`             | Run linter                          |
 | `npm run format`           | Format code with Prettier           |
-| `npm run deploy:localhost` | Deploy contracts to localhost       |
-| `npm run deploy:sepolia`   | Deploy contracts to Sepolia testnet |
-| `npm run deploy:gnosis`    | Deploy contracts to Gnosis chain    |
 
 ## Top 30 Features
 
@@ -109,15 +106,11 @@ npm run dev
 
 17. **Database Viewer (DB Panel)** - Direct view and manipulation of raw HoloSphere data for administrative purposes
 
-### Blockchain & Smart Contracts
+### Blockchain
 
-22. **Bundle Smart Contract System** - Deploy and manage Bundle contracts with interior/exterior zones, member management, and flow distribution
-
-23. **Smart Contract Deployment** - Contract loader system supporting Managed, Zoned, Splitter, and Appreciative holon types with registry configuration
+22. **The Pot and its treasury** - A holon's value held on chain (`Pot.sol`), divided by a rights table committed at each new moon and collected by proof; a Safe treasury feeds it (Flows → The Pot)
 
 24. **Flow Split Management** - Adjust flow distribution between interior (members) and exterior (federated holons) with steepness and zone parameters
-
-25. **Holon Manager Service** - Comprehensive contract management including member addition, zone assignment, balance queries, and event emission
 
 ### Federation & Integration
 
@@ -145,9 +138,8 @@ src/
 │   ├── widgets/         # Dashboard widgets
 │   └── ...
 ├── lib/                 # Core libraries
-│   ├── holons/          # Holon management (contracts, settings)
-│   ├── holosphere/      # HoloSphere data layer
-│   └── contracts/       # Smart contract ABIs and bytecode
+│   ├── holons/          # The Pot on chain, the allocation mirror
+│   └── holosphere/      # HoloSphere data layer
 ├── routes/              # SvelteKit routes
 ├── services/            # Business logic services
 ├── stores/              # Svelte stores for state management
@@ -159,22 +151,9 @@ src/
 
 | Service           | Description                                          |
 | ----------------- | ---------------------------------------------------- |
-| `FlowSettings`    | Holon configuration, federation, and flow management |
-| `HolonsManager`   | Smart contract interaction and event handling        |
-| `HolonsContract`  | Low-level blockchain contract operations             |
 | `QueryManager`    | Centralized HoloSphere data queries with caching     |
 | `SessionManager`  | Design Streams session lifecycle management          |
 | `QRActionService` | QR code action processing and dispatch               |
-
-## Smart Contract Types
-
-| Contract     | Purpose                                                             |
-| ------------ | ------------------------------------------------------------------- |
-| Bundle       | Primary contract with interior/exterior zones and member management |
-| Managed      | Simpler contract with basic member and flow management              |
-| Zoned        | Contract with multiple configurable zones                           |
-| Splitter     | Flow distribution contract for payment splitting                    |
-| Appreciative | Appreciative-based resource allocation                              |
 
 ## Quick Start for Users
 
