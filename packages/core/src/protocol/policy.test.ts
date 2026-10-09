@@ -40,5 +40,9 @@ describe('policy', () => {
     expect(policyFor(policies, 'flow_claims').quorum).toBe(2);
     expect(policyFor(policies, 'votes').conflict).toBe('quorum');
     expect(policyFor(policies, 'unknown')).toEqual(DEFAULT_POLICY);
+    // The fund logs need an attester's word by default; an admin's own entry self-attests.
+    expect(policyFor(null, 'flow_claims').quorum).toBe(1);
+    expect(policyFor(null, 'flow_mints').quorum).toBe(1);
+    expect(policyFor(null, 'governance_votes').quorum).toBe(0);
   });
 });

@@ -284,6 +284,12 @@ export function createTrustCache(
 ) {
   const byPubkey = new Map(); // pubkey -> telegram user id (all holons)
   const perHolon = new Map(); // holon -> { at, list }
+  let providerPubkey = null;
+  try {
+    if (secret) providerPubkey = deriveIdentityProviderKey(secret).publicKey;
+  } catch {
+    providerPubkey = null;
+  }
   const groupHashes = new Map(); // holon -> [hash of 39000, 39001, 39002]
   let warned = false;
 
@@ -337,9 +343,13 @@ export function createTrustCache(
           /* skip */
         }
       }
-      // Linked keys, second pass: a derived key always outranks a link, and a
-      // key two members both claim stays with whoever mapped it first
-      // (mirrors the read-side attestation guard — never remapped).
+      // Linked keys, second pass, from each member's PERSONAL record only:
+      // that holon's writers are the person and this bot, while the group's
+      // `users` record is last-writer-wins by any member — read from there,
+      // a member could annex a fresh key to someone else and give their
+      // access away. A derived key always outranks a link, and a key two
+      // members both claim stays with whoever mapped it first (mirrors the
+      // read-side attestation guard — never remapped).
       for (const u of users) {
         if (!u || u.id === undefined || u.id === null) continue;
         let personal = null;
@@ -348,10 +358,7 @@ export function createTrustCache(
         } catch {
           /* no personal record */
         }
-        for (const pk of new Set([
-          ...linkedKeysOf(u),
-          ...linkedKeysOf(personal),
-        ])) {
+        for (const pk of new Set(linkedKeysOf(personal))) {
           if (derived.has(pk)) continue;
           const owner = byPubkey.get(pk);
           if (owner !== undefined && String(owner) !== String(u.id)) continue;
@@ -462,14 +469,29 @@ export function createTrustCache(
     syncPrivacy(hs, String(holon)).catch(e =>
       console.warn('[holosphere] privacy sync failed:', e?.message)
     );
-    if (settings && typeof settings === 'object' && !settings.holonPubkey) {
+    // The trust anchor and the identity provider readers may believe:
+    // written once by the holon key (an admin), so a browser folding the
+    // claims log counts this bot's kind-31926 attestations and nobody
+    // else's. (Readers take these fields from an admin's envelope only.)
+    const providers = Array.isArray(settings?.identityProviders)
+      ? settings.identityProviders
+      : [];
+    const needsProvider = providerPubkey && !providers.includes(providerPubkey);
+    if (
+      settings &&
+      typeof settings === 'object' &&
+      (!settings.holonPubkey || needsProvider)
+    ) {
       hs.put(String(holon), 'settings', {
         ...settings,
         id: settings.id ?? String(holon),
-        holonPubkey,
+        holonPubkey: settings.holonPubkey || holonPubkey,
+        ...(needsProvider
+          ? { identityProviders: [...providers, providerPubkey] }
+          : {}),
       }).catch(e =>
         console.warn(
-          '[holosphere] could not record holonPubkey in settings:',
+          '[holosphere] could not record holonPubkey / identityProviders in settings:',
           e?.message
         )
       );

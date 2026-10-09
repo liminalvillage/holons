@@ -55,6 +55,7 @@ import {
   loadPotRecord,
   loadRights,
   lunationAt,
+  rightsByRef,
   scoreAllocationMembers,
 } from '@holons/core/flows';
 import {
@@ -742,6 +743,27 @@ export default class FundClaims {
   }
 
   /**
+   * The root the Pot applies today — epoch, root and the log id of its
+   * table — or null when none was ever activated.
+   */
+  async potActive(pot) {
+    const rpc = describeChain(pot.chainId)?.rpc;
+    if (!rpc) return null;
+    const provider = new ethers.JsonRpcProvider(rpc, pot.chainId, {
+      staticNetwork: true,
+    });
+    const contract = new ethers.Contract(pot.address, [...POT_ABI], provider);
+    const a = await contract.active();
+    const root = String(a.root ?? a[1] ?? '').toLowerCase();
+    if (!/^0x[0-9a-f]{64}$/.test(root) || /^0x0+$/.test(root)) return null;
+    return {
+      epoch: Number(a.epoch ?? a[0]),
+      root,
+      tableRef: String(a.tableRef ?? a[2]),
+    };
+  }
+
+  /**
    * At the new moon, cut and publish the lunation's rights table for every
    * holon with a Pot whose latest published table is older than this
    * lunation. Signed by the holon key (an attester); the signers then sign
@@ -764,8 +786,31 @@ export default class FundClaims {
         () => null
       );
       if (!received) continue;
+      // The next table builds on the one the chain APPLIES, never on the
+      // newest in the log: every row is held monotone over its predecessor,
+      // so a vetoed table taken as the floor would keep its inflated rows
+      // for good. A chain with no active root yet starts from nothing.
+      let previous = null;
+      try {
+        const active = await this.potActive(pot);
+        if (active) {
+          const applied = rightsByRef(ctx.folded, active.tableRef);
+          if (!applied) {
+            console.warn(
+              `[fundclaims] ${h}: the Pot's active table ${active.tableRef} is not in the rights log — not cut`
+            );
+            continue;
+          }
+          previous = applied.table;
+        }
+      } catch (err) {
+        console.warn(
+          `[fundclaims] ${h}: could not read the Pot's active root (${err?.message || err}) — not cut`
+        );
+        continue;
+      }
       const cut = await cutRights(db, h, {
-        previous: ctx.latest?.table ?? null,
+        previous,
         epoch,
         chainId: pot.chainId,
         received,

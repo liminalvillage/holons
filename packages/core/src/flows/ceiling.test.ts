@@ -48,14 +48,17 @@ describe('claimCeilings', () => {
     const c = claimCeilings({ shares, pots: { l: 200 }, usage: usageOf(fold([])), claims: fold([]) });
     expect(c).toEqual({ ada: { L: 100 }, bob: { L: 100 } });
     expect(ceilingOf(c, 'ada', 'l')).toBe(100);
-    expect(ceilingOf(c, 'ada', 'EUR')).toBeNull();
+    // A unit the lookup does not name is a right of zero, never "unknown".
+    expect(ceilingOf(c, 'ada', 'EUR')).toBe(0);
+    expect(ceilingOf(c, 'carl', 'L')).toBe(0);
+    expect(ceilingOf(null, 'ada', 'L')).toBeNull();
     expect(partyShares(shares).get('bob')).toBe(50);
   });
 
-  it('one ceiling per unit the pot is in; a unit with no pot has none', () => {
+  it('one ceiling per unit the pot is in; a unit with no pot is a ceiling of zero', () => {
     const c = claimCeilings({ shares, pots: { L: 200, eur: 40, kg: 0 }, usage: null, claims: null });
     expect(c.ada).toEqual({ L: 100, EUR: 20 });
-    expect(ceilingOf(c, 'ada', 'KG')).toBeNull();
+    expect(ceilingOf(c, 'ada', 'KG')).toBe(0);
   });
 
   it("the log's own draws are the fold's to subtract: a payout leaves the ceiling where it was", () => {
@@ -105,7 +108,8 @@ describe('claimHeadroom', () => {
     const account = fundAccount(sized, usage, 'ada')!;
     expect(account.available).toBe(45);
     expect(claimHeadroom(ceilings, claims, 'ada', 'l')).toBe(45);
-    expect(claimHeadroom(ceilings, claims, 'ada', 'EUR')).toBeNull();
+    expect(claimHeadroom(ceilings, claims, 'ada', 'EUR')).toBe(0);
+    expect(claimHeadroom(null, claims, 'ada', 'EUR')).toBeNull();
   });
 
   it('a claim still awaiting attestation is already spoken for', () => {
@@ -188,7 +192,7 @@ describe('gives under the ceiling', () => {
     const claims = fold([g, c]);
     const usage = usageOf(claims);
     const ceilings = claimCeilings({ shares, pots: { L: 200 }, usage, claims });
-    expect(ceilingOf(ceilings, 'tre', 'L')).toBeNull();
+    expect(ceilingOf(ceilings, 'tre', 'L')).toBe(0);
     expect(claimHeadroom(ceilings, claims, 'tre', 'L')).toBe(10);
     expect(fundAccount(sized(), usage, 'tre')).toMatchObject({ percentage: 0, right: 0, received: 12.5, claimed: 2.5, available: 10, side: 'exterior' });
     expect(fundAccount(sized(), usage, 'nobody')).toBeNull();

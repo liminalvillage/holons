@@ -105,12 +105,16 @@ export function claimCeilings(input: ClaimCeilingInput): ClaimCeilings {
   return out;
 }
 
-/** The ceiling a lookup gives for a party and unit, or null when none is known. */
+/**
+ * The ceiling a lookup gives for a party and unit: zero when the lookup does
+ * not name them (no seat, or a unit with no pot), null only when there is no
+ * lookup at all — the same reading the fold makes.
+ */
 export function ceilingOf(ceilings: RightsLookup | null | undefined, party: string, unit: string): number | null {
   if (!ceilings) return null;
   const key = unitKey(unit);
   const v = typeof ceilings === 'function' ? ceilings(String(party), key) : ceilings[String(party)]?.[key];
-  return v == null || !Number.isFinite(Number(v)) ? null : Number(v);
+  return v == null || !Number.isFinite(Number(v)) ? 0 : Number(v);
 }
 
 /**
@@ -119,7 +123,7 @@ export function ceilingOf(ceilings: RightsLookup | null | undefined, party: stri
  * holds for them: approved, settled, and still awaiting a verdict (a pending
  * give included). A party with no ceiling of their own but something
  * received has exactly that, the same rule the fold applies. Floored at
- * zero; null when no ceiling is known for that unit and nothing was received.
+ * zero; null only when no ceilings were passed at all and nothing was received.
  */
 export function claimHeadroom(
   ceilings: RightsLookup | null | undefined,

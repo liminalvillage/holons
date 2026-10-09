@@ -17,9 +17,10 @@ describe('bootstrapFromLenses', () => {
   it('assembles members, admins and the party map from settings, users and attestations', () => {
     const b = bootstrapFromLenses({
       holonId: '-100',
-      settings: { holonPubkey: K('e'), admin: '7', nostrTrustedPubkeys: [K('f'), 'junk'] },
+      settings: { holonPubkey: K('e'), admin: '7', nostrTrustedPubkeys: [K('f'), 'junk'], identityProviders: [K('9')] },
       users: [{ id: 7, linkedKeys: [K('c')] }, { id: 8 }, null],
       attestations: [att('telegram:7', [K('a')], 'a1'), att('telegram:8', [K('b')], 'a2')],
+      trustUsers: true,
     });
     expect(b.holonPubkey).toBe(K('e'));
     expect(new Set(b.actors.members)).toEqual(new Set([K('a'), K('b'), K('c'), K('e'), K('f')]));
@@ -37,6 +38,36 @@ describe('bootstrapFromLenses', () => {
     expect(parties.partyOf(K('b'))).toBe('8');
     expect(parties.partyOf(K('e'))).toBe('-100');
     expect(parties.partyOf(K('f'))).toBeNull(); // trusted to write, but nobody's party
+  });
+
+  it('a plain read of the users lens names nobody: a member could have written anyone\'s record', () => {
+    const b = bootstrapFromLenses({
+      holonId: '-100',
+      settings: { holonPubkey: K('e'), admin: '7', identityProviders: [K('9')] },
+      users: [{ id: 7, linkedKeys: [K('c')] }, { id: 8, linkedKeys: [K('d')] }],
+      attestations: [att('telegram:7', [K('a')], 'a1')],
+    });
+    expect(new Set(b.actors.members)).toEqual(new Set([K('a'), K('e')]));
+    expect(new Set(b.actors.admins)).toEqual(new Set([K('e'), K('a')]));
+    const parties = createPartyResolver({ keyToParty: b.keyToParty, linkedKeys: b.linkedKeys, holonPubkey: b.holonPubkey, holonId: '-100' });
+    expect(parties.partyOf(K('c'))).toBeNull();
+    expect(parties.partyOf(K('d'))).toBeNull();
+    expect(parties.partyOf(K('a'))).toBe('7');
+  });
+
+  it('an attestation counts only from a trusted provider: the holon key, settings, or the caller', () => {
+    const rogue: IdentityAttestation = { ...att('telegram:7', [K('b')], 'r1'), provider: K('8') };
+    const base = { holonId: '-100', settings: { holonPubkey: K('e') }, attestations: [att('telegram:7', [K('a')], 'a1'), rogue] };
+    const none = bootstrapFromLenses(base);
+    expect(none.keyToParty.size).toBe(1); // only the holon key names itself
+    expect(none.keyToParty.get(K('a'))).toBeUndefined();
+    const viaCaller = bootstrapFromLenses({ ...base, providers: [K('9')] });
+    expect(viaCaller.keyToParty.get(K('a'))).toBe('7');
+    expect(viaCaller.keyToParty.get(K('b'))).toBeUndefined();
+    const viaSettings = bootstrapFromLenses({ ...base, settings: { holonPubkey: K('e'), identityProviders: [K('9')] } });
+    expect(viaSettings.keyToParty.get(K('a'))).toBe('7');
+    const own: IdentityAttestation = { ...att('telegram:7', [K('a')], 'e1'), provider: K('e') };
+    expect(bootstrapFromLenses({ ...base, attestations: [own] }).keyToParty.get(K('a'))).toBe('7');
   });
 
   it('is empty but well-formed with nothing to go on', () => {

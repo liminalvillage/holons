@@ -53,6 +53,21 @@ describe('foldClaims', () => {
     ]);
   });
 
+  it('under a lookup, a party with no seat or a unit with no pot has a right of zero: nothing to claim, nothing to give', () => {
+    const carl = testKey();
+    const partyOfAll = (pk: string) => (pk === carl.pk ? 'carl' : partyOf(pk));
+    const members = bootstrapActors({ members: [ada.pk, bob.pk, carl.pk], admins: [treasurer.pk, holon.pk], genesis: holon.pk });
+    const noSeat = entry(carl.sk, buildClaim({ party: 'carl', amount: 1_000_000, unit: 'eur', at: T0 * 1000 }) as never, T0);
+    const noPot = entry(ada.sk, buildClaim({ party: 'ada', amount: 1, unit: 'btc', at: T0 * 1000 }) as never, T0 + 1);
+    const phantomGive = entry(carl.sk, buildTransfer({ party: 'carl', to: 'ada', amount: 500, unit: 'eur', at: T0 * 1000 }) as never, T0 + 2);
+    const f = foldClaims({ entries: [noSeat, noPot, phantomGive], actors: members, partyOf: partyOfAll, rights });
+    expect(f.claims.map((c) => c.status)).toEqual(['over', 'over']);
+    expect(f.transfers[0].status).toBe('over');
+    expect(claimTotalsOf(f, 'ada', 'eur').received).toBe(0);
+    // Only a fold with NO lookup at all is uncapped.
+    expect(foldClaims({ entries: [noSeat], actors: members, partyOf: partyOfAll }).claims[0].status).toBe('approved');
+  });
+
   it('holds a claim past the right as over — kept, shown, not counted', () => {
     const a = entry(bob.sk, buildClaim({ party: 'bob', amount: 40, unit: 'eur', at: T0 * 1000 }) as never, T0);
     const b = entry(bob.sk, buildClaim({ party: 'bob', amount: 20, unit: 'eur', at: T0 * 1000 }) as never, T0 + 1);
@@ -235,12 +250,16 @@ describe('foldClaimsFromLenses', () => {
       entries: [c],
       settings: { holonPubkey: holon.pk, admin: '7' },
       users: [{ id: 7, linkedKeys: [ada.pk] }],
+      trustUsers: true, // records the caller read as the anchor's own
     });
     expect(ctx.actors.source).toBe('bootstrap');
+    // The same records read plainly name nobody: any member could have written them.
+    const plain = foldClaimsFromLenses({ holonId: '-100', entries: [c], settings: { holonPubkey: holon.pk, admin: '7' }, users: [{ id: 7, linkedKeys: [ada.pk] }] });
+    expect(plain.folded.claims[0]).toMatchObject({ status: 'rejected', reason: 'unaccepted-signer' });
     expect(ctx.parties.partyOf(ada.pk)).toBe('7');
     expect(ctx.folded.claims[0].status).toBe('approved');
     expect(ctx.actors.roleAt(ada.pk, T0)).toBe('admin');
-    expect(ctx.policy.quorum).toBe(0);
+    expect(ctx.policy.quorum).toBe(1); // the fund log's default: an attester's word is needed
     // Nobody vouches for the key → rejected, and the statement says why.
     const nobody = foldClaimsFromLenses({ holonId: '-100', entries: [c], settings: { holonPubkey: holon.pk } });
     expect(nobody.folded.claims[0]).toMatchObject({ status: 'rejected', reason: 'unaccepted-signer' });
@@ -265,12 +284,14 @@ describe('foldClaims with partner imports', () => {
     const tooMuch = pEntry(pam.sk, buildClaim({ party: 'P', amount: 30, unit: 'eur', at: T0 * 1000 }), T0 + 2);
     const forAda = pEntry(pam.sk, buildClaim({ party: 'ada', amount: 1, unit: 'eur', at: T0 * 1000 }), T0 + 3);
     const theirPayout = pEntry(partnerKey.sk, buildPayout({ claimId: theirs.id, party: 'P', amount: 30, unit: 'eur' }) as never, T0 + 4);
+    // The partner's own admin attests its members' entries (its log's default quorum is 1).
+    const theirWord = [theirs, tooMuch, forAda].map((e, i) => pEntry(partnerKey.sk, buildClaimVerdict(e.id, 'attest'), T0 + 10 + i));
     const f = foldClaims({
       entries: [own],
       actors: actors(),
       partyOf,
       rights: { ...rights, P: { EUR: 50 } },
-      imports: [imported([theirs, tooMuch, forAda, theirPayout])],
+      imports: [imported([theirs, tooMuch, forAda, theirPayout, ...theirWord])],
     });
     expect(f.imports).toEqual([{ holon: 'P', source: 'log', accepted: 4, pending: 0, rejected: 0 }]);
     expect(f.claims.map((c) => [c.party, c.status, c.reason ?? null, c.origin ?? null])).toEqual([
@@ -285,7 +306,7 @@ describe('foldClaims with partner imports', () => {
     expect(claimTotalsOf(f, 'P', 'EUR')).toEqual({ claimed: 30, settled: 0, pending: 0, over: 30, given: 0, received: 0 });
     // Our attester pays the partner's claim out.
     const paid = entry(treasurer.sk, buildPayout({ claimId: theirs.id, party: 'P', amount: 30, unit: 'eur' }) as never, T0 + 5);
-    const g = foldClaims({ entries: [own, paid], actors: actors(), partyOf, rights: { ...rights, P: { EUR: 50 } }, imports: [imported([theirs])] });
+    const g = foldClaims({ entries: [own, paid], actors: actors(), partyOf, rights: { ...rights, P: { EUR: 50 } }, imports: [imported([theirs, theirWord[0]])] });
     expect(g.claims.find((c) => c.id === theirs.id)?.status).toBe('settled');
   });
 
@@ -302,11 +323,14 @@ describe('foldClaims with partner imports', () => {
 
   it('foldClaimsFromLenses passes imports through', () => {
     const theirs = pEntry(pam.sk, buildClaim({ party: 'P', amount: 5, unit: 'eur', at: T0 * 1000 }), T0);
+    const theirWord = pEntry(partnerKey.sk, buildClaimVerdict(theirs.id, 'attest'), T0 + 1);
+    // Our side needs an attester's word too: the holon key is the admin here.
+    const ourWord = entry(holon.sk, buildClaimVerdict(theirs.id, 'attest') as never, T0 + 2);
     const ctx = foldClaimsFromLenses({
       holonId: 'H',
-      entries: [],
+      entries: [ourWord],
       settings: { holonPubkey: holon.pk },
-      imports: [imported([theirs])],
+      imports: [imported([theirs, theirWord])],
     });
     expect(ctx.folded.claims.map((c) => [c.party, c.status, c.origin])).toEqual([['P', 'approved', 'P']]);
   });

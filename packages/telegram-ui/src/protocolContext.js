@@ -17,7 +17,10 @@ import {
   readMembersLog,
 } from '@holons/core/protocol';
 import { attestationsFrom, SHIFT_IDENTITY_LENS } from '@holons/core/shifts';
-import { deriveTelegramNostrKey } from '@holons/core/auth';
+import {
+  deriveIdentityProviderKey,
+  deriveTelegramNostrKey,
+} from '@holons/core/auth';
 import { linkedKeysOf } from '@holons/core/users';
 import {
   createNameResolver,
@@ -60,9 +63,29 @@ export async function readLogContext(db, holon, lens, { secret = '' } = {}) {
   ]);
   await db.getAll(h, MEMBERS_LENS).catch(() => []);
   const membersLog = await readMembersLog(db, h);
+  // Who each key is, from what this bot KNOWS: the derived keys (the
+  // secret) and the keys each member linked on their own personal record.
+  // The group's `users` records are not consulted for links — any member
+  // can write any record there — and the bot's own attestations are the
+  // provider readers trust.
   const extraKeyToParty = [];
-  for (const u of users || []) {
-    if (!u || u.id === undefined || u.id === null) continue;
+  const providers = [];
+  if (secret) {
+    try {
+      providers.push(deriveIdentityProviderKey(secret).publicKey);
+    } catch {
+      /* no provider key */
+    }
+  }
+  const personal = await Promise.all(
+    (users || []).map(u =>
+      u && u.id !== undefined && u.id !== null
+        ? db.get(String(u.id), 'users', String(u.id)).catch(() => null)
+        : null
+    )
+  );
+  (users || []).forEach((u, i) => {
+    if (!u || u.id === undefined || u.id === null) return;
     if (secret) {
       try {
         extraKeyToParty.push([
@@ -73,8 +96,9 @@ export async function readLogContext(db, holon, lens, { secret = '' } = {}) {
         /* skip */
       }
     }
-    for (const k of linkedKeysOf(u)) extraKeyToParty.push([k, String(u.id)]);
-  }
+    for (const k of linkedKeysOf(personal[i]))
+      extraKeyToParty.push([k, String(u.id)]);
+  });
   const base = {
     holonId: h,
     policyEntries,
@@ -84,6 +108,7 @@ export async function readLogContext(db, holon, lens, { secret = '' } = {}) {
     attestations: attestationsFrom(dir || []),
     extraKeyToParty,
     extraMembers: extraKeyToParty.map(([k]) => k),
+    providers,
     holonPubkey: db.currentPubkey,
   };
   // The partners the policy pins are read by their own rules.

@@ -65,7 +65,7 @@ describe('createTrustCache', () => {
 });
 
 describe('createTrustCache — linked keys', () => {
-  it('trusts a member’s linked keys and resolves them to the member; derived keys outrank, first claim wins', async () => {
+  it('trusts the keys a member linked on their PERSONAL record; the group record never seats a key; derived keys outrank, first claim wins', async () => {
     const { deriveTelegramNostrKey } = await import('@holons/core/auth');
     const { setProjectionHostForTests } =
       await import('../src/createHoloSphere.js');
@@ -74,13 +74,19 @@ describe('createTrustCache — linked keys', () => {
     const LINK_C = 'c'.repeat(64);
     const bobDerived = deriveTelegramNostrKey(2, 'secret').publicKey;
     const users = [
-      // Alice links A on the group record and B on her personal record;
-      // she also lists Bob's derived key, which must not be remapped.
+      // The GROUP records are last-writer-wins by any member, so what they
+      // list is never seated: Alice's group record names A and Bob's
+      // derived key; neither counts from here.
       { id: 1, first_name: 'Alice', linkedKeys: [LINK_A, bobDerived] },
-      // Bob claims A too (second claim loses) and C.
       { id: 2, first_name: 'Bob', linkedKeys: [LINK_A, LINK_C] },
     ];
-    const personal = { 1: { id: 1, linkedKeys: [LINK_B] } };
+    // Personal records (writable by the person and this bot only): Alice
+    // linked B and lists Bob's derived key (must not be remapped); Bob
+    // linked B too (second claim loses) and C.
+    const personal = {
+      1: { id: 1, linkedKeys: [LINK_B, bobDerived] },
+      2: { id: 2, linkedKeys: [LINK_B, LINK_C] },
+    };
     setProjectionHostForTests({
       getAll: async () => users,
       get: async (holon, lens, key) =>
@@ -91,9 +97,9 @@ describe('createTrustCache — linked keys', () => {
     const aliceDerived = deriveTelegramNostrKey(1, 'secret').publicKey;
     const list = await trust.trustedAuthors('-1');
     expect(new Set(list)).toEqual(
-      new Set([holonPk, aliceDerived, bobDerived, LINK_A, LINK_B, LINK_C])
+      new Set([holonPk, aliceDerived, bobDerived, LINK_B, LINK_C])
     );
-    expect(trust.userIdFor(LINK_A)).toBe(1);
+    expect(trust.userIdFor(LINK_A)).toBeUndefined();
     expect(trust.userIdFor(LINK_B)).toBe(1);
     expect(trust.userIdFor(LINK_C)).toBe(2);
     expect(trust.userIdFor(bobDerived)).toBe(2);

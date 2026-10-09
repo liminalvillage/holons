@@ -202,7 +202,12 @@ export interface FoldedClaims {
   imports: Array<{ holon: string; source: AcceptedActors['source']; accepted: number; pending: number; rejected: number }>;
 }
 
-/** Rights per party and unit, or a lookup. `null` means "no ceiling known". */
+/**
+ * Rights per party and unit, or a lookup. Passing none at all means "no
+ * ceiling known" (an uncapped fold, to size a pot); once a lookup IS passed,
+ * a party or unit it does not name has a right of ZERO — a member with no
+ * seat, or a unit nobody minted, has nothing to draw.
+ */
 export type RightsLookup =
   | Record<string, Record<string, number | null | undefined>>
   | ((party: string, unit: string) => number | null | undefined);
@@ -298,7 +303,7 @@ export interface FoldClaimsInput {
   policy?: Partial<Policy> | null;
   /** Which party a signing key acts for. */
   partyOf: (pubkey: string) => string | null | undefined;
-  /** The ceiling per party and unit; a missing right means no ceiling. */
+  /** The ceiling per party and unit; omit it for an uncapped fold. Under a lookup, a missing right is zero. */
   rights?: RightsLookup | null;
   /** The holon's own key, allowed to claim `onBehalfOf` a party. */
   holonPubkey?: string | null;
@@ -321,7 +326,9 @@ interface FoldState {
 const rightOf = (rights: RightsLookup | null | undefined, party: string, unit: string): number | null => {
   if (!rights) return null;
   const v = typeof rights === 'function' ? rights(party, unit) : rights[party]?.[unit];
-  return v == null || !Number.isFinite(Number(v)) ? null : Number(v);
+  // A lookup that does not name the party or the unit says they hold nothing:
+  // treating that as "unknown" would let an unseated member draw without limit.
+  return v == null || !Number.isFinite(Number(v)) ? 0 : Number(v);
 };
 
 /** Fold the `flow_claims` log into every party's statement. */
@@ -352,8 +359,8 @@ export function foldClaims(input: FoldClaimsInput): FoldedClaims {
 
   /**
    * A party's access in a unit: their right plus what they received less what
-   * they gave. No right and nothing received means no ceiling at all (the
-   * surface sized none); no right but something received means exactly that.
+   * they gave. With no lookup at all there is no ceiling (the surface sized
+   * none) unless something was received — then exactly that.
    */
   const accessOf = (state: FoldState, party: string, unit: string): number | null => {
     const key = `${party}|${unit}`;

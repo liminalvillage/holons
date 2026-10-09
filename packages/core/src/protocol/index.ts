@@ -81,7 +81,7 @@ export {
 
 export { createPartyResolver, partiesFromAttestations, type PartyResolver, type PartyResolverInput } from './identity.js';
 
-export { DEFAULT_POLICY, POLICY_ROLES, normalizePolicy, policyRecord, foldPolicies, policyFor, samePolicy } from './policy.js';
+export { DEFAULT_POLICY, LENS_DEFAULT_POLICIES, POLICY_ROLES, defaultPolicyFor, normalizePolicy, policyRecord, foldPolicies, policyFor, samePolicy } from './policy.js';
 
 export {
   collapse,

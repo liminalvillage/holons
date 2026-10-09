@@ -86,6 +86,23 @@ export function buildTimeline(events, pinnedGenesis) {
   };
 }
 
+/** The lens a holon's settings record lives in. */
+export const SETTINGS_LENS = 'settings';
+
+/**
+ * Settings fields that decide money and trust: who the holon's key and admin
+ * are, which keys it trusts, who vouches for identities, how the pot splits
+ * and where it is paid. Under an authorized read these come from the newest
+ * envelope an ADMIN (as of its time) signed — never from a plain member's,
+ * whose settings write still counts for every other field. Without this a
+ * member could seat themselves as admin, rewrite the split in their favour
+ * or point the payout at their own wallet, since the lens is last-writer-wins.
+ */
+export const GUARDED_SETTINGS_FIELDS = Object.freeze([
+  'holonPubkey', 'admin', 'nostrTrustedPubkeys', 'identityProviders',
+  'allocation', 'pot', 'payout', 'bundle', 'treasury',
+]);
+
 /** Newest first, ties by larger id (the store's LWW tie-break). */
 const newestFirst = (a, b) => (b.created_at - a.created_at) || (a.id < b.id ? 1 : -1);
 
@@ -163,7 +180,9 @@ export function createSigner({
     }
     if (enforceMode === 'membership') {
       const tl = await resolveMembership(holo, holon);
-      return (pub, at) => tl.isAuthorizedAt(pub, at);
+      const p = (pub, at) => tl.isAuthorizedAt(pub, at);
+      p.roleAt = (pub, at) => tl.roleAt(pub, at);
+      return p;
     }
     const readKeys = new Set(holo._allowedAuthors || []);
     readKeys.add(pubkey);
@@ -225,6 +244,30 @@ export function createSigner({
     if (item._deleted && !includeDeleted) return null;
     if (isLocked(item)) return null;   // sealed, no key: neither shown nor pending
     return item;
+  }
+
+  /**
+   * The guarded fields of a settings record, taken from admins' envelopes.
+   * `events` are the counted envelopes at this address, newest first; a
+   * field no admin ever wrote is dropped. Lenses other than settings, and
+   * authorities that do not know roles, pass through untouched.
+   */
+  function guardSettings(holo, holon, lens, id, item, events, isAuth) {
+    if (lens !== SETTINGS_LENS || !item || typeof item !== 'object' || typeof isAuth?.roleAt !== 'function') return item;
+    const out = { ...item };
+    for (const field of GUARDED_SETTINGS_FIELDS) {
+      let found = false;
+      for (const e of events) {
+        if (isAuth.roleAt(e.pubkey, e.created_at) !== 'admin') continue;
+        const claim = claimAt(holo, e, lens, id);
+        if (!claim || claim._deleted || claim[field] === undefined) continue;
+        out[field] = claim[field];
+        found = true;
+        break;
+      }
+      if (!found) delete out[field];
+    }
+    return out;
   }
 
   function build(holo, holon, lens, item, at, content) {
@@ -330,7 +373,7 @@ export function createSigner({
             }
           }
           if (!item) continue; // an unresolved pointer is neither shown nor pending
-          items.push(item);
+          items.push(guardSettings(holo, holon, lens, id, item, authorized, isAuth));
           report.accounted++;
           report.byPubkey[authorized[0].pubkey] = (report.byPubkey[authorized[0].pubkey] || 0) + 1;
         } else {
@@ -349,7 +392,8 @@ export function createSigner({
       if (!isAuth) return undefined;   // no authority defined: the caller keeps its plain read
       const { events } = await countedEvents(holo, holon, lens, key, isAuth);
       if (!events.length) return null;
-      return materialize(claimAt(holo, events[0], lens, key), opts);
+      const item = materialize(claimAt(holo, events[0], lens, key), opts);
+      return guardSettings(holo, holon, lens, key, item, events, isAuth);
     },
 
     /**

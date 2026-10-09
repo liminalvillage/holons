@@ -28,12 +28,15 @@ import { eventToItem } from 'holosphere/nostr-events.js';
 import { isValidCell } from 'h3-js';
 import { bootstrapFromLenses } from '../protocol/bootstrap.js';
 import { actorsFromMembersLog, bootstrapActors } from '../protocol/membership.js';
-import type { AcceptedActors } from '../protocol/types.js';
+import type { AcceptedActors, Role } from '../protocol/types.js';
 import { attestationsFrom, SHIFT_IDENTITY_LENS } from '../shifts/wire.js';
 import type { IdentityAttestation } from '../shifts/attestation.js';
 import { linkedKeysOf } from '../users/keys.js';
 
-export type AuthorityPredicate = (pubkey: string, createdAt: number) => boolean;
+export type AuthorityPredicate = ((pubkey: string, createdAt: number) => boolean) & {
+  /** The role the key held at that time, when the authority knows roles: the signer guards settings with it. */
+  roleAt?: (pubkey: string, createdAt: number) => Role | null;
+};
 
 export interface HolonAuthority {
   /** The key that speaks for the holon, when something signed says so. */
@@ -90,6 +93,8 @@ export function resolveHolonAuthority(hs: HoloSphere, holon: string, attestation
     users: itemsByAuthor(host.store, h, 'users', anchor),
     attestations,
     holonPubkey: anchor,
+    // The records above were signed by the anchor itself: its word on who linked what.
+    trustUsers: true,
   });
   return { anchor, actors: bootstrapActors(boot.actors) };
 }
@@ -253,7 +258,9 @@ export function createReadAuthority({ ttlMs = 10_000 }: ReadAuthorityOptions = {
     async authorityFor(hs, holon) {
       const { actors } = await resolve(hs, holon);
       if (!actors) return null;
-      return (pubkey, createdAt) => actors.isAcceptedAt(String(pubkey).toLowerCase(), createdAt);
+      const p: AuthorityPredicate = (pubkey, createdAt) => actors.isAcceptedAt(String(pubkey).toLowerCase(), createdAt);
+      p.roleAt = (pubkey, createdAt) => actors.roleAt(String(pubkey).toLowerCase(), createdAt);
+      return p;
     },
     async vouchFor(hs, ctx) {
       const host = hs as AuthorityHost;

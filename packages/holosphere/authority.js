@@ -11,10 +11,10 @@
 // whoever writes last would otherwise pick who receives the holon's keys.
 
 import { eventToItem } from './nostr-events.js';
-import { buildTimeline } from './signing.js';
+import { buildTimeline, GUARDED_SETTINGS_FIELDS, SETTINGS_LENS } from './signing.js';
 
 export const MEMBERS_LENS = '_members';
-export const SETTINGS_LENS = 'settings';
+export { GUARDED_SETTINGS_FIELDS, SETTINGS_LENS };
 const HEX64 = /^[0-9a-f]{64}$/i;
 
 /** Is this holon id a pubkey (a personal holon)? */

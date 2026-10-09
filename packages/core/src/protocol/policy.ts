@@ -79,9 +79,25 @@ export function foldPolicies(entries: Iterable<LogEvent<unknown>>, actors: Accep
   return out;
 }
 
-/** The rule for a lens, or the default. */
+/**
+ * What a lens behaves by when no admin has set its rule. The fund logs are
+ * the exception to "nothing needs a quorum": a claim, a give or a mint moves
+ * value, so a member's word alone does not count — an attester's does (an
+ * attester's own action self-attests, so a treasurer still works alone).
+ */
+export const LENS_DEFAULT_POLICIES: Readonly<Record<string, Partial<Policy>>> = Object.freeze({
+  flow_claims: { quorum: 1 },
+  flow_mints: { quorum: 1 },
+});
+
+/** The default rule for a lens: `DEFAULT_POLICY`, tightened for the lenses that move value. */
+export function defaultPolicyFor(lens: string): Policy {
+  return normalizePolicy(LENS_DEFAULT_POLICIES[String(lens)] ?? null);
+}
+
+/** The rule for a lens, or its default. */
 export function policyFor(policies: Map<string, Policy> | null | undefined, lens: string): Policy {
-  return policies?.get(String(lens)) ?? { ...DEFAULT_POLICY, partners: {} };
+  return policies?.get(String(lens)) ?? defaultPolicyFor(lens);
 }
 
 /** True when two rules would judge a log the same way. */

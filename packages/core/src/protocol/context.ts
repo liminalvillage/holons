@@ -24,8 +24,12 @@ export interface LensContextInput {
   settings?: Record<string, unknown> | null;
   users?: LensBootstrapInput['users'];
   attestations?: LensBootstrapInput['attestations'];
-  /** Key → party the caller knows beyond the lenses (the bot's derived keys). */
+  /** Key → party the caller knows beyond the lenses (the bot's derived keys). Outranks any attestation. */
   extraKeyToParty?: Iterable<readonly [string, string]> | null;
+  /** Identity providers the caller trusts (the bot's own provider key); see `LensBootstrapInput.providers`. */
+  providers?: Iterable<string> | null;
+  /** Whether the `users` records' `linkedKeys` may be trusted; see `LensBootstrapInput.trustUsers`. */
+  trustUsers?: boolean;
   /** Keys the caller trusts beyond the lenses (the bot's derived member keys). */
   extraMembers?: Iterable<string> | null;
   holonPubkey?: string | null;
@@ -49,8 +53,12 @@ export function lensContext(input: LensContextInput): LensContext {
     users: input.users,
     attestations: input.attestations,
     holonPubkey: input.holonPubkey,
+    providers: input.providers,
+    trustUsers: input.trustUsers,
   });
-  for (const [k, party] of input.extraKeyToParty ?? []) if (!boot.keyToParty.has(k)) boot.keyToParty.set(k, party);
+  // What the caller derives itself is the truth about a key; a directory
+  // entry never remaps it to someone else.
+  for (const [k, party] of input.extraKeyToParty ?? []) boot.keyToParty.set(String(k).toLowerCase(), party);
   const members = new Set([...boot.actors.members, ...(input.extraMembers ?? []), ...boot.keyToParty.keys()]);
   const actors = resolveAcceptedActors({
     membersLog: input.membersLog,

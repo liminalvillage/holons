@@ -24,7 +24,7 @@ import type { BootstrapInput } from './membership.js';
 
 export interface LensBootstrapInput {
   holonId: string;
-  /** The holon's settings record (`holonPubkey`, `admin`, `nostrTrustedPubkeys` are read). */
+  /** The holon's settings record (`holonPubkey`, `admin`, `nostrTrustedPubkeys`, `identityProviders` are read). */
   settings?: Record<string, unknown> | null;
   /** The holon's `users` records (`id`, `linkedKeys`). */
   users?: ReadonlyArray<{ id?: string | number | null; linkedKeys?: readonly string[] | null } | null> | null;
@@ -34,6 +34,20 @@ export interface LensBootstrapInput {
   holonPubkey?: string | null;
   coordinatorPubkey?: string;
   blockedProviders?: readonly string[];
+  /**
+   * Identity providers the caller trusts beyond the lenses (the bot's own
+   * provider key). Attestations count only from a trusted provider: the
+   * holon key, `settings.identityProviders`, `settings.nostrTrustedPubkeys`
+   * and these — anyone can publish a kind-31926 saying a key is someone.
+   */
+  providers?: Iterable<string> | null;
+  /**
+   * Whether the `users` records' `linkedKeys` may seat keys and name
+   * parties. Only when the caller read records the holon's anchor signed
+   * (`itemsByAuthor`): a group's `users` lens is last-writer-wins by any
+   * member, so a plain read of it could annex a key to someone else.
+   */
+  trustUsers?: boolean;
 }
 
 export interface LensBootstrap {
@@ -53,18 +67,28 @@ const hexKey = (v: unknown): string | null => (typeof v === 'string' && HEX64.te
 export function bootstrapFromLenses(input: LensBootstrapInput): LensBootstrap {
   const settings = input.settings ?? {};
   const holonPubkey = hexKey(input.holonPubkey) ?? hexKey(settings.holonPubkey);
-  const keyToParty = partiesFromAttestations(input.attestations ?? [], {
+  const hexList = (v: unknown): string[] => (Array.isArray(v) ? v.map(hexKey).filter((k): k is string => !!k) : []);
+  const trustedProviders = new Set<string>([
+    ...(holonPubkey ? [holonPubkey] : []),
+    ...hexList(settings.identityProviders),
+    ...hexList(settings.nostrTrustedPubkeys),
+    ...[...(input.providers ?? [])].map(hexKey).filter((k): k is string => !!k),
+  ]);
+  const attestations = [...(input.attestations ?? [])].filter((a) => trustedProviders.has(String(a.provider ?? '').toLowerCase()));
+  const keyToParty = partiesFromAttestations(attestations, {
     coordinatorPubkey: input.coordinatorPubkey,
     blockedProviders: input.blockedProviders,
   });
   const linkedKeys = new Map<string, string[]>();
   const members = new Set<string>();
-  for (const u of input.users ?? []) {
-    if (!u || u.id === undefined || u.id === null) continue;
-    const party = String(u.id);
-    const keys = linkedKeysOf(u as never);
-    if (keys.length) linkedKeys.set(party, keys);
-    for (const k of keys) members.add(k.toLowerCase());
+  if (input.trustUsers) {
+    for (const u of input.users ?? []) {
+      if (!u || u.id === undefined || u.id === null) continue;
+      const party = String(u.id);
+      const keys = linkedKeysOf(u as never);
+      if (keys.length) linkedKeys.set(party, keys);
+      for (const k of keys) members.add(k.toLowerCase());
+    }
   }
   for (const [k, party] of keyToParty) {
     members.add(k.toLowerCase());

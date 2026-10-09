@@ -150,9 +150,10 @@ describe('FundClaims under the ceiling', () => {
     await claims.claim(c);
     expect(c.replies[0]).toMatch(/You can claim up to 10 L here/);
 
-    // A fund with no ceiling in that unit takes any amount.
+    // A unit with no pot is a ceiling of zero: nothing minted, nothing to claim.
     c = ctxFor(2, '/fundclaim 500 EUR');
     await claims.claim(c);
-    expect(c.replies[0]).toMatch(/Claim recorded: 500 EUR/);
+    expect(c.replies[0]).toMatch(/You can claim up to 0 EUR here/);
+    expect(await db.getLog(HOLON, 'flow_claims')).toHaveLength(1);
   });
 });

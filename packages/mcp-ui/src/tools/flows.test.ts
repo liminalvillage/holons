@@ -198,8 +198,11 @@ describe('claim tools under the ceiling', () => {
     const after = payload(await tools.get('flow_claims_state')!({ holon: 'olive' }));
     expect(after.claims.map((c: any) => c.status)).toEqual(['approved', 'over']);
     expect(after.headroom.u1.L).toBe(40);
-    // No pot in EUR: no ceiling, any amount goes through.
-    expect(payload(await tools.get('flow_claim_record')!({ holon: 'olive', party: 'u2', amount: 999, unit: 'EUR', onBehalfOf: 'u2' })).success).toBe(true);
+    // No pot in EUR: a ceiling of zero — nothing was minted, nothing can be claimed.
+    const noPot = payload(await tools.get('flow_claim_record')!({ holon: 'olive', party: 'u2', amount: 999, unit: 'EUR', onBehalfOf: 'u2' }));
+    expect(noPot.success).toBe(false);
+    expect(noPot.error).toBe('over-right');
+    expect(noPot.headroom).toBe(0);
   });
 
   it('a give burns the giver\'s access and opens it for the receiver, seated or not', async () => {
