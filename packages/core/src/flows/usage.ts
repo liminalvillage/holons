@@ -263,9 +263,11 @@ export function rightsTotal(
   balance: number,
   usage: FundUsage | null | undefined,
   inbound = 0,
+  unit?: string,
 ): number {
-  const drawn = lifetimeTotals(usage);
-  const outside = usage ? (usage.unattributed[usage.unit] ?? EMPTY_USE) : EMPTY_USE;
+  const want = normalizeCurrency(unit ?? usage?.unit ?? '');
+  const drawn = lifetimeTotals(usage, want || undefined);
+  const outside = usage ? (usage.unattributed[want || usage.unit] ?? EMPTY_USE) : EMPTY_USE;
   const upstream = Number.isFinite(inbound) && inbound > 0 ? inbound : 0;
   const total = balance + drawn.spent - outside.claimed + upstream;
   return Math.max(0, round(total));
@@ -681,15 +683,25 @@ function slicesOf(allocation: AllocationResult, partyId: string): AllocationSlic
  * account: the seats add up, and the statement names the contributor side
  * with the zone alongside. A party with no seat who received a give has an
  * account too: no share, no right, and exactly what reached them.
+ *
+ * `unit` picks the unit the statement is in; the allocation's amounts must
+ * already be priced in it (`withPot`), or `right` is read in the wrong unit.
  */
 export function fundAccount(
   allocation: AllocationResult,
   usage: FundUsage | null | undefined,
   partyId: string,
+  unit?: string,
 ): FundAccount | null {
   const id = String(partyId ?? '');
   if (!id) return null;
-  const unit = usage?.unit ?? normalizeCurrency(allocation.unit);
+  // The usage keys every unit it saw; the statement reads the one asked for
+  // (a wallet asks per unit), else the pot's, else the allocation's.
+  const want = normalizeCurrency(unit ?? allocation.unit ?? '') || usage?.unit || '';
+  return accountIn(allocation, usage, id, want);
+}
+
+function accountIn(allocation: AllocationResult, usage: FundUsage | null | undefined, id: string, unit: string): FundAccount | null {
   const moved = movedOf(usage, id, unit);
   const slices = slicesOf(allocation, id);
   if (!slices.length && !(moved.received > 0)) return null;

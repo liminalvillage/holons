@@ -195,7 +195,11 @@ The cascade stops three hops below the root and never goes round a loop.
    neighbour to collect for them gives part of their access instead
    (`/fundgive 5 L @neighbour`, or _Give_ beside _Claim_ on the kiosk and
    the web): their access drops by five litres, the neighbour's rises by five,
-   and the neighbour claims as anyone does.
+   and the neighbour claims as anyone does. Everyone reads their own
+   position on one screen — _Your balances_ on the kiosk and the web,
+   `/fundbalance` in the group, `flow_wallet` over MCP: one line per unit
+   (litres, euros, a token in the Pot, what is open in mutual credit),
+   nothing converted (core `wallet.ts`, `buildWallet` / `loadWallet`).
 8. **New moon.** The bot checkpoints each log per lunar cycle; readers can
    compare their fold against the holon's root.
 
@@ -308,13 +312,14 @@ window is for.
 | a share divided again                     | `cascade.ts`, `cascade-load.ts` (children scored via `score-load.ts`)                                                                                                                                                                                                            |
 | what the fund holds                       | `mints.ts` (log `flow_mints`, kind 1808), `mints-load.ts`                                                                                                                                                                                                                        |
 | what reaches a holon from upstream        | `inbound.ts` (`inboundRightFrom`, `loadInboundRights`)                                                                                                                                                                                                                           |
+| a party's balances, every unit at once    | `wallet.ts` (`buildWallet`: fund access + mutual credit per unit; `loadWallet` for the bot and the MCP) |
 | the pot to divide, per unit               | `pot.ts` (`potUnits`, `potTotal`)                                                                                                                                                                                                                                                |
 | claims, gives, attestations, payouts      | `claims.ts` (log `flow_claims`: `claim`, `transfer`, `payout`) — see [`protocol.md`](./protocol.md)                                                                                                                                                                              |
 | the access a claim or a give is judged by | `ceiling.ts` (`claimCeilings`, `claimHeadroom`: the ceiling plus received less given), `ceiling-load.ts` (`loadClaimCeilings`, for the MCP and the bot); `usage.ts` `movedOf`, `fundAccount`                                                                                      |
 | the Pot: the rights table and its root    | `rights.ts` (`advanceRights`), `rights-tree.ts`, `rights-log.ts` (log `flow_rights`), `rights-cut.ts` (`cutRights`), `pot-contract.ts`, `payout.ts`; `contracts/src/Pot.sol`                                                                                                     |
 | the Pot record, its tokens, its treasury  | `pot-record.ts` (`settings.pot`: `tokens`, `treasury`; `savePotTreasury`, `addPotToken`), `holdings.ts` (`treasuryLines`), `chain.ts` (`safeAppUrl`)                                                                                                                           |
 | the value equation                        | `@holons/core/scoring` (`currencies.hour`, `currencies.euro`)                                                                                                                                                                                                                    |
-| surfaces                                  | kiosk `FlowsView.svelte` + `AllocationSettings.svelte` (Fund, Contributors, Zones, Rules), web `flows/Flows.svelte` + `AllocationEditor.svelte`, MCP `allocation_*` / `flow_*` (`flow_transfer_record` for a give), bot `/fundmint` `/fundmints` `/fundclaim` `/fundgive` `/fundattest` `/funddispute` `/fundpaid` `/fundpolicy` |
+| surfaces                                  | kiosk `FlowsView.svelte` + `AllocationSettings.svelte` (Fund, Contributors, Zones, Rules), web `flows/Flows.svelte` + `AllocationEditor.svelte` (both editors find a partner holon or a person by name or id — `PartyFinder`, core `linkSplitPartner`), MCP `allocation_*` / `flow_*` (`flow_transfer_record` for a give), bot `/fundbalance` `/fundmint` `/fundmints` `/fundclaim` `/fundgive` `/fundattest` `/funddispute` `/fundpaid` `/fundpolicy` |
 
 ## Limits, plainly
 

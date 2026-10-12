@@ -257,6 +257,30 @@ function uniqueById<T extends { id: string }>(items: T[]): T[] {
   });
 }
 
+/**
+ * The same split over another pot: every percentage kept, every amount
+ * re-read against `total` in `unit`. A split is a rule about shares, so a
+ * holon that holds euros AND litres divides both by the one rule — this is
+ * how a wallet prices each unit without allocating twice. `null` leaves the
+ * shape percentage-only, as `allocate` would.
+ */
+export function withPot(result: AllocationResult, total: number | null, unit: string): AllocationResult {
+  const pot = total != null && Number.isFinite(total) && total > 0 ? total : null;
+  const amountOf = (percentage: number) => (pot == null ? null : (percentage / 100) * pot);
+  const reprice = (slice: AllocationSlice): AllocationSlice => ({
+    ...slice,
+    amount: amountOf(slice.percentage),
+    ...(slice.members ? { members: slice.members.map(reprice) } : {}),
+  });
+  return {
+    ...result,
+    unit: unit ?? '',
+    total: pot,
+    interior: result.interior.map(reprice),
+    exterior: result.exterior.map(reprice),
+  };
+}
+
 export function allocate(input: {
   total: number | null;
   unit?: string;

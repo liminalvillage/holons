@@ -115,6 +115,7 @@ export {
   normalizeInteriorShares,
   resolveInteriorMembers,
   sharesFromMembers,
+  withPot,
   type AllocationConfig,
   type AllocationMember,
   type AllocationPartner,
@@ -231,6 +232,7 @@ export {
   ALLOCATION_KEY,
   COLLECTIVE_KEY,
   hasAllocationConfig,
+  linkSplitPartner,
   readAllocationConfig,
   readCollectiveSlug,
   readInteriorShares,
@@ -238,6 +240,7 @@ export {
   readZonePeople,
   saveAllocationConfig,
   saveCollectiveSlug,
+  splitPartyKind,
   toAllocationPartners,
 } from './settings.js';
 
@@ -320,6 +323,18 @@ export {
   type LoadedClaimCeilings,
 } from './ceiling-load.js';
 export { loadAllocationInputs, onwardParties, type AllocationInputs } from './cascade-load.js';
+
+// ── The wallet: one party's balances, every unit at once ──────────────────
+export {
+  buildWallet,
+  creditPositionOf,
+  walletLine,
+  type BuildWalletInput,
+  type WalletCredit,
+  type WalletLine,
+  type WalletSource,
+} from './wallet.js';
+export { loadWallet, type LoadWalletOptions, type LoadedWallet } from './wallet-load.js';
 export { defaultUpstreams } from './inbound.js';
 
 // ── The Pot: value held, rights committed once per lunation ───────────────

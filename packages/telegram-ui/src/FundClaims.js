@@ -12,6 +12,10 @@
 //                                       give part of your access to another
 //                                       party — burns yours, opens theirs;
 //                                       judged like a claim, never taken back
+//   /fundbalance                        your balances here, every unit at once:
+//                                       what the fund opens to you, what you
+//                                       may still claim, what is open between
+//                                       you and others in mutual credit
 //   /fundclaims                         the holon's claims and gives, judged:
 //                                       approved, pending, disputed, over, settled …
 //   /fundattest <id> · /funddispute <id> [reason]   an attester's word
@@ -54,6 +58,7 @@ import {
   loadClaimCeilings,
   loadPotRecord,
   loadRights,
+  loadWallet,
   lunationAt,
   rightsByRef,
   scoreAllocationMembers,
@@ -122,6 +127,7 @@ export default class FundClaims {
     if (bot) {
       bot.command('fundclaim', ctx => this.claim(ctx));
       bot.command('fundgive', ctx => this.give(ctx));
+      bot.command('fundbalance', ctx => this.balance(ctx));
       bot.command('fundclaims', ctx => this.list(ctx));
       bot.command('fundattest', ctx => this.verdict(ctx, 'attest'));
       bot.command('funddispute', ctx => this.verdict(ctx, 'dispute'));
@@ -428,6 +434,62 @@ export default class FundClaims {
           ? ` (${c.reason})`
           : '';
     return `${mark} ${c.status}${why}`;
+  }
+
+  /** Your balances here: one line per unit, nothing converted (core `loadWallet`). */
+  async balance(ctx) {
+    const holon = getholonId(ctx);
+    const userId = String(getUserId(ctx));
+    try {
+      const { folded } = await this.context(holon);
+      const { lines, truncated } = await loadWallet(this.db, holon, userId, {
+        claims: folded,
+        scoreOf: id => scoreAllocationMembers(this.db, id),
+        now: this.now(),
+      });
+      if (!lines.length)
+        return ctx.reply(
+          'Nothing on your balance here yet: no right over the fund, nothing given to you, nothing open with anyone.'
+        );
+      const rows = lines.map(l => this.describeLine(l));
+      const foot = truncated
+        ? '<i>Some splits could not be followed; a right may be missing.</i>'
+        : '';
+      return ctx.replyWithHTML(
+        ['<b>Your balances</b>', ...rows, foot].filter(Boolean).join('\n')
+      );
+    } catch (err) {
+      return ctx.reply(`Could not read your balance: ${err?.message || err}`);
+    }
+  }
+
+  /** One wallet line, the way every surface words it. */
+  describeLine(l) {
+    const unit = l.unit.toUpperCase();
+    const parts = [];
+    if (l.account) {
+      const a = l.account;
+      parts.push(a.over > 0 ? `over by ${a.over}` : `${a.available} available`);
+      if (a.right != null) parts.push(`right ${a.right}`);
+      if (a.lifetimeSpent > 0) parts.push(`paid ${a.lifetimeSpent}`);
+      if (a.claimed > 0) parts.push(`claimed ${a.claimed}`);
+      if (a.received > 0) parts.push(`received ${a.received}`);
+      if (a.given > 0) parts.push(`given ${a.given}`);
+      if (l.held) parts.push('held in the Pot — collect there');
+      else if (l.claimable != null && l.claimable !== a.available)
+        parts.push(`claim up to ${l.claimable}`);
+    }
+    if (l.credit) {
+      const c = l.credit;
+      parts.push(
+        c.net > 0
+          ? `owed to you ${c.net}`
+          : c.net < 0
+            ? `you owe ${-c.net}`
+            : 'square with everyone'
+      );
+    }
+    return `<b>${unit}</b> · ${parts.join(' · ')}`;
   }
 
   async list(ctx) {

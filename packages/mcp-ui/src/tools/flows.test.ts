@@ -203,6 +203,16 @@ describe('claim tools under the ceiling', () => {
     expect(noPot.success).toBe(false);
     expect(noPot.error).toBe('over-right');
     expect(noPot.headroom).toBe(0);
+
+    // The wallet: one line per unit, the statement and the headroom together.
+    const wallet = payload(await tools.get('flow_wallet')!({ holon: 'olive', party: 'u1' }));
+    expect(wallet.success).toBe(true);
+    expect(wallet.lines.map((l: any) => l.unit)).toEqual(['l']);
+    expect(wallet.lines[0]).toMatchObject({ unit: 'l', pot: 200, available: 40, claimable: 40, held: false, sources: ['mint'], credit: null });
+    expect(wallet.lines[0].account).toMatchObject({ right: 100, claimed: 60 });
+    // Nobody seated and nothing open: an empty wallet, not an error.
+    const none = payload(await tools.get('flow_wallet')!({ holon: 'olive', party: 'stranger' }));
+    expect(none.lines).toEqual([]);
   });
 
   it('a give burns the giver\'s access and opens it for the receiver, seated or not', async () => {

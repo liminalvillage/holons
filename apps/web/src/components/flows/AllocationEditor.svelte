@@ -21,11 +21,13 @@
   } from "../../lib/holons/allocationMirror";
   import {
     allocate,
+    linkSplitPartner,
     normalizeInteriorShares,
     resolveInteriorMembers,
     sharesFromMembers,
     interiorSharePercentages,
   } from "@holons/core/flows";
+  import PartyFinder from "./PartyFinder.svelte";
   import type { InteriorMode, InteriorShares } from "@holons/core/flows";
 
   /** One colour per ring, outermost first — the same palette the old concentric editor drew. */
@@ -33,6 +35,8 @@
 
   export let holonId = "";
   export let holosphere: HoloSphere | null = null;
+  /** The split is a guarded settings field: an admin's signature counts, anyone else's is recorded and ignored. */
+  export let canEdit = true;
   /** The live draft. Bound, so the diagram above moves with the sliders. */
   export let interiorPercent = 50;
   export let steepness = 50;
@@ -46,6 +50,12 @@
 
   /** Federated partners available to place, names already resolved. */
   export let partners: { id: string; name: string }[] = [];
+  /**
+   * Partner holons found with the finder and not yet in the federation
+   * record: seated now, linked on Save (core `linkSplitPartner`). Bound, so
+   * the diagram above seats them too.
+   */
+  export let newPartners: { id: string; name: string }[] = [];
   /** Interior shares from the contribution scoring, for the on-chain sync. */
   export let members: SyncMember[] = [];
   /** Everyone a custom split could name, the roster with names resolved. */
@@ -56,6 +66,8 @@
     steepness: number;
     nzones: number;
     zones: Record<string, number>;
+    /** People on rings, as stored. */
+    people?: Record<string, number>;
     interiorMode?: InteriorMode;
     shares?: InteriorShares;
   } = { interiorPercent: 50, steepness: 50, nzones: 6, zones: {} };
@@ -70,7 +82,16 @@
   let open = false;
 
   $: exteriorPercent = 100 - interiorPercent;
-  $: placed = partners.filter((p) => (zoneOf[p.id] ?? 0) >= 1).length;
+  $: partnersAll = [...partners, ...newPartners.filter((n) => !partners.some((p) => p.id === n.id))];
+  $: isPartner = (id: string) => partnersAll.some((p) => p.id === id);
+  // Names for people the finder found who are on no roster handed in.
+  let foundNames: Record<string, string> = {};
+  // People on rings: everyone in the ring map who is not a partner holon.
+  $: peopleOnRings = Object.entries(zoneOf)
+    .filter(([id, zone]) => zone >= 1 && !isPartner(id))
+    .map(([id, zone]) => ({ id, zone, name: partyName(id) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  $: placed = partnersAll.filter((p) => (zoneOf[p.id] ?? 0) >= 1).length;
 
   // What each zone — and each partner in it — actually receives, as a share
   // of the WHOLE fund: the draft run through the same `allocate()` the Sankey
@@ -81,7 +102,10 @@
     total: null,
     config: { interiorPercent, steepness, nzones },
     members: [],
-    zoned: partners.map((p) => ({ ...p, zone: zoneOf[p.id] ?? 0 })),
+    zoned: [
+      ...partnersAll.map((p) => ({ ...p, zone: zoneOf[p.id] ?? 0 })),
+      ...peopleOnRings.map((p) => ({ id: p.id, name: p.name, zone: p.zone, kind: "person" as const })),
+    ],
   });
   $: zoneShares = draft.exterior.map((z) => z.percentage);
   $: maxZoneShare = Math.max(0, ...zoneShares);
@@ -102,8 +126,10 @@
   // A partner holon can hold a contributor seat too: a collective whose
   // contributors are other holons weights them here, and the cascade follows
   // each seat into that holon's own split.
-  $: partnerRows = partners.map((p) => ({ id: p.id, name: `${p.name} (holon)` }));
-  $: nameOf = new Map<string, string>([...people, ...partnerRows].map((p) => [p.id, p.name]));
+  $: partnerRows = partnersAll.map((p) => ({ id: p.id, name: `${p.name} (holon)` }));
+  $: nameOf = new Map<string, string>(
+    [...people, ...Object.entries(foundNames).map(([id, name]) => ({ id, name })), ...partnerRows].map((p) => [p.id, p.name]),
+  );
   // One name for an id anywhere in the editor: the rosters handed in, else the
   // dashboard's resolver — a holon holding a contributor seat is on no roster
   // of people, and must not print as its id.
@@ -172,9 +198,34 @@
 
   function addShare() {
     if (!pick) return;
-    shares = { ...shares, [pick]: 0 };
-    shareText = { ...shareText, [pick]: "0" };
+    seatShare(pick);
     pick = "";
+  }
+
+  function seatShare(id: string) {
+    if (id in shares) return;
+    shares = { ...shares, [id]: 0 };
+    shareText = { ...shareText, [id]: "0" };
+  }
+
+  /** A holon the finder found: a partner once saved, seated right away. */
+  function addNewPartner(id: string, name: string) {
+    if (isPartner(id)) return;
+    newPartners = [...newPartners, { id, name }];
+  }
+
+  function found(e: CustomEvent<{ id: string; name: string; kind: "person" | "holon" }>, where: "split" | "zones") {
+    const { id, name, kind } = e.detail;
+    if (kind === "holon") addNewPartner(id, name);
+    else foundNames = { ...foundNames, [id]: name };
+    if (where === "split") seatShare(id);
+    else if (!((zoneOf[id] ?? 0) >= 1)) setZone(id, 1);
+  }
+
+  function removeFromRings(id: string) {
+    const next = { ...zoneOf };
+    delete next[id];
+    zoneOf = next;
   }
 
   function sameShares(a: InteriorShares, b: InteriorShares): boolean {
@@ -189,7 +240,9 @@
     nzones !== saved.nzones ||
     interiorMode !== (saved.interiorMode ?? "equation") ||
     !sameShares(normalizeInteriorShares(shares), saved.shares ?? {}) ||
-    partners.some((p) => (zoneOf[p.id] ?? 0) !== (saved.zones[p.id] ?? 0));
+    newPartners.length > 0 ||
+    partnersAll.some((p) => (zoneOf[p.id] ?? 0) !== (saved.zones[p.id] ?? 0)) ||
+    !sameShares(peopleZones(), saved.people ?? {});
 
   function say(message: string, kind: "info" | "error" | "success" = "info") {
     notice = message;
@@ -206,14 +259,21 @@
    * sync, so shrinking the zone count pulls the strays back to the edge.
    */
   $: if (nzones > 0) {
-    for (const partner of partners) {
-      const zone = zoneOf[partner.id] ?? 0;
-      if (zone > nzones) setZone(partner.id, nzones);
+    for (const id of Object.keys(zoneOf)) {
+      const zone = zoneOf[id] ?? 0;
+      if (zone > nzones) setZone(id, nzones);
     }
   }
 
   function partnersForSync(): SyncPartner[] {
-    return partners.map((p) => ({ id: p.id, zone: zoneOf[p.id] ?? 0 }));
+    return partnersAll.map((p) => ({ id: p.id, zone: zoneOf[p.id] ?? 0 }));
+  }
+
+  /** The people on rings, as the settings store them. */
+  function peopleZones(): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const [id, zone] of Object.entries(zoneOf)) if (zone >= 1 && !isPartner(id)) out[id] = zone;
+    return out;
   }
 
   /** Save the split: the settings lens, which every surface reads. */
@@ -221,12 +281,19 @@
     if (!holosphere || !holonId) return;
     try {
       busy = true;
+      // A holon found in the finder is a partner from here on: the record
+      // every reader finds it in is written before the split that seats it.
+      for (const p of newPartners) await linkSplitPartner(holosphere, holonId, p.id, p.name);
+      const linked = newPartners;
+      newPartners = [];
+      partners = [...partners, ...linked.filter((n) => !partners.some((p) => p.id === n.id))];
       await mirrorAllocation(
         holosphere,
         holonId,
         { interiorPercent, steepness, nzones, interiorMode },
         partnersForSync(),
         shares,
+        peopleZones(),
       );
       say("Saved. Every surface reads this.", "success");
       dispatch("saved");
@@ -241,7 +308,8 @@
     interiorPercent = saved.interiorPercent;
     steepness = saved.steepness;
     nzones = saved.nzones;
-    zoneOf = { ...saved.zones };
+    zoneOf = { ...saved.zones, ...(saved.people ?? {}) };
+    newPartners = [];
     interiorMode = saved.interiorMode ?? "equation";
     shares = { ...(saved.shares ?? {}) };
     shareText = {};
@@ -424,6 +492,9 @@
               >Copy from value equation</button
             >
           </div>
+          <!-- Anyone else: a person or a holon by name or id. A holon becomes
+               a federation partner on Save; a person is seated by their id. -->
+          <PartyFinder {holosphere} exclude={Object.keys(shares)} on:pick={(e) => found(e, "split")} />
         {:else}
           <p class="muted">
             Divided by contribution score, as the value equation ranks members today.
@@ -458,17 +529,19 @@
         {/each}
       </div>
 
-      {#if partners.length}
+      {#if partnersAll.length}
         <div class="partners">
           <div class="partners-head">
             <span>Partners</span>
-            <span class="muted">{placed} of {partners.length} placed</span>
+            <span class="muted">{placed} of {partnersAll.length} placed</span>
           </div>
-          {#each partners as partner (partner.id)}
+          {#each partnersAll as partner (partner.id)}
             <div class="partner">
               <span class="partner-name"
                 >{partner.name}
-                {#if (zoneOf[partner.id] ?? 0) >= 1}
+                {#if newPartners.some((n) => n.id === partner.id)}
+                  <span class="partner-share">new — linked on save</span>
+                {:else if (zoneOf[partner.id] ?? 0) >= 1}
                   <span class="partner-share">{pct(partnerShare(partner.id))} of the fund</span>
                 {/if}</span
               >
@@ -497,10 +570,48 @@
         </div>
       {:else}
         <p class="muted empty">
-          No federated partners yet — the reciprocity zones have nowhere to send
-          value until this holon is linked to another.
+          No federated partners yet — find one below, or a person to place on a ring.
         </p>
       {/if}
+
+      <!-- People on rings: anyone the holon shares with in relationship
+           rather than for tasks. A member placed here holds both seats. -->
+      {#if peopleOnRings.length}
+        <div class="partners">
+          <div class="partners-head">
+            <span>People</span>
+            <span class="muted">{peopleOnRings.length} on rings</span>
+          </div>
+          {#each peopleOnRings as person (person.id)}
+            <div class="partner">
+              <span class="partner-name"
+                >{person.name}
+                <span class="partner-share">{pct(partnerShare(person.id))} of the fund</span></span
+              >
+              <div class="ring-picker" role="group" aria-label={person.name}>
+                <button type="button" on:click={() => removeFromRings(person.id)} title="Remove from the rings">×</button>
+                {#each Array(nzones) as _, i (i)}
+                  <button
+                    type="button"
+                    class:on={person.zone === i + 1}
+                    on:click={() => setZone(person.id, i + 1)}
+                    title="Zone {i + 1} — {pct(zoneShares[i] ?? 0)} of the fund"
+                  >
+                    {i + 1}
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+      <!-- Anyone else, or another holon: found by name or id, seated on the
+           first ring at once. A holon is linked as a partner on Save. -->
+      <PartyFinder
+        {holosphere}
+        exclude={[...partnersAll.map((p) => p.id), ...peopleOnRings.map((p) => p.id)]}
+        on:pick={(e) => found(e, "zones")}
+      />
 
       <div class="actions">
         <div class="buttons">
@@ -514,11 +625,14 @@
             type="button"
             class="btn"
             on:click={save}
-            disabled={!changed || busy || !holosphere}
-            title="Save the split; every surface reads it"
+            disabled={!changed || busy || !holosphere || !canEdit}
+            title={canEdit ? "Save the split; every surface reads it" : "Only an admin's signature sets the split"}
             >Save</button
           >
         </div>
+        {#if !canEdit}
+          <p class="note warn">Only an admin's signature sets the split; yours would be recorded but not counted.</p>
+        {/if}
       </div>
 
       {#if notice}

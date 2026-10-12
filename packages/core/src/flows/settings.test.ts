@@ -263,3 +263,30 @@ describe('readInteriorShares', () => {
     });
   });
 });
+
+describe('split parties', () => {
+  it('splitPartyKind: people by key or positive id, holons otherwise', async () => {
+    const { splitPartyKind, linkSplitPartner } = await import('./settings.js');
+    expect(splitPartyKind('235114395')).toBe('person');
+    expect(splitPartyKind('a'.repeat(64))).toBe('person');
+    expect(splitPartyKind('-1003864542239')).toBe('holon');
+    expect(splitPartyKind('holon_fig33pftaepw96i4')).toBe('holon');
+    expect(splitPartyKind('x', 'personal')).toBe('person');
+    expect(splitPartyKind('-5', 'community')).toBe('holon');
+
+    // linkSplitPartner: links a new partner with no lens flow, leaves a linked one alone.
+    const calls: unknown[] = [];
+    const hs = {
+      getFederation: async () => ({ federated: ['-2'] }),
+      federateHolon: async (...args: unknown[]) => {
+        calls.push(args);
+        return true;
+      },
+    };
+    expect(await linkSplitPartner(hs, '-1', '-2')).toBe(true);
+    expect(calls).toEqual([]);
+    expect(await linkSplitPartner(hs, '-1', '-3', 'Three')).toBe(true);
+    expect(calls).toEqual([['-1', '-3', { lensConfig: { inbound: [], outbound: [] }, partnerName: 'Three' }]]);
+    expect(await linkSplitPartner(hs, '-1', '-1')).toBe(false);
+  });
+});

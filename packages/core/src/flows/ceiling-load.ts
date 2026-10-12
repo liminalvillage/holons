@@ -61,6 +61,8 @@ export interface LoadedClaimCeilings {
   truncated: boolean;
   /** Units held in the holon's Pot: collected by its table, ceiling zero in the log. */
   held: string[];
+  /** What fed the pots, for a wallet to caption its lines. */
+  sources: PotSources;
 }
 
 const EMPTY: LoadedClaimCeilings = {
@@ -70,6 +72,7 @@ const EMPTY: LoadedClaimCeilings = {
   usage: null,
   truncated: false,
   held: [],
+  sources: {},
 };
 
 /** The ceilings every party holds over `holonId`'s fund, per unit, read from the store. */
@@ -118,7 +121,7 @@ export async function loadClaimCeilings(
     chain: opts.chain ?? null,
   };
   const units = potUnits(sources);
-  if (units.length === 0) return { ...EMPTY, shares, truncated: loaded.truncated || inbound.truncated, held };
+  if (units.length === 0) return { ...EMPTY, shares, truncated: loaded.truncated || inbound.truncated, held, sources };
 
   const parties: FundUsageParty[] = [...partyShares(shares).keys()].map((id) => ({ id, name: id }));
   const usage = buildFundUsage({
@@ -144,5 +147,6 @@ export async function loadClaimCeilings(
     usage,
     truncated: loaded.truncated || inbound.truncated || cascade.truncated,
     held,
+    sources,
   };
 }

@@ -155,5 +155,15 @@ describe('FundClaims under the ceiling', () => {
     await claims.claim(c);
     expect(c.replies[0]).toMatch(/You can claim up to 0 EUR here/);
     expect(await db.getLog(HOLON, 'flow_claims')).toHaveLength(1);
+
+    // The wallet: one line per unit, what is left after the claim.
+    c = ctxFor(1, '/fundbalance');
+    await claims.balance(c);
+    expect(c.replies[0]).toMatch(/Your balances/);
+    // The 40 L claim awaits attestation: the statement still reads 50, the headroom 10.
+    expect(c.replies[0]).toMatch(
+      /<b>L<\/b> · 50 available · right 50 · claim up to 10/
+    );
+    expect(c.replies[0]).not.toMatch(/EUR/);
   });
 });

@@ -21,6 +21,7 @@ import {
   type InteriorShares,
 } from './allocation.js';
 import { normalizeCollectiveSlug } from './opencollective.js';
+import { setFederationPartner } from '../federation/partners.js';
 
 /** Settings field holding the OpenCollective link. */
 export const COLLECTIVE_KEY = 'openCollective';
@@ -239,4 +240,54 @@ export async function saveAllocationConfig(
   });
 
   return clean;
+}
+
+/**
+ * Link a holon as a federation partner so the split can seat it.
+ *
+ * A seat on a ring or in the contributors' split needs the partner in the
+ * federation record — that is where every reader (`toAllocationPartners`,
+ * the cascade, the inbound climb) finds it. A partner added from the split
+ * editor shares no lens: the link is the relationship, and which boards flow
+ * between the two is chosen in Settings → Federation. Linking an already
+ * linked partner keeps its lenses — the record is only touched when the
+ * partner is new to it.
+ */
+export async function linkSplitPartner(
+  holosphere: any,
+  holonId: string,
+  partnerId: string,
+  partnerName?: string,
+): Promise<boolean> {
+  const holon = String(holonId ?? '').trim();
+  const partner = String(partnerId ?? '').trim();
+  if (!holon || !partner || holon === partner) return false;
+  let federated: string[] = [];
+  try {
+    const fed = await holosphere.getFederation(holon);
+    federated = Array.isArray(fed?.federated) ? fed.federated.map(String) : [];
+  } catch {
+    // No record yet: the link below creates one.
+  }
+  if (federated.includes(partner)) return true;
+  return setFederationPartner(holosphere, holon, partner, {
+    inbound: [],
+    outbound: [],
+    ...(partnerName ? { partnerName } : {}),
+  });
+}
+
+/**
+ * What a found party is to the split: a PERSON goes on a ring or into the
+ * contributors' split by their user id; a HOLON must first be a federation
+ * partner (`linkSplitPartner`). A personal holon (hex key, npub) and a
+ * Telegram user (positive id) are people; a Telegram group (negative id), a
+ * keyed holon (`holon_…`) or anything the registry calls a community is a holon.
+ */
+export function splitPartyKind(id: string, type?: string | null): 'person' | 'holon' {
+  const v = String(id ?? '').trim();
+  if (type === 'personal') return 'person';
+  if (/^[0-9a-f]{64}$/i.test(v) || /^npub1[a-z0-9]{58}$/i.test(v)) return 'person';
+  if (/^\d+$/.test(v)) return 'person';
+  return 'holon';
 }

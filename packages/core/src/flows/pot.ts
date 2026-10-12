@@ -133,7 +133,7 @@ export function potTotal(unit: string, sources: PotSources, usage: FundUsage | n
   const c = sources.collective;
   const bank =
     c && normalizeCurrency(c.currency) === want && Number.isFinite(c.balance)
-      ? rightsTotal(c.balance, usage)
+      ? rightsTotal(c.balance, usage, 0, want)
       : 0;
   const gross = (heldInPot(unit, sources) ? chainReceived(unit, sources) : mintedTotal(sources.mints, unit)) + inboundTotal(claimableInbound(sources.inbound), unit);
   return round(bank + gross);

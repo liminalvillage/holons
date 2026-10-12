@@ -41,6 +41,7 @@
   import {
     UNATTRIBUTED_ID,
     allocate,
+    buildWallet,
     allocationToGraph,
     cascadeToGraph,
     childResolver,
@@ -128,6 +129,7 @@
   import { buildNameMap } from "@holons/core/identity";
   import { nameMap as knownNames, resolvedName } from "$lib/stores/nameResolver";
   import {
+    computeMutualCredit,
     expenseCurrencies,
     normalizeCurrency,
     participantIds,
@@ -136,6 +138,7 @@
   import SankeyChart from "./SankeyChart.svelte";
   import ChordChart from "./ChordChart.svelte";
   import AllocationEditor from "./AllocationEditor.svelte";
+  import { may } from "@holons/core/holosphere";
   import PillSwitch from "./PillSwitch.svelte";
   import Sheet from "./Sheet.svelte";
   import BalancesPanel from "./BalancesPanel.svelte";
@@ -173,7 +176,7 @@
   let collective: OpenCollectiveSnapshot | null = null;
   let collectiveError = "";
   let equation: ScoreEquation = DEFAULT_EQUATION;
-  let partners: { id: string; name: string; zone: number }[] = [];
+  let partners: { id: string; name: string; zone: number; kind?: "holon" | "person" }[] = [];
   let memberShares: { id: string; name: string; percentage: number }[] = [];
 
   let trackId = "";
@@ -727,8 +730,14 @@
   let savedAllocation = {
     ...DEFAULT_ALLOCATION_CONFIG,
     zones: {} as Record<string, number>,
+    people: {} as Record<string, number>,
     shares: {} as InteriorShares,
   };
+  // Partner holons found in the editor and not yet linked: seated in the
+  // draft so the diagram shows them before Save writes the record.
+  let newPartners: { id: string; name: string }[] = [];
+  $: partnerHolons = partners.filter((p) => p.kind !== "person");
+  $: partnersAll = [...partnerHolons, ...newPartners.filter((n) => !partnerHolons.some((p) => p.id === n.id)).map((n) => ({ ...n, zone: 0 }))];
 
   function sameShares(a: InteriorShares, b: InteriorShares): boolean {
     const ka = Object.keys(a);
@@ -742,7 +751,10 @@
     allocationConfig.nzones !== savedAllocation.nzones ||
     (allocationConfig.interiorMode ?? "equation") !== (savedAllocation.interiorMode ?? "equation") ||
     !sameShares(normalizeInteriorShares(interiorShares), savedAllocation.shares) ||
-    partners.some((p) => (zoneOf[p.id] ?? 0) !== (savedAllocation.zones[p.id] ?? 0));
+    newPartners.length > 0 ||
+    Object.keys({ ...zoneOf, ...savedAllocation.zones, ...savedAllocation.people }).some(
+      (id) => (zoneOf[id] ?? 0) !== (savedAllocation.zones[id] ?? savedAllocation.people[id] ?? 0),
+    );
 
   /**
    * Take the saved split as the draft.
@@ -753,18 +765,26 @@
   function seedAllocation(doc: unknown) {
     const config = readAllocationConfig(doc);
     const zones = readZoneAssignments(doc);
+    const people = readZonePeople(doc);
     const shares = readInteriorShares(doc);
     const wasDirty = allocationDirty;
-    savedAllocation = { ...config, zones, shares };
+    savedAllocation = { ...config, zones, people, shares };
     if (!wasDirty) {
       allocationConfig = { ...config };
-      zoneOf = { ...zones };
+      // One ring map for partners and people: the editor tells them apart.
+      zoneOf = { ...zones, ...people };
       interiorShares = { ...shares };
     }
   }
 
   /** Partners carry the draft's rings, not the saved ones. */
-  $: zonedPartners = partners.map((p) => ({ ...p, zone: zoneOf[p.id] ?? 0 }));
+  $: zonedPartners = [
+    ...partnersAll.map((p) => ({ ...p, zone: zoneOf[p.id] ?? 0 })),
+    // People on rings: in the ring map, not partner holons.
+    ...Object.entries(zoneOf)
+      .filter(([id, zone]) => zone >= 1 && !partnersAll.some((p) => p.id === id))
+      .map(([id, zone]) => ({ id, name: partyName(id), zone, kind: "person" as const })),
+  ];
 
   // Who the contributors' share goes to: the scored roster under the
   // equation, the draft's hand-set shares under a custom split — the same
@@ -936,7 +956,28 @@
   // A stored split counts on its own: a personal holon has no scored member
   // (its owner is not a member of themselves) and may have no partners yet.
   $: hasAllocation =
-    interiorMembers.length > 0 || partners.length > 0 || hasAllocationConfig(settings);
+    interiorMembers.length > 0 || zonedPartners.length > 0 || hasAllocationConfig(settings);
+
+  // ── The wallet: every unit at once ──────────────────────────────────────
+  // One line per unit the viewer holds anything in — a seat on the fund,
+  // access someone gave them, an open mutual-credit position — built by core
+  // from the same shapes the diagram reads. Tapping a fund line picks the
+  // unit the claims form and the diagram are in.
+  $: creditByUnit = currencies.map((c) => computeMutualCredit(expenses, people, c));
+  $: wallet = selfId
+    ? buildWallet({
+        partyId: selfId,
+        shares: rights,
+        sources: potSources,
+        usage: usageJudged,
+        credit: creditByUnit,
+        held: Object.keys(potChain),
+        ceilings,
+        claims: claimsCtx?.folded ?? null,
+      })
+    : [];
+  const money = (unit: string, v: number) => `${Math.round(v * 100) / 100} ${unit.toUpperCase()}`;
+  const signedMoney = (unit: string, v: number) => `${v < 0 ? "−" : v > 0 ? "+" : ""}${money(unit, Math.abs(v))}`;
   $: formatAllocation = potUnit
     ? formatter({ id: "money", unit: potUnit })
     : (v: number) => `${Math.round(v)}%`;
@@ -1754,6 +1795,57 @@
         </div>
       </header>
 
+      {#if selfId && wallet.length}
+        <!-- Every unit at once: tokens, vouchers, mutual credit — each on its
+             own line, nothing converted. A fund line sets the unit below. -->
+        <div class="claims-panel wallet">
+          <h3>Your balances</h3>
+          <ul class="wallet-lines" role="radiogroup" aria-label="Your balances">
+            {#each wallet as l (l.unit)}
+              <li>
+                <button
+                  type="button"
+                  role="radio"
+                  class="wline"
+                  class:on={l.unit === potUnit}
+                  class:over={(l.account?.over ?? 0) > 0}
+                  aria-checked={l.unit === potUnit}
+                  disabled={!potUnitList.includes(l.unit)}
+                  on:click={() => (potUnitPick = l.unit)}
+                >
+                  <span class="wunit">{l.unit.toUpperCase()}</span>
+                  <span class="wmain">
+                    {#if l.account}
+                      <strong>{money(l.unit, l.account.over > 0 ? l.account.over : l.available)}</strong>
+                      <span class="muted">{l.account.over > 0 ? "over by" : "available"}</span>
+                    {:else if l.credit}
+                      <strong class:debit={l.credit.net < 0} class:credit={l.credit.net > 0}>{signedMoney(l.unit, l.credit.net)}</strong>
+                      <span class="muted">mutual credit</span>
+                    {/if}
+                  </span>
+                  <span class="wsub muted">
+                    {#if l.held}In the Pot · {/if}
+                    {#if l.account && l.credit}
+                      {l.credit.net > 0 ? `Owed to you ${money(l.unit, l.credit.net)}` : l.credit.net < 0 ? `You owe ${money(l.unit, -l.credit.net)}` : "Square"}
+                    {:else}
+                      {l.sources.map((src) => ({ collective: "Collective", pot: "Pot", mint: "Issued here", inbound: "From upstream", credit: "Shared expenses" })[src]).join(" · ")}
+                    {/if}
+                    {#if l.account}
+                      · right {money(l.unit, l.account.right ?? 0)}
+                      {#if l.account.lifetimeSpent > 0}· paid {money(l.unit, l.account.lifetimeSpent)}{/if}
+                      {#if l.account.claimed > 0}· claimed {money(l.unit, l.account.claimed)}{/if}
+                      {#if l.account.received > 0}· received {money(l.unit, l.account.received)}{/if}
+                      {#if l.account.given > 0}· given {money(l.unit, l.account.given)}{/if}
+                    {/if}
+                  </span>
+                </button>
+              </li>
+            {/each}
+          </ul>
+          <p class="note left">Each unit on its own line — nothing is converted. Mutual credit is between people, never a draw on the fund; settle it in Balances.</p>
+        </div>
+      {/if}
+
       {#if !hasAllocation}
         <p class="empty">No members or partners to share with yet.</p>
       {:else}
@@ -1812,22 +1904,33 @@
           <AllocationEditor
             holonId={holonID}
             {holosphere}
+            canEdit={may(myLogRole, "settings.guarded")}
             bind:interiorPercent={allocationConfig.interiorPercent}
             bind:steepness={allocationConfig.steepness}
             bind:nzones={allocationConfig.nzones}
             bind:interiorMode={allocationConfig.interiorMode}
             bind:shares={interiorShares}
             bind:zoneOf
-            partners={partners.map((p) => ({ id: p.id, name: p.name }))}
+            partners={partnerHolons.map((p) => ({ id: p.id, name: p.name }))}
+            bind:newPartners
             members={memberShares.map((m) => ({ userId: m.id, percentage: m.percentage }))}
             {people}
             saved={savedAllocation}
             on:saved={() => {
+              const zones: Record<string, number> = {};
+              const placedPeople: Record<string, number> = {};
+              for (const [id, zone] of Object.entries(zoneOf)) {
+                if (partnersAll.some((p) => p.id === id)) zones[id] = zone;
+                else if (zone >= 1) placedPeople[id] = zone;
+              }
               savedAllocation = {
                 ...allocationConfig,
-                zones: { ...zoneOf },
+                zones,
+                people: placedPeople,
                 shares: normalizeInteriorShares(interiorShares),
               };
+              // The new partners are in the record now; read it back.
+              void loadFederation(holonID);
             }}
           />
         </div>
@@ -2435,6 +2538,66 @@
   .claims-panel h3 {
     margin: 0;
     font-size: 1rem;
+  }
+  .wallet-lines {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.35rem;
+  }
+  .wline {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 4rem minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 0.75rem;
+    align-items: center;
+    padding: 0.45rem 0.75rem;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    background: transparent;
+    border: 1px solid rgba(128, 128, 128, 0.35);
+    border-radius: 0.6rem;
+    cursor: pointer;
+  }
+  .wline:disabled {
+    cursor: default;
+  }
+  .wline.on {
+    border-color: #2a9d8f;
+    box-shadow: inset 0 0 0 1px #2a9d8f;
+  }
+  .wline.over {
+    border-color: #e76f51;
+  }
+  .wline .wunit {
+    grid-row: 1 / span 2;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  .wline .wmain {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+  .wline .wmain strong {
+    font-size: 1.15rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .wline .wsub {
+    font-size: 0.78rem;
+  }
+  .wline .credit {
+    color: #2a9d8f;
+  }
+  .wline .debit {
+    color: #e76f51;
+  }
+  .note.left {
+    text-align: left;
+    margin-top: 0;
   }
   .claim-form {
     display: flex;

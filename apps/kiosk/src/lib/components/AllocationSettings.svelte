@@ -20,6 +20,8 @@
 
   import { createEventDispatcher } from "svelte";
   import { t, locale } from "$lib/i18n";
+  import { may } from "@holons/core/holosphere";
+  import { standing } from "$lib/stores";
   import {
     describeWindow,
     describeWindowSpan,
@@ -36,6 +38,7 @@
   import { getReaStore } from "$lib/holosphere";
   import {
     allocate,
+    linkSplitPartner,
     resolveInteriorMembers,
     saveAllocationConfig,
     saveCollectiveSlug,
@@ -58,6 +61,7 @@
   } from "@holons/core/protocol";
   import SidePanel from "./SidePanel.svelte";
   import ValueEquation from "./ValueEquation.svelte";
+  import PartyFinder from "./PartyFinder.svelte";
 
   export let holonId = "";
   export let config: AllocationConfig;
@@ -195,6 +199,16 @@
   let sharePick = "";
   // The picker's choice; placing it moves the person into the list below.
   let pick = "";
+  // Partner holons found with the finder and not yet in the federation
+  // record: seated now, linked on Save (core `linkSplitPartner`), so the
+  // split can name a holon the hub has no relationship with yet.
+  let newPartners: { id: string; name: string }[] = [];
+  // Names for people the finder found who are on no roster handed in.
+  let foundNames: Record<string, string> = {};
+  $: partnersAll = [
+    ...partners,
+    ...newPartners.filter((n) => !partners.some((p) => p.id === n.id)),
+  ];
   // The value-equation editor is folded away: it is a long list of weights,
   // and most visits here are about the split, not the scoring behind it.
   let eqOpen = false;
@@ -218,6 +232,10 @@
   } satisfies Partial<Policy>;
   $: rulesUnchanged = samePolicy(ruleDraft, policy);
   $: rulesCanSign = policySignable && policyRole === "admin";
+  // The split, like every guarded settings field, counts from an admin's
+  // signature only (`may(standing, 'settings.guarded')`): the Save button
+  // says so instead of saving into silence.
+  $: canEditSplit = may($standing, "settings.guarded");
   function toggleRole(list: "authors" | "attesters", role: Role) {
     const cur = list === "authors" ? ruleAuthors : ruleAttesters;
     const next = cur.includes(role)
@@ -335,6 +353,7 @@
     zones: zoneOf,
     people: personZone,
     shares: shareOf,
+    partners: newPartners,
   });
 
   $: exteriorPercent = 100 - interiorPercent;
@@ -349,7 +368,10 @@
   // row: the board's own answer first (it re-answers as names are learned),
   // then the rosters handed in, then the kiosk's resolver. A holon holding a
   // contributor seat is on no roster of people, and must not print as its id.
-  $: nameOfPerson = new Map(candidates.map((c) => [c.id, c.name]));
+  $: nameOfPerson = new Map([
+    ...candidates.map((c) => [c.id, c.name] as const),
+    ...Object.entries(foundNames),
+  ]);
   $: partyName = (id: string): string =>
     nameOf(id) ??
     nameOfPerson.get(id) ??
@@ -364,7 +386,8 @@
     .sort((a, b) => a.name.localeCompare(b.name));
   $: unplaced = candidates
     .filter(
-      (c) => !(personZone[c.id] >= 1) && !partners.some((p) => p.id === c.id),
+      (c) =>
+        !(personZone[c.id] >= 1) && !partnersAll.some((p) => p.id === c.id),
     )
     .sort((a, b) => a.name.localeCompare(b.name));
   // What each zone — and each partner in it — actually receives, as a share
@@ -377,7 +400,7 @@
     config: { interiorPercent, steepness, nzones },
     members: [],
     zoned: [
-      ...partners.map((p) => ({ ...p, zone: zoneOf[p.id] ?? 0 })),
+      ...partnersAll.map((p) => ({ ...p, zone: zoneOf[p.id] ?? 0 })),
       ...placedPeople.map((p) => ({
         ...p,
         zone: personZone[p.id],
@@ -388,7 +411,8 @@
   $: zoneShares = draft.exterior.map((z) => z.percentage);
   $: maxZoneShare = Math.max(0, ...zoneShares);
   $: anyPlaced =
-    partners.some((p) => (zoneOf[p.id] ?? 0) >= 1) || placedPeople.length > 0;
+    partnersAll.some((p) => (zoneOf[p.id] ?? 0) >= 1) ||
+    placedPeople.length > 0;
   $: partnerShare = (id: string): number =>
     draft.exterior.flatMap((z) => z.members ?? []).find((m) => m.id === id)
       ?.percentage ?? 0;
@@ -415,13 +439,13 @@
   // A partner holon can hold a contributor seat too: a collective whose
   // contributors are other holons (the trees, the pickers) weights them here,
   // and the cascade follows each seat into that holon's own split.
-  $: nameOfPartner = new Map(partners.map((p) => [p.id, p.name]));
+  $: nameOfPartner = new Map(partnersAll.map((p) => [p.id, p.name]));
   $: shareable = [
     ...new Map(
       [
         ...candidates,
         ...scored.map((m) => ({ id: m.id, name: m.name })),
-        ...partners.map((p) => ({
+        ...partnersAll.map((p) => ({
           id: p.id,
           name: $t("alloc.partnerHolonName", { name: p.name }),
         })),
@@ -469,9 +493,33 @@
 
   function addShare() {
     if (!sharePick) return;
-    shareOf = { ...shareOf, [sharePick]: 0 };
-    shareText = { ...shareText, [sharePick]: "0" };
+    seatShare(sharePick);
     sharePick = "";
+  }
+
+  function seatShare(id: string) {
+    if (id in shareOf) return;
+    shareOf = { ...shareOf, [id]: 0 };
+    shareText = { ...shareText, [id]: "0" };
+  }
+
+  /** A holon the finder found: a partner once saved, seated right away. */
+  function addNewPartner(id: string, name: string) {
+    if (partnersAll.some((p) => p.id === id)) return;
+    newPartners = [...newPartners, { id, name }];
+  }
+
+  function found(
+    e: CustomEvent<{ id: string; name: string; kind: "person" | "holon" }>,
+    where: "split" | "zones",
+  ) {
+    const { id, name, kind } = e.detail;
+    if (kind === "holon") addNewPartner(id, name);
+    else foundNames = { ...foundNames, [id]: name };
+    if (where === "split") seatShare(id);
+    else if (kind === "holon")
+      zoneOf = { ...zoneOf, [id]: zoneOf[id] >= 1 ? zoneOf[id] : 1 };
+    else placePerson(id, personZone[id] >= 1 ? personZone[id] : 1);
   }
 
   function place(id: string, zone: number) {
@@ -510,6 +558,12 @@
     error = "";
     try {
       const store = await getReaStore();
+      // A holon found in the finder is a partner from here on: the record
+      // every reader finds it in is written before the split that seats it.
+      for (const p of newPartners) {
+        await linkSplitPartner(store, holonId, p.id, p.name);
+      }
+      newPartners = [];
       await saveAllocationConfig(
         store,
         holonId,
@@ -776,6 +830,12 @@
             on:click={copyEquation}>{$t("alloc.splitCopy")}</button
           >
         </div>
+        <!-- Anyone else: a person or a holon by name or id. A holon becomes
+             a federation partner on Save; a person is seated by their id. -->
+        <PartyFinder
+          exclude={Object.keys(shareOf)}
+          on:pick={(e) => found(e, "split")}
+        />
       {/if}
 
       <!-- The weights behind the equation split. Under "by value equation"
@@ -859,14 +919,16 @@
 
       <div class="control">
         <div class="k">{$t("alloc.partners")}</div>
-        {#if partners.length}
+        {#if partnersAll.length}
           <p class="sub">{$t("alloc.partnersAbout")}</p>
           <ul class="parties">
-            {#each partners as p (p.id)}
+            {#each partnersAll as p (p.id)}
               <li>
                 <div class="pline">
                   <span class="pname">{p.name}</span>
-                  {#if (zoneOf[p.id] ?? 0) >= 1}
+                  {#if newPartners.some((n) => n.id === p.id)}
+                    <span class="unplaced">{$t("alloc.newPartner")}</span>
+                  {:else if (zoneOf[p.id] ?? 0) >= 1}
                     <span class="pshare"
                       >{$t("alloc.zoneShare", {
                         pct: pct(partnerShare(p.id)),
@@ -976,6 +1038,15 @@
         {:else if !placedPeople.length}
           <p class="sub">{$t("alloc.noPeople")}</p>
         {/if}
+        <!-- Anyone else, or another holon: found by name or id, seated on
+             the first ring at once. A holon is linked as a partner on Save. -->
+        <PartyFinder
+          exclude={[
+            ...partnersAll.map((p) => p.id),
+            ...placedPeople.map((p) => p.id),
+          ]}
+          on:pick={(e) => found(e, "zones")}
+        />
       </div>
     {:else if tab === "rules"}
       <!-- ── The claims policy ─────────────────────────────────────────── -->
@@ -1231,10 +1302,18 @@
           {$t("alloc.rulesSave")}
         </button>
       {:else}
+        {#if !canEditSplit}
+          <span class="sub warn foot-note">{$t("alloc.splitNotAdmin")}</span>
+        {/if}
         <button class="ghost" on:click={() => dispatch("close")}
           >{$t("common.cancel")}</button
         >
-        <button class="primary" disabled={busy} on:click={save}>
+        <button
+          class="primary"
+          disabled={busy || !canEditSplit}
+          title={canEditSplit ? "" : $t("alloc.splitNotAdmin")}
+          on:click={save}
+        >
           {busy ? $t("common.saving") : $t("alloc.save")}
         </button>
       {/if}
@@ -1319,6 +1398,10 @@
   }
   .control {
     margin-top: 1.2rem;
+  }
+  .foot-note {
+    flex: 1 1 100%;
+    margin: 0 0 0.4rem;
   }
   .sub.warn {
     color: var(--ink);

@@ -76,6 +76,7 @@
     UNATTRIBUTED_ID,
     allocate,
     allocationToGraph,
+    buildWallet,
     cascadeRights,
     cascadeToGraph,
     childResolver,
@@ -141,6 +142,7 @@
   import { loadSettings } from "@holons/core/settings";
   import { buildNameMap } from "@holons/core/identity";
   import {
+    computeMutualCredit,
     expenseCurrencies,
     normalizeCurrency,
     participantIds,
@@ -601,9 +603,16 @@
   // so dragging a partner onto a ring redraws the diagram behind it.
   $: savedZones = readZoneAssignments(settings);
   $: savedPeople = readZonePeople(settings);
+  // A partner found in the sheet and not yet linked rides along in the
+  // draft, so the diagram shows the seat before Save writes the record.
   $: partners = toAllocationPartners(
-    federated,
-    partnerNameMap,
+    [...federated, ...(allocationDraft?.partners ?? []).map((p) => p.id)],
+    {
+      ...partnerNameMap,
+      ...Object.fromEntries(
+        (allocationDraft?.partners ?? []).map((p) => [p.id, p.name]),
+      ),
+    },
     allocationDraft?.zones ?? savedZones,
     allocationDraft?.people ?? savedPeople,
   ).map((p) => ({ ...p, name: nameFor(p.id) ?? p.name }));
@@ -902,6 +911,53 @@
   $: myShare =
     selfId && cascade ? (cascade.leaves[selfId]?.percentage ?? 0) : 0;
   $: myAccount = selfId ? fundAccount(rights, usageJudged, selfId) : null;
+
+  // ── The wallet: every unit at once ──────────────────────────────────────
+  // One line per unit the viewer holds anything in — a seat on the fund,
+  // access someone gave them, an open mutual-credit position — built by
+  // core from the same shapes the card and the diagram read. Tapping a line
+  // picks the unit the statement below is in; a fund unit also moves the
+  // board's unit pill.
+  let walletPick = "";
+  $: creditByUnit = currencies.map((c) =>
+    computeMutualCredit(expenses, people, c),
+  );
+  $: wallet = selfId
+    ? buildWallet({
+        partyId: selfId,
+        shares: rights,
+        sources: potSources,
+        usage: usageJudged,
+        credit: creditByUnit,
+        held: Object.keys(potChain),
+        ceilings,
+        claims: claimsCtx?.folded ?? null,
+      })
+    : [];
+  $: walletUnit =
+    walletPick && wallet.some((l) => l.unit === walletPick)
+      ? walletPick
+      : wallet.some((l) => l.unit === potUnit)
+        ? potUnit
+        : (wallet[0]?.unit ?? potUnit);
+  $: walletSelected = wallet.find((l) => l.unit === walletUnit) ?? null;
+  // The statement card reads the board's unit; a credit-only line (a
+  // currency the fund never held) gets its own card instead.
+  $: walletCreditOnly = !!(
+    walletSelected &&
+    !walletSelected.account &&
+    walletSelected.credit
+  );
+  function pickWalletUnit(unit: string) {
+    walletPick = unit;
+    if (potUnitList.includes(unit)) potUnitPick = unit;
+  }
+  function openBalances(unit: string) {
+    pickUnit(`money:${unit}`);
+    flowsViewMode.set("balances");
+  }
+  $: signed = (unit: string, v: number) =>
+    `${v < 0 ? "−" : v > 0 ? "+" : ""}${moneyFormatter(unit, 2)(Math.abs(v))}`;
   $: myPassesTo = selfId ? namesOf(cascadeFlows.to.get(selfId)) : "";
   // A statement shows cents; the diagram rounds to whole units.
   $: formatAccount = potUnit
@@ -1886,26 +1942,88 @@
           {$t("flows.accountSignIn")}
         </button>
       {:else}
-        <!-- The fund: what you may still direct, as a balance. -->
-        {#if potUnitList.length > 1}
-          <div
-            class="pot-units"
-            role="radiogroup"
-            aria-label={$t("flows.potUnit")}
-          >
-            {#each potUnitList as u (u)}
-              <button
-                type="button"
-                role="radio"
-                class="chip pick"
-                class:on={u === potUnit}
-                aria-checked={u === potUnit}
-                on:click={() => (potUnitPick = u)}>{u.toUpperCase()}</button
-              >
-            {/each}
-          </div>
-        {/if}
         <section class="hero">
+          <!-- Every unit at once: tokens, vouchers, mutual credit — each on
+               its own line, nothing converted. The tapped line is the unit
+               the statement below reads. -->
+          {#if wallet.length}
+            <div class="account wallet">
+              <div class="account-head">
+                <div>
+                  <div class="k">{$t("flows.walletTitle")}</div>
+                  <div class="account-sub">{$t("flows.walletAbout")}</div>
+                </div>
+              </div>
+              <ul
+                class="wallet-lines"
+                role="radiogroup"
+                aria-label={$t("flows.walletTitle")}
+              >
+                {#each wallet as l (l.unit)}
+                  <li>
+                    <button
+                      type="button"
+                      role="radio"
+                      class="wline"
+                      class:on={l.unit === walletUnit}
+                      class:over={(l.account?.over ?? 0) > 0}
+                      aria-checked={l.unit === walletUnit}
+                      on:click={() => pickWalletUnit(l.unit)}
+                    >
+                      <span class="wunit">{l.unit.toUpperCase()}</span>
+                      <span class="wmain">
+                        {#if l.account}
+                          <span class="v"
+                            >{moneyFormatter(
+                              l.unit,
+                              2,
+                            )(
+                              l.account.over > 0 ? l.account.over : l.available,
+                            )}</span
+                          >
+                          <span class="k"
+                            >{l.account.over > 0
+                              ? $t("flows.accountOverBy")
+                              : $t("flows.available")}</span
+                          >
+                        {:else if l.credit}
+                          <span
+                            class="v"
+                            class:debit={l.credit.net < 0}
+                            class:credit={l.credit.net > 0}
+                            >{signed(l.unit, l.credit.net)}</span
+                          >
+                          <span class="k">{$t("flows.walletCredit")}</span>
+                        {/if}
+                      </span>
+                      <span class="wsub">
+                        {#if l.held}{$t("flows.walletHeld")} ·
+                        {/if}
+                        {#if l.account && l.credit}
+                          {l.credit.net > 0
+                            ? $t("flows.walletOwedToYou", {
+                                amount: moneyFormatter(l.unit, 2)(l.credit.net),
+                              })
+                            : l.credit.net < 0
+                              ? $t("flows.walletYouOwe", {
+                                  amount: moneyFormatter(
+                                    l.unit,
+                                    2,
+                                  )(-l.credit.net),
+                                })
+                              : $t("flows.walletSquare")}
+                        {:else}
+                          {l.sources
+                            .map((src) => $t(`flows.walletSource.${src}`))
+                            .join(" · ")}
+                        {/if}
+                      </span>
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
           {#if inbound.length && selfId && hid === selfId}
             <!-- A person's own board: what reaches them from every hub they
                  keep — the same rights those hubs' boards show on their
@@ -1927,11 +2045,67 @@
               </ul>
             </div>
           {/if}
-          {#if myAccount}
+          {#if walletCreditOnly && walletSelected?.credit}
+            <!-- A currency the fund never held, open between people: the
+                 viewer's position in it, and the way to settle it. -->
+            <div class="account">
+              <div class="account-head">
+                <div>
+                  <div class="k">
+                    {$t("flows.accountTitle")} · {walletSelected.unit.toUpperCase()}
+                  </div>
+                  <div class="account-sub">{$t("flows.walletNoFund")}</div>
+                </div>
+              </div>
+              <div class="account-main">
+                <span class="k">{$t("flows.walletCredit")}</span>
+                <span
+                  class="v"
+                  class:debit={walletSelected.credit.net < 0}
+                  class:credit={walletSelected.credit.net > 0}
+                  >{signed(
+                    walletSelected.unit,
+                    walletSelected.credit.net,
+                  )}</span
+                >
+              </div>
+              <dl class="statement">
+                <div>
+                  <dt>{$t("flows.walletOwedToYouLabel")}</dt>
+                  <dd class="credit">
+                    +{moneyFormatter(
+                      walletSelected.unit,
+                      2,
+                    )(walletSelected.credit.owedToYou)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{$t("flows.walletYouOweLabel")}</dt>
+                  <dd class="debit">
+                    −{moneyFormatter(
+                      walletSelected.unit,
+                      2,
+                    )(walletSelected.credit.youOwe)}
+                  </dd>
+                </div>
+              </dl>
+              <button
+                class="claim ghost"
+                type="button"
+                on:click={() => openBalances(walletSelected?.unit ?? "")}
+              >
+                {$t("flows.walletOpenBalances")}
+              </button>
+            </div>
+          {:else if myAccount}
             <div class="account" class:over={myAccount.over > 0}>
               <div class="account-head">
                 <div>
-                  <div class="k">{$t("flows.accountTitle")}</div>
+                  <div class="k">
+                    {$t("flows.accountTitle")}{potUnit
+                      ? ` · ${potUnit.toUpperCase()}`
+                      : ""}
+                  </div>
                   <div class="account-sub">
                     {potCollective
                       ? $t("flows.accountAbout", { name: potCollective.name })
@@ -2176,6 +2350,26 @@
                     <div>
                       <dt>{$t("flows.accountGiven")}</dt>
                       <dd class="debit">−{formatAccount(myAccount.given)}</dd>
+                    </div>
+                  {/if}
+                  {#if walletSelected?.credit && walletSelected.unit === potUnit}
+                    <!-- Mutual credit is a ledger between people, not a draw
+                         on the fund: shown beside the statement, never summed
+                         into it. -->
+                    <div class="foot">
+                      <dt>{$t("flows.walletCredit")}</dt>
+                      <dd
+                        class:debit={walletSelected.credit.net < 0}
+                        class:credit={walletSelected.credit.net > 0}
+                      >
+                        {signed(potUnit, walletSelected.credit.net)}
+                        <button
+                          class="linkish"
+                          type="button"
+                          on:click={() => openBalances(potUnit)}
+                          >{$t("flows.walletOpenBalances")}</button
+                        >
+                      </dd>
                     </div>
                   {/if}
                   {#each myAccount.otherUnits as other (other.unit)}
@@ -2931,6 +3125,84 @@
   /* The hero: the one card the personal scope opens with. */
   .hero {
     margin-bottom: 1.6rem;
+  }
+  .hero .account.wallet {
+    margin-bottom: 0.8rem;
+  }
+  .wallet-lines {
+    list-style: none;
+    margin: 0.6rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 0.4rem;
+  }
+  .wline {
+    width: 100%;
+    min-height: 56px;
+    display: grid;
+    grid-template-columns: 4.2rem minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 0.8rem;
+    align-items: center;
+    padding: 0.5rem 0.8rem;
+    text-align: left;
+    font: inherit;
+    color: var(--ink);
+    background: transparent;
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    touch-action: manipulation;
+    cursor: pointer;
+  }
+  .wline.on {
+    border-color: var(--teal);
+    box-shadow: inset 0 0 0 1px var(--teal);
+  }
+  .wline.over {
+    border-color: #c0392b;
+  }
+  .wline .wunit {
+    grid-row: 1 / span 2;
+    font-weight: 700;
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
+    color: var(--teal-ink);
+  }
+  .wline .wmain {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+  .wline .wmain .v {
+    font-size: 1.35rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .wline .wmain .k {
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+  }
+  .wline .wsub {
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+  }
+  .wline .v.credit {
+    color: var(--teal-ink);
+  }
+  .wline .v.debit,
+  .account-main .v.debit {
+    color: #c0392b;
+  }
+  .linkish {
+    margin-left: 0.5rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: 0.8rem;
+    color: var(--teal-ink);
+    text-decoration: underline;
+    cursor: pointer;
   }
   .hero .account {
     margin: 0;

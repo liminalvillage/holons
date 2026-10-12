@@ -31,6 +31,7 @@ import {
   inboundTotal,
   loadAllocationInputs,
   loadClaimCeilings,
+  loadWallet,
   loadInboundRights,
   loadMints,
   potTotal,
@@ -47,6 +48,7 @@ import {
 import { MEMBERS_LENS, POLICY_LENS, importPartnerLogs, lensContext, readMembersLog } from '@holons/core/protocol';
 import { attestationsFrom, SHIFT_IDENTITY_LENS } from '@holons/core/shifts';
 import type { ToolDeps } from './index.js';
+import { gate } from './standing.js';
 import { namesFor } from './names.js';
 
 function ok(payload: unknown) {
@@ -196,6 +198,8 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
       try {
         const hs = await deps.getHoloSphere();
         const { holon, zones, people, shares, ...config } = args;
+        const g = await gate(hs, holon, 'settings.guarded');
+        if (g.refusal) return fail(g.refusal, { standing: g.standing });
         const saved = await saveAllocationConfig(hs, holon, config, zones, people, shares);
         return ok({ success: true, holon, config: saved });
       } catch (err) {
@@ -424,6 +428,31 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
           headroom: headroomOf(ceilings, ctx.folded),
           ...(truncated ? { truncated } : {}),
         });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  server.registerTool(
+    'flow_wallet',
+    {
+      description:
+        "A party's balances over the holon, every unit at once — one line per unit they hold anything in: `account` (their statement over the fund: right, paid, claimed, received, given, available, over), `claimable` (what the next claim or give may be), `credit` (their mutual-credit position on the expenses lens: net, owedToYou, youOwe), `pot`, `sources` (collective | pot | mint | inbound | credit) and `held` (collected from the Pot, not claimable in the log). Nothing is converted across units. Defaults to the acting user. Wraps @holons/core/flows loadWallet.",
+      inputSchema: {
+        holon: z.string(),
+        party: z.string().optional().describe('A user id or a holon id; omit for the acting user.'),
+      },
+    },
+    async (args) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        const party = String(args.party ?? deps.resolveActor().id ?? '');
+        if (!party) return fail('No party given and no acting user.');
+        const { ctx } = await judgedClaims(hs, args.holon);
+        const wallet = await loadWallet(hs, args.holon, party, { claims: ctx.folded, scoreOf: scoreOf(hs) });
+        const names = await namesFor(hs, args.holon, [party]);
+        return ok({ success: true, holon: args.holon, party, names, ...wallet });
       } catch (err) {
         return fail((err as Error).message);
       }

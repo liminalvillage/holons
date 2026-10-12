@@ -19,4 +19,6 @@ export interface AllocationDraft {
   people: Record<string, number>;
   /** The hand-set contributors' split, read under `interiorMode: custom`. */
   shares: InteriorShares;
+  /** Partner holons found in the editor and not yet linked: linked on Save. */
+  partners?: { id: string; name: string }[];
 }

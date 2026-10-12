@@ -73,13 +73,15 @@ export async function mirrorAllocation(
   draft: AllocationDraft,
   partners: SyncPartner[] = [],
   shares?: InteriorShares,
+  /** People on rings, user id → ring; omitted keeps what is stored. */
+  people?: Record<string, number>,
 ): Promise<void> {
   await saveAllocationConfig(
     holosphere,
     holonId,
     draft,
     zoneMap(partners),
-    undefined,
+    people,
     shares,
   );
 }
