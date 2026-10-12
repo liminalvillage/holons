@@ -77,7 +77,15 @@
   import AddHubSheet from "./AddHubSheet.svelte";
   import FederationLens from "./FederationLens.svelte";
   import DockMap from "./DockMap.svelte";
+  import DockPeople from "./DockPeople.svelte";
   import MapSearch from "./MapSearch.svelte";
+  import {
+    dockPeople,
+    dockPeopleLoading,
+    dockPeopleOn,
+    loadDockPeople,
+    setDockPeople,
+  } from "$lib/dockpeople";
   import type { PlaceHit } from "$lib/placesearch";
   import { showHomePage } from "$lib/home";
   import { holonId } from "$lib/stores";
@@ -529,6 +537,21 @@
 
   $: links = linksAmong(ids, partnerMap);
 
+  // ── People ──────────────────────────────────────────────────────────────--
+  //
+  // Switched on, the sky also shows who is in more than one of these hubs,
+  // standing between them (DockPeople), and the list names everyone. The
+  // rosters are only read while the layer is on, and again when the cast
+  // changes.
+  let peopleLayer: DockPeople | undefined;
+  $: if ($dockPeopleOn) void loadDockPeople(ids);
+  $: hubNames = new Map($dockEntries.map((e) => [e.id, e.name]));
+  /** A person's hub was picked: fly to it over the earth, else open it. */
+  function openFromPerson(id: string) {
+    if (mapOn && !listOn && dockMap?.hexOf(id)) void dockMap.showBoard(id);
+    else requestOpen(id);
+  }
+
   // ── The search box as a filter ──────────────────────────────────────────--
   //
   // Whatever is typed in the search narrows the sky to the orbs that answer
@@ -783,7 +806,9 @@
     const had = editing || adding;
     editing = false;
     cancelAdd();
-    return had;
+    // Not `||`: the card must be stood down even when the others were up.
+    const hadCard = peopleLayer?.close() ?? false;
+    return had || hadCard;
   }
   function onBackdrop(e: Event) {
     if (e.target !== e.currentTarget) return;
@@ -811,6 +836,8 @@
         onmove={() => (mapTick += 1)}
         highlight={dragging ? dropTarget : (homeDrop?.hex ?? null)}
         carrying={dragging ? dragId : (homeDrop?.holon ?? null)}
+        people={$dockPeopleOn ? $dockPeople.people : null}
+        peopleLoading={$dockPeopleLoading}
       />
     {/if}
 
@@ -1061,6 +1088,23 @@
           {/if}
         {/each}
 
+        <!-- The people between the hubs, over the orbs and their names. The
+             list covers the sky, so there they are rows instead. -->
+        {#if $dockPeopleOn && !listOn}
+          <DockPeople
+            bind:this={peopleLayer}
+            {positions}
+            {fieldW}
+            {fieldH}
+            orb={ORB}
+            orbRem={ORB_REM}
+            visible={filtering ? shown : null}
+            {hubNames}
+            onopen={openFromPerson}
+            onmore={() => setDockView("list")}
+          />
+        {/if}
+
         <!-- The hover chip: what flows across the liquid the pointer rests
            on, hung just above its neck. Last in the layer, over the names. -->
         {#if hoverLink}
@@ -1150,6 +1194,20 @@
           <Icon name="locate" />
         </button>
       {/if}
+      <!-- People among the hubs: who is in more than one of them. -->
+      <button
+        type="button"
+        class="locate people"
+        class:on={$dockPeopleOn}
+        aria-pressed={$dockPeopleOn}
+        on:click={() => setDockPeople(!$dockPeopleOn)}
+        aria-label={$dockPeopleOn
+          ? $t("dock.peopleHide")
+          : $t("dock.peopleShow")}
+        title={$dockPeopleOn ? $t("dock.peopleHide") : $t("dock.peopleShow")}
+      >
+        <Icon name="users" />
+      </button>
       <!-- The reading page: what a hub is and how to start one. -->
       <button
         type="button"
@@ -1880,9 +1938,15 @@
   .locate:active {
     transform: scale(0.92);
   }
-  .locate.about {
+  .locate.about,
+  .locate.people {
     margin-left: 0.5rem;
     font-size: 1.15rem;
+  }
+  .locate.people.on {
+    border-color: var(--teal);
+    background: color-mix(in srgb, var(--teal) 22%, var(--card));
+    color: var(--ink);
   }
   .locate:disabled {
     opacity: 0.6;

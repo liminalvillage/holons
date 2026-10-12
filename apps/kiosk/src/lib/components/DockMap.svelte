@@ -56,6 +56,7 @@
     type ViewBox,
   } from "$lib/maplens";
   import { hubRows, lensRows, type LensRow } from "$lib/maplist";
+  import type { PersonAcross } from "@holons/core/holons";
   import type { PlaceHit } from "$lib/placesearch";
   import MapList from "./MapList.svelte";
   import { prettyField } from "$lib/lensform";
@@ -731,6 +732,9 @@
 
   /** Whether the list lies over the earth — the dock's view switch says. */
   export let listOpen = false;
+  /** Everyone in the docked hubs, when the dock's people layer is on. */
+  export let people: readonly PersonAcross[] | null = null;
+  export let peopleLoading = false;
   /** The map has somewhere to fly: the dock turns the pane back to the earth. */
   export let onshowmap: () => void = () => {};
   function showMap() {
@@ -1168,6 +1172,8 @@
       lens={selectedLens}
       rows={listed.rows}
       total={listed.total}
+      {people}
+      {peopleLoading}
       onopen={requestOpen}
       onshowhub={(id) => void showBoard(id)}
       onshowrow={showRow}
