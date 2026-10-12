@@ -112,7 +112,7 @@ class HolonsBot {
     this.shopping = new Shopping(this.bot, this.db, this.settings);
 
     this.bigtalk = new Bigtalk(this.bot);
-    this.library = new Library(this.bot, this.db);
+    this.library = new Library(this.bot, this.db, this.settings);
     this.stock = new Stock(this.bot, this.db, this.settings);
     this.users = new Users(this.bot, this.db);
     this.expenses = new Expenses(this.bot, this.db, this.ui, this.settings);

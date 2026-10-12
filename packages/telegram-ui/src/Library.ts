@@ -10,11 +10,21 @@ import { extractItemsFromImage } from './AI.js';
 import { Calendar } from './Calendar.js';
 import {
     LIBRARY_TYPES as LIBRARY_TYPES_CORE,
-    borrowItem as coreBorrowItem,
+    bookItem as coreBookItem,
+    bookingBound,
+    bookingStatus,
+    dayKey,
+    getLibraryStats,
+    minuteKey,
     recordBorrowAccounting as coreRecordBorrowAccounting,
     recordReturnAccounting as coreRecordReturnAccounting,
     returnItem as coreReturnItem,
+    returnableBooking,
+    timeOf,
+    wallClock,
+    ymd,
     type AccountingDeps,
+    type Booking,
     type LibraryItem,
 } from '@holons/core/library';
 
@@ -50,9 +60,41 @@ interface PendingBorrow {
     username: string | undefined;
     firstName: string;
     lastName: string;
-    item: any;
     itemName: string;
-    fromKeyboard: boolean;
+    /** Booking by the clock: a day is picked, then a start time, then a length. */
+    timed?: boolean;
+    day?: string;
+    /** Chosen start, as a `YYYY-MM-DDTHH:mm` bound. */
+    start?: string;
+}
+
+/** Quick lengths offered from now, and lengths offered after a start time (minutes). */
+const QUICK_MINUTES = [60, 120, 240];
+const LENGTH_MINUTES = [30, 60, 120, 180, 240, 360, 480, 720];
+
+function fmtLength(minutes: number): string {
+    return minutes < 60 ? `${minutes} min` : `${minutes / 60} h`;
+}
+
+/** A booking bound as the bot shows it: "12/10" or "12/10 14:00". */
+function fmtBound(s: string): string {
+    const [, m, d] = dayKey(s).split('-');
+    const day = `${Number(d)}/${Number(m)}`;
+    const time = timeOf(s);
+    return time ? `${day} ${time}` : day;
+}
+
+/** "12/10 14:00–15:00" within a day, else "12/10 → 14/10". */
+function fmtRange(b: Pick<Booking, 'start' | 'end'>): string {
+    if (timeOf(b.start) && dayKey(b.start) === dayKey(b.end)) {
+        return `${fmtBound(b.start)}–${timeOf(b.end)}`;
+    }
+    return dayKey(b.start) === dayKey(b.end) ? fmtBound(b.start) : `${fmtBound(b.start)} → ${fmtBound(b.end)}`;
+}
+
+/** `start` plus `minutes`, as a timed bound. */
+function addMinutes(start: string, minutes: number): string {
+    return minuteKey(new Date(new Date(start).getTime() + minutes * 60_000));
 }
 
 interface CreateLibraryItemOptions {
@@ -94,20 +136,22 @@ class Library {
     db: DbLike;
     expensesInstance: any | null;
     pendingPhotoItems: Map<number | string, PendingPhotoState>;
-    borrowLocks: Set<string>;
+    settings: any | null;
     pendingBorrows: Map<string, PendingBorrow>;
     calendar: any;
     eventStore: any;
     eventFactory: typeof REAEventFactory;
     aggregator: any;
 
-    constructor(bot: BotLike, db: DbLike) {
+    constructor(bot: BotLike, db: DbLike, settings: any | null = null) {
         this.bot = bot;
         this.db = db;
+        this.settings = settings;
         this.expensesInstance = null;
         this.pendingPhotoItems = new Map(); // Store pending items from photo extraction per chat
-        this.borrowLocks = new Set(); // Prevent concurrent borrows of the same item
-        this.pendingBorrows = new Map(); // Store pending borrows waiting for date selection: key=holonId:itemId, value={userId, username, item, fromKeyboard}
+        // A borrow waiting for its dates: one per person per chat (key=holonId:userId).
+        // Core checks every booking against the stored item, so nothing is locked meanwhile.
+        this.pendingBorrows = new Map();
 
         // Initialize Calendar for date selection (date only, no time).
         // `start_date` is supported by the JS implementation but not surfaced
@@ -154,6 +198,11 @@ class Library {
 
         // Calendar date selection for library borrows
         this.bot.action(/lb_d_(.+)/, (ctx) => this.handleBorrowDateSelected(ctx, ctx.match[1]));
+        // Booking by the clock: a few hours from now, or a day → start time → length.
+        this.bot.action(/^lb_q_(\d+)$/, (ctx) => this.handleQuickBorrow(ctx, parseInt(ctx.match[1])));
+        this.bot.action('lb_t', (ctx) => this.handlePickTime(ctx));
+        this.bot.action(/^lb_h_(\d{2}:\d{2})$/, (ctx) => this.handleStartSelected(ctx, ctx.match[1]));
+        this.bot.action(/^lb_n_(\d+)$/, (ctx) => this.handleLengthSelected(ctx, parseInt(ctx.match[1])));
         this.bot.action(/lb_m_(.+)_(.+)/, (ctx) => this.handleCalendarNavigation(ctx));
         this.bot.action('library_cancel_borrow', (ctx) => this.cancelPendingBorrow(ctx));
 
@@ -290,70 +339,76 @@ class Library {
             return;
         }
 
-        // Create a lock key to prevent concurrent borrows
-        const lockKey = `${holonId}:${item}`;
-        if (this.borrowLocks.has(lockKey)) {
-            if (fromKeyboard) await ctx.answerCbQuery('Someone else is borrowing this item, please try again.').catch(() => {});
-            else ctx.reply('Someone else is borrowing this item, please try again.');
-            return;
-        }
-
-        // Check if item exists and is available
-        let currentItem = await this.db.get(holonId.toString(), 'library', item);
+        const currentItem = await this.db.get(holonId.toString(), 'library', item);
         if (!currentItem) {
             if (fromKeyboard) await ctx.answerCbQuery(`${item} is not in the library.`).catch(() => {});
             else ctx.reply(`${item} is not in the library.`);
             return;
         }
-        if (currentItem.borrowed) {
-            if (fromKeyboard) await ctx.answerCbQuery(`${item} is already borrowed by ${currentItem.borrower}.`).catch(() => {});
-            else ctx.reply(`${item} is already borrowed by ${currentItem.borrower}.`);
-            return;
-        }
 
-        // Acquire lock to prevent others from borrowing while calendar is shown
-        this.borrowLocks.add(lockKey);
-
-        // Store pending borrow info with name for initials
-        const firstName = ctx.from.first_name || '';
-        const lastName = ctx.from.last_name || '';
-        this.pendingBorrows.set(lockKey, {
+        // Remember who is borrowing what while they pick the dates. An item that
+        // is out right now can still be booked for later — core checks the
+        // chosen stretch against every existing booking when it is confirmed.
+        this.pendingBorrows.set(this.pendingKey(holonId, ctx.from.id), {
             userId: ctx.from.id,
             username: ctx.from.username,
-            firstName: firstName,
-            lastName: lastName,
-            item: currentItem,
+            firstName: ctx.from.first_name || '',
+            lastName: ctx.from.last_name || '',
             itemName: item,
-            fromKeyboard: fromKeyboard
         });
 
-        // Show calendar to select return date
+        const now = await this.holonNow(holonId);
+        const status = bookingStatus(currentItem, now);
         const icon = this.getItemIcon(currentItem);
-        const calendarKeyboard = this.createLibraryCalendarKeyboard(new Date(), item);
+        const out = status.state === 'out' && status.booking
+            ? `\n⏳ Out with ${status.booking.borrower} until ${fmtBound(status.booking.end)}`
+            : '';
+        const text = `📅 Borrowing ${icon} ${item}${out}\n\nFor a few hours from now, by the clock, or pick the return date:`;
+        const calendarKeyboard = this.createLibraryCalendarKeyboard(now, item, { now });
 
         if (fromKeyboard) {
             await ctx.answerCbQuery().catch(() => {});
-            await ctx.editMessageText(
-                `📅 Borrowing ${icon} ${item}\n\nSelect return date:`,
-                { reply_markup: calendarKeyboard }
-            ).catch((error: unknown) => { console.log(error) });
+            await ctx.editMessageText(text, { reply_markup: calendarKeyboard })
+                .catch((error: unknown) => { console.log(error) });
         } else {
-            await ctx.reply(
-                `📅 Borrowing ${icon} ${item}\n\nSelect return date:`,
-                { reply_markup: calendarKeyboard }
-            );
+            await ctx.reply(text, { reply_markup: calendarKeyboard });
         }
+    }
+
+    pendingKey(holonId: number | string, userId: number | string): string {
+        return `${holonId}:${userId}`;
+    }
+
+    /**
+     * The holon's wall clock. Booking times carry no zone, so a bot hosted
+     * elsewhere reads "now" in the holon's own timezone setting; without one
+     * the host's clock stands.
+     */
+    async holonNow(holonId: number | string): Promise<Date> {
+        let zone = '';
+        try {
+            zone = (await this.settings?.getSettings(holonId))?.timezone || '';
+        } catch {
+            // no settings — host clock
+        }
+        return wallClock(new Date(), zone);
     }
 
     // Create calendar keyboard with library-specific callback prefixes
     // `_item` is accepted for call-site compatibility — the JS keyboard is
     // global to the holon and doesn't need the item id baked into the cells.
-    createLibraryCalendarKeyboard(date: Date | number | string, _item?: string) {
+    // `opts.timed` is the day step of a by-the-clock booking: the same grid
+    // without the shortcuts that lead into it.
+    createLibraryCalendarKeyboard(
+        date: Date | number | string,
+        _item?: string,
+        opts: { now?: Date; timed?: boolean } = {}
+    ) {
         const displayDate = new Date(date);
         displayDate.setDate(1);
         displayDate.setHours(0, 0, 0, 0);
 
-        const today = new Date();
+        const today = opts.now ?? new Date();
         const year = displayDate.getFullYear();
         const month = displayDate.getMonth();
         const monthStr = `${year}-${String(month + 1).padStart(2, '0')}`;
@@ -364,6 +419,13 @@ class Library {
 
         type KbButton = { text: string; callback_data: string };
         const keyboard: { inline_keyboard: KbButton[][] } = { inline_keyboard: [] };
+
+        if (!opts.timed) {
+            keyboard.inline_keyboard.push(
+                QUICK_MINUTES.map(m => ({ text: `⏱ ${fmtLength(m)}`, callback_data: `lb_q_${m}` })),
+                [{ text: '🕐 Pick day & time', callback_data: 'lb_t' }]
+            );
+        }
 
         // Header row: << < Month Year > >>
         keyboard.inline_keyboard.push([
@@ -440,37 +502,133 @@ class Library {
                 break;
         }
 
-        const calendarKeyboard = this.createLibraryCalendarKeyboard(date);
+        const holonId = ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
+        const pending = this.pendingBorrows.get(this.pendingKey(holonId, ctx.from.id));
+        const calendarKeyboard = this.createLibraryCalendarKeyboard(date, undefined, {
+            now: await this.holonNow(holonId),
+            timed: !!pending?.timed,
+        });
         await ctx.editMessageReplyMarkup(calendarKeyboard).catch((error: unknown) => { console.log(error) });
     }
 
-    // Handle date selection and complete the borrow
-    async handleBorrowDateSelected(ctx: any, dateStr: string) {
+    /** The borrow this person is in the middle of, or null (after telling them so). */
+    async pendingFor(ctx: any): Promise<{ holonId: number | string; pending: PendingBorrow } | null> {
         const holonId = ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
-
-        // Find the pending borrow for this user in this chat
-        let pendingKey: string | null = null;
-        let pendingBorrow: PendingBorrow | null = null;
-        for (const [key, value] of this.pendingBorrows.entries()) {
-            if (key.startsWith(`${holonId}:`) && value.userId === ctx.from.id) {
-                pendingKey = key;
-                pendingBorrow = value;
-                break;
-            }
-        }
-
-        if (!pendingBorrow || !pendingKey) {
+        const pending = this.pendingBorrows.get(this.pendingKey(holonId, ctx.from.id));
+        if (!pending) {
             await ctx.answerCbQuery('No pending borrow found. Please try again.').catch(() => {});
+            return null;
+        }
+        return { holonId, pending };
+    }
+
+    // A day was tapped: the return date of a whole-day borrow, or the day of a
+    // by-the-clock booking (which goes on to ask for the start time).
+    async handleBorrowDateSelected(ctx: any, dateStr: string) {
+        const found = await this.pendingFor(ctx);
+        if (!found) return;
+        const { holonId, pending } = found;
+
+        if (!pending.timed) {
+            await this.completeBorrow(ctx, holonId, pending, { end: dateStr });
             return;
         }
-        // Narrow for the rest of the body — the null-check above guarantees both.
-        const lockKey: string = pendingKey;
 
-        const { itemName, username, firstName, lastName } = pendingBorrow;
-        const returnDate = new Date(dateStr);
+        pending.day = dateStr;
+        const now = await this.holonNow(holonId);
+        // Today, the hours already gone are left out (the running one stays).
+        const from = dateStr === ymd(now) ? now.getHours() : 0;
+        const hours: Array<{ text: string; callback_data: string }> = [];
+        for (let h = from; h < 24; h++) {
+            const time = `${String(h).padStart(2, '0')}:00`;
+            hours.push({ text: time, callback_data: `lb_h_${time}` });
+        }
+        const rows: Array<typeof hours> = [];
+        for (let i = 0; i < hours.length; i += 4) rows.push(hours.slice(i, i + 4));
+        rows.push([{ text: '❌ Cancel', callback_data: 'library_cancel_borrow' }]);
 
+        await ctx.answerCbQuery().catch(() => {});
+        await ctx.editMessageText(
+            `🕐 Booking ${pending.itemName} on ${fmtBound(dateStr)}\n\nFrom what time?`,
+            { reply_markup: { inline_keyboard: rows } }
+        ).catch((error: unknown) => { console.log(error) });
+    }
+
+    // "Pick day & time": the calendar again, now choosing the day of the booking.
+    async handlePickTime(ctx: any) {
+        const found = await this.pendingFor(ctx);
+        if (!found) return;
+        const { holonId, pending } = found;
+        pending.timed = true;
+        const now = await this.holonNow(holonId);
+        await ctx.answerCbQuery().catch(() => {});
+        await ctx.editMessageText(
+            `🕐 Booking ${pending.itemName}\n\nWhich day?`,
+            { reply_markup: this.createLibraryCalendarKeyboard(now, pending.itemName, { now, timed: true }) }
+        ).catch((error: unknown) => { console.log(error) });
+    }
+
+    // A start time was tapped: ask how long.
+    async handleStartSelected(ctx: any, time: string) {
+        const found = await this.pendingFor(ctx);
+        if (!found) return;
+        const { pending } = found;
+        if (!pending.day) {
+            await ctx.answerCbQuery('Pick a day first.').catch(() => {});
+            return;
+        }
+        pending.start = bookingBound(pending.day, time);
+        const lengths = LENGTH_MINUTES.map(m => ({ text: fmtLength(m), callback_data: `lb_n_${m}` }));
+        await ctx.answerCbQuery().catch(() => {});
+        await ctx.editMessageText(
+            `🕐 Booking ${pending.itemName} from ${fmtBound(pending.start)}\n\nFor how long?`,
+            {
+                reply_markup: {
+                    inline_keyboard: [
+                        lengths.slice(0, 4),
+                        lengths.slice(4),
+                        [{ text: '❌ Cancel', callback_data: 'library_cancel_borrow' }],
+                    ],
+                },
+            }
+        ).catch((error: unknown) => { console.log(error) });
+    }
+
+    // A length was tapped after a start time: book that stretch.
+    async handleLengthSelected(ctx: any, minutes: number) {
+        const found = await this.pendingFor(ctx);
+        if (!found) return;
+        const { holonId, pending } = found;
+        if (!pending.start) {
+            await ctx.answerCbQuery('Pick a start time first.').catch(() => {});
+            return;
+        }
+        await this.completeBorrow(ctx, holonId, pending, {
+            start: pending.start,
+            end: addMinutes(pending.start, minutes),
+        });
+    }
+
+    // "1 h" / "2 h" / "4 h": from now.
+    async handleQuickBorrow(ctx: any, minutes: number) {
+        const found = await this.pendingFor(ctx);
+        if (!found) return;
+        const { holonId, pending } = found;
+        const start = minuteKey(await this.holonNow(holonId));
+        await this.completeBorrow(ctx, holonId, pending, { start, end: addMinutes(start, minutes) });
+    }
+
+    // Book the chosen stretch through core and show the outcome.
+    async completeBorrow(
+        ctx: any,
+        holonId: number | string,
+        pending: PendingBorrow,
+        range: { start?: string; end: string }
+    ) {
+        const { itemName, username, firstName, lastName } = pending;
+        const now = await this.holonNow(holonId);
         try {
-            const borrowResult = await coreBorrowItem(
+            const result = await coreBookItem(
                 this.db as any,
                 holonId.toString(),
                 itemName,
@@ -480,24 +638,23 @@ class Library {
                     first_name: firstName,
                     last_name: lastName,
                 },
-                returnDate
+                range,
+                { now }
             );
 
-            if (!borrowResult.ok || !borrowResult.item) {
-                // `overlaps` = a future reservation (made on web/kiosk) blocks
-                // the requested window; anything else = gone or borrowed today.
-                const msg = borrowResult.reason === 'overlaps' && borrowResult.conflict
-                    ? `Reserved by ${borrowResult.conflict.borrower || 'someone'} from ${borrowResult.conflict.start} — pick an earlier return date.`
-                    : 'Item is no longer available.';
-                await ctx.answerCbQuery(msg).catch(() => {});
-                this.pendingBorrows.delete(lockKey);
-                this.borrowLocks.delete(lockKey);
+            if (!result.ok || !result.item || !result.booking) {
+                const msg = result.reason === 'overlaps' && result.conflict
+                    ? `Booked by ${result.conflict.borrower || 'someone'} ${fmtRange(result.conflict)} — pick another time.`
+                    : result.reason === 'invalid_range'
+                        ? 'That time is already past — pick a later one.'
+                        : 'Item is no longer available.';
+                await ctx.answerCbQuery(msg, { show_alert: true }).catch(() => {});
                 await this.showLibrary(ctx);
                 return;
             }
 
-            const freshItem = borrowResult.item;
-            const isOwner = !!borrowResult.isOwner;
+            const freshItem = result.item;
+            const isOwner = !!result.isOwner;
 
             // Core helper internally skips owners + zero-value items and
             // swallows persistence errors (matches the original inline path).
@@ -507,15 +664,16 @@ class Library {
             const accountingDeps: AccountingDeps = { db: this.db as any };
             await coreRecordBorrowAccounting(accountingDeps, holonId, ctx.from, freshItem);
 
-            await ctx.answerCbQuery(`Borrowed until ${dateStr}`).catch(() => {});
+            const when = fmtRange(result.booking);
+            await ctx.answerCbQuery(`Booked ${when}`).catch(() => {});
 
             // Show updated library
             let list = await this.getLibraryItems(ctx);
             const icon = this.getItemIcon(freshItem);
-            const keyboard = this.getLibraryKeyboard(list);
+            const keyboard = this.getLibraryKeyboard(list, false, 0, now);
 
             // Build confirmation message with credit info if applicable
-            let confirmMsg = `${icon} ${firstName || username} borrowed ${itemName}\n📅 Return by: ${dateStr}`;
+            let confirmMsg = `${icon} ${firstName || username} borrowed ${itemName}\n📅 ${when}`;
             if (!isOwner && freshItem.value > 0) {
                 confirmMsg += `\n💳 ${freshItem.value}● charged`;
             }
@@ -524,24 +682,14 @@ class Library {
             await ctx.editMessageText(confirmMsg, keyboard).catch(() => {});
 
         } finally {
-            // Clean up
-            this.pendingBorrows.delete(pendingKey);
-            this.borrowLocks.delete(pendingKey);
+            this.pendingBorrows.delete(this.pendingKey(holonId, ctx.from.id));
         }
     }
 
     // Cancel pending borrow
     async cancelPendingBorrow(ctx: any) {
         const holonId = ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
-
-        // Find and remove the pending borrow for this user
-        for (const [key, value] of this.pendingBorrows.entries()) {
-            if (key.startsWith(`${holonId}:`) && value.userId === ctx.from.id) {
-                this.pendingBorrows.delete(key);
-                this.borrowLocks.delete(key);
-                break;
-            }
-        }
+        this.pendingBorrows.delete(this.pendingKey(holonId, ctx.from.id));
 
         await ctx.answerCbQuery('Borrow cancelled').catch(() => {});
         await this.showLibrary(ctx);
@@ -587,6 +735,7 @@ class Library {
             return;
         }
 
+        const now = await this.holonNow(holonId);
         const returnResult = await coreReturnItem(
             this.db as any,
             holonId.toString(),
@@ -596,14 +745,16 @@ class Library {
                 username: ctx.from.username,
                 first_name: ctx.from.first_name,
                 last_name: ctx.from.last_name,
-            }
+            },
+            { now }
         );
 
         if (!returnResult.ok) {
+            const holder = returnResult.item ? bookingStatus(returnResult.item, now).booking?.borrower : null;
             const errorMessages: Record<string, string> = {
                 not_found: `${item} is not in the library.`,
                 not_borrowed: `${item} is not borrowed.`,
-                forbidden: `Only ${returnResult.item?.borrower} can return this item.`,
+                forbidden: `Only ${holder || 'the borrower'} can return this item.`,
             };
             const msg = errorMessages[returnResult.reason ?? 'not_found'];
             if (fromKeyboard) await ctx.answerCbQuery(msg).catch(() => {});
@@ -641,33 +792,20 @@ class Library {
             return;
         }
 
-        if (!item.borrowed) {
+        // Read the state from the bookings — the stored `borrowed` flag is only
+        // as fresh as the last write.
+        const now = await this.holonNow(holonId);
+        const status = bookingStatus(item, now);
+        const held = status.booking;
+        if (!held) {
             await ctx.answerCbQuery('Item is not borrowed').catch(() => {});
             await this.showLibrary(ctx);
             return;
         }
 
         const icon = this.getItemIcon(item);
-        const borrower = item.borrower || item.borrowerInitials || 'Unknown';
-
-        // Format dates
-        const borrowedDate = item.borrowedAt ? new Date(item.borrowedAt) : null;
-        const returnDate = item.returnBy ? new Date(item.returnBy) : null;
-        const now = new Date();
-
-        // Check if overdue
-        const isOverdue = returnDate && returnDate < now;
+        const isOverdue = status.state === 'overdue';
         const overdueMarker = isOverdue ? ' 🔴' : '';
-
-        // Format borrowed date
-        const borrowedStr = borrowedDate
-            ? `${borrowedDate.getDate()}/${borrowedDate.getMonth() + 1}/${borrowedDate.getFullYear()}`
-            : 'Unknown';
-
-        // Format return date
-        const returnStr = returnDate
-            ? `${returnDate.getDate()}/${returnDate.getMonth() + 1}/${returnDate.getFullYear()}`
-            : 'Not set';
 
         // Check if current user is the owner
         const isOwner = item.createdBy === ctx.from.id;
@@ -676,21 +814,26 @@ class Library {
         // Build info text
         let infoText = `${icon} **${item.id}**${overdueMarker}\n\n`;
         infoText += `🏠 Owner: ${ownerText}\n`;
-        infoText += `👤 Borrower: ${borrower}\n`;
-        infoText += `📅 Borrowed: ${borrowedStr}\n`;
-        infoText += `📆 Return by: ${returnStr}${isOverdue ? ' (OVERDUE)' : ''}\n`;
+        infoText += `👤 Borrower: ${held.borrower || held.borrowerInitials || 'Unknown'}\n`;
+        infoText += `📅 Borrowed: ${fmtBound(held.start)}\n`;
+        infoText += `📆 Return by: ${fmtBound(held.end)}${isOverdue ? ' (OVERDUE)' : ''}\n`;
+        if (status.next) {
+            infoText += `⏭ Next: ${status.next.borrower || 'someone'}, ${fmtRange(status.next)}\n`;
+        }
         if (item.value > 0) {
             infoText += `💰 Value: ${item.value}●\n`;
         }
 
-        // Check if current user is the borrower
-        const isBorrower = item.borrowerId === ctx.from.id || item.borrower === ctx.from.username;
+        // Core decides whose borrow this is (ids match as text, names as a
+        // fallback) — the same rule the return itself applies.
+        const isBorrower = !!returnableBooking(item, ctx.from, now);
 
         // Build keyboard
         const buttons = [];
         if (isBorrower) {
             buttons.push([Markup.button.callback('🔄 Return Item', `lib_ret_${itemId}`)]);
         }
+        buttons.push([Markup.button.callback('📅 Book for later', `library_borrow_${itemId}`)]);
         if (isOwner) {
             buttons.push([Markup.button.callback('🗑️ Delete Item', `lib_del_${itemId}`)]);
         }
@@ -745,7 +888,7 @@ class Library {
 
         const totalPages = Math.ceil(list.length / ITEMS_PER_PAGE);
         const currentPage = Math.min(Math.max(0, page), totalPages - 1);
-        const keyboard = this.getLibraryKeyboard(list, removeMode, currentPage);
+        const keyboard = this.getLibraryKeyboard(list, removeMode, currentPage, await this.holonNow(holonId));
 
         const pageInfo = totalPages > 1 ? ` (${currentPage + 1}/${totalPages})` : '';
         const headerText = `📦 Library${pageInfo}:`;
@@ -759,7 +902,7 @@ class Library {
         }
     }
 
-    getLibraryKeyboard(list: any[], removeMode: boolean = false, page: number = 0) {
+    getLibraryKeyboard(list: any[], removeMode: boolean = false, page: number = 0, now: Date = new Date()) {
         let buttons = [];
 
         // Calculate pagination
@@ -776,23 +919,14 @@ class Library {
                     `❌ ${icon} ${item.id}`,
                     `library_remove_${item.id}`
                 )]);
-            } else if (item.borrowed) {
-                // Borrowed item - show details button with initials and return date
-                const initials = item.borrowerInitials || (item.borrower ? item.borrower.charAt(0).toUpperCase() : '?');
-                let returnInfo = initials;
-                let overdueMarker = '';
-                if (item.returnBy) {
-                    const returnDate = new Date(item.returnBy);
-                    const day = returnDate.getDate();
-                    const month = returnDate.getMonth() + 1;
-                    returnInfo = `${initials} ${day}/${month}`;
-                    // Check if overdue
-                    if (returnDate < new Date()) {
-                        overdueMarker = '🔴 ';
-                    }
-                }
+            } else if (bookingStatus(item, now).booking) {
+                // Out (or overdue) - show details button with initials and when it is due back
+                const status = bookingStatus(item, now);
+                const held = status.booking!;
+                const initials = held.borrowerInitials || (held.borrower ? held.borrower.charAt(0).toUpperCase() : '?');
+                const overdueMarker = status.state === 'overdue' ? '🔴 ' : '';
                 buttons.push([Markup.button.callback(
-                    `${overdueMarker}🔄 ${icon} ${item.id} (${returnInfo})`,
+                    `${overdueMarker}🔄 ${icon} ${item.id} (${initials} ${fmtBound(held.end)})`,
                     `libret_${item.id}`
                 )]);
             } else {
@@ -1147,22 +1281,17 @@ class Library {
     async showStats(ctx: any) {
         let list = await this.getLibraryItems(ctx);
 
-        // Count items by type
-        const byType: Record<string, number> = {};
-        list.forEach((item: any) => {
-            const type = item.type || LIBRARY_TYPES.OTHER;
-            byType[type] = (byType[type] || 0) + 1;
-        });
+        const stats = getLibraryStats(list, await this.holonNow(ctx.chat.id));
 
         // Format stats message
         const statsMessage = `📊 Library Statistics
 
-📦 Total Items: ${list.length}
-🔄 Currently Borrowed: ${list.filter(i => i.borrowed).length}
-✅ Available: ${list.filter(i => !i.borrowed).length}
+📦 Total Items: ${stats.total}
+🔄 Currently Borrowed: ${stats.borrowed}
+✅ Available: ${stats.available}
 
 By Type:
-${Object.entries(byType).map(([type, count]) => {
+${Object.entries(stats.byType).map(([type, count]) => {
     const icon = this.getItemIcon({ type });
     return `${icon} ${this.getTypeDisplayName(type)}: ${count}`;
 }).join('\n')}`;

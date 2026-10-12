@@ -19,7 +19,7 @@ import {
   setItemValue,
   updateBookingDates
 } from './operations.js';
-import { getDisplayBookings, ymd } from './bookings.js';
+import { bookingStatus, getDisplayBookings, minuteKey, ymd } from './bookings.js';
 import { LIBRARY_TYPES, type LibraryDB, type LibraryItem } from './types.js';
 
 function mockDb(initial: Record<string, LibraryItem> = {}): {
@@ -398,5 +398,129 @@ describe('cancelBooking / updateBookingDates', () => {
       { id: 99 }
     );
     expect(stranger.reason).toBe('forbidden');
+  });
+});
+
+describe('timed bookings', () => {
+  const bob = { id: 20, username: 'bob', first_name: 'Bob' };
+  const eve = { id: 30, username: 'eve' };
+
+  it('books a car by the hour, back to back, and refuses a clash', async () => {
+    const { db } = mockDb({ car: createLibraryItem('car', LIBRARY_TYPES.OTHER, { createdBy: 10 }) });
+    const first = await bookItem(db, 'h', 'car', bob, {
+      start: '2099-01-10T14:00',
+      end: '2099-01-10T15:00'
+    });
+    expect(first.ok).toBe(true);
+    expect(first.booking).toMatchObject({ start: '2099-01-10T14:00', end: '2099-01-10T15:00' });
+    // Booked for later: the item is still on the shelf now.
+    expect(first.item?.borrowed).toBe(false);
+
+    const next = await bookItem(db, 'h', 'car', eve, {
+      start: '2099-01-10T15:00',
+      end: '2099-01-10T16:00'
+    });
+    expect(next.ok).toBe(true);
+
+    const clash = await bookItem(db, 'h', 'car', eve, {
+      start: '2099-01-10T14:30',
+      end: '2099-01-10T15:30'
+    });
+    expect(clash).toMatchObject({ ok: false, reason: 'overlaps' });
+    const wholeDay = await bookItem(db, 'h', 'car', eve, { start: '2099-01-10', end: '2099-01-10' });
+    expect(wholeDay).toMatchObject({ ok: false, reason: 'overlaps' });
+  });
+
+  it('rejects an empty or mixed range', async () => {
+    const { db } = mockDb({ car: createLibraryItem('car') });
+    const range = (start: string, end: string) => bookItem(db, 'h', 'car', bob, { start, end });
+    expect((await range('2099-01-10T15:00', '2099-01-10T15:00')).reason).toBe('invalid_range');
+    expect((await range('2099-01-10T15:00', '2099-01-10T14:00')).reason).toBe('invalid_range');
+    expect((await range('2099-01-10', '2099-01-10T14:00')).reason).toBe('invalid_range');
+  });
+
+  it('starts now when only a timed end is given, and returns early', async () => {
+    const { db } = mockDb({ car: createLibraryItem('car', LIBRARY_TYPES.OTHER, { createdBy: 10 }) });
+    const end = minuteKey(new Date(Date.now() + 3_600_000));
+    const taken = await bookItem(db, 'h', 'car', bob, { end });
+    expect(taken.ok).toBe(true);
+    expect(taken.item?.borrowed).toBe(true);
+    expect(taken.item?.returnBy).toBe(end);
+
+    const back = await returnItem(db, 'h', 'car', { id: '20' });
+    expect(back.ok).toBe(true);
+    expect(getDisplayBookings(back.item!)).toHaveLength(0);
+  });
+
+  it('reschedules a timed booking against the others only', async () => {
+    const { db } = mockDb({ car: createLibraryItem('car') });
+    const mine = await bookItem(db, 'h', 'car', bob, { start: '2099-01-10T14:00', end: '2099-01-10T15:00' });
+    await bookItem(db, 'h', 'car', eve, { start: '2099-01-10T16:00', end: '2099-01-10T17:00' });
+    const longer = await updateBookingDates(
+      db, 'h', 'car', mine.booking!.id,
+      { start: '2099-01-10T14:00', end: '2099-01-10T16:00' },
+      bob
+    );
+    expect(longer.ok).toBe(true);
+    const tooLong = await updateBookingDates(
+      db, 'h', 'car', mine.booking!.id,
+      { start: '2099-01-10T14:00', end: '2099-01-10T16:30' },
+      bob
+    );
+    expect(tooLong).toMatchObject({ ok: false, reason: 'overlaps' });
+  });
+});
+
+describe('late returns', () => {
+  const bob = { id: 20, username: 'bob' };
+
+  it('lets the borrower return after the booking has lapsed', async () => {
+    const item: LibraryItem = {
+      ...createLibraryItem('drill', LIBRARY_TYPES.TOOL, { createdBy: 10, value: 2 }),
+      // What the last write left behind: borrowed, due back long ago.
+      borrowed: true,
+      borrower: 'bob',
+      borrowerId: '20',
+      returnBy: '2001-01-05',
+      bookings: [
+        { id: 'b-old', start: '2001-01-01', end: '2001-01-05', borrowerId: '20', borrower: 'bob', created: '2001-01-01T00:00:00.000Z' }
+      ]
+    };
+    const { db } = mockDb({ drill: item });
+    expect(bookingStatus(item).state).toBe('overdue');
+    expect(getLibraryStats([item])).toMatchObject({ borrowed: 1, available: 0 });
+
+    const stranger = await returnItem(db, 'h', 'drill', { id: 99, username: 'mallory' });
+    expect(stranger).toMatchObject({ ok: false, reason: 'forbidden' });
+
+    const back = await returnItem(db, 'h', 'drill', bob);
+    expect(back.ok).toBe(true);
+    expect(back.item?.borrowed).toBe(false);
+    expect(bookingStatus(back.item!).state).toBe('available');
+  });
+
+  it('returns a lapsed legacy single-borrow that never had a bookings array', async () => {
+    const item: LibraryItem = {
+      ...createLibraryItem('saw', LIBRARY_TYPES.TOOL, { createdBy: 10 }),
+      borrowed: true,
+      borrower: 'bob',
+      borrowerId: 20,
+      borrowedAt: '2001-01-01T00:00:00.000Z',
+      returnBy: '2001-01-05T00:00:00.000Z'
+    };
+    const { db } = mockDb({ saw: item });
+    const back = await returnItem(db, 'h', 'saw', bob);
+    expect(back.ok).toBe(true);
+    expect(back.item?.bookings).toEqual([]);
+  });
+
+  it('counts a booked-for-later item as available', () => {
+    const item: LibraryItem = {
+      ...createLibraryItem('tent'),
+      bookings: [
+        { id: 'b', start: '2099-01-01', end: '2099-01-02', borrowerId: '20', borrower: 'bob', created: '2099-01-01T00:00:00.000Z' }
+      ]
+    };
+    expect(getLibraryStats([item])).toMatchObject({ borrowed: 0, available: 1 });
   });
 });

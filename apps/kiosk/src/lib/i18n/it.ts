@@ -237,6 +237,8 @@ export const it: Record<MessageKey, Msg> = {
   "library.available": "disponibile",
   "library.outWith": "in prestito · {who}",
   "library.out": "in prestito",
+  "library.overdueWith": "in ritardo · {who}",
+  "library.overdue": "in ritardo",
 
   // Library view
   "library.emptyShared": "Ancora nessun oggetto condiviso.",
@@ -909,8 +911,7 @@ export const it: Record<MessageKey, Msg> = {
   "detail.overlaps":
     "Si sovrappone alla prenotazione di {who} ({start} → {end}).",
   "detail.someone": "qualcuno",
-  "detail.invalidRange":
-    "La data di riconsegna non può precedere quella di inizio.",
+  "detail.invalidRange": "La fine non può precedere l'inizio.",
   "detail.bookFailed": "Impossibile prenotare.",
   "detail.onlyBorrowerReturn": "Solo chi l'ha in prestito può restituirlo.",
   "detail.returnFailed": "Impossibile restituire.",
@@ -918,6 +919,10 @@ export const it: Record<MessageKey, Msg> = {
   "detail.status": "Stato",
   "detail.out": "In prestito",
   "detail.outWith": "In prestito · {who}",
+  "detail.overdue": "In ritardo",
+  "detail.overdueWith": "In ritardo · {who}",
+  "detail.untilWhen": "fino a {when}",
+  "detail.dueWhen": "doveva rientrare {when}",
   "detail.viaHolonTitle": "Prenotato da un holon federato",
   "detail.availableCap": "Disponibile",
   "detail.value": "Valore",
@@ -928,6 +933,13 @@ export const it: Record<MessageKey, Msg> = {
   "detail.len3days": "3 giorni",
   "detail.len1week": "1 settimana",
   "detail.len2weeks": "2 settimane",
+  "detail.len1h": "1 ora",
+  "detail.len2h": "2 ore",
+  "detail.len4h": "4 ore",
+  "detail.bookFromDateAria": "Prestito da, data",
+  "detail.bookFromTimeAria": "Prestito da, ora (vuoto per giorni interi)",
+  "detail.bookUntilDateAria": "Prestito fino a, data",
+  "detail.bookUntilTimeAria": "Prestito fino a, ora",
   "detail.booking": "Prenotazione…",
   "detail.confirmBooking": "Conferma la prenotazione",
   "detail.borrow": "Prendi in prestito",

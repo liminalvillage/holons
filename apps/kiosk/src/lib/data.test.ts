@@ -418,19 +418,107 @@ describe("toThings — borrow state mapping", () => {
         borrowed: true,
         borrower: "Roberto",
         borrowerId: "235",
+        borrowedAt: "2026-07-20",
         returnBy: "2026-07-30",
       },
       { id: "Ladder", type: "tool", borrowed: false },
     ] as unknown as LibraryItem[];
-    const out = toThings(items);
+    const out = toThings(
+      items,
+      undefined,
+      undefined,
+      undefined,
+      new Date(2026, 6, 25),
+    );
     const drill = out.find((t) => t.id === "Drill")!;
     expect(drill.available).toBe(false);
+    expect(drill.overdue).toBe(false);
     expect(drill.borrowerId).toBe("235");
     expect(drill.returnBy).toBeInstanceOf(Date);
     const ladder = out.find((t) => t.id === "Ladder")!;
     expect(ladder.available).toBe(true);
     expect(ladder.borrowerId).toBeNull();
     expect(ladder.returnBy).toBeNull();
+  });
+});
+
+describe("toThings — the state follows the clock, not the stored flag", () => {
+  const car = {
+    id: "Car",
+    type: "other",
+    // Written when the booking was made, hours before it began.
+    borrowed: false,
+    bookings: [
+      {
+        id: "b1",
+        start: "2026-09-01T14:00",
+        end: "2026-09-01T15:00",
+        borrowerId: "235",
+        borrower: "Roberto",
+        created: "2026-09-01T08:00:00.000Z",
+      },
+    ],
+  } as unknown as LibraryItem;
+  const at = (h: number, m = 0) =>
+    toThings(
+      [car],
+      undefined,
+      undefined,
+      undefined,
+      new Date(2026, 8, 1, h, m),
+    )[0];
+
+  it("is available before the hour, out during it, overdue after", () => {
+    expect(at(13, 59).available).toBe(true);
+    const during = at(14, 30);
+    expect(during.available).toBe(false);
+    expect(during.overdue).toBe(false);
+    expect(during.borrower).toBe("Roberto");
+    expect(during.returnBy).toEqual(new Date(2026, 8, 1, 15, 0));
+    const after = at(15, 0);
+    expect(after.available).toBe(false);
+    expect(after.overdue).toBe(true);
+  });
+});
+
+describe("toBookingEvents — a booking by the clock", () => {
+  const car = (start: string, end: string) =>
+    ({
+      id: "Car",
+      type: "other",
+      bookings: [
+        {
+          id: "b1",
+          start,
+          end,
+          borrowerId: "235",
+          borrower: "Roberto",
+          created: "2026-08-20T10:00:00.000Z",
+        },
+      ],
+    }) as unknown as LibraryItem;
+
+  it("sits at its own hours instead of spanning the day", () => {
+    const [span] = toBookingEvents([
+      car("2026-09-01T14:00", "2026-09-01T15:00"),
+    ]);
+    expect(span.allDay).toBe(false);
+    expect(span.date).toEqual(new Date(2026, 8, 1, 14, 0));
+    expect(span.end).toEqual(new Date(2026, 8, 1, 15, 0));
+    expect(span.days).toBe(1);
+    expect(span.multiDay).toBe(false);
+  });
+
+  it("counts the days it touches; ending at midnight stays in the day before", () => {
+    const [evening] = toBookingEvents([
+      car("2026-09-01T22:00", "2026-09-02T00:00"),
+    ]);
+    expect(evening.days).toBe(1);
+    const [overnight] = toBookingEvents([
+      car("2026-09-01T22:00", "2026-09-02T08:00"),
+    ]);
+    expect(overnight.days).toBe(2);
+    expect(overnight.multiDay).toBe(true);
   });
 });
 

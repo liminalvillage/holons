@@ -20,6 +20,7 @@
     editOnOpen,
     partnerNames,
     showNotice,
+    minute,
   } from "$lib/stores";
   import { holonColors } from "$lib/palette";
   import { selectionCardUrl } from "$lib/cardlink";
@@ -64,9 +65,14 @@
     recordBorrowAccounting,
     recordReturnAccounting,
     findOverlappingBooking,
+    bookingBound,
     bookingOriginLabel,
+    bookingStatus,
     getDisplayBookings,
-    isBookingActive,
+    isBookingPast,
+    isTimedBooking,
+    returnableBooking,
+    timeOf,
     dayKey,
     getItemIcon,
     getTypeDisplayName,
@@ -1115,13 +1121,23 @@
     else if (!message) message = $t("detail.couldNotSave");
   }
 
-  // ── Booking form (borrow for a chosen date range, like the web library) ────
-  // Tapping Borrow opens a From/Until range with quick length chips instead of
-  // borrowing for a hard-coded week. Core's `bookItem` owns the meaning: it
-  // appends to `bookings[]` (the canonical borrow state) and rejects overlaps.
+  // ── Booking form (borrow for a chosen stretch, like the web library) ───────
+  // Tapping Borrow opens a From/Until pair with quick length chips instead of
+  // borrowing for a hard-coded week. Each edge is a date plus an optional
+  // clock, the schedule editor's shape: no time means whole days (a drill for
+  // the week), a time means by the clock (a car for an hour). Core's
+  // `bookItem` owns the meaning: it appends to `bookings[]` (the canonical
+  // borrow state) and rejects overlaps.
   let booking = false;
   let bStart = "";
   let bEnd = "";
+  let bStartTime = "";
+  let bEndTime = "";
+  const HOUR_CHIPS = [
+    { hours: 1, labelKey: "detail.len1h" },
+    { hours: 2, labelKey: "detail.len2h" },
+    { hours: 4, labelKey: "detail.len4h" },
+  ] as const;
   const LENGTH_CHIPS = [
     { days: 1, labelKey: "detail.len1day" },
     { days: 3, labelKey: "detail.len3days" },
@@ -1129,34 +1145,101 @@
     { days: 14, labelKey: "detail.len2weeks" },
   ] as const;
 
+  /** `day` + `time` moved by `minutes`, back as the two input values. */
+  function shiftClock(
+    day: string,
+    time: string,
+    minutes: number,
+  ): { day: string; time: string } {
+    const d = new Date(`${day}T${time}`);
+    d.setMinutes(d.getMinutes() + minutes);
+    return {
+      day: toDateInput(d),
+      time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+    };
+  }
+
+  /** The next quarter hour from now — where a booking by the clock starts. */
+  function nextQuarter(): string {
+    const d = new Date();
+    d.setMinutes(Math.ceil((d.getMinutes() + 1) / 15) * 15, 0, 0);
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  /** An hour chip: by the clock, `hours` long from the start time (or from
+   *  the coming quarter hour / 09:00 on a later day when none is set). */
+  function bookHours(hours: number) {
+    if (!bStart) return;
+    if (!bStartTime)
+      bStartTime = bStart === toDateInput(new Date()) ? nextQuarter() : "09:00";
+    const end = shiftClock(bStart, bStartTime, hours * 60);
+    bEnd = end.day;
+    bEndTime = end.time;
+  }
+
+  /** A day chip: whole days, so any clock is dropped. */
+  function bookDays(days: number) {
+    bStartTime = "";
+    bEndTime = "";
+    bEnd = addDaysKey(bStart, days);
+  }
+
+  /** The start clock was edited: no time means whole days again; a first time
+   *  proposes one hour, ending the same day. */
+  function onStartTime() {
+    if (!bStartTime) bEndTime = "";
+    else if (!bEndTime) bookHours(1);
+  }
+
+  $: bookedHours =
+    bStart && bEnd && bStartTime && bEndTime
+      ? (new Date(`${bEnd}T${bEndTime}`).getTime() -
+          new Date(`${bStart}T${bStartTime}`).getTime()) /
+        3_600_000
+      : 0;
+
   function addDaysKey(key: string, n: number): string {
     const d = new Date(`${key}T00:00:00`);
     d.setDate(d.getDate() + n);
     return toDateInput(d);
   }
 
-  /** Short human label for a booking day key ("Jul 27"). */
+  /** Short human label for a booking bound: "Jul 27", or "Jul 27, 14:00"
+   *  when it carries a clock. */
   function fmtDay(loc: string, d: string): string {
-    return new Date(`${dayKey(d)}T00:00:00`).toLocaleDateString(loc, {
+    const day = new Date(`${dayKey(d)}T00:00:00`).toLocaleDateString(loc, {
       day: "numeric",
       month: "short",
     });
+    return timeOf(d) ? `${day}, ${timeOf(d)}` : day;
   }
+
+  /** A booking's stretch: "Jul 27 → Jul 30", "Jul 27, 14:00–15:00". */
+  function fmtSpan(loc: string, b: { start: string; end: string }): string {
+    if (isTimedBooking(b) && dayKey(b.start) === dayKey(b.end))
+      return `${fmtDay(loc, b.start)}–${timeOf(b.end)}`;
+    return `${fmtDay(loc, b.start)} → ${fmtDay(loc, b.end)}`;
+  }
+
+  // The clock at minute grain: a booking starts and ends without the item
+  // being written, so what the card says has to follow the time.
+  $: clock = new Date($minute * 60_000);
 
   // Upcoming/active bookings, soonest first — shown on the card so a free
   // range is easy to pick. (Recomputed per selected item; capped for space.)
   $: upcomingBookings = item
     ? getDisplayBookings(item)
-        .filter((b) => dayKey(b.end) >= toDateInput(new Date()))
-        .sort((a, b) => dayKey(a.start).localeCompare(dayKey(b.start)))
+        .filter((b) => !isBookingPast(b, clock))
         .slice(0, 3)
     : [];
 
-  // The booking covering today, if any — the status line ("Out · Alex") reads
-  // from it, so a federated borrow can say which holon it came in from.
-  $: activeBooking = item
-    ? (getDisplayBookings(item).find((b) => isBookingActive(b)) ?? null)
-    : null;
+  // Where the thing is right now — core reads it from the bookings. The
+  // status line ("Out · Alex") comes from the booking holding it, so a
+  // federated borrow can say which holon it came in from.
+  $: status = item
+    ? bookingStatus(item, clock)
+    : { state: "available" as const, booking: null, next: null };
+  $: activeBooking = status.booking;
 
   function startBooking() {
     if (!item) return;
@@ -1165,26 +1248,42 @@
     message = "";
     // Default to the first free day: today, or the day after the booking that
     // covers today (so "book ahead" on an item that's out starts sensibly).
+    // A booking by the clock leaves the rest of its day free, so it does not
+    // push the start along.
     let start = toDateInput(new Date());
     const busy = findOverlappingBooking(item, start, start);
-    if (busy) start = addDaysKey(dayKey(busy.end), 1);
+    if (busy && !isTimedBooking(busy)) start = addDaysKey(dayKey(busy.end), 1);
     bStart = start;
     bEnd = addDaysKey(start, 7);
+    bStartTime = "";
+    bEndTime = "";
     booking = true;
   }
 
   // Moving the start past the end drags the end along (never an inverted range).
   $: if (booking && bStart && bEnd && bEnd < bStart) bEnd = bStart;
 
+  // What the form adds up to, as the bounds core stores.
+  $: bookFrom = bStart ? bookingBound(bStart, bStartTime) : "";
+  $: bookUntil = bEnd
+    ? bookingBound(bEnd, bStartTime ? bEndTime || bStartTime : "")
+    : "";
+
   async function confirmBooking() {
-    if (!sel || sel.kind !== "thing" || !$holonId || !bStart || !bEnd) return;
+    if (!sel || sel.kind !== "thing" || !$holonId || !bookFrom || !bookUntil)
+      return;
     const actor = borrowActor();
     if (!actor) return requestLogin();
-    saving = true;
     message = "";
+    // By the clock, the end has to come after the start.
+    if (bStartTime && bookUntil <= bookFrom) {
+      message = $t("detail.invalidRange");
+      return;
+    }
+    saving = true;
     // Fast-path UX check on the on-screen copy; core re-validates against the
     // stored item on write.
-    const conflict = findOverlappingBooking(sel.item, bStart, bEnd);
+    const conflict = findOverlappingBooking(sel.item, bookFrom, bookUntil);
     if (conflict) {
       saving = false;
       message = $t("detail.overlaps", {
@@ -1206,7 +1305,7 @@
       holon,
       key,
       actor,
-      { start: bStart, end: bEnd },
+      { start: bookFrom, end: bookUntil },
       // Where we're booking FROM. Core stamps the booking's origin when this
       // differs from the item's holon, so the owner sees a federated borrow.
       { actingHolon: $holonId, actingHolonName: $holonName || null },
@@ -1255,10 +1354,14 @@
     }
   }
 
-  $: borrowedByMe =
-    item?.borrowed &&
-    ($currentUser?.id === item?.borrowerId ||
-      ($currentUser?.username && item?.borrower === $currentUser.username));
+  // Whether there is a borrow of mine to bring back. Core decides whose it is
+  // (the rule `returnItem` itself applies) — comparing ids here went wrong the
+  // moment a Telegram id was a number on one side and text on the other.
+  $: canReturn = !!(
+    item &&
+    $currentUser &&
+    returnableBooking(item, borrowActor() ?? { id: "" }, clock)
+  );
 </script>
 
 {#if sel}
@@ -1321,10 +1424,22 @@
           <div>
             <dt>{$t("detail.status")}</dt>
             <dd>
-              {#if item.borrowed}
-                {item.borrower
-                  ? $t("detail.outWith", { who: item.borrower })
-                  : $t("detail.out")}
+              {#if activeBooking}
+                {#if status.state === "overdue"}
+                  {activeBooking.borrower
+                    ? $t("detail.overdueWith", { who: activeBooking.borrower })
+                    : $t("detail.overdue")}
+                  · {$t("detail.dueWhen", {
+                    when: fmtDay($locale, activeBooking.end),
+                  })}
+                {:else}
+                  {activeBooking.borrower
+                    ? $t("detail.outWith", { who: activeBooking.borrower })
+                    : $t("detail.out")}
+                  · {$t("detail.untilWhen", {
+                    when: fmtDay($locale, activeBooking.end),
+                  })}
+                {/if}
                 {#if bookingOriginLabel(activeBooking)}
                   <span class="viachip" title={$t("detail.viaHolonTitle")}
                     ><Icon name="swap" />
@@ -1346,10 +1461,7 @@
               <dd>
                 {#each upcomingBookings as b (b.id)}
                   <span class="booking-line"
-                    >{fmtDay($locale, b.start)} → {fmtDay(
-                      $locale,
-                      b.end,
-                    )}{b.borrower
+                    >{fmtSpan($locale, b)}{b.borrower
                       ? ` · ${b.borrower}`
                       : ""}{#if bookingOriginLabel(b)}<span
                         class="viachip"
@@ -1365,25 +1477,64 @@
 
         {#if $isLoggedIn}
           {#if booking}
-            <!-- Borrow for a chosen period — same booking model as the web
-                 library: an inclusive [from, until] day range on bookings[]. -->
-            <div class="row2">
-              <label
-                >{$t("detail.from")}
-                <input type="date" bind:value={bStart} />
-              </label>
-              <label
-                >{$t("detail.until")}
-                <input type="date" bind:value={bEnd} min={bStart} />
-              </label>
+            <!-- Borrow for a chosen stretch — core's booking model: whole days
+                 (inclusive), or by the clock once a time is set. Each edge is
+                 the schedule editor's date + clock pair, so it wraps the same
+                 way on a phone. -->
+            <div class="when-row">
+              <div class="edge">
+                <span class="elab">{$t("detail.from")}</span>
+                <div class="pair">
+                  <input
+                    type="date"
+                    bind:value={bStart}
+                    aria-label={$t("detail.bookFromDateAria")}
+                  />
+                  <input
+                    class="clock"
+                    type="time"
+                    step="900"
+                    bind:value={bStartTime}
+                    on:change={onStartTime}
+                    aria-label={$t("detail.bookFromTimeAria")}
+                  />
+                </div>
+              </div>
+              <div class="edge">
+                <span class="elab">{$t("detail.until")}</span>
+                <div class="pair">
+                  <input
+                    type="date"
+                    bind:value={bEnd}
+                    min={bStart}
+                    aria-label={$t("detail.bookUntilDateAria")}
+                  />
+                  <input
+                    class="clock"
+                    type="time"
+                    step="900"
+                    bind:value={bEndTime}
+                    disabled={!bStartTime}
+                    aria-label={$t("detail.bookUntilTimeAria")}
+                  />
+                </div>
+              </div>
             </div>
             <div class="lengths">
+              {#each HOUR_CHIPS as c (c.hours)}
+                <button
+                  class="chip"
+                  class:on={bookedHours === c.hours}
+                  on:click={() => bookHours(c.hours)}>{$t(c.labelKey)}</button
+                >
+              {/each}
               {#each LENGTH_CHIPS as c (c.days)}
                 <button
                   class="chip"
-                  class:on={bStart && bEnd === addDaysKey(bStart, c.days)}
-                  on:click={() => (bEnd = addDaysKey(bStart, c.days))}
-                  >{$t(c.labelKey)}</button
+                  class:on={!bStartTime &&
+                    bStart &&
+                    bEnd === addDaysKey(bStart, c.days)}
+                  on:click={() => bookDays(c.days)}>{$t(c.labelKey)}</button
                 >
               {/each}
             </div>
@@ -1402,24 +1553,29 @@
             </div>
           {:else}
             <div class="actions">
-              {#if !item.borrowed}
-                <button
-                  class="primary"
-                  on:click={startBooking}
-                  disabled={saving}>{$t("detail.borrow")}</button
-                >
-              {:else if borrowedByMe}
+              <!-- Return whenever a borrow of mine is still open — running, or
+                   past its time. Anyone can book around what is out; a thing
+                   merely overdue is free to borrow. -->
+              {#if canReturn}
                 <button class="primary" on:click={returnThing} disabled={saving}
                   >{$t("detail.return")}</button
                 >
-              {:else}
+              {:else if status.state === "out"}
                 <span class="note-line"
                   >{$t("detail.onLoanTo", {
-                    who: item.borrower ?? $t("detail.someone"),
+                    who: activeBooking?.borrower ?? $t("detail.someone"),
                   })}</span
                 >
+              {/if}
+              {#if status.state === "out"}
                 <button class="ghost" on:click={startBooking} disabled={saving}
                   >{$t("detail.bookAhead")}</button
+                >
+              {:else}
+                <button
+                  class={canReturn ? "ghost" : "primary"}
+                  on:click={startBooking}
+                  disabled={saving}>{$t("detail.borrow")}</button
                 >
               {/if}
               <button class="ghost" on:click={startEdit} disabled={saving}
@@ -2463,27 +2619,6 @@
     opacity: 0.45;
   }
 
-  /* The booking sheet's from/until pair: each side can shrink (min-width: 0 —
-     native date controls otherwise keep an intrinsic width and overflow) and
-     wraps when the dialog is too narrow. */
-  .row2 {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.8rem;
-  }
-  .row2 label {
-    flex: 1 1 8rem;
-    min-width: 0;
-  }
-  .row2 input {
-    box-sizing: border-box;
-    max-width: 100%;
-  }
-  @media (max-width: 560px) {
-    .row2 label {
-      flex-basis: 6rem;
-    }
-  }
   /* "Pick from list" escape hatch under the new-category input. */
   .link-btn {
     display: inline;

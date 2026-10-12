@@ -62,6 +62,10 @@
    *  the template expression re-runs on a language switch). */
   function statusLabel(thing: LibraryThing, tr: Translator): string {
     if (thing.available) return tr("library.available");
+    if (thing.overdue)
+      return thing.borrower
+        ? tr("library.overdueWith", { who: thing.borrower })
+        : tr("library.overdue");
     return thing.borrower
       ? tr("library.outWith", { who: thing.borrower })
       : tr("library.out");

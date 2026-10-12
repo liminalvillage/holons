@@ -17,6 +17,7 @@ import type { AgentTool, ToolCall, ToolResult } from "@holons/ai-ui";
 import type { Quest } from "@holons/core/tasks";
 import { TASK_ACTIONS, toJsonSchema } from "@holons/core/actions";
 import {
+  bookingStatus,
   borrowItem,
   returnItem,
   recordBorrowAccounting,
@@ -133,7 +134,8 @@ function digestLibrary(): string {
       return {
         id: String(r.id ?? ""),
         title: String(r.description ?? r.name ?? r.id ?? ""),
-        borrowed: !!r.borrowed,
+        // Read from the bookings — the stored flag is as old as the last write.
+        borrowed: bookingStatus(it).state !== "available",
       };
     });
   return JSON.stringify(rows);

@@ -50,20 +50,33 @@ export {
 
 export {
   actorMatchesBooking,
+  bookingBound,
+  bookingSpan,
+  bookingStatus,
   dayKey,
   findOverlappingBooking,
   bookingOriginFor,
   bookingOriginLabel,
   getDisplayBookings,
+  hasTime,
   isBookingActive,
+  isBookingPast,
   isFederatedBooking,
+  isTimedBooking,
   makeBooking,
+  minuteKey,
+  returnableBooking,
+  timeOf,
+  toBound,
   toDayKey,
+  wallClock,
   withBookings,
   ymd,
   type BookableItem,
   type Booking,
-  type BookingOrigin
+  type BookingOrigin,
+  type BookingState,
+  type BookingStatus
 } from './bookings.js';
 
 export {

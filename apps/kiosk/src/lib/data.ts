@@ -22,7 +22,13 @@ import {
 } from "@holons/core/tasks";
 import type { Quest, QuestFrequency } from "@holons/core/tasks";
 import type { IconName } from "./icons";
-import { dayKey, getDisplayBookings } from "@holons/core/library";
+import {
+  bookingStatus,
+  dayKey,
+  getDisplayBookings,
+  isTimedBooking,
+  ymd,
+} from "@holons/core/library";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
 import {
@@ -613,6 +619,8 @@ export interface LibraryThing {
    */
   picture?: string | null;
   available: boolean;
+  /** Out past its time: the booking ended and the thing was never returned. */
+  overdue?: boolean;
   borrower?: string | null;
   /** Who has it out (Telegram id), for the "my things" filter. */
   borrowerId?: number | string | null;
@@ -774,23 +782,30 @@ export function toThings(
   names?: Names,
   t?: Translator,
   colors?: HolonColors,
+  now: Date = new Date(),
 ): LibraryThing[] {
   const seen = new Set<string>();
   return items
-    .map((it) => ({
-      id: String(it.id ?? ""),
-      title: String(it.id ?? (t ? t("common.untitled") : "Untitled")),
-      type: String(it.type ?? "other"),
-      picture: (it.picture as string | undefined) ?? null,
-      available: !it.borrowed,
-      borrower: it.borrower ?? null,
-      borrowerId: it.borrowerId ?? null,
-      returnBy: parseWhen(it.returnBy),
-      source: sourceLabel(it, names),
-      sourceId: sourceHolonId(it),
-      sourceColor: sourceGlow(it, colors),
-      hologram: isHologram(it),
-    }))
+    .map((it) => {
+      // Core reads the state from the bookings at `now` — the stored
+      // `borrowed` flag is only as fresh as the item's last write.
+      const { state, booking } = bookingStatus(it, now);
+      return {
+        id: String(it.id ?? ""),
+        title: String(it.id ?? (t ? t("common.untitled") : "Untitled")),
+        type: String(it.type ?? "other"),
+        picture: (it.picture as string | undefined) ?? null,
+        available: state === "available",
+        overdue: state === "overdue",
+        borrower: booking?.borrower ?? null,
+        borrowerId: booking?.borrowerId ?? null,
+        returnBy: booking ? bookingEdge(booking.end) : null,
+        source: sourceLabel(it, names),
+        sourceId: sourceHolonId(it),
+        sourceColor: sourceGlow(it, colors),
+        hologram: isHologram(it),
+      };
+    })
     .filter((t) => {
       // Drop blanks and federated duplicates so view keys stay unique.
       if (!t.id || seen.has(t.id)) return false;
@@ -806,6 +821,12 @@ export function toThings(
 /** Local midnight of a `YYYY-MM-DD` day, or `null` when it doesn't parse. */
 function dayStart(day: string): Date | null {
   const d = new Date(`${dayKey(day)}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** A booking bound as a local Date: its clock time when timed, else midnight. */
+function bookingEdge(bound: string): Date | null {
+  const d = new Date(bound.length === 16 ? bound : `${dayKey(bound)}T00:00:00`);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
@@ -888,14 +909,24 @@ export function toBookingEvents(
     const sourceColor = sourceGlow(item, colors);
     const hologram = isHologram(item);
     for (const b of getDisplayBookings(item)) {
-      const date = dayStart(b.start);
-      const end = dayStart(b.end);
+      // A booking by the clock sits on the day grid at its own hours; one for
+      // whole days is an all-day span.
+      const timed = isTimedBooking(b);
+      const date = timed ? bookingEdge(b.start) : dayStart(b.start);
+      const end = timed ? bookingEdge(b.end) : dayStart(b.end);
       if (!date || !end) continue;
+      // Days touched. A timed end is exclusive (until midnight does not reach
+      // into the next day), so the last day is the one of its final minute.
+      const first = dayStart(b.start);
+      const last = timed
+        ? dayStart(ymd(new Date(end.getTime() - 60_000)))
+        : end;
+      if (!first || !last) continue;
       // Inclusive day count; rounded because a DST boundary inside the range
       // makes the millisecond span 23h or 25h, not a whole number of days.
       const days = Math.max(
         1,
-        Math.round((end.getTime() - date.getTime()) / 86_400_000) + 1,
+        Math.round((last.getTime() - first.getTime()) / 86_400_000) + 1,
       );
       const who = b.borrower || (b.borrowerId ? nameFor(b.borrowerId) : "");
       out.push({
@@ -907,7 +938,7 @@ export function toBookingEvents(
         days,
         multiDay: days > 1,
         category: itemId,
-        allDay: true,
+        allDay: !timed,
         people: who ? [{ id: b.borrowerId || who, name: who }] : [],
         appreciation: 0,
         source,

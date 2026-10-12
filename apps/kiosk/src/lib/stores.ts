@@ -357,10 +357,22 @@ export const backlog = derived(
   ([$q, $n, $query, $s, $sort, $t, $c]) =>
     filterBySearch(toBacklog(scopeLocal($q, $s), $n, $sort, $t, $c), $query),
 );
+// The clock (ticked by `startClock`, below) — declared here because the
+// library's cards follow it.
+export const now = writable<Date>(new Date());
+/**
+ * The clock at minute grain — what time-dependent boards derive from, so a
+ * booking that starts or ends flips its card without re-deriving every second.
+ */
+export const minute = derived(now, ($n) => Math.floor($n.getTime() / 60_000));
+
 export const things = derived(
-  [rawLibrary, partnerNames, searchQuery, scope, t, holonColors, names],
-  ([$l, $n, $query, $s, $t, $c]) =>
-    filterBySearch(toThings(scopeLocal($l, $s), $n, $t, $c), $query),
+  [rawLibrary, partnerNames, searchQuery, scope, t, holonColors, minute, names],
+  ([$l, $n, $query, $s, $t, $c, $m]) =>
+    filterBySearch(
+      toThings(scopeLocal($l, $s), $n, $t, $c, new Date($m * 60_000)),
+      $query,
+    ),
 );
 // The library's bookings as calendar spans — what the Library's calendar
 // layout renders (through the same CalendarView the Calendar tab uses). No
@@ -736,7 +748,6 @@ export const pinnedTab = writable<TabId | null>(initialPin);
 
 // ── Clock ──────────────────────────────────────────────────────────────────
 
-export const now = writable<Date>(new Date());
 let clockTimer: ReturnType<typeof setInterval> | null = null;
 
 export function startClock(): () => void {
