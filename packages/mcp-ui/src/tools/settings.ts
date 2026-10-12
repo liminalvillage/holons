@@ -21,6 +21,7 @@ import {
   setFederationPartner,
 } from '@holons/core/federation';
 import type { ToolDeps } from './index.js';
+import { gate } from './standing.js';
 
 // --- helpers -------------------------------------------------------------
 
@@ -163,6 +164,8 @@ export function registerSettingsTools(server: McpServer, deps: ToolDeps): void {
         }
 
         const hs = await deps.getHoloSphere();
+        const g = await gate(hs, args.holon, 'federation');
+        if (g.refusal) return fail(g.refusal, { standing: g.standing });
         await setFederationPartner(hs, args.holon, targetId, {
           inbound: Array.isArray(inbound) ? inbound : [],
           outbound: Array.isArray(outbound) ? outbound : [],
@@ -190,6 +193,8 @@ export function registerSettingsTools(server: McpServer, deps: ToolDeps): void {
       try {
         if (!args.target) return fail("'target' is required.");
         const hs = await deps.getHoloSphere();
+        const g = await gate(hs, args.holon, 'federation');
+        if (g.refusal) return fail(g.refusal, { standing: g.standing });
         await removeFederationPartner(hs, args.holon, args.target);
         return ok({ success: true, holon: args.holon, removedTarget: args.target });
       } catch (err) {
@@ -222,6 +227,8 @@ export function registerSettingsTools(server: McpServer, deps: ToolDeps): void {
         if (!equation) return fail("'equation' must be a JSON-encoded object.");
 
         const hs = await deps.getHoloSphere();
+        const g = await gate(hs, args.holon, 'settings.guarded');
+        if (g.refusal) return fail(g.refusal, { standing: g.standing });
         const existing = (await loadSettings(hs, args.holon)) ?? {};
         const updated = {
           ...(existing as Record<string, unknown>),

@@ -10,6 +10,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { audience, lock, privacyOfHolon, share, sync, unlock, unshare, type Scope } from '@holons/core/privacy';
 import type { ToolDeps } from './index.js';
+import { gate } from './standing.js';
 import { namesFor } from './names.js';
 
 function ok(payload: object) {
@@ -45,6 +46,8 @@ export function registerPrivacyTools(server: McpServer, deps: ToolDeps): void {
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
+        const g = await gate(hs, args.holon, 'privacy.lock');
+        if (g.refusal) return fail(g.refusal, { standing: g.standing });
         return ok(await lock(hs, scopeOf(args)));
       } catch (err) {
         return fail((err as Error).message);
@@ -55,7 +58,7 @@ export function registerPrivacyTools(server: McpServer, deps: ToolDeps): void {
   server.registerTool(
     'privacy_unlock',
     {
-      description: 'Make a private lens or item public again: its content is rewritten in the clear.',
+      description: 'Make a private lens or item public again: its content is rewritten in the clear. The owner of the lock, or an admin of the holon who holds the key (a member shared with).',
       inputSchema: SCOPE,
     },
     async (args) => {

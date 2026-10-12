@@ -28,7 +28,7 @@ import { FLOW_MINTS_LENS } from '../flows/mints.js';
 import { FLOW_RIGHTS_LENS } from '../flows/rights-log.js';
 import { GOVERNANCE_VOTES_LENS } from '../governance/votes.js';
 import type { ProjectionHook } from '../nostr/types.js';
-import { createReadAuthority, type VouchContext } from './authority.js';
+import { createReadAuthority, roleOfSync, type VouchContext } from './authority.js';
 
 /**
  * Every append-only lens core writes (kind 1808): the protocol's own logs
@@ -196,7 +196,12 @@ export function createHoloSphere(
           authority: (holo: HoloSphere, holon: string) => authority.authorityFor(holo, holon),
           vouch: (holo: HoloSphere, ctx: VouchContext) => authority.vouchFor(holo, ctx),
         },
-        privacy: { acceptGrantFrom: (holo: HoloSphere, holon: string, lens: string, sender: string) => authority.acceptGrantFrom(holo, holon, lens, sender) },
+        privacy: {
+          acceptGrantFrom: (holo: HoloSphere, holon: string, lens: string, sender: string) => authority.acceptGrantFrom(holo, holon, lens, sender),
+          // The vault obeys the same table as every read: a member's vault
+          // counts, only an admin retires another key's.
+          roleOf: (holo: HoloSphere, holon: string, pubkey: string) => roleOfSync(holo, holon, pubkey),
+        },
       }
     : {};
   const config: Record<string, unknown> = {

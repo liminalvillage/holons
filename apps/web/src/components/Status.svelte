@@ -11,6 +11,7 @@
     import { DEFAULT_EQUATION, REAAggregator, ZERO_USER_AGGREGATES, loadHolonUserData, scoreHolonUsers, type ScoredHolonUser, type UserAggregates } from "@holons/core/scoring";
     import { getEventStore } from "../lib/rea/eventStore";
     import { readHolonSettings } from "@holons/core/settings";
+    import { may, writeAcceptance, type WriteStanding } from "@holons/core/holosphere";
     import TitleBar from "./shared/TitleBar.svelte";
     import { nameMap, resolvedName, resolveName, resolvedInitials } from '$lib/stores/nameResolver';
     interface User {
@@ -65,6 +66,14 @@
 
     // Add state for editing
     let isEditingEquation = false;
+    // The equation is a guarded settings field (`may(standing, 'settings.guarded')`):
+    // an admin's signature counts, anyone else's is recorded and ignored.
+    let eqStanding: WriteStanding | null = null;
+    $: canEditEquation = may(eqStanding, 'settings.guarded');
+    async function loadEqStanding(id: string) {
+        try { eqStanding = await writeAcceptance(holosphere, id); } catch { eqStanding = null; }
+    }
+    $: if (holonID) void loadEqStanding(holonID);
     let editingEquation: Equation = { ...equation, currencies: { ...equation.currencies } };
 
     // Score breakdown popover state
@@ -1106,6 +1115,9 @@
                         <div>
                             <h3 class="text-xl font-bold text-white mb-2">Value Equation</h3>
                             <p class="text-gray-400 text-sm">Current scoring weights used to calculate user rankings</p>
+                            {#if !canEditEquation}
+                                <p class="text-amber-300 text-xs mt-1">Only an admin's signature changes the value equation; yours would be recorded but not counted.</p>
+                            {/if}
                         </div>
                         {#if isEditingEquation}
                             <div class="flex items-center gap-2">
@@ -1120,7 +1132,9 @@
                                 </button>
                                 <button 
                                     onclick={saveEquation}
-                                    class="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium"
+                                    disabled={!canEditEquation}
+                                    title={canEditEquation ? 'Save the equation' : "Only an admin's signature changes the value equation"}
+                                    class="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm font-medium"
                                 >
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>

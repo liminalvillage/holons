@@ -18,6 +18,8 @@
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import HomeHexCard from "./federation/HomeHexCard.svelte";
     import { readSettingsHex } from "@holons/core/federation";
+    import { may, writeAcceptance, type WriteStanding } from "@holons/core/holosphere";
+    import { nostrPrivateKey } from '$lib/stores/nostr';
     import {
         audience as readAudience,
         lock,
@@ -113,7 +115,17 @@
     let audiences: Record<string, Audience> = {};
     let keyBusy = '';
     let privacyBusy = '';
-    $: canOwn = !!holosphere?.loggedIn;
+    // Where the signed-in key stands with this holon: the federation record
+    // is an admin's word, a lock a member's (`may(standing, …)`, the one
+    // table every surface reads). Re-read on login and on holon change.
+    let standing: WriteStanding | null = null;
+    async function loadStanding() {
+        if (!holosphere || !currentHolonId) { standing = null; return; }
+        try { standing = await writeAcceptance(holosphere, currentHolonId); } catch { standing = null; }
+    }
+    $: if ($nostrPrivateKey !== undefined && currentHolonId) void loadStanding();
+    $: canEdit = may(standing, 'federation');
+    $: canOwn = !!holosphere?.loggedIn && may(standing, 'privacy.lock');
     $: ownedLenses = Object.keys(audiences).filter((l) => audiences[l]?.owned);
     const keyShared = (a: Record<string, Audience>, holonId: string, lens: string) =>
         !!a[normalizeLens(lens)]?.holons.some((h) => h.holon === holonId);
@@ -171,7 +183,8 @@
         try {
             [federationInfo, homeHexCell] = await Promise.all([
                 holosphere.getFederation(currentHolonId),
-                readSettingsHex(holosphere, currentHolonId).catch(() => null)
+                readSettingsHex(holosphere, currentHolonId).catch(() => null),
+                loadStanding()
             ]);
 
             if (!federationInfo) {
@@ -429,7 +442,7 @@
     <FeatureToolbar
         onAdd={currentHolonId && !saving ? () => (showAddDialog = true) : null}
         addLabel="Add Federation"
-        addDisabled={!currentHolonId || saving}
+        addDisabled={!currentHolonId || saving || !canEdit}
         bind:searchQuery
         searchPlaceholder="Search federations…"
         bind:viewMode
@@ -439,6 +452,11 @@
         ]}
     />
 
+    {#if currentHolonId && viewMode === 'list' && !canEdit}
+        <p class="admin-note" role="status">
+            Only an admin of this holon changes who it federates with and which lenses flow; your changes here would be recorded but not counted.
+        </p>
+    {/if}
     {#if currentHolonId && viewMode === 'list'}
         <!-- Private lenses: sealed on the relays; only keys handed out can read them. -->
         <div class="privacy-card">
@@ -508,8 +526,9 @@
                 type="button"
                 class="primary-btn"
                 on:click={() => (showAddDialog = true)}
+                disabled={!canEdit}
                 aria-label="Add Federation"
-                title="Add Federation"
+                title={canEdit ? 'Add Federation' : 'Only an admin of this holon can federate it'}
             >
                 Add Federation
             </button>
@@ -560,9 +579,9 @@
                                 type="button"
                                 class="icon-btn icon-btn--danger"
                                 on:click={() => removeFederation(holon.id)}
-                                title="Remove federation"
+                                title={canEdit ? 'Remove federation' : 'Only an admin of this holon can unlink a partner'}
                                 aria-label="Remove federation with {name}"
-                                disabled={saving}
+                                disabled={saving || !canEdit}
                             >
                                 <Trash2 size="16" />
                             </button>
@@ -595,7 +614,7 @@
                                         class:toggle--on={isIn}
                                         class:toggle--in={isIn}
                                         on:click={() => toggleInboundLens(holon, lens)}
-                                        disabled={saving}
+                                        disabled={saving || !canEdit}
                                         aria-pressed={isIn}
                                         aria-label="{isIn ? 'Disable' : 'Enable'} inbound {lens}"
                                         title="{isIn ? 'Disable' : 'Enable'} inbound {lens}"
@@ -608,7 +627,7 @@
                                         class:toggle--on={isOut}
                                         class:toggle--out={isOut}
                                         on:click={() => toggleOutboundLens(holon, lens)}
-                                        disabled={saving}
+                                        disabled={saving || !canEdit}
                                         aria-pressed={isOut}
                                         aria-label="{isOut ? 'Disable' : 'Enable'} outbound {lens}"
                                         title="{isOut ? 'Disable' : 'Enable'} outbound {lens}"
@@ -780,6 +799,14 @@
 {/if}
 
 <style>
+    .admin-note {
+        margin: 0 0 1rem;
+        padding: 0.6rem 0.9rem;
+        border-radius: 0.75rem;
+        background: rgba(250, 204, 21, 0.12);
+        color: #fde68a;
+        font-size: 0.85rem;
+    }
     .federation-page {
         padding: 1rem;
         display: flex;

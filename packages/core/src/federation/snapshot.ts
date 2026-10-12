@@ -21,6 +21,14 @@ export interface FederationLensDirections {
 }
 
 export interface FederationSnapshot {
+	/**
+	 * Is this the record an admin of the holon signed? The federation record
+	 * is an admin's word (see `may(standing, 'federation')`): under enforced
+	 * reads a record nobody with that role signed does not count, and the
+	 * snapshot is empty. `false` also for a holon nobody speaks for, where
+	 * the plain record shows.
+	 */
+	endorsed: boolean;
 	/** Canonical list of all partners (any direction, including no lens flow yet). */
 	federated: string[];
 	/** Per-partner directional lens config, keyed by partner id. */
@@ -41,7 +49,16 @@ export async function getFederationSnapshot(
 	federationSourceId?: string
 ): Promise<FederationSnapshot> {
 	const sourceId = federationSourceId ?? holonId;
-	const fedInfo: any = await (holosphere as any).getFederation(sourceId);
+	const hs = holosphere as any;
+	let fedInfo: any = null;
+	let endorsed = false;
+	if (typeof hs.getFederationStanding === 'function') {
+		const standing = await hs.getFederationStanding(sourceId);
+		fedInfo = standing?.record ?? null;
+		endorsed = !!standing?.endorsed;
+	} else {
+		fedInfo = await hs.getFederation(sourceId);
+	}
 
 	const lensConfig: Record<string, FederationLensDirections> = {};
 	const rawConfig = fedInfo?.lensConfig ?? {};
@@ -55,6 +72,7 @@ export async function getFederationSnapshot(
 	}
 
 	return {
+		endorsed,
 		federated: Array.isArray(fedInfo?.federated) ? fedInfo.federated : [],
 		lensConfig,
 		partnerNames: fedInfo?.partnerNames ?? {}

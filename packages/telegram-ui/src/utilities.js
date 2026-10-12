@@ -115,6 +115,16 @@ export const capitalize = string => {
   return string.charAt(0).toUpperCase() + string.slice(1);
 };
 
+/**
+ * Is the person a Telegram admin of this chat (or in a private chat)?
+ *
+ * This is the bot's side of the one capability table
+ * (@holons/core/holosphere `CAPABILITIES`): the bot's key is the anchor of
+ * every chat-founded holon and signs on the chat's behalf, so a chat admin is
+ * who may do what the table reserves for admins — federation, the guarded
+ * settings fields, the rules, overriding a lock. ASYNC: always `await` it.
+ * An un-awaited call is a Promise, which is truthy, and the gate is gone.
+ */
 export const isAdmin = async (ctxOrUserId, holonId) => {
   // Handle case where first parameter is userId and second is holonId
   if (typeof ctxOrUserId === 'number' && holonId) {

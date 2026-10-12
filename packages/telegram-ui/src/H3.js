@@ -92,47 +92,15 @@ class H3 {
           return ctx.reply('No quest found for this message.');
         }
 
-        // Setup federation with the hex target
-        let fedInfo = null;
-        try {
-          fedInfo = await this.db.getGlobal('federation', holonId);
-        } catch (error) {
-          // Federation info doesn't exist, create new one
-        }
-
-        if (!fedInfo) {
-          fedInfo = {
-            id: holonId,
-            name: holonId,
-            inbound: [],
-            outbound: [],
-            lensConfig: {},
-            timestamp: Date.now(),
-          };
-        }
-
-        // Ensure arrays exist
-        if (!fedInfo.inbound) fedInfo.inbound = [];
-        if (!fedInfo.outbound) fedInfo.outbound = [];
-        if (!fedInfo.lensConfig) fedInfo.lensConfig = {};
-
-        // Add hex to federation if not already present
-        if (!fedInfo.inbound.includes(hex)) {
-          fedInfo.inbound.push(hex);
-        }
-        if (!fedInfo.outbound.includes(hex)) {
-          fedInfo.outbound.push(hex);
-        }
-
-        // Configure lens settings for the hex
-        fedInfo.lensConfig[hex] = {
-          inbound: ['quests', 'events'],
-          outbound: ['quests', 'events'],
-          timestamp: Date.now(),
-        };
-
-        // Save the federation configuration
-        await this.db.putGlobal('federation', fedInfo);
+        // Federate the chat's holon with the hex cell through the one
+        // write path: the record counts because the bot's key is the
+        // holon's anchor (an admin, see @holons/core/holosphere CAPABILITIES).
+        await this.db.federateHolon(holonId, hex, {
+          lensConfig: {
+            inbound: ['quests', 'events'],
+            outbound: ['quests', 'events'],
+          },
+        });
 
         const outcome = await publishToFederation(
           {

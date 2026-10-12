@@ -6,6 +6,7 @@
 
 import { writable, derived, get, type Readable } from "svelte/store";
 import type { Quest } from "@holons/core/tasks";
+import type { WriteStanding } from "@holons/core/holosphere";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
 import type { Checklist } from "@holons/core/checklists";
@@ -72,6 +73,12 @@ export const holonId = writable<string | null>(null);
 export const writeStanding = writable<"accepted" | "held" | "open" | null>(
   null,
 );
+/**
+ * The full standing — status AND role — that `may(standing, action)` from
+ * @holons/core/holosphere weighs an action against: the one table every
+ * surface reads to grey out what this key's signature would not count for.
+ */
+export const standing = writable<WriteStanding | null>(null);
 
 /** Caretaker-set header logo (data URL or image URL); empty → bundled logo. */
 export const brandLogo = writable<string>("");

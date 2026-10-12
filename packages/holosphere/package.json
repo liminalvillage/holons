@@ -102,6 +102,7 @@
     "./private-ops.js": "./private-ops.js",
     "./privacy.js": "./privacy.js",
     "./authority.js": "./authority.js",
+    "./capabilities.js": "./capabilities.js",
     "./store/sealed.js": "./store/sealed.js"
   },
   "repository": {

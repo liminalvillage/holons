@@ -42,6 +42,12 @@ export interface Audience {
   locked: boolean;
   /** Does this identity own the vault (it can lock/unlock, share, unshare)? */
   owned: boolean;
+  /**
+   * Could this identity make the scope public or take it over: it owns the
+   * vault, or it is an admin of the holon holding the key (see
+   * `may(standing, 'privacy.override')`). Always true when owned.
+   */
+  canManage: boolean;
   /** Empty unless owned: only the owner can read the audience. */
   holons: AudienceEntry[];
 }

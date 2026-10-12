@@ -680,7 +680,7 @@ export default class Settings {
     });
 
     this.bot.command(['federate', 'spoon'], async ctx => {
-      if (utils.isAdmin(ctx))
+      if (await utils.isAdmin(ctx))
         this.federate(ctx).catch(e => {
           console.log(e);
         });
@@ -738,7 +738,7 @@ export default class Settings {
       lens,
     });
     this.bot.command(['lock', 'unlock'], async ctx => {
-      if (!utils.isAdmin(ctx))
+      if (!(await utils.isAdmin(ctx)))
         return ctx.reply('Only a chat admin can perform this action');
       const [lens] = privacyArgs(ctx);
       if (!lens)
@@ -760,7 +760,7 @@ export default class Settings {
       }
     });
     this.bot.command(['share', 'unshare'], async ctx => {
-      if (!utils.isAdmin(ctx))
+      if (!(await utils.isAdmin(ctx)))
         return ctx.reply('Only a chat admin can perform this action');
       const [lens, target] = privacyArgs(ctx);
       if (!lens || !target)
@@ -817,7 +817,7 @@ export default class Settings {
     });
 
     this.bot.command(['separate', 'fork', 'spork'], async ctx => {
-      if (utils.isAdmin(ctx)) await this.separate(ctx);
+      if (await utils.isAdmin(ctx)) await this.separate(ctx);
       else ctx.reply('Only a chat admin can perform this action');
     });
 
@@ -827,24 +827,24 @@ export default class Settings {
     });
 
     this.bot.command('setlanguage', async ctx => {
-      if (utils.isAdmin(ctx)) await this.setLanguage(ctx);
+      if (await utils.isAdmin(ctx)) await this.setLanguage(ctx);
       else ctx.reply('Only a chat admin can perform this action');
     });
 
     this.bot.command('settheme', async ctx => {
-      if (utils.isAdmin(ctx)) this.setTheme(ctx);
+      if (await utils.isAdmin(ctx)) this.setTheme(ctx);
       else ctx.reply('Only a chat admin can perform this action');
     });
 
     this.bot.command('setadmin', async ctx => {
-      if (utils.isAdmin(ctx)) await this.setAdmin(ctx);
+      if (await utils.isAdmin(ctx)) await this.setAdmin(ctx);
       else ctx.reply('Only a chat admin can perform this action');
     });
 
     this.bot.command(
       ['valueweights', 'weights', 'weight', 'equation'],
       async ctx => {
-        if (utils.isAdmin(ctx)) {
+        if (await utils.isAdmin(ctx)) {
           let holonId = utils.getholonId(ctx);
           let settings = await this.getSettings(holonId); // Fetch full settings
           let weights = settings.valueEquation;
@@ -878,7 +878,7 @@ export default class Settings {
     });
 
     this.bot.command('setvalues', async ctx => {
-      if (utils.isAdmin(ctx)) {
+      if (await utils.isAdmin(ctx)) {
         await this.setValues(ctx);
       } else {
         ctx.reply('Only a chat admin can perform this action');
@@ -886,7 +886,7 @@ export default class Settings {
     });
 
     this.bot.command('setpurpose', async ctx => {
-      if (utils.isAdmin(ctx)) {
+      if (await utils.isAdmin(ctx)) {
         await this.setPurpose(ctx);
       } else {
         ctx.reply('Only a chat admin can perform this action');
@@ -894,7 +894,7 @@ export default class Settings {
     });
 
     this.bot.command('setdomains', async ctx => {
-      if (utils.isAdmin(ctx)) {
+      if (await utils.isAdmin(ctx)) {
         const holonId = ctx.message.chat.id;
         const text = ctx.message.text.substring('/setDomains'.length).trim();
 
@@ -964,7 +964,7 @@ export default class Settings {
 
     // Add back the settings command handler
     this.bot.command('settings', async ctx => {
-      if (utils.isAdmin(ctx)) {
+      if (await utils.isAdmin(ctx)) {
         await this.showSettingsMenu(ctx, false).catch(e =>
           console.log('Error in settings command:', e)
         );
@@ -1061,7 +1061,7 @@ export default class Settings {
           await ctx.scene.enter('users_scene');
           break;
         case 'hex':
-          if (utils.isAdmin(ctx)) {
+          if (await utils.isAdmin(ctx)) {
             // Show hex menu instead of entering scene directly
             await this.showHexMenu(ctx, true);
           } else {
@@ -1097,7 +1097,7 @@ export default class Settings {
           await this.showHolacracyMenu(ctx, true);
           break;
         case 'federation':
-          if (utils.isAdmin(ctx)) {
+          if (await utils.isAdmin(ctx)) {
             await this.showFederationMenu(ctx, true);
           } else {
             ctx.reply(
@@ -1456,7 +1456,7 @@ export default class Settings {
     // Handle federation actions
     this.bot.action('add_federation', async ctx => {
       await ctx.answerCbQuery().catch();
-      if (utils.isAdmin(ctx)) {
+      if (await utils.isAdmin(ctx)) {
         await ctx.scene.enter('federation_scene');
       } else {
         const holonId = ctx.callbackQuery.message.chat.id;
@@ -1468,7 +1468,7 @@ export default class Settings {
 
     this.bot.action(/unfed_(.+)/, async ctx => {
       await ctx.answerCbQuery().catch();
-      if (utils.isAdmin(ctx)) {
+      if (await utils.isAdmin(ctx)) {
         const holonId = ctx.callbackQuery.message.chat.id;
         const shortFederationID = ctx.match[1];
         const language = await this.getLanguage(holonId);
@@ -1523,7 +1523,7 @@ export default class Settings {
 
     this.bot.action(/unnotify_(.+)/, async ctx => {
       await ctx.answerCbQuery().catch();
-      if (utils.isAdmin(ctx)) {
+      if (await utils.isAdmin(ctx)) {
         const holonId = ctx.callbackQuery.message.chat.id;
         const notifyID = ctx.match[1];
         const language = await this.getLanguage(holonId);
@@ -2645,7 +2645,7 @@ export default class Settings {
   }
 
   async setHex(ctx) {
-    if (utils.isAdmin(ctx)) {
+    if (await utils.isAdmin(ctx)) {
       const holonId = ctx.message.chat.id;
       const hex = ctx.message.text.split(' ')[1];
       let settings = await this.getSettings(holonId);
@@ -3041,7 +3041,7 @@ export default class Settings {
   }
 
   async setValues(ctx) {
-    if (utils.isAdmin(ctx)) {
+    if (await utils.isAdmin(ctx)) {
       const holonId = ctx.message.chat.id;
       const text = ctx.message.text.substring('/setValues'.length).trim();
 

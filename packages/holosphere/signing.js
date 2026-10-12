@@ -21,6 +21,7 @@ import { buildEvent, eventToItem, getPublicKey, HOLOSPHERE_KIND } from './nostr-
 import { isHologram } from './hologram.js';
 import { isLocked } from './store/sealed.js';
 import { GLOBAL_HOLON } from './store/address.js';
+import { GUARDED_SETTINGS_FIELDS } from './capabilities.js';
 
 const MEMBERSHIP_LENS = '_members'; // signed membership log lens
 
@@ -89,19 +90,7 @@ export function buildTimeline(events, pinnedGenesis) {
 /** The lens a holon's settings record lives in. */
 export const SETTINGS_LENS = 'settings';
 
-/**
- * Settings fields that decide money and trust: who the holon's key and admin
- * are, which keys it trusts, who vouches for identities, how the pot splits
- * and where it is paid. Under an authorized read these come from the newest
- * envelope an ADMIN (as of its time) signed — never from a plain member's,
- * whose settings write still counts for every other field. Without this a
- * member could seat themselves as admin, rewrite the split in their favour
- * or point the payout at their own wallet, since the lens is last-writer-wins.
- */
-export const GUARDED_SETTINGS_FIELDS = Object.freeze([
-  'holonPubkey', 'admin', 'nostrTrustedPubkeys', 'identityProviders',
-  'allocation', 'pot', 'payout', 'bundle', 'treasury',
-]);
+export { GUARDED_SETTINGS_FIELDS } from './capabilities.js';
 
 /** Newest first, ties by larger id (the store's LWW tie-break). */
 const newestFirst = (a, b) => (b.created_at - a.created_at) || (a.id < b.id ? 1 : -1);
@@ -394,6 +383,25 @@ export function createSigner({
       if (!events.length) return null;
       const item = materialize(claimAt(holo, events[0], lens, key), opts);
       return guardSettings(holo, holon, lens, key, item, events, isAuth);
+    },
+
+    /**
+     * A GLOBAL record owned by a holon — the `federation` table is keyed by
+     * the holon it describes — resolved to the newest claim by an ADMIN of
+     * that holon (an accepted key when the authority knows no roles).
+     * `undefined` when nobody speaks for the holon (the caller keeps its
+     * plain read), null when no admin ever wrote one, or the newest is a
+     * tombstone.
+     */
+    async resolveOwned(holo, owner, lens, id, { role = 'admin' } = {}) {
+      const isAuth = await authPredicate(holo, owner);
+      if (!isAuth) return undefined;
+      const admits = role === 'admin' && typeof isAuth.roleAt === 'function'
+        ? (e) => isAuth.roleAt(e.pubkey, e.created_at) === 'admin'
+        : (e) => isAuth(e.pubkey, e.created_at);
+      const events = envelopes(holo, null, lens, id).filter(admits).sort(newestFirst);
+      if (!events.length) return null;
+      return materialize(claimAt(holo, events[0], lens, id));
     },
 
     /**

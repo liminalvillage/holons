@@ -16,7 +16,7 @@
  * See packages/holosphere/PRIVACY.md.
  */
 
-export { audience, isLocked, lock, privacyOfHolon, share, sync, syncScope, unlock, unshare } from './audience.js';
+export { audience, isLocked, lock, privacyOfHolon, share, sync, syncScope, takeOver, unlock, unshare } from './audience.js';
 export { holonReaders, type HolonReadersOptions } from './readers.js';
 export {
   assertPrivatizable,

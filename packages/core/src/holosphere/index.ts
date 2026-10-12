@@ -14,8 +14,19 @@ export {
   type HoloSphereNostrOptions,
 } from './factory.js';
 export {
+  CAPABILITIES,
+  GUARDED_SETTINGS_FIELDS,
+  HOLON_OWNED_GLOBAL_TABLES,
+  ROLES,
+  may,
+  requiredRole,
+  whyNot,
+  type Capability,
+} from './capabilities.js';
+export {
   createReadAuthority,
   resolveHolonAuthority,
+  roleOfSync,
   writeAcceptance,
   type WriteAcceptance,
   type WriteStanding,

@@ -24,6 +24,8 @@
     equationSaveState,
   } from "$lib/equation";
   import { t, type MessageKey } from "$lib/i18n";
+  import { may } from "@holons/core/holosphere";
+  import { standing } from "$lib/stores";
   import Modal from "./Modal.svelte";
 
   /** The holon whose equation is being edited; null renders nothing. */
@@ -244,6 +246,11 @@
     return String(Math.round(n * 100) / 100);
   }
 
+  // The equation weighs the split, so it is a guarded settings field: an
+  // admin's signature counts, anyone else's is recorded and ignored. The
+  // editor says so and goes read-only (`may(standing, 'settings.guarded')`).
+  $: canEdit = may($standing, "settings.guarded");
+
   // No teardown here on purpose: the pending write lives in `$lib/equation`,
   // which outlives this component, so closing the panel mid-burst still saves.
 </script>
@@ -252,94 +259,99 @@
   <p class="eq-loading">{$t("settings.eqLoading")}</p>
 {:else}
   <div class="eq">
-    {#each eqSections as section (section.headKey)}
-      <div class="eq-head">
-        <span>{$t(section.headKey)}</span>
-        <button
-          type="button"
-          class="eq-info"
-          aria-label={$t("settings.eqAboutAria", {
-            section: $t(section.headKey),
-          })}
-          on:click={() =>
-            (eqInfo = {
-              title: $t("settings.eqAbout", { section: $t(section.headKey) }),
-              rows: section.rows,
-            })}><Icon name="info" /></button
-        >
-      </div>
-      {#each section.rows as row (row.key)}
-        {@const weight = eqWeight(equation, row.key, section.currency)}
-        <div class="eq-row">
-          <span class="eq-name">{row.label}</span>
-          <div class="eq-steps">
-            <button
-              type="button"
-              class="eq-step"
-              aria-label={$t("settings.eqLess", { metric: row.label })}
-              on:click={() => bumpEq(row, section.currency, -1)}>−</button
-            >
-            <span
-              class="eq-val"
-              class:off={weight === 0}
-              aria-label={$t("settings.eqValue", { metric: row.label })}
-              >{eqLabel(weight)}</span
-            >
-            <button
-              type="button"
-              class="eq-step"
-              aria-label={$t("settings.eqMore", { metric: row.label })}
-              on:click={() => bumpEq(row, section.currency, 1)}>+</button
-            >
-          </div>
-        </div>
-      {/each}
-      {#if section.currency}
-        {#if addingCurrency}
-          <div class="eq-add">
-            <!-- svelte-ignore a11y_autofocus -->
-            <input
-              type="text"
-              autofocus
-              bind:value={currencyDraft}
-              placeholder={$t("settings.eqCurrencyPlaceholder")}
-              on:keydown={(e) => {
-                if (e.key === "Enter") addCurrencies();
-                if (e.key === "Escape") {
-                  currencyDraft = "";
-                  addingCurrency = false;
-                }
-              }}
-            />
-            <button type="button" class="eq-add-go" on:click={addCurrencies}
-              >{$t("settings.eqAdd")}</button
-            >
-          </div>
-          <p class="eq-hint">{$t("settings.eqCurrencyStartsAtZero")}</p>
-        {:else}
+    {#if !canEdit}
+      <p class="eq-hint eq-readonly">{$t("settings.eqNotAdmin")}</p>
+    {/if}
+    <fieldset class="eq-fs" disabled={!canEdit}>
+      {#each eqSections as section (section.headKey)}
+        <div class="eq-head">
+          <span>{$t(section.headKey)}</span>
           <button
             type="button"
-            class="eq-link eq-add-open"
-            on:click={() => (addingCurrency = true)}
-            >＋ {$t("settings.eqAddCurrency")}</button
+            class="eq-info"
+            aria-label={$t("settings.eqAboutAria", {
+              section: $t(section.headKey),
+            })}
+            on:click={() =>
+              (eqInfo = {
+                title: $t("settings.eqAbout", { section: $t(section.headKey) }),
+                rows: section.rows,
+              })}><Icon name="info" /></button
           >
+        </div>
+        {#each section.rows as row (row.key)}
+          {@const weight = eqWeight(equation, row.key, section.currency)}
+          <div class="eq-row">
+            <span class="eq-name">{row.label}</span>
+            <div class="eq-steps">
+              <button
+                type="button"
+                class="eq-step"
+                aria-label={$t("settings.eqLess", { metric: row.label })}
+                on:click={() => bumpEq(row, section.currency, -1)}>−</button
+              >
+              <span
+                class="eq-val"
+                class:off={weight === 0}
+                aria-label={$t("settings.eqValue", { metric: row.label })}
+                >{eqLabel(weight)}</span
+              >
+              <button
+                type="button"
+                class="eq-step"
+                aria-label={$t("settings.eqMore", { metric: row.label })}
+                on:click={() => bumpEq(row, section.currency, 1)}>+</button
+              >
+            </div>
+          </div>
+        {/each}
+        {#if section.currency}
+          {#if addingCurrency}
+            <div class="eq-add">
+              <!-- svelte-ignore a11y_autofocus -->
+              <input
+                type="text"
+                autofocus
+                bind:value={currencyDraft}
+                placeholder={$t("settings.eqCurrencyPlaceholder")}
+                on:keydown={(e) => {
+                  if (e.key === "Enter") addCurrencies();
+                  if (e.key === "Escape") {
+                    currencyDraft = "";
+                    addingCurrency = false;
+                  }
+                }}
+              />
+              <button type="button" class="eq-add-go" on:click={addCurrencies}
+                >{$t("settings.eqAdd")}</button
+              >
+            </div>
+            <p class="eq-hint">{$t("settings.eqCurrencyStartsAtZero")}</p>
+          {:else}
+            <button
+              type="button"
+              class="eq-link eq-add-open"
+              on:click={() => (addingCurrency = true)}
+              >＋ {$t("settings.eqAddCurrency")}</button
+            >
+          {/if}
         {/if}
-      {/if}
-    {/each}
+      {/each}
 
-    <div class="eq-foot">
-      <button type="button" class="eq-link" on:click={resetEq}
-        >{$t("settings.eqReset")}</button
-      >
-      <button type="button" class="eq-link" on:click={zeroEq}
-        >{$t("settings.eqZero")}</button
-      >
-      <span class="eq-state" class:on={eqState !== "idle"}>
-        {eqState === "saving"
-          ? $t("settings.eqSaving")
-          : $t("settings.eqSaved")}
-      </span>
-    </div>
+      <div class="eq-foot">
+        <button type="button" class="eq-link" on:click={resetEq}
+          >{$t("settings.eqReset")}</button
+        >
+        <button type="button" class="eq-link" on:click={zeroEq}
+          >{$t("settings.eqZero")}</button
+        >
+        <span class="eq-state" class:on={eqState !== "idle"}>
+          {eqState === "saving"
+            ? $t("settings.eqSaving")
+            : $t("settings.eqSaved")}
+        </span>
+      </div>
+    </fieldset>
   </div>
 {/if}
 
@@ -358,6 +370,23 @@
 {/if}
 
 <style>
+  .eq-fs {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+  }
+  /* Read-only for a signature that would not count: the steppers and links
+     are inert (the fieldset disables them) and look it. */
+  .eq-fs:disabled .eq-step,
+  .eq-fs:disabled .eq-link,
+  .eq-fs:disabled .eq-add-open {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .eq-readonly {
+    color: var(--danger);
+  }
   .eq-loading {
     margin: 0.4rem 0 0;
     font-size: 0.85rem;

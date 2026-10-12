@@ -24,6 +24,7 @@ describe('privacy verbs', () => {
       scope: { holon: H, lens: 'quests' },
       locked: true,
       owned: true,
+      canManage: true,
       holons: [{ holon: H, kind: 'group', self: true, readers: 1, status: 'synced' }],
     });
     expect(hs.store.getEvents(H, 'quests', 'q1')[0].content).not.toContain('hidden');
@@ -122,7 +123,7 @@ describe('privacy verbs', () => {
     // The member's own device: the card is private, the audience is not theirs to see.
     await hs.login(member.sk);
     const view = await audience(hs, { holon: H, lens: 'quests', item: 'q1' });
-    expect(view).toEqual({ scope: { holon: H, lens: 'quests', item: 'q1' }, locked: true, owned: false, holons: [] });
+    expect(view).toEqual({ scope: { holon: H, lens: 'quests', item: 'q1' }, locked: true, owned: false, canManage: false, holons: [] });
     expect(await sync(hs, H)).toEqual({});
   });
 });

@@ -203,7 +203,7 @@ export async function federate(holosphere, spaceId1, spaceId2, password1 = null,
     try {
         // Space 1: directions as given.
         let fedInfo1 = null;
-        try { fedInfo1 = await holosphere.getGlobal('federation', spaceId1, password1); } catch {}
+        try { fedInfo1 = await federationBase(holosphere, spaceId1, password1); } catch {}
         if (fedInfo1 == null) {
             fedInfo1 = {
                 id: spaceId1, name: spaceId1,
@@ -223,7 +223,7 @@ export async function federate(holosphere, spaceId1, spaceId2, password1 = null,
         // Space 2 (mirrored): directions are inverted from its perspective.
         if (bidirectional) {
             let fedInfo2 = null;
-            try { fedInfo2 = await holosphere.getGlobal('federation', spaceId2, password2); } catch {}
+            try { fedInfo2 = await federationBase(holosphere, spaceId2, password2); } catch {}
             if (fedInfo2 == null) {
                 fedInfo2 = {
                     id: spaceId2, name: spaceId2,
@@ -268,7 +268,7 @@ export async function subscribeFederation(holosphere, spaceId, password = null, 
     const { lenses = ['*'], throttle = 0 } = options;
     
     // Get federation info
-    const fedInfo = await holosphere.getGlobal('federation', spaceId, password);
+    const fedInfo = await getFederation(holosphere, spaceId, password);
     if (!fedInfo) {
         throw new Error('No federation info found for space');
     }
@@ -371,7 +371,43 @@ export async function getFederation(holosphere, spaceId, password = null) {
     if (!spaceId) {
         throw new Error('getFederation: Missing space ID');
     }
-    return await holosphere.getGlobal('federation', spaceId, password);
+    return (await federationStanding(holosphere, spaceId, password)).record;
+}
+
+/**
+ * A holon's federation record, resolved like everything else the holon
+ * owns: under an authorized read it is the newest record an ADMIN of that
+ * holon signed (see capabilities.js — the global `federation` table is keyed
+ * by the holon it describes, so whoever wrote last could otherwise decide
+ * its partners and open its lenses). A holon nobody speaks for, a private
+ * (password) space and an unsigned instance read the plain record.
+ *
+ * Returns `{ record, raw, endorsed }`: `record` is what counts (null when
+ * nothing does), `raw` the plain last-writer-wins record, `endorsed` whether
+ * `record` is an admin's. A raw record no admin ever signed — written before
+ * the rule existed, or by a stranger — is not counted, but the first admin
+ * write starts from it (`federationBase`), so a legacy link survives the
+ * day its admin touches federation.
+ */
+export async function federationStanding(holosphere, spaceId, password = null) {
+    const id = String(spaceId);
+    const raw = await holosphere.getGlobal('federation', id, password);
+    const signer = holosphere._signer;
+    if (!signer?.enforce || password || typeof signer.resolveOwned !== 'function') {
+        return { record: raw ?? null, raw: raw ?? null, endorsed: false };
+    }
+    // The owner's log decides who its admins are: catch it up first, as an
+    // enforced read of the holon itself would.
+    try { await holosphere._relaySync?.(id, '_members', { await: true }); } catch { /* local view */ }
+    const owned = await signer.resolveOwned(holosphere, id, 'federation', id);
+    if (owned === undefined) return { record: raw ?? null, raw: raw ?? null, endorsed: false };   // nobody speaks for this holon: open
+    return { record: owned ?? null, raw: raw ?? null, endorsed: owned != null };
+}
+
+/** The record a federation write starts from: what counts, else what is there to adopt. */
+async function federationBase(holosphere, spaceId, password = null) {
+    const { record, raw } = await federationStanding(holosphere, spaceId, password);
+    return record ?? raw ?? null;
 }
 
 /**
@@ -421,7 +457,7 @@ export async function unfederate(holosphere, spaceId1, spaceId2, password1 = nul
         // Get federation info for first space
         let fedInfo1 = null;
         try {
-            fedInfo1 = await holosphere.getGlobal('federation', spaceId1, password1);
+            fedInfo1 = await federationBase(holosphere, spaceId1, password1);
         } catch (error) {
             console.error(`Error getting fedInfo1 for ${spaceId1} during unfederate: ${error.message}`);
             // If we can't get fedInfo1, we can't modify it. Decide if this is a critical failure.
@@ -465,7 +501,7 @@ export async function unfederate(holosphere, spaceId1, spaceId2, password1 = nul
         {
             let fedInfo2 = null;
             try {
-                fedInfo2 = await holosphere.getGlobal('federation', spaceId2, password2);
+                fedInfo2 = await federationBase(holosphere, spaceId2, password2);
             } catch (error) {
                 console.error(`Error getting fedInfo2 for ${spaceId2} during unfederate: ${error.message}`);
             }
@@ -540,7 +576,7 @@ export async function removeNotify(holosphere, spaceId1, spaceId2, password1 = n
     }
 
     try {
-        const fedInfo = await holosphere.getGlobal('federation', spaceId1, password1);
+        const fedInfo = await federationBase(holosphere, spaceId1, password1);
         if (!fedInfo) {
             throw new Error(`No federation info found for ${spaceId1}`);
         }
@@ -2108,6 +2144,7 @@ export async function resetFederation(holosphere, spaceId, password = null, opti
 
 // Export all federation operations as default
 export default {
+    federationStanding,
     federate,
     subscribeFederation,
     getFederation,

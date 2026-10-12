@@ -136,7 +136,7 @@ export default class Roles {
     }
 
     async addrole(ctx) {
-        if (!utils.isAdmin(ctx)) {
+        if (!(await utils.isAdmin(ctx))) {
             ctx.reply('Only admins can add roles');
             return;
         }
@@ -178,7 +178,7 @@ export default class Roles {
     async clearroles(ctx) {
         let holonId = ctx.callbackQuery.message.chat.id;
         let messageId = ctx.callbackQuery.message.message_id;
-        if (!utils.isAdmin(ctx)) {
+        if (!(await utils.isAdmin(ctx))) {
             ctx.answerCbQuery('Only admins can clear all roles');
             return;
         }
@@ -227,7 +227,7 @@ export default class Roles {
     // finds role by its title and removes it
     async removerole(ctx) {
         let holonId = ctx.chat.id;
-        if (!utils.isAdmin(ctx)) {
+        if (!(await utils.isAdmin(ctx))) {
             ctx.answerCbQuery('Only admins can remove roles');
             return;
         }
@@ -249,7 +249,7 @@ export default class Roles {
 
     async resetroles(ctx) {
         let holonId = ctx.chat.id;
-        if (!utils.isAdmin(ctx)) {
+        if (!(await utils.isAdmin(ctx))) {
             ctx.reply('Only admins can reset all roles');
             return;
         }
@@ -269,7 +269,7 @@ export default class Roles {
     }
 
     async editrole(ctx) {
-        if (!utils.isAdmin(ctx)) {
+        if (!(await utils.isAdmin(ctx))) {
             ctx.reply('Only admins can edit roles');
             return;
         }

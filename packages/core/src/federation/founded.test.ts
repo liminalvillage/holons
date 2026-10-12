@@ -22,11 +22,21 @@ describe('two key-founded holons', () => {
     await hs.login(bytesToHex(q.sk));
     await foundHolon(hs, B, { name: 'Forno' });
 
+    // The federation record is an admin's word: a link counts on each side
+    // only when its signer is an admin THERE. q (B's admin) linking A↔B
+    // opens B's side; on A it is recorded and ignored until p links.
+    await setFederationPartner(hs, A, B, { inbound: ['quests'], outbound: ['quests', 'library'], partnerName: 'Forno' });
+    expect((await getFederationSnapshot(hs, A)).federated).not.toContain(B);
+    const b = await getFederationSnapshot(hs, B);
+    expect(b.endorsed).toBe(true);
+    expect(b.federated).toContain(A);
+    expect(b.lensConfig[A]).toMatchObject({ inbound: ['quests', 'library'], outbound: ['quests'] });
+    await hs.login(bytesToHex(p.sk));
     await setFederationPartner(hs, A, B, { inbound: ['quests'], outbound: ['quests', 'library'], partnerName: 'Forno' });
     const a = await getFederationSnapshot(hs, A);
+    expect(a.endorsed).toBe(true);
     expect(a.federated).toContain(B);
     expect(a.lensConfig[B]).toMatchObject({ inbound: ['quests'], outbound: ['quests', 'library'] });
-    expect((await getFederationSnapshot(hs, B)).federated).toContain(A);
 
     expect(await holonReaders(hs, A)).toEqual({ keys: [p.pk], kind: 'group' });
     expect(await holonReaders(hs, B)).toEqual({ keys: [q.pk], kind: 'group' });

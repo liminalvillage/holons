@@ -107,6 +107,9 @@ export function registerProtocolTools(server: McpServer, deps: ToolDeps): void {
         });
         if (samePolicy(next, inForce)) return fail('These are the rules already in force.', { policy: inForce });
         const myRole = ctx.actors.roleAt(hs.currentPubkey, Math.floor(Date.now() / 1000));
+        if (myRole !== 'admin') {
+          return fail('Only an admin of this holon sets its rules; this key\'s record would be kept but not counted.', { role: myRole, policy: inForce });
+        }
         const a = policyRecord(args.lens, next);
         const event = await hs.append(args.holon, POLICY_LENS, a.item, { refs: a.refs });
         return ok({

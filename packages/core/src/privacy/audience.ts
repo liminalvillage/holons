@@ -166,7 +166,7 @@ export async function audience(hs: HoloSphere, scope: Scope): Promise<Audience> 
   await p.ensureKeys(s.holon, s.lens);
   const locked = p.isPrivate(s.holon, s.lens, s.item ?? null);
   const list = await p.audienceGet(s);
-  if (!list) return { scope: s, locked, owned: false, holons: [] };
+  if (!list) return { scope: s, locked, owned: false, canManage: locked && p.canManage(s), holons: [] };
   const sent = (await p.sentGet(s)) ?? {};
   const me = String(hs.currentPubkey ?? '').toLowerCase();
   const readers = await readersByHolon(hs, holonsOf(list));
@@ -179,5 +179,20 @@ export async function audience(hs: HoloSphere, scope: Scope): Promise<Audience> 
     const status = keys.length === 0 ? 'no-readers' : others.some((k) => !sent[k]) ? 'pending' : 'synced';
     holons.push({ holon, kind: isPubkeyHolonId(holon) ? 'personal' : 'group', self: holon === s.holon || holon === s.holon.toLowerCase(), readers: keys.length, status });
   }
-  return { scope: s, locked, owned: true, holons };
+  return { scope: s, locked, owned: true, canManage: true, holons };
+}
+
+/**
+ * An admin takes a scope another key locked: it goes public under the
+ * admin's tombstone and private again under the admin's own vault, with the
+ * owner holon as its audience (the previous shares are the old owner's to
+ * know; share again). Needs the key — a member of the holon holds it.
+ */
+export async function takeOver(hs: HoloSphere, scope: Scope): Promise<Audience> {
+  const s = normScope(scope);
+  const p = privacyOf(hs);
+  await loadVaults(hs, s.holon);
+  await p.ensureKeys(s.holon, s.lens);
+  if (!p.owned(s)) await p.unlock(s);
+  return lock(hs, s);
 }

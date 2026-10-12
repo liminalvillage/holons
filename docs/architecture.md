@@ -199,15 +199,40 @@ legacy `federation[]`/`lensConfig` settings fields were removed):
 
 Federation needs no Telegram: two holons founded from screens link the same
 way, and a Telegram chat linked to a holon (`@holons/core/linking`) is
-federated on every board lens as part of the link. The federation record is a
-global, unauthenticated table (last writer wins); a partner's items still
-show only when its own authority signed them.
+federated on every board lens as part of the link. The federation record is
+an admin's word: under enforced reads it resolves to the newest record an
+admin of the holon signed (`getFederationStanding` says whether one did), and
+a partner's items still show only when its own authority signed them.
 
 UI-side concerns (Svelte stores, identity resolution, toast notifications)
 stay in the UI: callers pass `federationSourceId` and an optional
 `onWriteDenied` callback. The web app additionally runs a global federation
 DM subscription in its root layout to receive cross-holon
 request/response/update messages (see [realtime-sync.md](./realtime-sync.md)).
+
+## Who may do what
+
+Nothing is refused at write time — relays take every signed event — and
+every reader applies the same rule, so two honest clients see the same
+holon. The rule has two parts, both in `@holons/core/holosphere`:
+
+1. **Who counts**: a holon's admins and members come from its signed
+   `_members` log (else its anchored records); a holon nobody speaks for is
+   open. `writeAcceptance(hs, holon)` says where a key stands and which role
+   it holds.
+2. **Which role an action needs** — one table, `CAPABILITIES`:
+   *members* make content, ordinary settings and private scopes (the locker
+   owns the lock); *admins* make the trust decisions — who is seated, the
+   guarded settings fields (the value equation, the split, the pot, the
+   payout, the treasury), the rules of a log, the federation record, and
+   overriding a member's lock.
+
+The data layer enforces the table (the signer on `settings` and the
+`federation` table, the privacy layer on `_vault`); every surface asks
+`may(standing, action)` first and greys the control out with the reason,
+the bot asks the chat's admin list (its key signs for the chat), MCP refuses
+with the same sentence. See `packages/holosphere/SIGNING.md` "Who may do
+what".
 
 ## Conventions
 

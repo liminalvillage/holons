@@ -141,6 +141,14 @@ interface Privacy {
   /** Does this identity own the scope's vault (it can lock/unlock, share, revoke)? Synchronous after `ensureKeys`. */
   owned(scope: Scope): boolean;
   ownedScopes(holon: string): Scope[];
+  /** Does this identity hold a usable key for the scope, as owner or reader? Synchronous after `ensureKeys`. */
+  holdsKey(scope: Scope): boolean;
+  /** Could this identity unlock or take over the scope: it owns it, or it is an admin of the holon holding the key. */
+  canManage(scope: Scope): boolean;
+  /** The role a key holds in a holon now: 'admin' | 'member' | null (stranger) | undefined (nobody defined, open). */
+  roleOf(holon: string, pubkey: string): 'admin' | 'member' | null | undefined;
+  /** May this identity do `action` (a capabilities.js key) in the holon? Open holons allow everything. */
+  may(holon: string, action: string): boolean;
   /** Make a scope private: a fresh key, the vault record, the scope's items rewritten sealed. Idempotent. */
   lock(scope: Scope, opts?: { audience?: unknown[]; sent?: Record<string, string> }): Promise<{ kid: string | null; rewritten: number }>;
   /** Make a scope public again: items rewritten in the clear, the vault tombstoned. */
@@ -317,6 +325,14 @@ export interface PrivacyOptions {
    * `_members` log (see authority.js).
    */
   acceptGrantFrom?: (holo: HoloSphere, holon: string, lens: string, sender: string) => boolean | Promise<boolean>;
+  /**
+   * The role `pubkey` holds in `holon` right now, SYNCHRONOUSLY from what the
+   * instance holds: 'admin' | 'member' | null (a stranger) | undefined
+   * (nobody speaks for the holon — it is open). Decides whose vault record
+   * counts (a member's) and who may tombstone another key's (an admin).
+   * Default: the holon's own signed `_members` log (see authority.js).
+   */
+  roleOf?: (holo: HoloSphere, holon: string, pubkey: string) => 'admin' | 'member' | null | undefined;
 }
 
 /** What the `vouch` hook is asked about: one claim at one address. */
@@ -588,6 +604,8 @@ declare class HoloSphere {
 
     subscribeFederation(holonId: string, password: string | null, callback: (data: any, federatedSpace?: string, lens?: string) => void, options?: { lenses?: string[], throttle?: number }): Promise<{ unsubscribe: () => void, getSubscriptionCount: () => number }>;
     getFederation(holonId: string, password?: string | null): Promise<FederationInfo | null>;
+    /** The federation record with its standing: what counts, the raw record, and whether an admin signed what counts. */
+    getFederationStanding(holonId: string, password?: string | null): Promise<{ record: FederationInfo | null; raw: FederationInfo | null; endorsed: boolean }>;
     getFederatedConfig(holonId: string, targetHolonId: string, password?: string | null): Promise<{ inbound: string[], outbound: string[] } | null>;
     removeNotify(holonId1: string, holonId2: string, password1?: string | null): Promise<boolean>;
     getFederated(holon: string, lens: string, options?: GetFederatedOptions): Promise<Array<any>>;

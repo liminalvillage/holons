@@ -15,6 +15,7 @@
     lock,
     privacyOfHolon,
     share,
+    takeOver,
     unlock,
     unshare,
     type Audience,
@@ -91,6 +92,7 @@
             ? lensLocked || !!flags[scope.lens]?.items.includes(scope.item)
             : lensLocked,
           owned: false,
+          canManage: false,
           holons: [],
         };
       }
@@ -146,11 +148,14 @@
     : scope.item
       ? "audience.whenLockCard"
       : "audience.whenLockLens";
+  // The lock is the owner's — or an admin's, who may make it public or take
+  // it over (`may(standing, 'privacy.override')`, core's `canManage`).
   $: frozen =
     loading ||
     !!busy ||
-    (!!aud?.locked && !aud.owned) ||
+    (!!aud?.locked && !aud.canManage) ||
     (!!scope.item && lensLocked);
+  const takeOverScope = () => run("takeover", (h) => takeOver(h, scope));
   const add = (id: string, name?: string) => {
     if (name) names = { ...names, [id]: name };
     addOpen = false;
@@ -214,6 +219,14 @@
 
   {#if scope.item && lensLocked}
     <p class="note">{$t("audience.lensLocked")}</p>
+  {:else if aud?.locked && !aud.owned && aud.canManage && $isLoggedIn}
+    <p class="note">{$t("audience.adminCanUnlock")}</p>
+    <button
+      type="button"
+      class="takeover"
+      disabled={!!busy}
+      on:click={takeOverScope}>{$t("audience.takeOver")}</button
+    >
   {:else if aud?.locked && !aud.owned && $isLoggedIn}
     <p class="note">{$t("audience.notOwner")}</p>
   {:else if aud?.locked && aud.owned}
@@ -304,6 +317,16 @@
 </div>
 
 <style>
+  .takeover {
+    min-height: 44px;
+    padding: 0 0.9rem;
+    border-radius: 999px;
+    border: 1.5px solid var(--teal-deep);
+    background: transparent;
+    color: var(--teal-ink);
+    font-weight: 700;
+    font-size: 0.85rem;
+  }
   .audience {
     text-transform: none;
     letter-spacing: 0;

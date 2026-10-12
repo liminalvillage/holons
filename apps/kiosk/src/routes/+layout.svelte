@@ -64,6 +64,7 @@
     holonName,
     holonId as holonIdStore,
     writeStanding,
+    standing,
     partnerNames,
     brandLogo,
     accent,
@@ -529,9 +530,11 @@
         (
           hs as { _readAuthority?: { invalidate?: (h: string) => void } }
         )._readAuthority?.invalidate?.(id);
-      const { status } = await writeAcceptance(hs, id, key);
+      const st = await writeAcceptance(hs, id, key);
+      const { status } = st;
       if (id !== boundHolon || key !== hs.currentPubkey) return;
       writeStanding.set(status);
+      standing.set(st);
       if (!recheck) scheduleStandingRechecks(id, key);
       else if (status === "accepted")
         for (const t of standingTimers) clearTimeout(t);
@@ -560,6 +563,7 @@
       }
     } catch {
       writeStanding.set(null);
+      standing.set(null);
     }
   }
   $: if ($sessionKeyPub !== undefined && boundHolon)

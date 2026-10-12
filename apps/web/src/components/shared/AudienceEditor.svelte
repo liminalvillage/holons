@@ -16,6 +16,7 @@
         lock,
         privacyOfHolon,
         share,
+        takeOver,
         unlock,
         unshare,
         type Audience,
@@ -60,6 +61,7 @@
                     scope,
                     locked: scope.item ? lensLocked || !!flags[scope.lens]?.items.includes(scope.item) : lensLocked,
                     owned: false,
+                    canManage: false,
                     holons: [],
                 };
             }
@@ -96,7 +98,9 @@
     // One click does it; the line under the state says what that click does
     // to what is already in the scope and to what comes after.
     const toggleLock = () => run("lock", () => (aud?.locked ? unlock(holosphere, scope) : lock(holosphere, scope)));
-    $: frozen = loading || !!busy || !canChange || (!!aud?.locked && !aud.owned) || (!!scope.item && lensLocked);
+    // The lock is the owner's — or an admin's, who may make it public or take it over (core's `canManage`).
+    $: frozen = loading || !!busy || !canChange || (!!aud?.locked && !aud.canManage) || (!!scope.item && lensLocked);
+    const takeOverScope = () => run("takeover", () => takeOver(holosphere, scope));
     $: why = aud?.locked
         ? scope.item
             ? "Making it public rewrites this item in the clear, and its changes stay public, for anyone to read."
@@ -146,6 +150,9 @@
     {#if canChange && !frozen}<p class="aud__hint">{why}</p>{/if}
     {#if scope.item && lensLocked}
         <p class="aud__hint">The whole lens is locked; this item follows it.</p>
+    {:else if aud?.locked && !aud.owned && aud.canManage && canChange}
+        <p class="aud__hint">Locked by another key. As an admin you can make it public, or take it over and share it yourself.</p>
+        <button type="button" class="aud__act" disabled={!!busy} on:click={takeOverScope}>Take over</button>
     {:else if aud?.locked && !aud.owned && canChange}
         <p class="aud__hint">Locked by another key — only its owner changes who reads it.</p>
     {:else if aud?.locked && aud.owned}

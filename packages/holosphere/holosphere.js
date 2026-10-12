@@ -844,6 +844,15 @@ class HoloSphere {
         return result;
     }
 
+    /**
+     * The federation record with its standing: what counts (`record`), the
+     * plain last-writer-wins record (`raw`) and whether `record` is an
+     * admin's (`endorsed`). See federation.js `federationStanding`.
+     */
+    async getFederationStanding(holonId, password = null) {
+        return Federation.federationStanding(this, holonId, password);
+    }
+
     async getFederatedConfig(holonId, targetHolonId, password = null) {
         return Federation.getFederatedConfig(this, holonId, targetHolonId, password);
     }

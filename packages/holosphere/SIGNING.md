@@ -204,6 +204,34 @@ key-founded holon is written after the admin's approval, and a link offer is
 judged by the author's role at the envelope's time (`@holons/core/holons`,
 `@holons/core/linking`, `docs/identity-linking.md`).
 
+### Who may do what — one table (`capabilities.js`)
+
+Nothing is refused at write time; what a write is *worth* is decided on
+read, by everyone, with one table (`capabilities.js`, re-exported by
+`@holons/core/holosphere`):
+
+| action | role whose signature counts |
+| --- | --- |
+| content, ordinary settings fields | member |
+| making a lens or card private (the locker owns its vault) | member |
+| seating keys (`_members`) | admin |
+| the guarded settings fields: `holonPubkey`, `admin`, `nostrTrustedPubkeys`, `identityProviders`, `valueEquation`/`equation`, `allocation`, `pot`, `payout`, `bundle`, `treasury` | admin |
+| a log's rule (`_policy`) | admin |
+| the federation record — partners, and which lenses flow each way | admin |
+| unlocking or taking over a scope another key locked | admin |
+
+The signer applies it twice. On `settings`, each guarded field is taken from
+the newest envelope an **admin** (as of its time) signed; a member's settings
+write still counts for every other field (`GUARDED_SETTINGS_FIELDS`). On the
+global `federation` table — keyed by the holon a record describes — the
+record is the newest an admin of *that holon* signed
+(`signer.resolveOwned`, `getFederation` / `getFederationStanding`); a holon
+nobody speaks for keeps the plain record, and a legacy record no admin ever
+signed is adopted by the first admin write. The privacy layer applies it to
+the vault (PRIVACY.md). Every surface asks the same question before a write
+— `may(await writeAcceptance(hs, holon), action)` — and greys the control out
+with the reason instead of saving into silence.
+
 ### Optional: holon-owned authority (`enforce: 'membership'`)
 
 When the *space* should define who may write (a shared treasury, a formal org) rather

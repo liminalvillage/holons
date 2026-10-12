@@ -138,13 +138,19 @@ export type WriteAcceptance = 'accepted' | 'held' | 'open';
 export interface WriteStanding {
   /** `accepted`: the key counts here. `held`: the holon has an authority and it is not this key — writes stay with their author. `open`: nobody is defined, every claim shows. */
   status: WriteAcceptance;
+  /** The role the key holds now (`accepted` only): what `may()` weighs an action against. */
+  role: Role | null;
   /** The key that speaks for the holon, when known. */
   anchor: string | null;
   /** How the authority was found: its signed log, its anchored records, or nothing. */
   source: 'log' | 'bootstrap' | null;
 }
 
-type AuthorityCarrier = HoloSphere & { _readAuthority?: ReadAuthority; currentPubkey?: string };
+type AuthorityCarrier = HoloSphere & {
+  _readAuthority?: ReadAuthority;
+  currentPubkey?: string;
+  _relaySync?: (holon: string, lens: string, opts?: { await?: boolean }) => Promise<unknown>;
+};
 
 /**
  * Does `pubkey` (default: the instance's signing key) count for `holon`
@@ -155,16 +161,40 @@ export async function writeAcceptance(hs: HoloSphere, holon: string, pubkey?: st
   const host = hs as AuthorityCarrier;
   const key = String(pubkey ?? host.currentPubkey ?? '').toLowerCase();
   const h = String(holon ?? '').trim();
+  // The answer is only as good as the log in the store: on a cold instance
+  // the holon would read as "open" until its `_members` envelopes arrive,
+  // and a surface would offer controls whose writes will not count. Catch
+  // the log (and the anchored settings) up first, and forget the cached
+  // answer that may predate them.
+  if (h && !isPubkeyHolon(h) && !isValidCell(h)) {
+    try { await host._relaySync?.(h, '_members', { await: true }); } catch { /* offline: the store decides */ }
+    try { await host._relaySync?.(h, 'settings', { await: true }); } catch { /* offline: the store decides */ }
+    host._readAuthority?.invalidate(h);
+  }
   const summary = resolveHolonAuthority(hs, h);
   const source = summary.actors?.source ?? null;
-  const predicate = host._readAuthority
+  const predicate: AuthorityPredicate | null = host._readAuthority
     ? await host._readAuthority.authorityFor(hs, h)
     : summary.actors
       ? (pub: string, at: number) => summary.actors!.isAcceptedAt(pub, at)
       : null;
-  if (!predicate) return { status: 'open', anchor: summary.anchor, source };
-  const accepted = !!key && predicate(key, Math.floor(Date.now() / 1000));
-  return { status: accepted ? 'accepted' : 'held', anchor: summary.anchor, source };
+  if (!predicate) return { status: 'open', role: null, anchor: summary.anchor, source };
+  const now = Math.floor(Date.now() / 1000);
+  const accepted = !!key && predicate(key, now);
+  const role = accepted ? (predicate.roleAt?.(key, now) ?? summary.actors?.roleAt(key, now) ?? 'member') : null;
+  return { status: accepted ? 'accepted' : 'held', role, anchor: summary.anchor, source };
+}
+
+/**
+ * The role a key holds in a holon right now, SYNCHRONOUSLY from what the
+ * instance holds — the privacy layer's `roleOf` hook, which decides whose
+ * vault record counts. 'admin' | 'member' | null (a stranger) | undefined
+ * (nobody speaks for the holon: it is open).
+ */
+export function roleOfSync(hs: HoloSphere, holon: string, pubkey: string): Role | null | undefined {
+  const { actors } = resolveHolonAuthority(hs, holon);
+  if (!actors) return undefined;
+  return actors.roleAt(String(pubkey).toLowerCase(), Math.floor(Date.now() / 1000));
 }
 
 /** `app/holon/lens/key` → its holon, or null. */
@@ -211,8 +241,11 @@ export function namesHolon(item: Record<string, any> | null | undefined, holon: 
  * only linked from its side has not been let in.
  */
 function receivesFrom(hs: AuthorityHost, holon: string, source: string, lens: string, accepted: AuthorityPredicate): boolean {
+  // The federation record is an admin's word (capabilities.js): a member's
+  // or a stranger's copy of it lets nobody in.
+  const counts = (pub: string, at: number) => (accepted.roleAt ? accepted.roleAt(pub, at) === 'admin' : accepted(pub, at));
   const events = hs.store.getEvents(null, 'federation', holon)
-    .filter((e) => accepted(String(e.pubkey).toLowerCase(), e.created_at))
+    .filter((e) => counts(String(e.pubkey).toLowerCase(), e.created_at))
     .sort((a, b) => (b.created_at - a.created_at) || (a.id < b.id ? 1 : -1));
   if (!events.length) return false;
   const record = eventToItem(events[0]) as Record<string, any> | null;

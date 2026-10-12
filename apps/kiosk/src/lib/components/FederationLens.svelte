@@ -28,6 +28,7 @@
     lensMode,
     type FederationLensMode,
   } from "@holons/core/federation";
+  import { may, writeAcceptance } from "@holons/core/holosphere";
   import {
     audience as readAudience,
     privacyOfHolon,
@@ -74,6 +75,10 @@
   let loading = true;
   let error = "";
   let busy = false;
+  // The federation record is an admin's word (`may(standing, 'federation')`,
+  // the one table every surface reads): anyone else sees the flows and can
+  // change nothing — their taps would be recorded and ignored.
+  let canEdit = true;
   /** True once this pair has a federation record — flows exist. */
   let linked = false;
   let cfg: { inbound: string[]; outbound: string[] } = {
@@ -157,8 +162,12 @@
   async function load() {
     try {
       hs = await getHolosphere();
-      const snap = await getFederationSnapshot(hs, holon);
+      const [snap, standing] = await Promise.all([
+        getFederationSnapshot(hs, holon),
+        writeAcceptance(hs, holon).catch(() => null),
+      ]);
       if (!alive) return;
+      canEdit = !!standing && may(standing, "federation");
       // Read-only on open: a fresh pair stays unfederated until an arrow is
       // tapped. Nothing here writes.
       linked = snap.federated.includes(partner);
@@ -364,7 +373,7 @@
                 class:part={r.master && !on && someOn[dir]}
                 aria-pressed={on}
                 aria-label={ariaFor($t, r.label, dir)}
-                disabled={busy}
+                disabled={busy || !canEdit}
                 on:click={() =>
                   r.master ? toggleAll(dir) : toggle(r.key, dir)}
               >
@@ -398,7 +407,11 @@
       </div>
     {/each}
 
-    <p class="hint">{$t("fed.arrowHint")}</p>
+    {#if !canEdit}
+      <p class="hint warn">{$t("fed.adminOnly")}</p>
+    {:else}
+      <p class="hint">{$t("fed.arrowHint")}</p>
+    {/if}
     {#if hasPrivate}
       <p class="hint">{$t("fed.privateHint")}</p>
       {#if partnerEntry(auds)}
@@ -413,12 +426,12 @@
       {/if}
     {/if}
     {#if error}<p class="err">{error}</p>{/if}
-    {#if linked}
+    {#if linked && canEdit}
       {#if confirmUnlink}
         <button
           type="button"
           class="unlink confirm"
-          disabled={busy}
+          disabled={busy || !canEdit}
           on:click={unlink}
         >
           {$t("fed.tapAgainUnlink")}
@@ -427,7 +440,7 @@
         <button
           type="button"
           class="unlink"
-          disabled={busy}
+          disabled={busy || !canEdit}
           on:click={armUnlink}
         >
           {$t("fed.unlink", { name: nameB() })}
@@ -509,6 +522,9 @@
     width: 1em;
     height: 1em;
     margin-top: 0.15em;
+  }
+  .hint.warn {
+    color: var(--danger);
   }
   .hint.keyto.warn {
     color: var(--caution);

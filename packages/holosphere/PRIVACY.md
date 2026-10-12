@@ -24,6 +24,14 @@ Five rules say all of it:
    the holon's authority rejects (unsigned, by a never-seated key, a stray
    revival over a signed delete) is left alone — re-signing it would
    publish it as the owner's own.
+   **The vault obeys the one capability table** (`capabilities.js`): a vault
+   record counts from a *member* of the holon, and only a tombstone by its
+   own author or by an *admin* retires it. A stranger can neither lock a
+   holon's lens nor flip a locked one back to plaintext by writing last.
+   An admin who holds the key (a member shared with) may `unlock` what
+   another key locked, or take it over (`@holons/core/privacy` `takeOver`:
+   unlock, then lock under their own vault); the role comes from
+   `config.privacy.roleOf` — core wires the same rule its reads use.
 3. **One key per scope.** `content = { enc:'nip44', v:2, kid, ct }` with
    `ct = nip44(JSON(item), K_scope)` and `kid = sha256(K_scope)[0:16]`.
    Rotation = a new key in the vault + the scope's items rewritten + the
@@ -142,8 +150,9 @@ wire.
 ## API
 
 Instance: `hs.privacy` — `scopeOf`, `isPrivate`, `lockedScopes`, `owned`,
-`ownedScopes`, `lock`, `unlock`, `audienceGet/Set`, `sentGet/Set`, `grant`,
-`revoke`, `acceptGrant`, `ensureKeys`; `hs.isPrivate(holon, lens, item?)`;
+`ownedScopes`, `holdsKey`, `canManage`, `roleOf`, `may`, `lock`, `unlock`,
+`audienceGet/Set`, `sentGet/Set`, `grant`, `revoke`, `acceptGrant`,
+`ensureKeys`; `hs.isPrivate(holon, lens, item?)`;
 `get`/`getAll(..., { includeLocked: true })` surfaces stubs.
 Store: `rescan`, `setUnseal`, `isLocked` (`store/sealed.js` holds the codec).
 Domain rules — who is in an audience and how a holon resolves to readers —
