@@ -345,3 +345,56 @@ export async function extractItemsFromImage(imageBuffer, itemType = 'any') {
     return { items: [], error: message };
   }
 }
+
+/**
+ * Transcribe the writing on a photographed card using GPT-4o vision API
+ * @param {Buffer} imageBuffer - The image buffer to read
+ * @param {string} mime - The image mime type
+ * @returns {Promise<{text: string, error?: string}>} - The writing on the card, or an `error` message if analysis failed
+ */
+export async function transcribeImage(imageBuffer, mime = 'image/jpeg') {
+  const base64Image = imageBuffer.toString('base64');
+
+  const promptText =
+    'Transcribe all the writing on this card exactly as written, handwriting included. Keep the original language and line breaks; add no commentary. Return a JSON object with a "text" string (empty if there is no legible writing).';
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: promptText },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${mime};base64,${base64Image}`,
+                detail: 'high',
+              },
+            },
+          ],
+        },
+      ],
+      response_format: { type: 'json_object' },
+      max_tokens: 1500,
+    });
+
+    const result = JSON.parse(response.choices[0].message.content);
+    return { text: typeof result?.text === 'string' ? result.text : '' };
+  } catch (error) {
+    console.error('Error transcribing image:', error);
+    const status = error?.status;
+    const code = error?.code;
+    let message = 'The image analysis service is temporarily unavailable.';
+    if (
+      status === 429 ||
+      code === 'insufficient_quota' ||
+      code === 'rate_limit_exceeded'
+    ) {
+      message =
+        'The image analysis service has reached its usage limit and is unavailable right now.';
+    }
+    return { text: '', error: message };
+  }
+}

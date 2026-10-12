@@ -11,6 +11,8 @@ export interface TagEntry {
   holonId: string;
   messageId: string | number;
   messageContent?: string;
+  /** Attached image: an absolute URL, or a Telegram file_id (see each UI's `resolveImage`). */
+  picture?: string;
   [key: string]: unknown;
 }
 

@@ -167,6 +167,12 @@ class HolonsBot {
         console.log('[HolonsMultiBot] Library not initialized yet');
       }
 
+      // A /card waiting for this user's photo
+      if (self.tags && self.tags.isWaitingForCard(ctx.chat.id, ctx.from.id)) {
+        await self.tags.handleCardPhoto(ctx);
+        return;
+      }
+
       // Handle photo captions for other modules
       if (ctx.message.caption) {
         const command = ctx.message.caption.split(' ')[0];
@@ -179,6 +185,9 @@ class HolonsBot {
         } else if (['/spent', '/expense', '/speso'].includes(command)) {
           ctx.message.text = ctx.message.caption;
           if (self.expenses) self.expenses.spent(ctx);
+          return;
+        } else if (command.split('@')[0] === '/card') {
+          if (self.tags) await self.tags.handleCardPhoto(ctx);
           return;
         }
       }

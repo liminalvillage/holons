@@ -43,6 +43,10 @@ export function registerTagsTools(server: McpServer, deps: ToolDeps): void {
           .union([z.string(), z.number()])
           .optional()
           .describe('Source message id; defaults to a generated id.'),
+        picture: z
+          .string()
+          .optional()
+          .describe('Attached image: an absolute URL or a Telegram file_id.'),
       },
     },
     async (args) => {
@@ -51,6 +55,7 @@ export function registerTagsTools(server: McpServer, deps: ToolDeps): void {
           holonId: args.holon,
           messageId: args.messageId ?? genId(),
           messageContent: args.text,
+          ...(args.picture?.trim() ? { picture: args.picture.trim() } : {}),
         });
         return ok({ success: true, tag: updated });
       } catch (err) {

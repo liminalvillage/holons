@@ -66,6 +66,7 @@ Linked keys are published in the kind-31926 attestation for `telegram:<your id>`
 
 ## Content Management
 - `/tag [tag]` - Saves content under the specified tag
+- `/card` - Reads the writing on a photographed card and saves it, with the picture, under the `cards` tag. Send it as a photo caption, as a reply to a photo, or on its own and then send the photo
 - `/publish` - Saves the content in the holosphere
 - `/cast` - Saves the content on every scale in the holosphere
 - `/summarize` - Listens to the conversation and summarises it when `/done` is entered

@@ -9,7 +9,7 @@
     },
     "content": {
       "type": "array",
-      "description": "Array of TagEntry objects: { holonId, messageId, messageContent? }."
+      "description": "Array of TagEntry objects: { holonId, messageId, messageContent?, picture? } — `picture` is an absolute URL or a Telegram file_id."
     }
   },
   "required": [

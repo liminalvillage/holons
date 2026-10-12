@@ -8,6 +8,7 @@
 	import type { HoloSphere } from "holosphere";
 	import TitleBar from "./shared/TitleBar.svelte";
 	import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
+	import { resolveImage } from '../utils/imageServer';
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -72,7 +73,12 @@
 			// Load initial tags data
 			const initialTagsData = await holosphere.getAll(holonID, "tags");
 			if (initialTagsData && typeof initialTagsData === 'object') {
-				store = initialTagsData;
+				// getAll may answer with a list: key by tag name, as the subscription does
+				store = Object.fromEntries(
+					Object.entries(initialTagsData)
+						.filter(([, tag]) => tag)
+						.map(([key, tag]) => [tag.id ?? key, tag])
+				);
 			}
 
 			// Subscribe to tag updates
@@ -154,7 +160,7 @@
 	// Function to handle content item clicks
 	function handleContentClick(content, event) {
 		event.preventDefault();
-		const url = extractUrl(content.messageContent) || content.link || content.url;
+		const url = linkOf(content);
 		if (url) {
 			window.open(url, "_blank");
 		}
@@ -162,7 +168,12 @@
 
 	// Function to check if content is a link
 	function isLink(content) {
-		return extractUrl(content.messageContent) || content.link || content.url;
+		return linkOf(content);
+	}
+
+	// Where a content item leads: a URL in its text, its own link, else its picture
+	function linkOf(content) {
+		return extractUrl(content.messageContent || '') || content.link || content.url || resolveImage(content.picture) || null;
 	}
 
 	// Function to truncate text if needed
@@ -263,16 +274,19 @@
 									{#each (tagData.content || []) as content}
 										{#if isLink(content)}
 											<a
-												href={extractUrl(content.messageContent) || content.url || content.link}
+												href={linkOf(content)}
 												target="_blank"
 												rel="noopener noreferrer"
 												class="block text-blue-400 hover:text-blue-300 text-sm bg-gray-800/50 p-3 rounded-lg hover:bg-gray-600/50 transition-all duration-200 border border-transparent hover:border-blue-500/30"
 												on:click={(e) => handleContentClick(content, e)}
 											>
+												{#if content.picture}
+													<img src={resolveImage(content.picture)} alt="" loading="lazy" class="w-full max-h-48 object-cover rounded-md mb-2" />
+												{/if}
 												<div class="break-words whitespace-pre-wrap">
-													{truncateText(content.messageContent)}
+													{truncateText(content.messageContent || '')}
 												</div>
-												{#if content.messageContent.length > 150}
+												{#if (content.messageContent || '').length > 150}
 													<div class="text-xs text-gray-500 mt-1">Click to read more...</div>
 												{/if}
 											</a>
@@ -316,16 +330,19 @@
 									{#each (tagData.content || []) as content}
 										{#if isLink(content)}
 											<a
-												href={extractUrl(content.messageContent) || content.url || content.link}
+												href={linkOf(content)}
 												target="_blank"
 												rel="noopener noreferrer"
 												class="block text-blue-400 hover:text-blue-300 text-sm bg-gray-800/50 p-3 rounded-lg hover:bg-gray-600/50 transition-all duration-200 border border-transparent hover:border-blue-500/30"
 												on:click={(e) => handleContentClick(content, e)}
 											>
+												{#if content.picture}
+													<img src={resolveImage(content.picture)} alt="" loading="lazy" class="w-full max-h-48 object-cover rounded-md mb-2" />
+												{/if}
 												<div class="break-words whitespace-pre-wrap">
-													{truncateText(content.messageContent)}
+													{truncateText(content.messageContent || '')}
 												</div>
-												{#if content.messageContent.length > 150}
+												{#if (content.messageContent || '').length > 150}
 													<div class="text-xs text-gray-500 mt-1">Click to read more...</div>
 												{/if}
 											</a>

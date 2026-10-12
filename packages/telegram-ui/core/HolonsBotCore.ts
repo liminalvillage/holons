@@ -38,6 +38,12 @@ interface LibraryLike {
   handlePhotoUpload(ctx: Context): Promise<boolean> | boolean;
 }
 
+/** The slice of the Tags service that this module touches. */
+interface TagsLike {
+  isWaitingForCard(chatId: number | string, userId: number | string): boolean;
+  handleCardPhoto(ctx: Context): unknown;
+}
+
 /** The slice of the Quests service that this module touches. */
 interface QuestsLike {
   quest(command: string, ctx: Context): unknown;
@@ -364,6 +370,7 @@ class HolonsBot {
       const quests = await this.container.get<QuestsLike>('quests');
       const expenses = await this.container.get<ExpensesLike>('expenses');
       const library = await this.container.get<LibraryLike | null>('library');
+      const tags = await this.container.get<TagsLike>('tags');
 
       // Debug: Log all messages to see what's coming through
       telebot.on('message', (ctx, next) => {
@@ -396,6 +403,12 @@ class HolonsBot {
           console.log('[HolonsBotCore] Library not available');
         }
 
+        // A /card waiting for this user's photo
+        if (ctx.from && tags.isWaitingForCard(ctx.chat!.id, ctx.from.id)) {
+          await tags.handleCardPhoto(ctx);
+          return;
+        }
+
         const message = ctx.message as { caption?: string; text?: string } | undefined;
         if (message?.caption) {
           const command = message.caption.split(' ')[0];
@@ -410,6 +423,9 @@ class HolonsBot {
           } else if (['/spent', '/expense', '/speso'].includes(command)) {
             message.text = message.caption;
             expenses.spent(ctx);
+            return; // Exit early to avoid QR processing
+          } else if (command.split('@')[0] === '/card') {
+            await tags.handleCardPhoto(ctx);
             return; // Exit early to avoid QR processing
           }
         }
