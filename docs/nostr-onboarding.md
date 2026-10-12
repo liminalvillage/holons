@@ -556,8 +556,6 @@ createIdentityContext({ derivationSecret }): { memberSigner, memberPubkey, provi
 - NIP-42 AUTH in `relay-transport.js` so community relays can restrict writes.
 - A lens where the standard kind is authoritative (`primary: 'standard'`) and
   foreign records are imported.
-- The bot answering NIP-29 join requests (9021) itself — today an admin on a
-  screen seats the key (`docs/identity-linking.md` → Founding and members).
 - Elinor occurrence publishing / reminders from the bot.
 - The Pi relay (Appendix A).
 

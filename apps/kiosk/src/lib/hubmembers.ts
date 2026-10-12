@@ -18,6 +18,8 @@ import {
 } from "@holons/core/holons";
 import { addHolonMember, removeHolonMember } from "@holons/core/protocol";
 import type { Role } from "@holons/core/protocol";
+import { get } from "svelte/store";
+import { currentUser } from "./auth";
 import { resolveAppName } from "./config";
 import { getHolosphere } from "./holosphere";
 import { getSessionSecret } from "./sessionKey";
@@ -76,12 +78,18 @@ export async function unseat(hub: string, key: string): Promise<string> {
     : removeHolonMember(hs, hub, key);
 }
 
-/** Ask to join `hub` as the session key (a kind-9021, carrying a name). */
+/**
+ * Ask to join `hub` as the session key (a kind-9021, carrying a name). A
+ * Telegram login also names its Telegram id: the bot of a Telegram group
+ * proves it from the key and links a member of the group at once.
+ */
 export async function askToJoin(hub: string, name: string): Promise<boolean> {
   const signer = sessionSigner();
   if (!signer) return false;
   const hs = await getHolosphere();
-  requestToJoin(hs, hub, signer, { ...opts(), reason: name });
+  const user = get(currentUser);
+  const telegramId = user?.provider === "telegram" ? user.id : undefined;
+  requestToJoin(hs, hub, signer, { ...opts(), reason: name, telegramId });
   return true;
 }
 

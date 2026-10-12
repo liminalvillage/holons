@@ -58,7 +58,7 @@ describe('join requests', () => {
     expect(published).toEqual([ev]);
     expect(ev.kind).toBe(GROUP_JOIN_REQUEST_KIND);
     expect(joinRequestFilter(H)).toEqual({ kinds: [GROUP_JOIN_REQUEST_KIND], '#h': [H] });
-    expect(parseJoinRequest(ev, H)).toEqual({ pubkey: alice.pk, at: ev.created_at, reason: 'Alice', eventId: ev.id });
+    expect(parseJoinRequest(ev, H)).toEqual({ pubkey: alice.pk, at: ev.created_at, reason: 'Alice', eventId: ev.id, holon: H });
     expect(parseJoinRequest(ev)).not.toBeNull();
     expect(parseJoinRequest(ev, 'holon_bbbbbbbbbbbbbbbb')).toBeNull();
     expect(parseJoinRequest({ ...ev, content: 'Mallory' }, H)).toBeNull(); // tampered: signature fails

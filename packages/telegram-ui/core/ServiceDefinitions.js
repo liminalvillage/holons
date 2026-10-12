@@ -23,6 +23,7 @@ import Tags from '../src/Tags.js';
 import Participation from '../src/RSVP.js';
 import Shifts from '../src/Shifts.js';
 import Keys from '../src/Keys.js';
+import JoinRequests from '../src/JoinRequests.js';
 import { invalidateLinkedKeys } from '../src/createHoloSphere.js';
 import Roles from '../src/Roles.js';
 import OneOnOne from '../src/OneOnOne.js';
@@ -221,8 +222,10 @@ export const serviceDefinitions = {
 
           if (success && partnerName) {
             try {
-              const fedInfo = await holosphere.getGlobal('federation', source);
-              if (fedInfo) {
+              // The record that counts (an admin's), never the raw table —
+              // see holosphere FEDERATION.md "Who may federate".
+              const fedInfo = await holosphere.getFederation(source);
+              if (fedInfo && fedInfo.federated?.length) {
                 if (!fedInfo.partnerNames) fedInfo.partnerNames = {};
                 fedInfo.partnerNames[target] = partnerName;
                 await holosphere.putGlobal('federation', fedInfo);
@@ -543,6 +546,16 @@ export const serviceDefinitions = {
       }),
     singleton: true,
     dependencies: ['telebot', 'database'],
+  },
+
+  // A join request from the kiosk or the dashboard (NIP-29 kind 9021) for a
+  // holon that is a Telegram group: a proven group member is linked at
+  // once, anyone else is announced in the group for its admins to decide.
+  joinRequests: {
+    factory: ({ telebot, database, settings }) =>
+      new JoinRequests(telebot, database, settings),
+    singleton: true,
+    dependencies: ['telebot', 'database', 'settings'],
   },
 
   rounds: {

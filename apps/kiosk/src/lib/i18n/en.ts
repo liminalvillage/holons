@@ -469,6 +469,15 @@ export const en = {
   "map.listPickLens": "Pick a lens below to list what is in view.",
   "map.listEmpty": "Nothing in view for this lens.",
   "map.listMore": "Showing the first {n} — zoom in to narrow it down.",
+  "dock.people": "People",
+  "dock.peopleShow": "Show the people who connect these hubs",
+  "dock.peopleHide": "Hide people",
+  "dock.personIn": "In {n} hubs",
+  "dock.personOpen": "{name}, in {n} hubs",
+  "dock.peopleMore": "{n} more between these hubs — see the list",
+  "dock.peopleLoading": "Looking up who is in these hubs…",
+  "dock.peopleEmpty": "Nobody is listed in these hubs yet.",
+  "dock.peopleFirst": "Showing the first {n}.",
   "map.field.status": "Status",
   // `id` is only ever asked for by the library, where the id IS the name.
   "map.field.id": "Name",
@@ -651,6 +660,8 @@ export const en = {
   "settings.eqZero": "Zero every weight",
   "settings.eqSaving": "Saving…",
   "settings.eqSaved": "Saved",
+  "settings.eqNotAdmin":
+    "Only an admin's signature changes the value equation; yours would be recorded but not counted.",
   "settings.eqLoading": "Loading the equation…",
   "settings.eqLess": "Lower the weight for {metric}",
   "settings.eqMore": "Raise the weight for {metric}",
@@ -697,6 +708,8 @@ export const en = {
   "members.linkMe": "Link my key",
   "members.asked":
     "Asked — an admin links your key; this page updates when they do.",
+  "members.askedTelegram":
+    "Asked — the admins were told in the Telegram group; this page updates when your key is linked.",
   "members.signIn": "Sign in with a key",
   "members.chat": "Telegram chat",
   "members.chatBorn":
@@ -756,6 +769,9 @@ export const en = {
   "audience.searchPlaceholder": "Name or holon id",
   "audience.noHits": "No holon by that name.",
   "audience.remove": "Stop sharing with {name}",
+  "audience.adminCanUnlock":
+    "Locked by another key. As an admin you can make it public, or take it over and share it yourself.",
+  "audience.takeOver": "Take over",
   "audience.notOwner":
     "Locked by another key — only its owner changes who reads it.",
   "audience.lensLocked":
@@ -797,6 +813,8 @@ export const en = {
   // Federation lens editor (the dock's intersection popup)
   "fed.loading": "Loading…",
   "fed.loadError": "Could not load federation — try again.",
+  "fed.adminOnly":
+    "Only an admin of this holon changes who it federates with and which lenses flow; your taps here would not count.",
   "fed.arrowHint":
     "Tap the arrow toward the holon items should travel to. Tap it again to close that way.",
   "fed.notLinked": "Not federated — tap an arrow to open the first flow.",
@@ -1470,13 +1488,18 @@ export const en = {
   "alloc.partners": "Partners by zone",
   "alloc.partnersAbout":
     "Tap a zone to place a partner; unplaced partners get nothing. Shares are of the whole fund.",
-  "alloc.noPartners": "No federation partners yet — link one in Settings.",
+  "alloc.noPartners": "No federation partners yet — find one below.",
   "alloc.people": "People by zone",
   "alloc.peopleAbout":
     "Anyone the holon shares with in relationship rather than for tasks. A member placed here holds both seats.",
   "alloc.addPerson": "Add a person…",
   "alloc.removePerson": "Remove {name}",
   "alloc.noPeople": "Nobody to place yet.",
+  "alloc.findParty": "Add a partner holon or a person — name or id",
+  "alloc.findNoHits": "Nothing found. A full id works too.",
+  "alloc.newPartner": "New partner — linked on save",
+  "alloc.kindPerson": "person",
+  "alloc.kindHolon": "holon",
   "alloc.unplaced": "Not placed",
   "alloc.zoneShare": "{pct}%",
   "alloc.zoneShareFund": "{pct}% of the fund",
@@ -1507,6 +1530,24 @@ export const en = {
   "flows.potMinted": "Issued",
   "flows.potInbound": "From upstream",
   "flows.potUnit": "Unit",
+  "flows.walletTitle": "Your balances",
+  "flows.walletAbout":
+    "Each unit on its own line — nothing is converted. Tap one to read it.",
+  "flows.walletCredit": "Mutual credit",
+  "flows.walletOwedToYou": "Owed to you {amount}",
+  "flows.walletYouOwe": "You owe {amount}",
+  "flows.walletOwedToYouLabel": "Owed to you",
+  "flows.walletYouOweLabel": "You owe",
+  "flows.walletSquare": "Square",
+  "flows.walletHeld": "In the Pot",
+  "flows.walletOpenBalances": "Open balances",
+  "flows.walletNoFund":
+    "No right over the fund in this unit — only what you share with others.",
+  "flows.walletSource.collective": "Collective",
+  "flows.walletSource.pot": "Pot",
+  "flows.walletSource.mint": "Issued here",
+  "flows.walletSource.inbound": "From upstream",
+  "flows.walletSource.credit": "Shared expenses",
   "flows.tipMinted": "Issued here",
   "flows.tipInboundFrom": "From {name}",
   "flows.accountAboutUnit": "Your share of the fund, in {unit}.",
@@ -1569,6 +1610,8 @@ export const en = {
   "alloc.rulesPartnerNoKey": "no key published",
   "alloc.rulesSave": "Set the rules",
   "alloc.rulesSaved": "Rules recorded.",
+  "alloc.splitNotAdmin":
+    "Only an admin's signature sets the split; yours would be recorded but not counted.",
   "alloc.rulesNotAdmin":
     "Only an admin's signature sets the rules; yours would be recorded but not counted.",
   "alloc.rulesNoSigner":

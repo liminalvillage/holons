@@ -97,9 +97,19 @@ export function groupRemoveUserTemplate(ctx: ProjectionCtx, holon: string, pubke
   return { kind: GROUP_REMOVE_USER_KIND, created_at: nowOf(ctx), tags: [['h', holon], ['p', pubkey], ...base(ctx, holon)], content: '' };
 }
 
-/** 9021/9022 — signed by the member. */
-export function groupJoinRequestTemplate(ctx: ProjectionCtx, holon: string, reason = ''): EventTemplate {
-  return { kind: GROUP_JOIN_REQUEST_KIND, created_at: nowOf(ctx), tags: [['h', holon], ...base(ctx, holon)], content: reason };
+/** The `i` tag value a join request claims a Telegram identity with (NIP-39 spelling). */
+export const TELEGRAM_CLAIM_PREFIX = 'telegram:';
+
+/**
+ * 9021/9022 — signed by the member. `telegramId` adds an `i` tag claiming
+ * that Telegram user: a claim only, proven by whoever holds the derivation
+ * secret (the key a Telegram login derives is the one that signed this).
+ */
+export function groupJoinRequestTemplate(ctx: ProjectionCtx, holon: string, reason = '', telegramId?: string | number): EventTemplate {
+  const tags: string[][] = [['h', holon], ...base(ctx, holon)];
+  const tg = telegramId === undefined || telegramId === null ? '' : String(telegramId);
+  if (/^\d{1,20}$/.test(tg)) tags.push(['i', `${TELEGRAM_CLAIM_PREFIX}${tg}`]);
+  return { kind: GROUP_JOIN_REQUEST_KIND, created_at: nowOf(ctx), tags, content: reason };
 }
 
 export function groupLeaveRequestTemplate(ctx: ProjectionCtx, holon: string): EventTemplate {

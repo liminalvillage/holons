@@ -29,6 +29,7 @@ import { resolveHolonAuthority } from '../holosphere/authority.js';
 import type { NostrSigner } from '../holosphere/signers.js';
 import {
   GROUP_JOIN_REQUEST_KIND,
+  TELEGRAM_CLAIM_PREFIX,
   buildGroupState,
   groupJoinRequestTemplate,
   groupLeaveRequestTemplate,
@@ -42,6 +43,7 @@ import { addHolonMember, foundHolon, holonMembers, myHolonRole, newHolonId, remo
 import { readMembersLog } from '../protocol/membership.js';
 import type { Role } from '../protocol/types.js';
 import { cleanName, isPlaceholderName } from '../identity/ids.js';
+import { approvedJoinKeys, settleJoinRequest } from './requests.js';
 
 const HEX64 = /^[0-9a-f]{64}$/i;
 /** The namespace stamped on every event when the caller names none. */
@@ -114,6 +116,10 @@ export interface JoinRequest {
   /** What they wrote — by convention their display name. */
   reason: string;
   eventId: string;
+  /** The holon asked (the `h` tag). */
+  holon: string;
+  /** The Telegram user the request CLAIMS to be (its `i` tag) — unproven, see `describeApplicant`. */
+  telegramId?: string;
 }
 
 /** The relay filter for a holon's join requests. */
@@ -138,23 +144,33 @@ export function parseJoinRequest(event: NostrEventLike | null | undefined, holon
   } catch {
     return null;
   }
+  const claim = (event.tags ?? []).find((t) => t[0] === 'i' && typeof t[1] === 'string' && t[1].startsWith(TELEGRAM_CLAIM_PREFIX))?.[1];
+  const telegramId = claim?.slice(TELEGRAM_CLAIM_PREFIX.length);
   return {
     pubkey: event.pubkey.toLowerCase(),
     at: event.created_at,
     reason: typeof event.content === 'string' ? event.content : '',
     eventId: event.id,
+    holon: h,
+    ...(telegramId && /^\d{1,20}$/.test(telegramId) ? { telegramId } : {}),
   };
 }
 
 export interface JoinOptions extends HolonPublishOptions {
   /** Carried in the request — by convention the person's display name. */
   reason?: string;
+  /**
+   * The person's Telegram id, when they signed in with Telegram. The bot of
+   * a Telegram-born holon proves it from the key and links a group member
+   * without asking an admin.
+   */
+  telegramId?: string | number;
 }
 
 /** Ask to join: a kind-9021 signed by the person. Never writes a profile (see the header). */
 export function requestToJoin(hs: HoloSphere, holon: string, signer: NostrSigner, opts: JoinOptions = {}): SignedEvent {
   const ctx = holonProjectionCtx(hs, holon, opts);
-  const event = signer.sign(groupJoinRequestTemplate(ctx, holon, opts.reason ?? ''));
+  const event = signer.sign(groupJoinRequestTemplate(ctx, holon, opts.reason ?? '', opts.telegramId));
   hs.publishNostrEvents(event);
   return event;
 }
@@ -217,6 +233,30 @@ export function listJoinRequests(hs: HoloSphere, holon: string, opts: { windowMs
   });
 }
 
+export interface WatchAllJoinRequestsOptions {
+  /** Only requests stamped with this namespace (`n` tag). */
+  appName?: string;
+  /** Unix seconds: nothing older is asked for. */
+  since?: number;
+}
+
+/**
+ * Every join request of the namespace, whatever holon it asks for — ONE
+ * filter, for a service that answers for many holons (the bot). A watch per
+ * holon would spend the relay's REQ budget; this never grows with the number
+ * of holons. Each verified request is handed over as it arrives, replays
+ * included: the listener dedupes by `eventId` and checks the seat itself.
+ * Returns a stop function.
+ */
+export function watchAllJoinRequests(hs: HoloSphere, opts: WatchAllJoinRequestsOptions, onRequest: (request: JoinRequest) => void): () => void {
+  const filter: Record<string, unknown> = { kinds: [GROUP_JOIN_REQUEST_KIND], '#n': [opts.appName ?? DEFAULT_APP] };
+  if (typeof opts.since === 'number' && opts.since > 0) filter.since = Math.floor(opts.since);
+  return hs.subscribeNostr(filter as never, (event: NostrEventLike) => {
+    const r = parseJoinRequest(event);
+    if (r) onRequest(r);
+  });
+}
+
 // ── Seating ────────────────────────────────────────────────────────────────
 
 export interface SeatOptions extends HolonPublishOptions {
@@ -264,6 +304,13 @@ export async function removeSeat(hs: HoloSphere, holon: string, pubkey: string, 
   hs.publishNostrEvents(signer.sign(groupRemoveUserTemplate(ctx, holon, pub)));
   await publishGroupState(hs, holon, signer, opts);
   afterRoster(hs, holon);
+  // An approval on record would have the holon's own service seat the key
+  // again at its next roster sync: unseating withdraws it.
+  try {
+    if ((await approvedJoinKeys(hs, holon)).includes(pub)) await settleJoinRequest(hs, holon, pub, 'declined', { now: opts.now });
+  } catch {
+    /* no record readable: nothing to withdraw */
+  }
   return pub;
 }
 
@@ -369,6 +416,20 @@ export async function ensureProfile(hs: HoloSphere, holon: string, profile: Prof
   return true;
 }
 
+// ── Answering requests ─────────────────────────────────────────────────────
+export {
+  JOIN_REQUESTS_LENS,
+  approvedJoinKeys,
+  describeApplicant,
+  joinRequestRecords,
+  recordJoinRequest,
+  settleJoinRequest,
+  type Applicant,
+  type DescribeApplicantOptions,
+  type JoinRequestRecord,
+  type JoinRequestStatus,
+} from './requests.js';
+
 // ── Trust ──────────────────────────────────────────────────────────────────
 export { membersTrustedAuthors } from './trust.js';
 
@@ -383,3 +444,16 @@ export {
   type HolonListStore,
   type RememberedHolon,
 } from './list.js';
+
+// ── People across holons ───────────────────────────────────────────────────
+export {
+  loadPeopleAcross,
+  peopleAcross,
+  type HolonBridge,
+  type HolonRoster,
+  type LoadPeopleOptions,
+  type PeopleAcross,
+  type PeopleAcrossOptions,
+  type PeopleHost,
+  type PersonAcross,
+} from './people.js';

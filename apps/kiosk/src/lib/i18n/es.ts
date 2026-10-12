@@ -474,6 +474,15 @@ export const es: Record<MessageKey, Msg> = {
     "Elige una lente abajo para listar lo que está a la vista.",
   "map.listEmpty": "Nada a la vista para esta lente.",
   "map.listMore": "Estos son los primeros {n} — acerca el mapa para acotar.",
+  "dock.people": "Personas",
+  "dock.peopleShow": "Mostrar las personas que conectan estos hubs",
+  "dock.peopleHide": "Ocultar personas",
+  "dock.personIn": "En {n} hubs",
+  "dock.personOpen": "{name}, en {n} hubs",
+  "dock.peopleMore": "{n} más entre estos hubs — ver la lista",
+  "dock.peopleLoading": "Buscando quién está en estos hubs…",
+  "dock.peopleEmpty": "Todavía no hay nadie en estos hubs.",
+  "dock.peopleFirst": "Estas son las primeras {n}.",
   "map.field.status": "Estado",
   "map.field.id": "Nombre",
   "map.field.title": "Título",
@@ -656,6 +665,8 @@ export const es: Record<MessageKey, Msg> = {
   "settings.eqZero": "Poner todos los pesos a 0",
   "settings.eqSaving": "Guardando…",
   "settings.eqSaved": "Guardado",
+  "settings.eqNotAdmin":
+    "Solo la firma de un admin cambia la ecuación de valor; la tuya quedaría registrada pero no contada.",
   "settings.eqLoading": "Cargando la ecuación…",
   "settings.eqLess": "Bajar el peso de {metric}",
   "settings.eqMore": "Subir el peso de {metric}",
@@ -701,6 +712,8 @@ export const es: Record<MessageKey, Msg> = {
   "members.linkMe": "Vincular mi clave",
   "members.asked":
     "Pedido enviado — un admin vincula tu clave; esta página se actualiza cuando lo haga.",
+  "members.askedTelegram":
+    "Pedido enviado — se avisó a los admins en el grupo de Telegram; esta página se actualiza cuando tu clave esté vinculada.",
   "members.signIn": "Entrar con una clave",
   "members.chat": "Chat de Telegram",
   "members.chatBorn":
@@ -763,6 +776,9 @@ export const es: Record<MessageKey, Msg> = {
   "audience.searchPlaceholder": "Nombre o id del holón",
   "audience.noHits": "Ningún holón con ese nombre.",
   "audience.remove": "Dejar de compartir con {name}",
+  "audience.adminCanUnlock":
+    "Bloqueado por otra clave. Como admin puedes hacerlo público, o tomarlo y compartirlo tú.",
+  "audience.takeOver": "Tomar el control",
   "audience.notOwner":
     "Bloqueada por otra clave — solo su dueño cambia quién lee.",
   "audience.lensLocked":
@@ -808,6 +824,8 @@ export const es: Record<MessageKey, Msg> = {
   // Federation lens editor (the dock's intersection popup)
   "fed.loading": "Cargando…",
   "fed.loadError": "No se pudo cargar la federación — inténtalo de nuevo.",
+  "fed.adminOnly":
+    "Solo un admin de este holón cambia con quién federa y qué lentes fluyen; tus toques aquí no contarían.",
   "fed.arrowHint":
     "Toca la flecha hacia el holón al que deben viajar los elementos. Tócala otra vez para cerrar ese sentido.",
   "fed.notLinked": "Sin federar — toca una flecha para abrir el primer flujo.",
@@ -1487,13 +1505,18 @@ export const es: Record<MessageKey, Msg> = {
   "alloc.partners": "Socios por zona",
   "alloc.partnersAbout":
     "Toca una zona para colocar un socio; los no colocados no reciben nada. Las partes son del fondo entero.",
-  "alloc.noPartners": "Aún no hay socios federados — vincula uno en Ajustes.",
+  "alloc.noPartners": "Aún no hay socios federados — encuentra uno abajo.",
   "alloc.people": "Personas por zona",
   "alloc.peopleAbout":
     "Quien comparte con el holón por relación, no por tareas. Un miembro colocado aquí ocupa ambos puestos.",
   "alloc.addPerson": "Añadir una persona…",
   "alloc.removePerson": "Quitar a {name}",
   "alloc.noPeople": "Nadie a quien colocar todavía.",
+  "alloc.findParty": "Añade un holon socio o una persona — nombre o id",
+  "alloc.findNoHits": "Nada encontrado. Un id completo también sirve.",
+  "alloc.newPartner": "Nuevo socio — se vincula al guardar",
+  "alloc.kindPerson": "persona",
+  "alloc.kindHolon": "holon",
   "alloc.unplaced": "Sin colocar",
   "alloc.zoneShare": "{pct}%",
   "alloc.zoneShareFund": "{pct}% del fondo",
@@ -1525,6 +1548,24 @@ export const es: Record<MessageKey, Msg> = {
   "flows.potMinted": "Emitido",
   "flows.potInbound": "Desde arriba",
   "flows.potUnit": "Unidad",
+  "flows.walletTitle": "Tus saldos",
+  "flows.walletAbout":
+    "Cada unidad en su propia línea — nada se convierte. Toca una para leerla.",
+  "flows.walletCredit": "Crédito mutuo",
+  "flows.walletOwedToYou": "Te deben {amount}",
+  "flows.walletYouOwe": "Debes {amount}",
+  "flows.walletOwedToYouLabel": "Te deben",
+  "flows.walletYouOweLabel": "Debes",
+  "flows.walletSquare": "En paz",
+  "flows.walletHeld": "En el Pot",
+  "flows.walletOpenBalances": "Abrir los saldos",
+  "flows.walletNoFund":
+    "Sin derecho sobre el fondo en esta unidad — solo lo que compartes con otros.",
+  "flows.walletSource.collective": "Colectivo",
+  "flows.walletSource.pot": "Pot",
+  "flows.walletSource.mint": "Emitido aquí",
+  "flows.walletSource.inbound": "Desde arriba",
+  "flows.walletSource.credit": "Gastos compartidos",
   "flows.tipMinted": "Emitido aquí",
   "flows.tipInboundFrom": "De {name}",
   "flows.accountAboutUnit": "Tu parte del fondo, en {unit}.",
@@ -1587,6 +1628,8 @@ export const es: Record<MessageKey, Msg> = {
   "alloc.rulesPartnerNoKey": "sin clave publicada",
   "alloc.rulesSave": "Fijar las reglas",
   "alloc.rulesSaved": "Reglas registradas.",
+  "alloc.splitNotAdmin":
+    "Solo la firma de un admin fija el reparto; la tuya quedaría registrada pero no contada.",
   "alloc.rulesNotAdmin":
     "Solo la firma de un admin fija las reglas; la tuya quedaría registrada pero no contada.",
   "alloc.rulesNoSigner":

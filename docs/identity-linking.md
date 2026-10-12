@@ -43,6 +43,31 @@ it granted itself (`syncMembersLog` → `seatAuthors`), so a seat another
 admin granted survives its next refresh. Without a seat a key's writes reach
 the relays but no enforced reader shows them (`writeAcceptance` = `held`).
 
+The Telegram group hears the ask too (`packages/telegram-ui/src/JoinRequests.js`;
+one relay filter for every chat, `watchAllJoinRequests`):
+
+- **A Telegram login that is in the group is linked at once.** The request
+  carries the person's Telegram id as an `i` tag (`telegram:<id>`). That is
+  only a claim, and `describeApplicant` proves it: the key a Telegram login
+  derives from that id is the key that signed the request. Telegram says
+  whether the user is in the chat; if so the bot writes their `users` record
+  and seats the key. No admin step.
+- **Anyone else is announced in the group**, once: a person on their own
+  Nostr key (named by the request, else their kind 0, else the short npub),
+  or a proven Telegram user who is not in the group (named with their
+  `@username`). The post has Link / Decline buttons that only the chat's
+  admins can press; Link runs `approveJoin` with the bot key.
+
+What was announced and decided is the holon's `joinrequests` lens (one record
+per asking key: `pending`, `approved`, `declined`). It stops a restart or a
+replayed event from posting twice, and `approvedJoinKeys` is what the bot's
+roster sync adds to its desired set, so a key the bot seated on an admin's
+word is not pruned. A record counts only when an admin of the holon signed it
+(the `members` capability) — a member writing `approved` seats nobody — and
+`removeSeat` withdraws the approval, so an unseated key stays unseated.
+`JOIN_NOTICES=off` silences the service on one of two bots sharing a
+namespace.
+
 On screen the whole story is told with one word, **link**: a Telegram chat
 is linked to the hub (a hub born in a chat stays linked to it by default), a
 person's key is linked to the hub directly or through that chat, admins link

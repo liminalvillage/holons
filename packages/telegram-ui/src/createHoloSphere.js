@@ -11,6 +11,7 @@ import {
   createHoloSphere as coreCreateHoloSphere,
   resolveEnforce,
   resolveRelays,
+  signerFromSecretKey,
 } from '@holons/core/holosphere';
 import { getOrCreateKey } from '../utils/key-storage.js';
 import { generateSecretKey, getPublicKey } from 'nostr-tools';
@@ -29,6 +30,7 @@ import {
 } from '@holons/core/auth';
 import { createLinkedKeysResolver, linkedKeysOf } from '@holons/core/users';
 import { syncMembersLog } from '@holons/core/protocol';
+import { approvedJoinKeys } from '@holons/core/holons';
 import { bridgeTelegramRoster, linkedAdmins } from '@holons/core/linking';
 import { sync as syncPrivacy } from '@holons/core/privacy';
 import KeyManager from './KeyManager.js';
@@ -128,6 +130,7 @@ export default function createHoloSphere(appName, options = {}) {
   // returned before its store has opened and its relay sync is up. Writes
   // queue behind `ready()` inside holosphere; HolonsBotCore awaits it
   // before launching the bot.
+  projectionHost.privateKey = privateKey;
   const instance = coreCreateHoloSphere({
     appName: resolvedAppName,
     privateKey,
@@ -333,6 +336,10 @@ export function createTrustCache(
       const derived = new Set();
       for (const u of users) {
         if (!u || u.id === undefined || u.id === null) continue;
+        // A record whose id IS a key (a person let in on their own Nostr
+        // key) has no Telegram id to derive from; their key is seated by
+        // the approval below.
+        if (/^[0-9a-f]{64}$/i.test(String(u.id))) continue;
         memberIds.push(u.id);
         try {
           const pk = deriveTelegramNostrKey(u.id, secret).publicKey;
@@ -352,6 +359,7 @@ export function createTrustCache(
       // read-side attestation guard — never remapped).
       for (const u of users) {
         if (!u || u.id === undefined || u.id === null) continue;
+        if (/^[0-9a-f]{64}$/i.test(String(u.id))) continue;
         let personal = null;
         try {
           personal = await hs.get(String(u.id), 'users', String(u.id));
@@ -382,6 +390,14 @@ export function createTrustCache(
           list.add(k.toLowerCase());
     } catch {
       /* no settings yet */
+    }
+    // Keys an admin let in from the group (JoinRequests.js): nobody in the
+    // `users` lens derives to them, so without this the prune below would
+    // unseat them at the next sync.
+    try {
+      for (const k of await approvedJoinKeys(hs, String(holon))) list.add(k);
+    } catch {
+      /* no approvals readable */
     }
     publishGroupState(holon, settings, memberIds);
     // A dashboard hub linked to this chat (@holons/core/linking) seats its
@@ -523,7 +539,18 @@ export function parseDuration(raw) {
 }
 
 /** The most recent instance, so timezoneFor can read settings without a cycle. */
-const projectionHost = { instance: null, notifier: null };
+const projectionHost = { instance: null, notifier: null, privateKey: null };
+
+/**
+ * The holon key as a signer, for what the bot publishes on a chat's behalf
+ * outside the projection layer (seating a key: the NIP-29 put-user and the
+ * group state). Null before the instance exists.
+ */
+export function holonSigner() {
+  return projectionHost.privateKey
+    ? signerFromSecretKey(projectionHost.privateKey)
+    : null;
+}
 
 /** Test seam: point the projection host at a fake instance. */
 export function setProjectionHostForTests(instance) {

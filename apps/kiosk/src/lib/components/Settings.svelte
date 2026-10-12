@@ -25,6 +25,7 @@
     settingsOpen,
     showNotice,
     writeStanding,
+    standing,
   } from "$lib/stores";
   import { showHomePage } from "$lib/home";
   import {
@@ -252,9 +253,11 @@
         }
         await loadHubKeys(hs, id, sessionKey);
         try {
-          const { status } = await writeAcceptance(hs, id);
-          if (id === $holonId && sessionKey === $sessionKeyPub)
-            writeStanding.set(status);
+          const st = await writeAcceptance(hs, id);
+          if (id === $holonId && sessionKey === $sessionKeyPub) {
+            writeStanding.set(st.status);
+            standing.set(st);
+          }
         } catch {
           /* the layout's reading stands */
         }
@@ -930,7 +933,14 @@
               {/if}
             {/if}
             {#if askedHere}
-              <p class="hex-note">{$t("members.asked")}</p>
+              <p class="hex-note">
+                {$t(
+                  ($holonId ?? "").startsWith("-") &&
+                    isTelegramChatId($holonId ?? "")
+                    ? "members.askedTelegram"
+                    : "members.asked",
+                )}
+              </p>
             {:else}
               <button
                 type="button"

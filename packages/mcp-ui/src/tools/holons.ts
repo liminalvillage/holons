@@ -94,11 +94,11 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
     },
   );
 
-  const seat = async (args: { holon: string; key: string; role?: 'member' | 'admin' }) => {
+  const seat = async (args: { holon: string; key: string; role?: 'member' | 'admin'; name?: string }) => {
     const hs = await deps.getHoloSphere();
     const signer = signerOf();
     const role = args.role ?? 'member';
-    const pub = signer ? await approveJoin(hs, args.holon, args.key, signer, { ...opts(hs), role }) : await addHolonMember(hs, args.holon, args.key, role);
+    const pub = signer ? await approveJoin(hs, args.holon, args.key, signer, { ...opts(hs), role, name: args.name }) : await addHolonMember(hs, args.holon, args.key, role);
     return ok({ success: true, holon: args.holon, pubkey: pub, role });
   };
   server.registerTool(
@@ -114,10 +114,10 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
   );
   server.registerTool(
     'holon_join_approve',
-    { description: 'Approve a join request: the same as holon_member_add for the requesting pubkey.', inputSchema: { holon: z.string(), pubkey: z.string(), role: roleEnum.optional() } },
+    { description: 'Approve a join request: the same as holon_member_add for the requesting pubkey. `name` (the one on the request) seeds their profile when they have none.', inputSchema: { holon: z.string(), pubkey: z.string(), role: roleEnum.optional(), name: z.string().optional() } },
     async (args) => {
       try {
-        return await seat({ holon: args.holon as string, key: args.pubkey as string, role: args.role as never });
+        return await seat({ holon: args.holon as string, key: args.pubkey as string, role: args.role as never, name: args.name as string | undefined });
       } catch (err) {
         return fail((err as Error).message);
       }
@@ -140,13 +140,13 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
 
   server.registerTool(
     'holon_join_request',
-    { description: 'Ask to join a holon as this MCP key: a NIP-29 kind-9021 request carrying a display name. An admin seats the key with holon_join_approve.', inputSchema: { holon: z.string(), name: z.string().optional() } },
+    { description: 'Ask to join a holon as this MCP key: a NIP-29 kind-9021 request carrying a display name. An admin seats the key with holon_join_approve; the bot of a Telegram group announces it there. `telegramId` claims a Telegram identity, which counts only when this key is the one that id derives.', inputSchema: { holon: z.string(), name: z.string().optional(), telegramId: z.string().regex(/^\d{1,20}$/).optional() } },
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
         const signer = signerOf();
         if (!signer) return fail('No signing secret configured (HOLOSPHERE_NSEC).');
-        const ev = requestToJoin(hs, args.holon, signer, { ...opts(hs), reason: args.name });
+        const ev = requestToJoin(hs, args.holon, signer, { ...opts(hs), reason: args.name, telegramId: args.telegramId });
         return ok({ success: true, holon: args.holon, pubkey: ev.pubkey, eventId: ev.id });
       } catch (err) {
         return fail((err as Error).message);

@@ -265,8 +265,10 @@
     if (!holosphere || !s || askBusy) return;
     askBusy = true;
     try {
-      const u = get(telegramUser) as { first_name?: string; username?: string } | null;
-      requestToJoin(holosphere, holonId, s, { ...publishOpts(), reason: u?.first_name || u?.username || '' });
+      const u = get(telegramUser) as { id?: string | number; first_name?: string; username?: string } | null;
+      // A Telegram login names its Telegram id: the bot of a Telegram group
+      // proves it from the key and links a member of the group at once.
+      requestToJoin(holosphere, holonId, s, { ...publishOpts(), reason: u?.first_name || u?.username || '', telegramId: u?.id });
       asked = new Set(asked).add(`${holonId}|${holosphere.currentPubkey}`);
     } catch (err) {
       console.warn('[settings] could not ask to join:', err);
@@ -918,7 +920,11 @@
                   {/if}
                 </p>
                 {#if askedHere}
-                  <p class="hub-key__note">Asked — an admin links your key.</p>
+                  <p class="hub-key__note">
+                    {isTelegramChatId(holonId) && String(holonId).startsWith('-')
+                      ? 'Asked — the admins were told in the Telegram group.'
+                      : 'Asked — an admin links your key.'}
+                  </p>
                 {:else}
                   <button type="button" class="btn btn--primary btn--sm" disabled={askBusy || !signer()} on:click={askSeat}>
                     Link my key

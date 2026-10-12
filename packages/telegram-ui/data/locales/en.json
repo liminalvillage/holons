@@ -391,6 +391,17 @@
         "stockpositions": "Spare across the federation",
         "stocksurplus": "{{qty}} spare",
         "stockhere": "here",
-        "stockfailed": "Couldn't record that. Try again."
+        "stockfailed": "Couldn't record that. Try again.",
+        "joinAsks": "🔑 <b>{{name}}</b>{{handle}} asks to link their key to this holon.",
+        "joinFromTelegram": "They signed in with Telegram, but are not in this group.",
+        "joinFromKey": "They signed in with their own Nostr key: {{key}}",
+        "joinAdminsDecide": "An admin of this group decides.",
+        "joinApprove": "✅ Link",
+        "joinDecline": "✖️ Decline",
+        "joinAdminsOnly": "Only admins of this group can decide.",
+        "joinClosed": "This request is no longer open.",
+        "joinFailed": "Couldn't link that key. Try again.",
+        "joinLinked": "✅ <b>{{name}}</b> is linked to this holon — by {{by}}.",
+        "joinDeclined": "✖️ <b>{{name}}</b> was not linked — declined by {{by}}."
     }
 }

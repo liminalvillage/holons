@@ -330,6 +330,17 @@
         "stockpositions": "Eccedenze nella federazione",
         "stocksurplus": "{{qty}} in eccesso",
         "stockhere": "qui",
-        "stockfailed": "Impossibile registrare. Riprova."
+        "stockfailed": "Impossibile registrare. Riprova.",
+        "joinAsks": "🔑 <b>{{name}}</b>{{handle}} chiede di collegare la sua chiave a questo holon.",
+        "joinFromTelegram": "Ha effettuato l'accesso con Telegram, ma non è in questo gruppo.",
+        "joinFromKey": "Ha effettuato l'accesso con la propria chiave Nostr: {{key}}",
+        "joinAdminsDecide": "Decide un admin di questo gruppo.",
+        "joinApprove": "✅ Collega",
+        "joinDecline": "✖️ Rifiuta",
+        "joinAdminsOnly": "Solo gli admin di questo gruppo possono decidere.",
+        "joinClosed": "Questa richiesta non è più aperta.",
+        "joinFailed": "Non è stato possibile collegare la chiave. Riprova.",
+        "joinLinked": "✅ <b>{{name}}</b> è collegato a questo holon — da {{by}}.",
+        "joinDeclined": "✖️ <b>{{name}}</b> non è stato collegato — rifiutato da {{by}}."
     }
 }
