@@ -11,8 +11,6 @@
   import { holonColor, holonColors } from "$lib/palette";
   import { lensColor, type LensId } from "$lib/maplens";
   import type { HubRow, LensRow } from "$lib/maplist";
-  import type { PersonAcross } from "@holons/core/holons";
-  import { nameOf } from "$lib/names";
   import { t, type MessageKey } from "$lib/i18n";
   import Icon from "./Icon.svelte";
 
@@ -21,17 +19,11 @@
   export let rows: readonly LensRow[] = [];
   /** How many records the lens holds in view — more than `rows` when capped. */
   export let total = 0;
-  /** Everyone in the docked hubs, the most connected first; null when the
-   *  dock's people layer is off. */
-  export let people: readonly PersonAcross[] | null = null;
-  export let peopleLoading = false;
   export let onopen: (id: string) => void;
   export let onshowhub: (id: string) => void;
   export let onshowrow: (row: LensRow) => void;
 
   $: lensName = lens ? $t(`lens.${lens}` as MessageKey) : "";
-  const PEOPLE_CAP = 200;
-  $: hubName = new Map(hubs.map((h) => [h.id, h.name]));
 </script>
 
 <section class="maplist" aria-label={$t("dock.list")}>
@@ -109,52 +101,6 @@
       {/if}
     {/if}
   </div>
-
-  {#if people}
-    <!-- Who is in these hubs, the people in several of them first: each
-         name with the hubs it belongs to, and a hub opens like its orb. -->
-    <div class="group wide">
-      <h3>
-        <Icon name="users" />{$t("dock.people")}<span class="n"
-          >{people.length}</span
-        >
-      </h3>
-      {#if people.length === 0}
-        <p class="hint">
-          {peopleLoading ? $t("dock.peopleLoading") : $t("dock.peopleEmpty")}
-        </p>
-      {:else}
-        <ul>
-          {#each people.slice(0, PEOPLE_CAP) as p (p.id)}
-            <li class="person">
-              <span class="label">{$nameOf(p.id)}</span>
-              <span class="hubs">
-                {#each p.holons as h (h)}
-                  <button
-                    type="button"
-                    class="hubchip"
-                    aria-label={$t("dock.open", {
-                      name: hubName.get(h) ?? $nameOf(h),
-                    })}
-                    on:click={() => onopen(h)}
-                  >
-                    <span
-                      class="dot"
-                      style:--c={holonColor(h, $holonColors)}
-                      aria-hidden="true"
-                    ></span>{hubName.get(h) ?? $nameOf(h)}
-                  </button>
-                {/each}
-              </span>
-            </li>
-          {/each}
-        </ul>
-        {#if people.length > PEOPLE_CAP}
-          <p class="hint">{$t("dock.peopleFirst", { n: PEOPLE_CAP })}</p>
-        {/if}
-      {/if}
-    </div>
-  {/if}
 </section>
 
 <style>
@@ -208,52 +154,6 @@
     .group + .group {
       margin-top: 0;
     }
-    /* The people run the full width beneath the two columns. */
-    .group.wide {
-      grid-column: 1 / -1;
-      justify-self: center;
-      max-width: 60rem;
-      margin-top: 1.6rem;
-    }
-  }
-  /* A person and their hubs: the name, then a chip per hub, wrapping under
-     the name when there are many. */
-  .person {
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.3rem 0.6rem;
-    padding: 0.35rem 0.2rem;
-    font-size: 0.95rem;
-    color: var(--ink);
-  }
-  .person .label {
-    flex: 1 1 9rem;
-  }
-  .hubs {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 0.3rem;
-  }
-  .hubchip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    min-height: 44px;
-    max-width: 14rem;
-    padding: 0 0.7rem;
-    border-radius: 999px;
-    border: 1.5px solid var(--line);
-    font-family: inherit;
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: var(--ink);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .hubchip:active {
-    opacity: 0.7;
   }
   h3 {
     display: flex;

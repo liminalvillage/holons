@@ -77,15 +77,9 @@
   import AddHubSheet from "./AddHubSheet.svelte";
   import FederationLens from "./FederationLens.svelte";
   import DockMap from "./DockMap.svelte";
-  import DockPeople from "./DockPeople.svelte";
+  import PeopleView from "./PeopleView.svelte";
   import MapSearch from "./MapSearch.svelte";
-  import {
-    dockPeople,
-    dockPeopleLoading,
-    dockPeopleOn,
-    loadDockPeople,
-    setDockPeople,
-  } from "$lib/dockpeople";
+  import { loadDockPeople } from "$lib/dockpeople";
   import type { PlaceHit } from "$lib/placesearch";
   import { showHomePage } from "$lib/home";
   import { holonId } from "$lib/stores";
@@ -109,7 +103,10 @@
   let locating = false;
   // The earth is up for the list too: the list is the earth's pane turned
   // over, and what it lists is what the map beneath is looking at.
-  $: mapOn = $dockView !== "deck";
+  $: mapOn = $dockView === "map" || $dockView === "list";
+  // The people have a view of their own: no earth, and the sky's orbs stand
+  // aside for it (PeopleView draws the hubs its own way).
+  $: peopleOn = $dockView === "people";
   $: listOn = $dockView === "list";
 
   /**
@@ -539,18 +536,11 @@
 
   // ── People ──────────────────────────────────────────────────────────────--
   //
-  // Switched on, the sky also shows who is in more than one of these hubs,
-  // standing between them (DockPeople), and the list names everyone. The
-  // rosters are only read while the layer is on, and again when the cast
-  // changes.
-  let peopleLayer: DockPeople | undefined;
-  $: if ($dockPeopleOn) void loadDockPeople(ids);
-  $: hubNames = new Map($dockEntries.map((e) => [e.id, e.name]));
-  /** A person's hub was picked: fly to it over the earth, else open it. */
-  function openFromPerson(id: string) {
-    if (mapOn && !listOn && dockMap?.hexOf(id)) void dockMap.showBoard(id);
-    else requestOpen(id);
-  }
+  // The People view (PeopleView): the dock's hubs gathered by the people
+  // they share, with everyone in them. The rosters are only read while it
+  // is up, and again when the cast changes.
+  let peopleView: PeopleView | undefined;
+  $: if (peopleOn) void loadDockPeople(ids);
 
   // ── The search box as a filter ──────────────────────────────────────────--
   //
@@ -807,7 +797,7 @@
     editing = false;
     cancelAdd();
     // Not `||`: the card must be stood down even when the others were up.
-    const hadCard = peopleLayer?.close() ?? false;
+    const hadCard = peopleView?.close() ?? false;
     return had || hadCard;
   }
   function onBackdrop(e: Event) {
@@ -836,8 +826,6 @@
         onmove={() => (mapTick += 1)}
         highlight={dragging ? dropTarget : (homeDrop?.hex ?? null)}
         carrying={dragging ? dragId : (homeDrop?.holon ?? null)}
-        people={$dockPeopleOn ? $dockPeople.people : null}
-        peopleLoading={$dockPeopleLoading}
       />
     {/if}
 
@@ -927,6 +915,7 @@
     <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
     <div
       class="field"
+      class:away={peopleOn}
       role="list"
       aria-label={$t("dock.boards")}
       bind:this={fieldEl}
@@ -1088,23 +1077,6 @@
           {/if}
         {/each}
 
-        <!-- The people between the hubs, over the orbs and their names. The
-             list covers the sky, so there they are rows instead. -->
-        {#if $dockPeopleOn && !listOn}
-          <DockPeople
-            bind:this={peopleLayer}
-            {positions}
-            {fieldW}
-            {fieldH}
-            orb={ORB}
-            orbRem={ORB_REM}
-            visible={filtering ? shown : null}
-            {hubNames}
-            onopen={openFromPerson}
-            onmore={() => setDockView("list")}
-          />
-        {/if}
-
         <!-- The hover chip: what flows across the liquid the pointer rests
            on, hung just above its neck. Last in the layer, over the names. -->
         {#if hoverLink}
@@ -1120,6 +1092,15 @@
         {/if}
       {/if}
     </div>
+    {#if peopleOn}
+      <PeopleView
+        bind:this={peopleView}
+        hubs={filtering
+          ? $dockEntries.filter((e) => shown.has(e.id))
+          : $dockEntries}
+        onopen={requestOpen}
+      />
+    {/if}
     {#if $dockEntries.length === 0 && !adding}
       <!-- A bare sky: nothing docked yet. Say what this is and where to
            start; the "+" in the tray is the other way in. -->
@@ -1179,6 +1160,16 @@
       >
         <span aria-hidden="true"><Icon name="list" /></span>{$t("dock.list")}
       </button>
+      <button
+        type="button"
+        class="viewopt"
+        class:on={$dockView === "people"}
+        role="radio"
+        aria-checked={$dockView === "people"}
+        on:click={() => setDockView("people")}
+      >
+        <span aria-hidden="true"><Icon name="users" /></span>{$t("dock.people")}
+      </button>
     </div>
     <div class="topbar__right">
       {#if mapOn}
@@ -1194,20 +1185,6 @@
           <Icon name="locate" />
         </button>
       {/if}
-      <!-- People among the hubs: who is in more than one of them. -->
-      <button
-        type="button"
-        class="locate people"
-        class:on={$dockPeopleOn}
-        aria-pressed={$dockPeopleOn}
-        on:click={() => setDockPeople(!$dockPeopleOn)}
-        aria-label={$dockPeopleOn
-          ? $t("dock.peopleHide")
-          : $t("dock.peopleShow")}
-        title={$dockPeopleOn ? $t("dock.peopleHide") : $t("dock.peopleShow")}
-      >
-        <Icon name="users" />
-      </button>
       <!-- The reading page: what a hub is and how to start one. -->
       <button
         type="button"
@@ -1225,7 +1202,7 @@
     <button class="plus" class:here={!!addCell} on:click={startAdd}>
       <span class="plus__sign">+</span>{addLabel}
     </button>
-    {#if !mapOn}
+    {#if !mapOn && !peopleOn}
       <p class="hint">{$t("dock.hint")}</p>
     {/if}
   </div>
@@ -1414,6 +1391,11 @@
   }
   .field {
     z-index: 2;
+  }
+  /* The People view is up: the orbs stand aside (still simulated, so they
+     are where they were on the way back) and nothing of them takes a tap. */
+  .field.away {
+    visibility: hidden;
   }
   .beacons {
     width: 100%;
@@ -1938,15 +1920,9 @@
   .locate:active {
     transform: scale(0.92);
   }
-  .locate.about,
-  .locate.people {
+  .locate.about {
     margin-left: 0.5rem;
     font-size: 1.15rem;
-  }
-  .locate.people.on {
-    border-color: var(--teal);
-    background: color-mix(in srgb, var(--teal) 22%, var(--card));
-    color: var(--ink);
   }
   .locate:disabled {
     opacity: 0.6;
