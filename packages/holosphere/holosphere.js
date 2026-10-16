@@ -31,7 +31,6 @@ import { generateSecretKey, normalizeSecretKey } from './nostr-events.js';
 import { nostrUtils } from './nostr-utils-shim.js';
 import { subscriptions, buildLensPath } from './subscriptions-shim.js';
 import { registry } from './registry-shim.js';
-import * as handshake from './handshake-shim.js';
 
 const HOLOSPHERE_VERSION = '2.0.0';
 const version = HOLOSPHERE_VERSION;
@@ -1259,4 +1258,4 @@ class HoloSphere {
 }
 
 export default HoloSphere;
-export { HoloSphere, handshake, nostrUtils, subscriptions, buildLensPath, registry, version };
+export { HoloSphere, nostrUtils, subscriptions, buildLensPath, registry, version };

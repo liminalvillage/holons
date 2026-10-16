@@ -1,5 +1,6 @@
 <script lang="ts">
   import { readHolonSettings } from '@holons/core/settings';
+  import { setFederationPartner } from '@holons/core/federation';
   import { getContext, onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
@@ -84,14 +85,9 @@
     saving = true; error='';
     try {
       await ensureSdgHolon();
-      await holosphere.federate(
-        sdgHolonId,
-        newHolonId.trim(),
-        null,
-        null,
-        true,
-        { inbound: [], outbound: [] }
-      );
+      // Core writes the SDG holon's half and asks the partner's admins for theirs.
+      const outcome = await setFederationPartner(holosphere, sdgHolonId, newHolonId.trim(), { inbound: [], outbound: [] });
+      if (outcome.self === 'held') throw new Error('Only an admin of this SDG holon can federate it');
       showAddDialog = false;
       newHolonName = '';
       newHolonId = '';
@@ -113,7 +109,8 @@
     // optionally seed a settings name
     try {
       await holosphere.put(id, 'settings', { id, name: newHolonName.trim() });
-      await holosphere.federate(sdgHolonId, id, null, null, true, { inbound: [], outbound: [] });
+      const outcome = await setFederationPartner(holosphere, sdgHolonId, id, { inbound: [], outbound: [], partnerName: newHolonName.trim() });
+      if (outcome.self === 'held') throw new Error('Only an admin of this SDG holon can federate it');
       showAddDialog = false; newHolonId = ''; newHolonName = '';
       await loadFederated();
     } catch (e) {

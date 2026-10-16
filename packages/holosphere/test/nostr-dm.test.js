@@ -1,11 +1,10 @@
 /**
- * NIP-17 DMs over the active relay set, and the federation handshake riding
- * on them.
+ * NIP-17 DMs over the active relay set.
  */
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
-import HoloSphere, { handshake } from '../holosphere.js';
+import HoloSphere from '../holosphere.js';
 import { startRelay } from '../spike/mini-relay.js';
 import { generateSecretKey, getPublicKey } from '../nostr-events.js';
 import { sendDirectMessage, subscribeDirectMessages, unwrapDirectMessage, GIFT_WRAP_KIND } from '../nostr-dm.js';
@@ -51,24 +50,5 @@ describe('NIP-17 direct messages', () => {
     expect(onRelay[0].pubkey).not.toBe(getPublicKey(aliceSk)); // throwaway wrap key
     expect(onRelay[0].content).not.toContain('hello');
     expect(await unwrapDirectMessage(onRelay[0], generateSecretKey())).toBeNull(); // strangers cannot read it
-  }, 20000);
-
-  test('federation handshake rides on NIP-17 and is handled once', async () => {
-    const aSk = generateSecretKey();
-    const bSk = generateSecretKey();
-    const a = new HoloSphere({ appName: APP, privateKey: aSk, nostr: { relays: [relay.url], syncTimeoutMs: 1000 }, store: { adapter: 'memory' } });
-    const b = new HoloSphere({ appName: APP, privateKey: bSk, nostr: { relays: [relay.url], syncTimeoutMs: 1000 }, store: { adapter: 'memory' } });
-    spheres.push(a, b);
-    const requests = [];
-    const unsub = handshake.subscribeToFederationDMs(b, bSk, getPublicKey(bSk), { onRequest: (m, from) => requests.push({ m, from }) });
-    await wait(200);
-    const r = await handshake.initiateFederationHandshake(a, aSk, { partnerPubKey: getPublicKey(bSk), holonId: 'h-a', holonName: 'A' });
-    expect(r.success).toBe(true);
-    await eventually(() => requests.length);
-    await wait(500);
-    expect(requests).toHaveLength(1);
-    expect(requests[0].from).toBe(getPublicKey(aSk));
-    expect(requests[0].m.senderHolonId).toBe('h-a');
-    unsub();
   }, 20000);
 });

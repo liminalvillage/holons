@@ -59,7 +59,6 @@
     "nostr-utils-shim.js",
     "subscriptions-shim.js",
     "registry-shim.js",
-    "handshake-shim.js",
     "nostr-events.js",
     "signing.js",
     "relay-transport.js",

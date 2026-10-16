@@ -1,14 +1,19 @@
 <script lang="ts">
 	import { shortId } from '@holons/core/identity';
 	import { createEventDispatcher } from 'svelte';
-	import { Check, X, RefreshCw } from 'svelte-feathers';
+	import { Check, X } from 'svelte-feathers';
 
+	// One partner's federation request (core `@holons/core/federation`): it
+	// linked from its side and asks this holon's admins for our half, or it
+	// ended the link and asks us to drop ours (`kind: 'unlink'`).
 	export let id: string;
 	export let senderPubKey: string;
 	export let senderHolonName: string;
-	export let type: 'federation_request' | 'lens_update' = 'federation_request';
-	export let message: string = '';
-	export let sharedLenses: string[] = [];
+	export let kind: 'link' | 'unlink' = 'link';
+	/** Lenses they would send us. */
+	export let theySend: string[] = [];
+	/** Lenses they ask us to send. */
+	export let theyAsk: string[] = [];
 	export let isProcessing: boolean = false;
 
 	const dispatch = createEventDispatcher();
@@ -25,15 +30,10 @@
 	$: displayPubKey = senderPubKey ? shortId(senderPubKey) : '';
 </script>
 
-<div class="request-card" class:request-card--update={type === 'lens_update'}>
+<div class="request-card" class:request-card--update={kind === 'unlink'}>
 	<!-- Header -->
 	<div class="request-card__header">
-		{#if type === 'lens_update'}
-			<RefreshCw size="14" class="request-card__icon request-card__icon--update" />
-			<span class="request-card__type">Lens Update Request</span>
-		{:else}
-			<span class="request-card__type">Federation Request</span>
-		{/if}
+		<span class="request-card__type">{kind === 'unlink' ? 'Link ended' : 'Federation Request'}</span>
 	</div>
 
 	<!-- Holon Preview (dashed border) -->
@@ -47,33 +47,34 @@
 		</div>
 	</div>
 
-	<!-- Shared Lenses -->
 	<div class="request-card__exchange">
-		{#if sharedLenses.length > 0}
-			<div class="request-card__lenses request-card__lenses--receiving">
-				<div class="request-card__lenses-header">
-					<span>Shared lenses</span>
+		{#if kind === 'unlink'}
+			<div class="request-card__no-lenses">They ended the link. Drop it on this side too?</div>
+		{:else if theySend.length || theyAsk.length}
+			{#if theySend.length}
+				<div class="request-card__lenses request-card__lenses--receiving">
+					<div class="request-card__lenses-header"><span>They send</span></div>
+					<div class="request-card__lens-tags">
+						{#each theySend as lens}
+							<span class="request-card__lens-tag request-card__lens-tag--receive">{lens}</span>
+						{/each}
+					</div>
 				</div>
-				<div class="request-card__lens-tags">
-					{#each sharedLenses as lens}
-						<span class="request-card__lens-tag request-card__lens-tag--receive">{lens}</span>
-					{/each}
+			{/if}
+			{#if theyAsk.length}
+				<div class="request-card__lenses">
+					<div class="request-card__lenses-header"><span>They ask for</span></div>
+					<div class="request-card__lens-tags">
+						{#each theyAsk as lens}
+							<span class="request-card__lens-tag request-card__lens-tag--send">{lens}</span>
+						{/each}
+					</div>
 				</div>
-			</div>
+			{/if}
 		{:else}
-			<div class="request-card__no-lenses">
-				No specific lenses configured
-			</div>
+			<div class="request-card__no-lenses">A link with no lenses yet</div>
 		{/if}
 	</div>
-
-	<!-- Message if present -->
-	{#if message}
-		<div class="request-card__message">
-			<span class="request-card__message-label">Message:</span>
-			<span class="request-card__message-text">{message}</span>
-		</div>
-	{/if}
 
 	<!-- Actions -->
 	<div class="request-card__actions">
@@ -83,7 +84,7 @@
 			disabled={isProcessing}
 		>
 			<X size="14" />
-			Decline
+			{kind === 'unlink' ? 'Keep' : 'Decline'}
 		</button>
 		<button
 			class="request-card__btn request-card__btn--accept"
@@ -95,7 +96,7 @@
 			{:else}
 				<Check size="14" />
 			{/if}
-			Accept
+			{kind === 'unlink' ? 'Unlink' : 'Accept'}
 		</button>
 	</div>
 </div>
@@ -229,29 +230,16 @@
 		color: var(--color-success, #22c55e);
 	}
 
+	.request-card__lens-tag--send {
+		background: rgba(59, 130, 246, 0.2);
+		color: #60a5fa;
+	}
+
 	.request-card__no-lenses {
 		font-size: var(--font-size-sm, 0.875rem);
 		color: var(--color-text-muted, var(--color-text-muted));
 		text-align: center;
 		padding: var(--spacing-2, 0.5rem);
-	}
-
-	/* Message */
-	.request-card__message {
-		font-size: var(--font-size-sm, 0.875rem);
-		padding: var(--spacing-2, 0.5rem);
-		background: var(--color-bg-tertiary, var(--color-bg-tertiary));
-		border-radius: var(--radius-sm, 0.25rem);
-		margin-bottom: var(--spacing-3, 0.75rem);
-	}
-
-	.request-card__message-label {
-		color: var(--color-text-muted, var(--color-text-muted));
-		margin-right: var(--spacing-1, 0.25rem);
-	}
-
-	.request-card__message-text {
-		color: var(--color-text-secondary, var(--color-text-muted));
 	}
 
 	/* Actions */

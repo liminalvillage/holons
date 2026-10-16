@@ -116,7 +116,7 @@ npm run dev
 
 26. **Holonic Federation System** - Create federation links between holons with lens-based permissions (read/write/delete) and capability tokens
 
-27. **Nostr-Based Messaging** - Integration with Nostr protocol for decentralized direct messaging and federation handshakes
+27. **Nostr-Based Messaging** - Integration with Nostr protocol for decentralized direct messaging; federation requests are signed records each holon's admins accept or decline (`@holons/core/federation`)
 
 28. **Capability-Based Access Control** - Issue and manage capability tokens with granular permissions (read, write, delete) and expiration settings
 

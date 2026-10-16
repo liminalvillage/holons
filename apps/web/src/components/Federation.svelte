@@ -17,7 +17,19 @@
     import TitleBar from "./shared/TitleBar.svelte";
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import HomeHexCard from "./federation/HomeHexCard.svelte";
-    import { readSettingsHex } from "@holons/core/federation";
+    import {
+        FEDERATION_REQUESTS_LENS,
+        answerFederationRequest,
+        federationLinkState,
+        laneState,
+        pendingFederationRequests,
+        readSettingsHex,
+        removeFederationPartner,
+        setFederationPartner,
+        type FederationLinkOutcome,
+        type FederationLinkState,
+        type FederationRequest,
+    } from "@holons/core/federation";
     import { may, writeAcceptance, type WriteStanding } from "@holons/core/holosphere";
     import { nostrPrivateKey } from '$lib/stores/nostr';
     import {
@@ -107,6 +119,13 @@
     let viewMode: 'list' | 'network' = 'list';
 
     let toast: { kind: 'success' | 'error'; message: string } | null = null;
+    // Both halves of each link, from this holon's side: a link has one half
+    // per holon, each its own admins' word (core federation/requests). A lane
+    // this holon opened waits until the partner's admins accept it.
+    let linkStates: Record<string, FederationLinkState> = {};
+    // Partners asking this holon to link (or to drop a link they ended).
+    let incoming: FederationRequest[] = [];
+    let answering = '';
     // Locked lenses of this holon and, for the ones this identity owns, who
     // may read them: an audience of HOLONS. A sealed lens sent outbound stays
     // unreadable until the partner is in that audience — core hands its
@@ -135,12 +154,26 @@
 
     let idStoreUnsubscribe: (() => void) | undefined;
     let federationSubscription: { unsubscribe: () => void } | null = null;
+    let requestsSubscription: { unsubscribe: () => void } | null = null;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    /** Coalesce bursts of record/request events into one reload. */
+    function scheduleReload() {
+        if (refreshTimer) clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(() => {
+            refreshTimer = null;
+            void loadFederationData();
+        }, 400);
+    }
 
     onMount(() => {
         idStoreUnsubscribe = ID.subscribe(async (newId) => {
             if ((newId || '') !== currentHolonId) {
                 federationSubscription?.unsubscribe();
                 federationSubscription = null;
+                requestsSubscription?.unsubscribe();
+                requestsSubscription = null;
+                linkStates = {};
+                incoming = [];
 
                 currentHolonId = newId || '';
                 if (currentHolonId) {
@@ -158,19 +191,32 @@
     onDestroy(() => {
         idStoreUnsubscribe?.();
         federationSubscription?.unsubscribe();
+        requestsSubscription?.unsubscribe();
         if (toastTimer) clearTimeout(toastTimer);
+        if (refreshTimer) clearTimeout(refreshTimer);
     });
 
     async function subscribeFederationChanges() {
         if (!holosphere || !currentHolonId) return;
         try {
-            // Federation lives in the global `federation` table keyed by holon ID,
-            // not the per-holon `federation` lens — must use subscribeGlobal so the
-            // initial cache hit AND subsequent updates both refresh the UI.
-            federationSubscription = await holosphere.subscribeGlobal(
+            // Federation lives in the global `federation` table keyed by holon ID.
+            // Watch the whole table, not only this holon's record: a partner
+            // accepting (or dropping) its half changes THEIR record, and the
+            // lanes here must follow.
+            const holon = currentHolonId;
+            federationSubscription = holosphere.subscribeGlobal(
                 'federation',
-                currentHolonId,
-                async () => loadFederationData()
+                (_data: unknown, key?: string) => {
+                    if (holon !== currentHolonId) return;
+                    const k = String(key ?? '');
+                    if (k === holon || federatedHolons.some((h) => h.id === k)) scheduleReload();
+                }
+            );
+            // Requests partners leave for this holon.
+            requestsSubscription = holosphere.subscribe(
+                holon,
+                FEDERATION_REQUESTS_LENS,
+                () => { if (holon === currentHolonId) scheduleReload(); }
             );
         } catch (err) {
             console.warn('Failed to subscribe to federation changes:', err);
@@ -189,6 +235,8 @@
 
             if (!federationInfo) {
                 federatedHolons = [];
+                linkStates = {};
+                await loadRequests([]);
                 return;
             }
 
@@ -220,7 +268,7 @@
             }
 
             federatedHolons = result;
-            await loadPrivacy(result);
+            await Promise.all([loadPrivacy(result), loadRequests(result)]);
             setTimeout(() => repairLensConfigs(), 100);
         } catch (err) {
             console.error('Federation load error:', err);
@@ -228,6 +276,55 @@
         } finally {
             loading = false;
         }
+    }
+
+    /** Each link's two halves, and the requests waiting for this holon's admins. */
+    async function loadRequests(holons: FederatedHolon[]) {
+        if (!holosphere || !currentHolonId) return;
+        const holon = currentHolonId;
+        const [states, pending] = await Promise.all([
+            Promise.all(holons.map(async (h) => [h.id, await federationLinkState(holosphere, holon, h.id).catch(() => null)] as const)),
+            pendingFederationRequests(holosphere, holon).catch(() => [] as FederationRequest[]),
+        ]);
+        if (holon !== currentHolonId) return;
+        const next: Record<string, FederationLinkState> = {};
+        for (const [id, st] of states) if (st) next[id] = st;
+        linkStates = next;
+        incoming = pending;
+        for (const r of pending) resolveName(r.from);
+    }
+
+    function lane(states: Record<string, FederationLinkState>, holonId: string, lens: string, dir: 'in' | 'out') {
+        const st = states[holonId];
+        return st ? laneState(st, normalizeLens(lens), dir) : null;
+    }
+
+    /** What happened on the partner's side, in words. */
+    function outcomeMessage(outcome: FederationLinkOutcome, partnerName: string, done: string): { kind: 'success' | 'error'; message: string } {
+        if (outcome.self === 'held') return { kind: 'error', message: 'Only an admin of this holon can change its federation' };
+        if (outcome.partner === 'requested') return { kind: 'success', message: `${done} — asked ${partnerName}'s admins to accept` };
+        return { kind: 'success', message: done };
+    }
+
+    async function answer(request: FederationRequest, decision: 'accept' | 'decline') {
+        if (!holosphere || !currentHolonId || answering) return;
+        answering = request.from;
+        try {
+            await answerFederationRequest(holosphere, currentHolonId, request.from, decision);
+            const name = requestName(request);
+            showToast('success', decision === 'accept'
+                ? (request.kind === 'unlink' ? `Unlinked from ${name}` : `Linked with ${name}`)
+                : `Declined ${name}'s request`);
+            await loadFederationData();
+        } catch (err) {
+            showToast('error', err instanceof Error ? err.message : 'Failed to answer the request');
+        } finally {
+            answering = '';
+        }
+    }
+
+    function requestName(r: FederationRequest): string {
+        return $nameMap[r.from] || r.fromName || resolvedName(r.from, $nameMap);
     }
 
     async function loadPrivacy(_holons: FederatedHolon[]) {
@@ -297,19 +394,18 @@
 
         saving = true;
         try {
-            const ok = await holosphere.federate(
-                currentHolonId, target, null, null, true,
-                { inbound: [], outbound: [] }
-            );
-            if (ok) {
+            const outcome = await setFederationPartner(holosphere, currentHolonId, target, {
+                inbound: [],
+                outbound: [],
+                holonName: holonName || undefined,
+            });
+            const msg = outcomeMessage(outcome, resolvedName(target, $nameMap), 'Federation created');
+            if (outcome.self !== 'held') {
                 showAddDialog = false;
                 newHolonId = '';
-                await new Promise(r => setTimeout(r, 300));
                 await loadFederationData();
-                showToast('success', 'Federation created');
-            } else {
-                showToast('error', 'Failed to create federation');
             }
+            showToast(msg.kind, msg.message);
         } catch (err) {
             showToast('error', err instanceof Error ? err.message : 'Failed to create federation');
         } finally {
@@ -321,14 +417,14 @@
         if (!holosphere || !currentHolonId) return;
         saving = true;
         try {
-            const ok = await holosphere.unfederateHolon(currentHolonId, holonId);
-            if (ok) {
-                await new Promise(r => setTimeout(r, 300));
-                await loadFederationData();
-                showToast('success', 'Federation removed');
-            } else {
-                showToast('error', 'Failed to remove federation');
-            }
+            const outcome = await removeFederationPartner(holosphere, currentHolonId, holonId, {
+                holonName: holonName || undefined,
+            });
+            if (outcome.self !== 'held') await loadFederationData();
+            const msg = outcomeMessage(outcome, resolvedName(holonId, $nameMap), 'Federation removed');
+            showToast(msg.kind, outcome.partner === 'requested'
+                ? `Federation removed — asked ${resolvedName(holonId, $nameMap)}'s admins to drop their side`
+                : msg.message);
         } catch (err) {
             showToast('error', err instanceof Error ? err.message : 'Failed to remove federation');
         } finally {
@@ -340,13 +436,20 @@
         if (!holosphere || !currentHolonId) return;
         saving = true;
         try {
-            const ok = await holosphere.federate(
-                currentHolonId, holonId, null, null, true,
-                { inbound, outbound }
-            );
-            if (ok) {
-                await new Promise(r => setTimeout(r, 300));
+            const holon = federatedHolons.find((h) => h.id === holonId);
+            const outcome = await setFederationPartner(holosphere, currentHolonId, holonId, {
+                inbound,
+                outbound,
+                partnerName: holon?.name,
+                holonName: holonName || undefined,
+            });
+            if (outcome.self === 'held') {
+                showToast('error', 'Only an admin of this holon can change its federation');
+            } else {
                 await loadFederationData();
+                if (outcome.partner === 'requested') {
+                    showToast('success', `Asked ${holon ? displayNameOf(holon) : resolvedName(holonId, $nameMap)}'s admins to accept the change`);
+                }
             }
         } catch (err) {
             console.error('Lens config update error:', err);
@@ -495,6 +598,38 @@
         <HomeHexCard lenses={ALL_LENSES} {lensIcon} />
     {/if}
 
+    {#if currentHolonId && viewMode === 'list' && incoming.length && canEdit}
+        <!-- A link has a half per holon; these partners linked from their
+             side and ask this holon's admins for ours. -->
+        <section class="requests-card" aria-label="Federation requests" transition:slide>
+            <div class="requests-card__title">Federation requests ({incoming.length})</div>
+            {#each incoming as req (req.from)}
+                {@const name = requestName(req)}
+                <div class="request-row">
+                    <div class="request-row__text">
+                        {#if req.kind === 'unlink'}
+                            <strong>{name}</strong> ended its link with this holon. Drop this holon's side too?
+                        {:else}
+                            <strong>{name}</strong> asks to federate.
+                            {#if req.inbound.length}<span class="request-row__lenses">They send: {req.inbound.join(', ')}</span>{/if}
+                            {#if req.outbound.length}<span class="request-row__lenses">They ask for: {req.outbound.join(', ')}</span>{/if}
+                            {#if !req.inbound.length && !req.outbound.length}<span class="request-row__lenses">A link with no lenses yet.</span>{/if}
+                        {/if}
+                        <span class="request-row__id" title={req.from}>{shortId(req.from)}</span>
+                    </div>
+                    <div class="request-row__actions">
+                        <button type="button" class="primary-btn" disabled={!!answering} on:click={() => answer(req, 'accept')}>
+                            {req.kind === 'unlink' ? 'Unlink' : 'Accept'}
+                        </button>
+                        <button type="button" class="ghost-btn" disabled={!!answering} on:click={() => answer(req, 'decline')}>
+                            {req.kind === 'unlink' ? 'Keep' : 'Decline'}
+                        </button>
+                    </div>
+                </div>
+            {/each}
+        </section>
+    {/if}
+
     {#if !loading && currentHolonId && totalFederations > 0}
         <div class="stats">
             <span><strong>{totalFederations}</strong> federation{totalFederations === 1 ? '' : 's'}</span>
@@ -562,6 +697,11 @@
                                     {name}
                                 </button>
                                 <div class="fed-card__id" title={holon.id}>{shortId(holon.id)}</div>
+                                {#if linkStates[holon.id]?.outgoing}
+                                    <div class="fed-card__pending" role="status">Waiting for {name}'s admins to accept</div>
+                                {:else if linkStates[holon.id]?.incoming}
+                                    <div class="fed-card__pending" role="status">{name} asks for a change — see requests above</div>
+                                {/if}
                                 {#if ownedLenses.length}
                                     {@const state = readerState(audiences, holon.id)}
                                     <div class="fed-card__key" class:fed-card__key--none={state === 'no-readers'}>
@@ -603,6 +743,8 @@
                             {#each ALL_LENSES as lens}
                                 {@const isIn = hasLens(lens, holon.lensConfig.inbound)}
                                 {@const isOut = hasLens(lens, holon.lensConfig.outbound)}
+                                {@const laneIn = lane(linkStates, holon.id, lens, 'in')}
+                                {@const laneOut = lane(linkStates, holon.id, lens, 'out')}
                                 <div class="lens-row">
                                     <span class="lens-row__name">
                                         <span class="lens-row__icon">{lensIcon(lens)}</span>
@@ -613,11 +755,17 @@
                                         class="toggle"
                                         class:toggle--on={isIn}
                                         class:toggle--in={isIn}
+                                        class:toggle--waiting={laneIn === 'waiting'}
+                                        class:toggle--offered={laneIn === 'offered'}
                                         on:click={() => toggleInboundLens(holon, lens)}
                                         disabled={saving || !canEdit}
                                         aria-pressed={isIn}
                                         aria-label="{isIn ? 'Disable' : 'Enable'} inbound {lens}"
-                                        title="{isIn ? 'Disable' : 'Enable'} inbound {lens}"
+                                        title={laneIn === 'waiting'
+                                            ? `Receiving ${lens} — waiting for the partner to send it`
+                                            : laneIn === 'offered'
+                                              ? `The partner sends ${lens} — enable to receive it`
+                                              : `${isIn ? 'Disable' : 'Enable'} inbound ${lens}`}
                                     >
                                         <span class="toggle__dot"></span>
                                     </button>
@@ -626,11 +774,17 @@
                                         class="toggle"
                                         class:toggle--on={isOut}
                                         class:toggle--out={isOut}
+                                        class:toggle--waiting={laneOut === 'waiting'}
+                                        class:toggle--offered={laneOut === 'offered'}
                                         on:click={() => toggleOutboundLens(holon, lens)}
                                         disabled={saving || !canEdit}
                                         aria-pressed={isOut}
                                         aria-label="{isOut ? 'Disable' : 'Enable'} outbound {lens}"
-                                        title="{isOut ? 'Disable' : 'Enable'} outbound {lens}"
+                                        title={laneOut === 'waiting'
+                                            ? `Sending ${lens} — waiting for the partner to accept it`
+                                            : laneOut === 'offered'
+                                              ? `The partner asks for ${lens} — enable to send it`
+                                              : `${isOut ? 'Disable' : 'Enable'} outbound ${lens}`}
                                     >
                                         <span class="toggle__dot"></span>
                                     </button>
@@ -1173,6 +1327,64 @@
     .toggle--on.toggle--out {
         background: #10b981;
         border-color: #10b981;
+    }
+    /* This holon's half is on, the partner's is not (yet): dashed, dimmed. */
+    .toggle--waiting {
+        border-style: dashed;
+        opacity: 0.7;
+    }
+    /* The partner's half is on, ours is off: an outline invites a tap. */
+    .toggle--offered {
+        border-color: #f59e0b;
+    }
+
+    .fed-card__pending {
+        margin-top: 0.25rem;
+        font-size: 0.75rem;
+        color: #fbbf24;
+    }
+
+    .requests-card {
+        background: var(--color-bg-secondary);
+        border: 1px solid #f59e0b;
+        border-radius: 0.75rem;
+        padding: 0.75rem 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    .requests-card__title {
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+    .request-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        padding: 0.5rem 0;
+        border-top: 1px solid var(--color-bg-tertiary);
+    }
+    .request-row__text {
+        display: flex;
+        flex-direction: column;
+        gap: 0.125rem;
+        font-size: 0.85rem;
+        min-width: 0;
+    }
+    .request-row__lenses {
+        color: var(--color-text-muted);
+        font-size: 0.8rem;
+    }
+    .request-row__id {
+        font-size: 0.7rem;
+        color: var(--color-text-muted);
+        font-family: ui-monospace, SFMono-Regular, monospace;
+    }
+    .request-row__actions {
+        display: flex;
+        gap: 0.5rem;
     }
 
     /* ─── Network view ─────────────────────────────────────── */

@@ -4,8 +4,7 @@
 // NIP-17 private direct messages (NIP-59 gift wrap, NIP-44 encryption) over
 // the active relay set. The relay sees only a kind-1059 wrap addressed to the
 // recipient, signed by a throwaway key; sender, content and timing are
-// hidden inside. Used by the federation handshake (handshake-shim.js) and by
-// hosts for notifications. nostr-tools is loaded lazily (optional dep).
+// hidden inside. Used by hosts for notifications. nostr-tools is loaded lazily (optional dep).
 
 import { hexToBytes } from '@noble/hashes/utils';
 import { getPublicKey } from './nostr-events.js';

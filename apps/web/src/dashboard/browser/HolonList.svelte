@@ -3,7 +3,6 @@
 	import { Users, Bell } from 'svelte-feathers';
 	import HolonItem from './HolonItem.svelte';
 	import FederationRequestCard from './FederationRequestCard.svelte';
-	import LensUpdateNotification from './LensUpdateNotification.svelte';
 
 	type FederationStatus = 'none' | 'pending_outgoing' | 'pending_incoming' | 'accepted';
 
@@ -19,14 +18,17 @@
 		accessLevel?: 'none' | 'read' | 'write' | 'member';
 	}
 
+	/** A partner's federation request (core), as the card shows it. */
 	interface IncomingRequest {
+		/** The asking holon. */
 		id: string;
 		senderPubKey: string;
 		senderHolonName: string;
-		senderHolonId?: string;
-		lensConfig: { lenses: string[] };
-		message?: string;
-		requestKind?: 'lens_update';  // If set, it's a lens update; otherwise it's a federation request
+		kind: 'link' | 'unlink';
+		/** Lenses they would send us. */
+		theySend: string[];
+		/** Lenses they ask us to send. */
+		theyAsk: string[];
 	}
 
 	export let holons: Holon[] = [];
@@ -77,9 +79,6 @@
 		h.federationStatus === 'pending_outgoing' || h.federationStatus === 'pending_incoming'
 	);
 
-	// Separate federation requests from lens update requests
-	$: federationRequests = incomingRequests.filter(r => r.requestKind !== 'lens_update');
-	$: lensUpdateRequests = incomingRequests.filter(r => r.requestKind === 'lens_update');
 </script>
 
 <div class="holon-list">
@@ -107,20 +106,20 @@
 		{/if}
 
 		<!-- Incoming Federation Requests -->
-		{#if federationRequests.length > 0}
+		{#if incomingRequests.length > 0}
 			<div class="holon-list__section holon-list__section--requests">
 				<span class="holon-list__section-title holon-list__section-title--notification">
 					<Bell size="10" />
-					Federation Requests ({federationRequests.length})
+					Federation Requests ({incomingRequests.length})
 				</span>
-				{#each federationRequests as request (request.id)}
+				{#each incomingRequests as request (request.id)}
 					<FederationRequestCard
 						id={request.id}
 						senderPubKey={request.senderPubKey}
 						senderHolonName={request.senderHolonName}
-						type="federation_request"
-						message={request.message || ''}
-						sharedLenses={request.lensConfig?.lenses || []}
+						kind={request.kind}
+						theySend={request.theySend}
+						theyAsk={request.theyAsk}
 						isProcessing={processingRequestId === request.id}
 						on:accept={handleAccept}
 						on:decline={handleDecline}
@@ -130,29 +129,12 @@
 		{/if}
 
 		<!-- Federated holons (accepted) -->
-		{#if acceptedHolons.length > 0 || lensUpdateRequests.length > 0}
+		{#if acceptedHolons.length > 0}
 			<div class="holon-list__section">
 				<span class="holon-list__section-title">
 					<Users size="10" />
 					Federated
-					{#if lensUpdateRequests.length > 0}
-						<span class="holon-list__update-badge">{lensUpdateRequests.length}</span>
-					{/if}
 				</span>
-
-				<!-- Lens Update Notifications (compact, inline with federation) -->
-				{#each lensUpdateRequests as request (request.id)}
-					<LensUpdateNotification
-						id={request.id}
-						senderPubKey={request.senderPubKey}
-						senderHolonName={request.senderHolonName}
-						sharedLenses={request.lensConfig?.lenses || []}
-						message={request.message || ''}
-						isProcessing={processingRequestId === request.id}
-						on:accept={handleAccept}
-						on:decline={handleDecline}
-					/>
-				{/each}
 
 				{#each acceptedHolons as holon (holon.id)}
 					<HolonItem
@@ -322,16 +304,6 @@
 
 	.holon-list__section-title--notification {
 		color: var(--color-accent, var(--color-accent));
-	}
-
-	/* Update badge in section title */
-	.holon-list__update-badge {
-		background: var(--color-warning, #f59e0b);
-		color: var(--color-text-primary);
-		font-size: 9px;
-		padding: 1px 5px;
-		border-radius: var(--radius-full, 9999px);
-		margin-left: var(--spacing-1, 0.25rem);
 	}
 
 </style>

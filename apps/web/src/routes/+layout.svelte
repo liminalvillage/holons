@@ -4,7 +4,6 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
-	import { handshake } from "holosphere"
 	import { createHoloSphere, resolveEnforce, resolveRelays } from '@holons/core/holosphere';
 	import { hexToBytes } from '@noble/hashes/utils';
 	import Layout from '../dashboard/Layout.svelte';
@@ -57,7 +56,6 @@
 	let gcInterval: ReturnType<typeof setInterval>;
 
 	// Federation DM subscription
-	let dmUnsubscribe: (() => void) | null = null;
 
 	// Store holon name from onboarding (if provided)
 	// These are set by handleAuthenticated or read from localStorage in initializeUserHolon
@@ -337,109 +335,6 @@
 		}
 	}
 
-	// Set up global federation DM subscription for receiving requests/responses
-	function setupFederationDMSubscription(privateKey: string) {
-		if (!holosphere || dmUnsubscribe) return;
-
-		const publicKey = holosphere.client?.publicKey;
-		if (!publicKey) {
-			console.warn('Cannot set up federation DM subscription: no public key');
-			return;
-		}
-
-		console.log('Setting up global federation DM subscription...');
-
-		dmUnsubscribe = handshake.subscribeToFederationDMs(
-			holosphere,
-			privateKey,
-			publicKey,
-			{
-				onRequest: async (request: any, senderPubKey: string) => {
-					console.log('[Global DM] Federation request received from:', senderPubKey?.slice(0, 8));
-					// Dispatch event for UI components to handle
-					if (browser) {
-						window.dispatchEvent(new CustomEvent('federationRequest', {
-							detail: { request, senderPubKey }
-						}));
-					}
-				},
-				onResponse: async (response: any, senderPubKey: string) => {
-					console.log('[Global DM] Federation response received:', response?.status, 'from:', senderPubKey?.slice(0, 8));
-
-					// Process the response (creates federation on our side)
-					if (response.status === 'accepted') {
-						try {
-							const currentHolonId = holosphere.client?.publicKey;
-							if (currentHolonId) {
-								// Process the response to complete federation on our side
-								const result = await handshake.processFederationResponse(
-									holosphere,
-									response,
-									senderPubKey,
-									{
-										holonId: currentHolonId,
-										inboundLenses: response.lensConfig?.lenses || response.lensConfig?.outbound || []
-									}
-								);
-								console.log('[Global DM] processFederationResponse result:', result);
-
-								// Store federation relationship with lens config
-								// In the new share protocol, lenses are symmetric - no swapping needed
-								if (response.responderHolonId) {
-									const sharedLenses = response.lensConfig?.lenses || [...new Set([
-										...(response.lensConfig?.inbound || []),
-										...(response.lensConfig?.outbound || [])
-									])];
-									const initiatorLensConfig = {
-										lenses: sharedLenses,
-										inbound: sharedLenses,
-										outbound: sharedLenses
-									};
-									await holosphere.federateHolon(currentHolonId, response.responderHolonId, {
-										lensConfig: initiatorLensConfig,
-										partnerName: response.responderHolonName,
-										skipPropagation: true // Data already propagated by processFederationResponse
-									});
-									console.log('[Global DM] Federation stored with:', response.responderHolonId, 'lensConfig:', initiatorLensConfig);
-								}
-							}
-						} catch (error) {
-							console.error('[Global DM] Failed to process federation response:', error);
-						}
-					}
-
-					// Dispatch event for UI refresh
-					if (browser) {
-						window.dispatchEvent(new CustomEvent('federationResponse', {
-							detail: { response, senderPubKey }
-						}));
-					}
-				},
-				onUpdate: async (update: any, senderPubKey: string) => {
-					console.log('[Global DM] Federation update received from:', senderPubKey?.slice(0, 8), update);
-
-					// DON'T auto-accept - dispatch event for UI to show approval dialog
-					// The update contains: newLensConfig (with capabilities), senderHolonId, senderHolonName, message
-					if (browser) {
-						window.dispatchEvent(new CustomEvent('federationUpdate', {
-							detail: { update, senderPubKey }
-						}));
-					}
-				},
-				onUpdateResponse: (response: any, senderPubKey: string) => {
-					console.log('[Global DM] Federation update response received from:', senderPubKey?.slice(0, 8));
-					if (browser) {
-						window.dispatchEvent(new CustomEvent('federationUpdateResponse', {
-							detail: { response, senderPubKey }
-						}));
-					}
-				}
-			}
-		);
-
-		console.log('Global federation DM subscription active');
-	}
-
 	// Synchronous routing used to render the dashboard immediately, before the
 	// background reconciliation in initializeUserHolon resolves names/settings.
 	// The holon namespace is fully determined by the telegram id (or pubkey) and
@@ -602,9 +497,6 @@
 		// Update the global store (this can be called from async callbacks)
 		holosphereStore.set(holosphere);
 
-		// Set up global federation DM subscription
-		setupFederationDMSubscription(privateKey);
-
 		// Initialize the user's personal holon with their telegram-id (or pubkey)
 		// as the namespace. Skipped only on protected/standalone routes.
 		if (browser) {
@@ -652,10 +544,6 @@
 	onDestroy(() => {
 		if (gcInterval) {
 			clearInterval(gcInterval);
-		}
-		if (dmUnsubscribe) {
-			dmUnsubscribe();
-			dmUnsubscribe = null;
 		}
 	});
 

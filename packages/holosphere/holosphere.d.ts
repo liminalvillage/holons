@@ -707,47 +707,5 @@ export declare const registry: {
     removeInboundCapability(client: HoloSphere, appName: string, holonId: string, capabilityId: string): Promise<boolean>;
 };
 
-export declare const handshake: {
-    subscribeToFederationDMs(holosphere: HoloSphere, privateKey: any, publicKey: string, handlers: {
-        onRequest?: (request: any, senderPubKey: string) => void;
-        onResponse?: (response: any, senderPubKey: string) => void;
-        onUpdate?: (update: any, senderPubKey: string) => void;
-        onUpdateResponse?: (response: any, senderPubKey: string) => void;
-    }): () => void;
-    initiateFederationHandshake(holosphere: HoloSphere, privateKey: any, params: {
-        partnerPubKey: string;
-        holonId: string;
-        holonName: string;
-        lensConfig?: any;
-        message?: string;
-    }): Promise<{ success: boolean; requestId?: string }>;
-    acceptFederationRequest(holosphere: HoloSphere, privateKey: any, params: {
-        requesterPubKey: string;
-        holonId: string;
-        holonName: string;
-        lensConfig?: any;
-        requestId?: string;
-    }): Promise<{ success: boolean }>;
-    rejectFederationRequest(holosphere: HoloSphere, privateKey: any, params: {
-        requesterPubKey: string;
-        holonId: string;
-        reason?: string;
-        requestId?: string;
-    }): Promise<{ success: boolean }>;
-    processFederationResponse(holosphere: HoloSphere, response: any, senderPubKey: string, options?: {
-        holonId: string;
-        inboundLenses?: string[];
-    }): Promise<{ success: boolean; responderHolonId?: string; error?: string }>;
-    requestFederationUpdate(holosphere: HoloSphere, privateKey: any, params: {
-        partnerPubKey: string;
-        holonId: string;
-        holonName: string;
-        newLensConfig?: any;
-        message?: string;
-    }): Promise<{ success: boolean }>;
-    acceptFederationUpdate(holosphere: HoloSphere, privateKey: any, params: any): Promise<{ success: boolean }>;
-    rejectFederationUpdate(holosphere: HoloSphere, privateKey: any, params: any): Promise<{ success: boolean }>;
-};
-
 export default HoloSphere;
 export { HoloSphere };

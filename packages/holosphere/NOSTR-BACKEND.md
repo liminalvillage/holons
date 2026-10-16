@@ -213,10 +213,10 @@ to a member (there is no Telegram id to create a `users` record for).
 active relay set: `sendDirectMessage(holo, { privateKey, recipientPubkey,
 content, subject })`, `subscribeDirectMessages(holo, privateKey, onMessage)`.
 The relay sees a kind-1059 by a throwaway key addressed to the recipient;
-the sender is authenticated by the seal, never by the payload. The
-federation handshake (`handshake-shim.js`) rides on it (messages carry an
-`id`, so a redelivered copy is handled once); without relays it warns and
-does nothing.
+the sender is authenticated by the seal, never by the payload. Without
+relays it warns and does nothing. (Federation requests are not DMs: they
+are signed records in the asked holon's `fedrequests` lens — see
+`@holons/core/federation`.)
 Generic host API: `holosphere.publishNostrEvents(events)`,
 `holosphere.subscribeNostr(filter, onevent)`, `holosphere.queryNostr(filter)` (one bounded REQ closed on EOSE, through the query budget — how a person's kind 0 is read), `holosphere.nostrRelays()`.
 
