@@ -14,6 +14,7 @@ import { profileCodec } from './codecs/profile.js';
 import { setCodec } from './codecs/sets.js';
 import { badgeCodec } from './codecs/badges.js';
 import { groupCodec } from './codecs/group.js';
+import { chatCodec } from './codecs/chat.js';
 
 /** All lenses that have a standard-kind projection. */
 export const PROJECTION_CODECS: Readonly<Record<string, LensCodec<any>>> = {
@@ -26,6 +27,7 @@ export const PROJECTION_CODECS: Readonly<Record<string, LensCodec<any>>> = {
   library: setCodec('library'),
   roles: badgeCodec,
   settings: groupCodec,
+  taskchat: chatCodec,
 };
 
 export const PROJECTABLE_LENSES: readonly string[] = Object.keys(PROJECTION_CODECS);

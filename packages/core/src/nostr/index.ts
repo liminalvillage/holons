@@ -19,3 +19,4 @@ export { REACTION_KIND, reactionCompanions, parseReaction } from './codecs/react
 export * from './groups.js';
 export * from './dm.js';
 export { groupCodec, type SettingsRecord } from './codecs/group.js';
+export { chatCodec, taskChatGroupId, GROUP_CHAT_KIND, TASKCHAT_LENS, type TaskChatRecord } from './codecs/chat.js';
