@@ -151,6 +151,14 @@ export const ICONS = {
     ),
   },
   expand: { paths: s("M15 3h6v6", "M9 21H3v-6", "M21 3l-7 7", "M3 21l7-7") },
+  // A task's chat, its whiteboard, and the composer's send.
+  chat: {
+    paths: s("M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"),
+  },
+  whiteboard: {
+    paths: s("M3 4h18v12H3z", "M12 16v4", "M8 20h8", "M7 12l3-3 3 2 4-4"),
+  },
+  send: { paths: s("M22 2L11 13", "M22 2l-7 20-4-9-9-4 20-7z") },
 
   // ── Things & places ────────────────────────────────────────────────────
   pencil: { paths: s("M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z") },

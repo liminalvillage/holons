@@ -57,6 +57,8 @@
     holoSeed,
   } from "$lib/data";
   import { linkify } from "$lib/linkify";
+  import { openBoard } from "$lib/taskchat";
+  import TaskChat from "./TaskChat.svelte";
   import { resolveImage } from "$lib/image";
   import { avatarUrl, avatarInitial, hideImg, showImg } from "./Avatars.svelte";
   import {
@@ -96,6 +98,8 @@
     setQuestKind,
     shiftSchedule,
     toggleOccurrenceCompleted,
+    boardUrlOf,
+    taskRef,
     type ApplyBreakdownResult,
     type BreakdownStep,
     type Quest,
@@ -763,6 +767,54 @@
       copyTimer = setTimeout(() => (copied = false), 1800);
     } catch {
       showNotice($t("clipboard.writeFailed"));
+    }
+  }
+
+  // ── Chat & whiteboard ──────────────────────────────────────────────────────
+  // Hang off the task where it really lives (a hologram resolves to its
+  // source, core `taskRef`), so everyone looking at one task shares them.
+  // The board link is read from the live record, so one someone else made
+  // replaces the snapshot's "none yet".
+  $: taskKey = quest && !isNew ? String(quest.id ?? quest.title ?? "") : "";
+  $: chatRef =
+    quest && taskKey && $holonId ? taskRef(quest, $holonId, taskKey) : null;
+  $: liveQuest = taskKey
+    ? ($rawQuests.find((x) => String(x.id ?? x.title) === taskKey) ?? quest)
+    : null;
+  let minted: { key: string; url: string } | null = null;
+  $: boardHref =
+    boardUrlOf(liveQuest) ??
+    (minted && chatRef && minted.key === `${chatRef.holon}|${chatRef.key}`
+      ? minted.url
+      : null);
+  let chatOpen = false;
+  let chatFor = "";
+  $: if (taskKey !== chatFor) {
+    chatFor = taskKey;
+    chatOpen = false;
+  }
+  let boardBusy = false;
+  async function startBoard() {
+    if (!chatRef || boardBusy) return;
+    const ref = chatRef;
+    // Open the tab inside the tap: Safari blocks a window opened after an await.
+    const w = window.open("about:blank", "_blank");
+    boardBusy = true;
+    try {
+      const url = await openBoard(ref);
+      if (!url) throw new Error("not saved");
+      minted = { key: `${ref.holon}|${ref.key}`, url };
+      if (w) {
+        w.opener = null;
+        w.location.href = url;
+      } else {
+        window.open(url, "_blank", "noopener");
+      }
+    } catch {
+      w?.close();
+      showNotice($t("detail.boardFailed"));
+    } finally {
+      boardBusy = false;
     }
   }
 
@@ -1760,6 +1812,49 @@
           <ProposalVote holonId={$holonId} proposalId={String(quest.id)} />
         {/if}
 
+        {#if chatRef}
+          <!-- Open to visitors too: reading the chat and the board needs
+               only what reading the card does. -->
+          <div class="actions links">
+            {#if boardHref}
+              <a
+                class="ghost linkbtn"
+                href={boardHref}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Icon name="whiteboard" />
+                <span>{$t("detail.board")}</span>
+                <Icon name="external" />
+              </a>
+            {:else if $isLoggedIn}
+              <button
+                class="ghost linkbtn"
+                on:click={startBoard}
+                disabled={boardBusy}
+              >
+                <Icon name="whiteboard" />
+                <span>{$t("detail.boardStart")}</span>
+              </button>
+            {/if}
+            <button
+              class="ghost linkbtn"
+              class:on={chatOpen}
+              aria-expanded={chatOpen}
+              aria-controls="task-chat"
+              on:click={() => (chatOpen = !chatOpen)}
+            >
+              <Icon name="chat" />
+              <span>{$t("detail.chat")}</span>
+            </button>
+          </div>
+          {#if chatOpen}
+            {#key `${chatRef.holon}|${chatRef.key}`}
+              <TaskChat id="task-chat" ref={chatRef} />
+            {/key}
+          {/if}
+        {/if}
+
         {#if $isLoggedIn}
           <div class="actions">
             {#if amParticipant}
@@ -2649,6 +2744,15 @@
   .ghost.on {
     border-color: var(--teal-deep);
     color: var(--teal-ink);
+  }
+  /* Chat and whiteboard: icon + label, the board link an anchor. */
+  .linkbtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    padding: 0 1rem;
+    text-decoration: none;
   }
   /* The lock is always the last thing on the row, flush right. */
   .actions .lockbtn {

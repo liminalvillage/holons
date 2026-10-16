@@ -125,7 +125,7 @@ const NEVER_ASK = new Set([
   "reminderId",
   "recurringTaskId",
   "orderIndex",
-  "canvasId",
+  "boardUrl",
   "splitWith",
   "picture",
   "document",

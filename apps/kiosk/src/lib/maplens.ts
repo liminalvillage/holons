@@ -511,7 +511,7 @@ const DETAIL_SKIP = new Set([
   "images",
   "avatar",
   "currency", // folded into `amount`
-  "canvasId",
+  "boardUrl",
   "orderIndex",
   "chat",
   "user",
