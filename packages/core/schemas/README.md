@@ -45,6 +45,7 @@ await hs.setSchema('quests', questsSchema);
 | [`appreciations`](appreciations.json) | `Date.now().toString()` | `id`, `from`, `to`, `amount`, `date` | |
 | [`settings`](settings.json) | singleton (holonId) | `id`, `name` | |
 | [`canvases`](canvases.json) | per-canvas `id` | `id` | Referenced by `Quest.canvasId`. |
+| [`fedrequests`](fedrequests.json) | asking holon id | `id`, `from`, `to`, `kind`, `inbound`, `outbound`, `status`, `proposedAt`, `at` | Stored in the ASKED holon; written by admins of either side, others ignored. Answered via `answerFederationRequest`. |
 | [`offers`](offers.json) | Telegram `message_id` | `id` | Holds both Murmurations-style offers (`exchange_type`/`item_type`) and simpler `/offer`/`/want` requests. |
 | [`announcements`](announcements.json) | Telegram `message_id` | `id`, `user`, `content` | Federated to partner chats. |
 | [`summaries`](summaries.json) | `'<user>_<partner>'` | `id`, `user`, `partner`, `summary` | 1:1 conversation summaries from `/summary`. |

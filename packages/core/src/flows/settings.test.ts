@@ -277,8 +277,10 @@ describe('split parties', () => {
     // linkSplitPartner: links a new partner with no lens flow, leaves a linked one alone.
     const calls: unknown[] = [];
     const hs = {
+      store: { listEventIds: () => [], getEvents: () => [] },
       getFederation: async () => ({ federated: ['-2'] }),
-      federateHolon: async (...args: unknown[]) => {
+      putGlobal: async () => true,
+      federate: async (...args: unknown[]) => {
         calls.push(args);
         return true;
       },
@@ -286,7 +288,7 @@ describe('split parties', () => {
     expect(await linkSplitPartner(hs, '-1', '-2')).toBe(true);
     expect(calls).toEqual([]);
     expect(await linkSplitPartner(hs, '-1', '-3', 'Three')).toBe(true);
-    expect(calls).toEqual([['-1', '-3', { lensConfig: { inbound: [], outbound: [] }, partnerName: 'Three' }]]);
+    expect(calls[0]).toEqual(['-1', '-3', null, null, false, { inbound: [], outbound: [], hops: undefined }]);
     expect(await linkSplitPartner(hs, '-1', '-1')).toBe(false);
   });
 });

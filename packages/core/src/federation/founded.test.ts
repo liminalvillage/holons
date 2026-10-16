@@ -12,6 +12,7 @@ import { foundHolon, newHolonId } from '../protocol/founding.js';
 import { testKey } from '../protocol/testing.js';
 import { getFederationSnapshot } from './snapshot.js';
 import { removeFederationPartner, setFederationPartner } from './partners.js';
+import { answerFederationRequest, pendingFederationRequests } from './requests.js';
 
 describe('two key-founded holons', () => {
   it('federate both ways and resolve their readers to each genesis', async () => {
@@ -22,27 +23,30 @@ describe('two key-founded holons', () => {
     await hs.login(bytesToHex(q.sk));
     await foundHolon(hs, B, { name: 'Forno' });
 
-    // The federation record is an admin's word: a link counts on each side
-    // only when its signer is an admin THERE. q (B's admin) linking A↔B
-    // opens B's side; on A it is recorded and ignored until p links.
-    await setFederationPartner(hs, A, B, { inbound: ['quests'], outbound: ['quests', 'library'], partnerName: 'Forno' });
+    // The federation record is an admin's word: each half is set by an
+    // admin of its own holon. q (B's admin) links B↔A: B's half is written
+    // and A is ASKED; p (A's admin) accepts, which writes A's half.
+    expect(await setFederationPartner(hs, B, A, { inbound: ['quests', 'library'], outbound: ['quests'], partnerName: 'Orto', holonName: 'Forno' }))
+      .toEqual({ self: 'linked', partner: 'requested' });
     expect((await getFederationSnapshot(hs, A)).federated).not.toContain(B);
     const b = await getFederationSnapshot(hs, B);
     expect(b.endorsed).toBe(true);
-    expect(b.federated).toContain(A);
-    expect(b.lensConfig[A]).toMatchObject({ inbound: ['quests', 'library'], outbound: ['quests'] });
+    expect(b.lensConfig[A]).toMatchObject({ inbound: ['library', 'quests'], outbound: ['quests'] });
     await hs.login(bytesToHex(p.sk));
-    await setFederationPartner(hs, A, B, { inbound: ['quests'], outbound: ['quests', 'library'], partnerName: 'Forno' });
+    const [req] = await pendingFederationRequests(hs, A);
+    expect(req).toMatchObject({ from: B, fromName: 'Forno', inbound: ['quests'], outbound: ['library', 'quests'] });
+    await answerFederationRequest(hs, A, B, 'accept');
     const a = await getFederationSnapshot(hs, A);
     expect(a.endorsed).toBe(true);
-    expect(a.federated).toContain(B);
-    expect(a.lensConfig[B]).toMatchObject({ inbound: ['quests'], outbound: ['quests', 'library'] });
+    expect(a.partnerNames[B]).toBe('Forno');
+    expect(a.lensConfig[B]).toMatchObject({ inbound: ['quests'], outbound: ['library', 'quests'] });
 
     expect(await holonReaders(hs, A)).toEqual({ keys: [p.pk], kind: 'group' });
     expect(await holonReaders(hs, B)).toEqual({ keys: [q.pk], kind: 'group' });
 
-    await removeFederationPartner(hs, A, B);
+    expect(await removeFederationPartner(hs, A, B)).toEqual({ self: 'removed', partner: 'requested' });
     expect((await getFederationSnapshot(hs, A)).federated).not.toContain(B);
+    expect((await pendingFederationRequests(hs, B))[0]).toMatchObject({ from: A, kind: 'unlink' });
     await hs.close();
   });
 });

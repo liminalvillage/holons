@@ -270,11 +270,12 @@ export async function linkSplitPartner(
     // No record yet: the link below creates one.
   }
   if (federated.includes(partner)) return true;
-  return setFederationPartner(holosphere, holon, partner, {
+  const outcome = await setFederationPartner(holosphere, holon, partner, {
     inbound: [],
     outbound: [],
     ...(partnerName ? { partnerName } : {}),
   });
+  return outcome.self === 'linked';
 }
 
 /**

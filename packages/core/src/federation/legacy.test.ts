@@ -8,7 +8,8 @@ function mockHolosphere(settings: any, native: any = null) {
 		get: vi.fn(async () => settings),
 		put: vi.fn(async () => undefined),
 		getFederation: vi.fn(async () => native),
-		federateHolon: vi.fn(async () => true)
+		store: { listEventIds: () => [], getEvents: () => [] },
+		federate: vi.fn(async () => true)
 	} as unknown as HoloSphere;
 }
 
@@ -34,9 +35,10 @@ describe('migrateLegacyFederationLinks', () => {
 		const result = await migrateLegacyFederationLinks(hs, 'home');
 
 		expect(result.migrated).toEqual(['partner']);
-		expect((hs as any).federateHolon).toHaveBeenCalledWith('home', 'partner', {
-			lensConfig: { inbound: ['quests', 'library'], outbound: ['roles'] },
-			partnerName: 'Partner'
+		expect((hs as any).federate).toHaveBeenCalledWith('home', 'partner', null, null, false, {
+			inbound: ['library', 'quests'],
+			outbound: ['roles'],
+			hops: undefined
 		});
 	});
 
@@ -64,7 +66,7 @@ describe('migrateLegacyFederationLinks', () => {
 
 		expect(result.migrated).toEqual([]);
 		expect(result.skipped).toEqual(['partner']);
-		expect((hs as any).federateHolon).not.toHaveBeenCalled();
+		expect((hs as any).federate).not.toHaveBeenCalled();
 		// Fields still stripped so the legacy data can't resurface.
 		expect((hs as any).put).toHaveBeenCalled();
 	});
@@ -75,8 +77,10 @@ describe('migrateLegacyFederationLinks', () => {
 		});
 		const result = await migrateLegacyFederationLinks(hs, 'home');
 		expect(result.migrated).toEqual(['orphan']);
-		expect((hs as any).federateHolon).toHaveBeenCalledWith('home', 'orphan', {
-			lensConfig: { inbound: ['quests'], outbound: [] }
+		expect((hs as any).federate).toHaveBeenCalledWith('home', 'orphan', null, null, false, {
+			inbound: ['quests'],
+			outbound: [],
+			hops: undefined
 		});
 	});
 

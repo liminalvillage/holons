@@ -148,7 +148,7 @@ export async function unlinkHomeHex(
 ): Promise<boolean> {
   const cell = await readSettingsHex(holosphere, holonId);
   if (!cell) return false;
-  return removeFederationPartner(holosphere, holonId, cell);
+  return (await removeFederationPartner(holosphere, holonId, cell)).self === 'removed';
 }
 
 /**

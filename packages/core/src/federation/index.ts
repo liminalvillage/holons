@@ -41,8 +41,33 @@ export {
 	sanitizeLenses,
 	setFederationPartner,
 	type FederationLensMode,
+	type FederationLinkOutcome,
+	type LinkSideOptions,
 	type SetFederationPartnerOptions
 } from './partners.js';
+
+export {
+	FEDERATION_REQUESTS_LENS,
+	answerFederationRequest,
+	askFederation,
+	cancelFederationRequest,
+	counterpartConfig,
+	federationLinkState,
+	federationRequestRecords,
+	laneState,
+	markFederationRequestAnnounced,
+	mirrorDirections,
+	normalizeDirections,
+	pendingFederationRequests,
+	sameDirections,
+	watchAllFederationRequests,
+	type AnswerFederationOptions,
+	type AskFederationInput,
+	type FederationLinkState,
+	type FederationRequest,
+	type FederationRequestSighting,
+	type FederationRequestStatus
+} from './requests.js';
 
 export {
 	migrateLegacyFederationLinks,

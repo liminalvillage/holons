@@ -26,8 +26,10 @@ function mockHolosphere(opts: MockOptions = {}) {
   return {
     get: vi.fn(async () => ({ hex })),
     getFederation: vi.fn(async () => ({ federated, lensConfig, partnerNames: {} })),
-    federateHolon: vi.fn(async () => true),
-    unfederateHolon: vi.fn(async () => true),
+    // Nobody speaks for a test holon or a cell: both halves are written directly.
+    store: { listEventIds: () => [], getEvents: () => [] },
+    federate: vi.fn(async () => true),
+    unfederate: vi.fn(async () => true),
     put: vi.fn(async () => ({ success: true })),
     createHologram: vi.fn(async (holon: string, lens: string, item: any) => ({
       id: item.id,
@@ -101,9 +103,16 @@ describe('setHomeHexLink', () => {
     });
 
     expect(link).toEqual({ cell: CELL, inbound: [], outbound: ['quests', 'offers'], hops: 3 });
-    expect(hs.federateHolon).toHaveBeenCalledWith('h1', CELL, {
-      lensConfig: { inbound: [], outbound: ['quests', 'offers'], hops: 3 },
-      partnerName: 'Home hex',
+    expect(hs.federate).toHaveBeenCalledWith('h1', CELL, null, null, false, {
+      inbound: [],
+      outbound: ['offers', 'quests'],
+      hops: 3,
+    });
+    // The cell's half mirrors it.
+    expect(hs.federate).toHaveBeenCalledWith(CELL, 'h1', null, null, false, {
+      inbound: ['offers', 'quests'],
+      outbound: [],
+      hops: 3,
     });
   });
 
@@ -111,7 +120,7 @@ describe('setHomeHexLink', () => {
     const hs = mockHolosphere();
     const link = await setHomeHexLink(hs, 'h1', { inbound: [], outbound: ['quests'] });
     expect(link.hops).toBe(HOME_HEX_DEFAULT_HOPS);
-    expect((hs.federateHolon as any).mock.calls[0][2].lensConfig.hops).toBe(5);
+    expect((hs.federate as any).mock.calls[0][5].hops).toBe(5);
   });
 
   it('clamps an out-of-range reach', async () => {
@@ -125,7 +134,7 @@ describe('setHomeHexLink', () => {
     await expect(setHomeHexLink(hs, 'h1', { inbound: [], outbound: ['quests'] })).rejects.toThrow(
       /no hex address set/
     );
-    expect(hs.federateHolon).not.toHaveBeenCalled();
+    expect(hs.federate).not.toHaveBeenCalled();
   });
 });
 
@@ -133,13 +142,13 @@ describe('unlinkHomeHex', () => {
   it('removes the cell as a partner', async () => {
     const hs = mockHolosphere({ federated: [CELL] });
     expect(await unlinkHomeHex(hs, 'h1')).toBe(true);
-    expect(hs.unfederateHolon).toHaveBeenCalledWith('h1', CELL);
+    expect(hs.unfederate).toHaveBeenCalledWith('h1', CELL, null, null, false);
   });
 
   it('is a no-op when no hex is set', async () => {
     const hs = mockHolosphere({ hex: '' });
     expect(await unlinkHomeHex(hs, 'h1')).toBe(false);
-    expect(hs.unfederateHolon).not.toHaveBeenCalled();
+    expect(hs.unfederate).not.toHaveBeenCalled();
   });
 });
 

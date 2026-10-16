@@ -10,8 +10,8 @@ import type { HoloSphere } from 'holosphere';
 
 function mockHolosphere() {
 	return {
-		federateHolon: vi.fn(async () => true),
-		unfederateHolon: vi.fn(async () => true)
+		federate: vi.fn(async () => true),
+		unfederate: vi.fn(async () => true)
 	} as unknown as HoloSphere;
 }
 
@@ -50,29 +50,9 @@ describe('applyLensMode', () => {
 	});
 });
 
+// The write path itself (who writes which half, when the partner is asked)
+// runs against signed instances in ./requests.test.ts.
 describe('setFederationPartner', () => {
-	it('passes normalized ids and sanitized lens config through to federateHolon', async () => {
-		const hs = mockHolosphere();
-		const ok = await setFederationPartner(hs, ' home ', ' partner ', {
-			inbound: ['quests', 'quests', ' library ', ''],
-			outbound: ['roles'],
-			partnerName: 'Partner'
-		});
-		expect(ok).toBe(true);
-		expect((hs as any).federateHolon).toHaveBeenCalledWith('home', 'partner', {
-			lensConfig: { inbound: ['quests', 'library'], outbound: ['roles'] },
-			partnerName: 'Partner'
-		});
-	});
-
-	it('omits partnerName when not provided', async () => {
-		const hs = mockHolosphere();
-		await setFederationPartner(hs, 'home', 'partner', { inbound: [], outbound: [] });
-		expect((hs as any).federateHolon).toHaveBeenCalledWith('home', 'partner', {
-			lensConfig: { inbound: [], outbound: [] }
-		});
-	});
-
 	it('rejects self-federation and empty ids without calling holosphere', async () => {
 		const hs = mockHolosphere();
 		await expect(
@@ -84,22 +64,15 @@ describe('setFederationPartner', () => {
 		await expect(
 			setFederationPartner(hs, 'home', '  ', { inbound: [], outbound: [] })
 		).rejects.toThrow(/targetId/);
-		expect((hs as any).federateHolon).not.toHaveBeenCalled();
+		expect((hs as any).federate).not.toHaveBeenCalled();
 	});
 });
 
 describe('removeFederationPartner', () => {
-	it('delegates to unfederateHolon with trimmed ids', async () => {
-		const hs = mockHolosphere();
-		const ok = await removeFederationPartner(hs, ' home ', ' partner ');
-		expect(ok).toBe(true);
-		expect((hs as any).unfederateHolon).toHaveBeenCalledWith('home', 'partner');
-	});
-
 	it('rejects empty ids without calling holosphere', async () => {
 		const hs = mockHolosphere();
 		await expect(removeFederationPartner(hs, '', 'partner')).rejects.toThrow(/holonId/);
 		await expect(removeFederationPartner(hs, 'home', '')).rejects.toThrow(/targetId/);
-		expect((hs as any).unfederateHolon).not.toHaveBeenCalled();
+		expect((hs as any).unfederate).not.toHaveBeenCalled();
 	});
 });

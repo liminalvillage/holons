@@ -5,8 +5,8 @@
 // around nostr-tools: hosts publish the returned kind-1059 wrap on whatever
 // relay set they have (holosphere.publishNostrEvents) and unwrap incoming
 // wraps addressed to their key. Notification payloads are plain text with an
-// optional `subject`; federation handshake payloads are JSON (see
-// packages/holosphere/handshake-shim.js).
+// optional `subject`. (Federation requests are not DMs: they are records in
+// the asked holon's `fedrequests` lens — see @holons/core/federation.)
 
 import { wrapEvent, unwrapEvent } from 'nostr-tools/nip17';
 import type { NostrEventLike } from './types.js';

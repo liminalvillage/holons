@@ -1,0 +1,63 @@
+{
+  "title": "fedrequests",
+  "description": "Records stored at (askedHolonId, 'fedrequests', <askingHolonId>). A partner's request that the asked holon match (kind 'link') or drop (kind 'unlink') its half of a federation link. Counts only when signed by an admin of the asking or the asked holon (newest such record wins); see @holons/core/federation requests.ts.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "The asking holon id (same as `from`)."
+    },
+    "from": {
+      "type": "string",
+      "description": "The asking holon."
+    },
+    "to": {
+      "type": "string",
+      "description": "The asked holon (the holon the record is stored in)."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["link", "unlink"],
+      "description": "'link': adopt the directions below; 'unlink': drop the half that names `from`."
+    },
+    "inbound": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Lenses the asked holon is asked to RECEIVE from `from`. Sorted, deduped."
+    },
+    "outbound": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Lenses the asked holon is asked to SEND to `from`. Both may be empty: a link with no flows yet."
+    },
+    "hops": {
+      "type": "number",
+      "description": "Scalespace reach, carried as-is when `from` is an H3 cell."
+    },
+    "fromName": {
+      "type": "string",
+      "description": "The asking holon's display name, as the asker knew it."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "accepted", "declined", "cancelled"]
+    },
+    "proposedAt": {
+      "type": "number",
+      "description": "Unix seconds of the proposal this record is about."
+    },
+    "at": {
+      "type": "number",
+      "description": "Unix seconds of the last change."
+    },
+    "messageId": {
+      "type": "number",
+      "description": "Where a surface announced it (a Telegram message id), written by an admin of the asked holon."
+    },
+    "by": {
+      "type": "string",
+      "description": "Who settled it, in the surface's own terms (e.g. a Telegram user id)."
+    }
+  },
+  "required": ["id", "from", "to", "kind", "inbound", "outbound", "status", "proposedAt", "at"]
+}
