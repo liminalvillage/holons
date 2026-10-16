@@ -9,6 +9,7 @@
     import SourceBadge from './shared/SourceBadge.svelte';
     import PublishToFederationButton from './shared/PublishToFederationButton.svelte';
     import ProposalVote from './governance/ProposalVote.svelte';
+    import TaskChat from './TaskChat.svelte';
     import { formatDate } from "../utils/date";
     import { resolveImage } from "../utils/imageServer";
     import { fileToDownscaledDataURL } from "../utils/imageCompression";
@@ -50,6 +51,9 @@
         applyOccurrenceCompletion,
         planOccurrenceCompletion,
         setQuestFrequency,
+        taskRef,
+        boardUrlOf,
+        ensureTaskBoard,
         type ApplyBreakdownResult,
         type BreakdownStep,
         type QuestFrequency,
@@ -1209,46 +1213,45 @@
         showRecurringEditor = false;
     }
 
-    // Canvas: navigate to an existing per-task canvas, or initialize one.
-    function navigateToCanvas() {
-        if (quest && quest.canvasId) {
-            goto(`/${holonId}/canvas/${quest.canvasId}`);
-        }
-    }
+    // Chat & whiteboard hang off the task where it really lives (a hologram
+    // resolves to its source, core `taskRef`), so everyone shares them.
+    $: chatRef = quest && questId && holonId ? taskRef(quest, holonId, questId) : null;
+    $: boardHref = boardUrlOf(quest);
+    let showChat = false;
+    let boardBusy = false;
 
-    function createCanvasForTask() {
-        if (!holosphere || !holonId || !questId) {
-            console.error("Cannot create canvas: missing parameters");
-            return;
+    async function startBoard() {
+        if (!holosphere || !chatRef || boardBusy) return;
+        const ref = chatRef;
+        // Open the tab inside the click: browsers block one opened after an await.
+        const w = window.open("about:blank", "_blank");
+        boardBusy = true;
+        try {
+            const res = await ensureTaskBoard(
+                {
+                    get: (key) => holosphere.get(ref.holon, lens, key),
+                    put: (record) => holosphere.put(ref.holon, lens, record),
+                },
+                ref.key,
+            );
+            if (!res) throw new Error("Whiteboard not saved");
+            quest = { ...quest, boardUrl: res.url };
+            if (w) {
+                w.opener = null;
+                w.location.href = res.url;
+            } else {
+                window.open(res.url, "_blank", "noopener");
+            }
+        } catch (error: any) {
+            w?.close();
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("Error creating whiteboard for task:", error);
+            }
+        } finally {
+            boardBusy = false;
         }
-        if (quest.canvasId) {
-            navigateToCanvas();
-            return;
-        }
-        const canvasId = `task_${questId}_canvas`;
-        const newCanvas = {
-            id: canvasId,
-            data: [],
-            updatedAt: Date.now(),
-        };
-        const previousQuest = quest;
-        quest = { ...quest, canvasId };
-
-        Promise.all([
-            holosphere.put(holonId, "canvases", newCanvas),
-            holosphere.put(holonId, lens, quest),
-        ])
-            .then(() => {
-                goto(`/${holonId}/canvas/${canvasId}`);
-            })
-            .catch((error: any) => {
-                quest = previousQuest;
-                if (error?.name === 'AuthorizationError') {
-                    notifyWriteDenied('Unable to save - no write permission for this holon');
-                } else {
-                    console.error("Error creating canvas for task:", error);
-                }
-            });
     }
 
     // Add function to create checklist for this task. Optimistic — flip the
@@ -2126,28 +2129,48 @@
                             </button>
                         {/if}
 
-                        {#if quest.canvasId}
-                            <button
+                        {#if boardHref}
+                            <a
                                 class="w-full px-2 py-1 bg-purple-500/20 text-purple-300 rounded text-xs hover:bg-purple-500/30 transition-colors flex items-center gap-2"
-                                on:click={navigateToCanvas}
-                                type="button"
+                                href={boardHref}
+                                target="_blank"
+                                rel="noopener noreferrer"
                             >
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h18v12H3zM12 16v4M8 20h8M7 12l3-3 3 2 4-4"/>
                                 </svg>
-                                Open Canvas
-                            </button>
+                                Open Whiteboard
+                            </a>
                         {:else}
                             <button
                                 class="w-full px-2 py-1 bg-gray-600 text-gray-300 rounded text-xs hover:bg-gray-500 transition-colors flex items-center gap-2"
-                                on:click={createCanvasForTask}
+                                on:click={startBoard}
+                                disabled={boardBusy || !chatRef}
                                 type="button"
                             >
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                                 </svg>
-                                Create Canvas
+                                Create Whiteboard
                             </button>
+                        {/if}
+
+                        <button
+                            class="w-full px-2 py-1 rounded text-xs transition-colors flex items-center gap-2 {showChat ? 'bg-sky-500/30 text-sky-200' : 'bg-sky-500/20 text-sky-300 hover:bg-sky-500/30'}"
+                            on:click={() => (showChat = !showChat)}
+                            aria-expanded={showChat}
+                            disabled={!chatRef}
+                            type="button"
+                        >
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                            </svg>
+                            Chat
+                        </button>
+                        {#if showChat && chatRef}
+                            {#key `${chatRef.holon}|${chatRef.key}`}
+                                <TaskChat {holosphere} ref={chatRef} />
+                            {/key}
                         {/if}
                     </div>
                 </div>
