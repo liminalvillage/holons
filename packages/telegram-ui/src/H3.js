@@ -4,6 +4,7 @@
  */
 
 import { publishToFederation } from '@holons/core/federation';
+import { linkHolons } from './federationLinks.js';
 
 // WRAPPER CLASS FOR HOLOSPHERE
 class H3 {
@@ -95,11 +96,13 @@ class H3 {
         // Federate the chat's holon with the hex cell through the one
         // write path: the record counts because the bot's key is the
         // holon's anchor (an admin, see @holons/core/holosphere CAPABILITIES).
-        await this.db.federateHolon(holonId, hex, {
+        // A hex cell is open (nobody speaks for it): both halves are written.
+        await linkHolons(this.db, holonId, hex, {
           lensConfig: {
             inbound: ['quests', 'events'],
             outbound: ['quests', 'events'],
           },
+          askPartner: false,
         });
 
         const outcome = await publishToFederation(

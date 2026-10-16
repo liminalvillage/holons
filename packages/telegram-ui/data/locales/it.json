@@ -341,6 +341,26 @@
         "joinClosed": "Questa richiesta non è più aperta.",
         "joinFailed": "Non è stato possibile collegare la chiave. Riprova.",
         "joinLinked": "✅ <b>{{name}}</b> è collegato a questo holon — da {{by}}.",
-        "joinDeclined": "✖️ <b>{{name}}</b> non è stato collegato — rifiutato da {{by}}."
+        "joinDeclined": "✖️ <b>{{name}}</b> non è stato collegato — rifiutato da {{by}}.",
+        "fedHeld": "⚠️ Il bot non può cambiare la federazione di questo holon: la sua chiave non è admin qui.",
+        "fedLinkedBoth": "🔗 Collegato da entrambe le parti con {{partner}}.",
+        "fedRemovedBoth": "✂️ Scollegato da entrambe le parti da {{partner}}.",
+        "fedUnlinkAsked": "✂️ Scollegato qui. Agli admin di {{partner}} è stato chiesto di rimuoverlo anche dalla loro parte.",
+        "fedAsked": "⏳ Chiesto agli admin di {{partner}} di accettare — il collegamento vale dalla loro parte quando accettano.",
+        "fedWaitingPartner": "⏳ In attesa che gli admin di {{partner}} accettino.",
+        "fedAsks": "🔗 <b>{{name}}</b> chiede di federarsi con questo holon.",
+        "fedEndedAsk": "✂️ <b>{{name}}</b> ha chiuso il collegamento di federazione con questo holon. Rimuoverlo anche da questa parte?",
+        "fedWouldReceive": "Questo holon riceverebbe: {{lenses}}",
+        "fedWouldSend": "Questo holon invierebbe: {{lenses}}",
+        "fedNone": "niente",
+        "fedAdminsDecide": "Decide un admin di questo gruppo.",
+        "fedAccept": "✅ Accetta",
+        "fedDecline": "✖️ Rifiuta",
+        "fedAdminsOnly": "Solo gli admin di questo gruppo possono decidere.",
+        "fedClosed": "Questa richiesta non è più aperta.",
+        "fedFailed": "Non è stato possibile cambiare la federazione. Riprova.",
+        "fedAcceptedBy": "🔗 Federato con <b>{{name}}</b> — accettato da {{by}}.",
+        "fedRemovedBy": "✂️ Scollegato da <b>{{name}}</b> anche da questa parte — da {{by}}.",
+        "fedDeclinedBy": "✖️ Rifiutato <b>{{name}}</b> — da {{by}}."
     }
 }

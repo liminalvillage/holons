@@ -36,6 +36,8 @@ import {
   parseLinkPayload,
   unlinkChat,
 } from '@holons/core/linking';
+import { federationLinkState, laneState } from '@holons/core/federation';
+import { linkContext, outcomeText } from './federationLinks.js';
 
 // Re-export so other modules (web, ai-ui) can import the canonical settings
 // shape from either `./Settings.js` or `@holons/core/settings`.
@@ -1489,16 +1491,16 @@ export default class Settings {
           console.log(
             `[unfederate] Unfederating ${holonId} from ${federationID}`
           );
-          const success = await this.db.keyManager.teardownFederation(
+          const res = await this.db.keyManager.teardownFederation(
             holonId.toString(),
-            federationID.toString()
+            federationID.toString(),
+            await linkContext(ctx, federationID)
           );
+          await this.replyFederationOutcome(ctx, res, federationID, language);
 
-          if (success) {
+          if (res.success) {
             // Update the federation menu to reflect the removal
             await this.showFederationMenu(ctx, true);
-          } else {
-            await ctx.answerCbQuery('Federation not found');
           }
         } catch (error) {
           // Ignore "message not modified" errors - this can happen if cache wasn't updated yet
@@ -1533,16 +1535,16 @@ export default class Settings {
           console.log(
             `[removeNotify] Removing inbound connection from ${notifyID} to ${holonId}`
           );
-          const success = await this.db.keyManager.teardownFederation(
+          const res = await this.db.keyManager.teardownFederation(
             holonId.toString(),
-            notifyID.toString()
+            notifyID.toString(),
+            await linkContext(ctx, notifyID)
           );
+          await this.replyFederationOutcome(ctx, res, notifyID, language);
 
-          if (success) {
+          if (res.success) {
             // Update the federation menu to reflect the removal
             await this.showFederationMenu(ctx, true);
-          } else {
-            await ctx.answerCbQuery('Inbound connection not found');
           }
         } catch (error) {
           console.error('Error removing notification:', error);
@@ -2383,9 +2385,16 @@ export default class Settings {
         if (!hasAnyLenses) {
           // No lenses enabled, remove the federation
           try {
-            await this.db.keyManager.teardownFederation(
+            const res = await this.db.keyManager.teardownFederation(
               holonIdStr,
-              targetholonIdStr
+              targetholonIdStr,
+              await linkContext(ctx, targetholonIdStr)
+            );
+            await this.replyFederationOutcome(
+              ctx,
+              res,
+              targetholonIdStr,
+              await this.getLanguage(holonId)
             );
           } catch (err) {
             console.error('Error unfederating holon:', err);
@@ -2396,14 +2405,25 @@ export default class Settings {
 
           // Update federation with new lens config - skip propagation by default
           try {
-            await this.db.keyManager.setupFederation(
+            const res = await this.db.keyManager.setupFederation(
               holonIdStr,
               targetholonIdStr,
               {
                 lensConfig: lensConfig,
                 skipPropagation: true, // Don't auto-propagate existing data
+                ...(await linkContext(ctx, targetholonIdStr)),
               }
             );
+            // Held is worth saying; a request shows as ⏳ in the lens menu.
+            if (res?.outcome?.self === 'held')
+              await this.replyFederationOutcome(
+                ctx,
+                res,
+                targetholonIdStr,
+                await this.getLanguage(holonId)
+              );
+            else
+              await this.showFederationLensConfig(ctx, targetholonIdStr, true);
             console.log(
               `[toggle_lens] Updated federation for ${holonIdStr} -> ${targetholonIdStr}`
             );
@@ -2939,19 +2959,25 @@ export default class Settings {
       // Use KeyManager to federate with proper public keys (user will configure lenses via menu)
       console.log('FEDERATING', holonId, federationID);
 
-      await this.db.keyManager.setupFederation(
+      const res = await this.db.keyManager.setupFederation(
         holonId.toString(),
         federationID.toString(),
         {
           lensConfig: { inbound: [], outbound: [] },
+          ...(await linkContext(ctx, federationID)),
         }
       );
-
-      const federationName = await this.getHolonDisplayName(federationID, ctx);
-      console.log('Federation created successfully!');
-      ctx.reply(
-        `This chat has been federated with ${federationName}. Use /settings → Federation to configure which lenses to share.`
-      );
+      const language = await this.getLanguage(holonId);
+      await this.replyFederationOutcome(ctx, res, federationID, language);
+      if (res?.success) {
+        const federationName = await this.getHolonDisplayName(
+          federationID,
+          ctx
+        );
+        ctx.reply(
+          `This chat has been federated with ${federationName}. Use /settings → Federation to configure which lenses to share.`
+        );
+      }
     } catch (error) {
       console.error('Federation error:', error);
       ctx.reply('Error creating federation: ' + error.message);
@@ -2983,12 +3009,19 @@ export default class Settings {
     try {
       // Use KeyManager to unfederate with proper public keys
       console.log(`[separate] Unfederating ${holonId} from ${federationID}`);
-      const success = await this.db.keyManager.teardownFederation(
+      const res = await this.db.keyManager.teardownFederation(
         holonId.toString(),
-        federationID.toString()
+        federationID.toString(),
+        await linkContext(ctx, federationID)
+      );
+      await this.replyFederationOutcome(
+        ctx,
+        res,
+        federationID,
+        await this.getLanguage(holonId)
       );
 
-      if (success) {
+      if (res?.success) {
         const federationName = await this.getHolonDisplayName(
           federationID,
           ctx
@@ -3001,6 +3034,18 @@ export default class Settings {
       console.error('Unfederation error:', error);
       ctx.reply('Error removing federation: ' + error.message);
     }
+  }
+
+  /**
+   * Say what happened on the partner's side of a federation edit (linked
+   * there too, its admins asked, or this holon's half could not be written).
+   */
+  async replyFederationOutcome(ctx, res, partnerId, language) {
+    const outcome = res?.outcome;
+    if (!outcome || outcome.partner === 'unchanged') return;
+    const name = await this.getHolonDisplayName(String(partnerId), ctx);
+    const line = outcomeText(outcome, name, language);
+    if (line) await ctx.reply(line).catch(() => {});
   }
 
   async getFederation(holonId) {
@@ -4959,6 +5004,34 @@ export default class Settings {
     const inboundLenses =
       lensConfig && lensConfig.inbound ? lensConfig.inbound : [];
 
+    // The partner's half: a flow this side opened that the partner has not
+    // taken yet is waiting for its admins (⏳), not running (✅).
+    let linkState = null;
+    try {
+      linkState = await federationLinkState(this.db, holonIdStr, targetholonIdStr);
+    } catch {
+      linkState = null;
+    }
+    const mark = (on, lensName, dir) => {
+      if (!on) return '🔘';
+      if (!linkState) return '✅';
+      return laneState(
+        { ours: { inbound: inboundLenses, outbound: outboundLenses }, theirs: linkState.theirs },
+        lensName,
+        dir
+      ) === 'agreed'
+        ? '✅'
+        : '⏳';
+    };
+    const waitingLine = linkState?.outgoing
+      ? '\n' +
+        i18next.t('fedWaitingPartner', {
+          lng: language,
+          partner: targetHolonName,
+          defaultValue: `⏳ Waiting for ${targetHolonName}'s admins to accept.`,
+        })
+      : '';
+
     const keyboard = {
       inline_keyboard: [],
     };
@@ -4983,11 +5056,11 @@ export default class Settings {
           callback_data: 'noop',
         },
         {
-          text: hasOutbound ? '✅' : '🔘',
+          text: mark(hasOutbound, lensName, 'out'),
           callback_data: `tld_${shortTargetId}_o_${lensName}`,
         },
         {
-          text: hasInbound ? '✅' : '🔘',
+          text: mark(hasInbound, lensName, 'in'),
           callback_data: `tld_${shortTargetId}_i_${lensName}`,
         },
       ]);
@@ -5006,11 +5079,11 @@ export default class Settings {
 
     try {
       if (edit && ctx.callbackQuery) {
-        await ctx.editMessageText(title, {
+        await ctx.editMessageText(title + waitingLine, {
           reply_markup: keyboard,
         });
       } else {
-        await ctx.reply(title, {
+        await ctx.reply(title + waitingLine, {
           reply_markup: keyboard,
         });
       }

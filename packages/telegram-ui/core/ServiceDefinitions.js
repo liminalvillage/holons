@@ -24,6 +24,8 @@ import Participation from '../src/RSVP.js';
 import Shifts from '../src/Shifts.js';
 import Keys from '../src/Keys.js';
 import JoinRequests from '../src/JoinRequests.js';
+import FederationRequests from '../src/FederationRequests.js';
+import { linkHolons, unlinkHolons } from '../src/federationLinks.js';
 import { invalidateLinkedKeys } from '../src/createHoloSphere.js';
 import Roles from '../src/Roles.js';
 import OneOnOne from '../src/OneOnOne.js';
@@ -194,69 +196,32 @@ export const serviceDefinitions = {
         getPublicKey: async holonId => String(holonId),
         getTelegramId: async pubkey => String(pubkey),
 
+        // Federation edits go through the one core write path: this
+        // holon's half, the partner's directly or by request (see
+        // src/federationLinks.js for when the partner's admins are asked).
         async setupFederation(sourceHolonId, targetHolonId, options = {}) {
-          const {
-            lensConfig = { inbound: [], outbound: [] },
-            partnerName = null,
-          } = options;
           const source = String(sourceHolonId);
           const target = String(targetHolonId);
           if (source === target)
             throw new Error('Cannot federate a holon with itself');
-
-          const success = await holosphere.federate(
+          const { success, outcome } = await linkHolons(
+            holosphere,
             source,
             target,
-            null,
-            null,
-            true,
-            {
-              inbound: Array.isArray(lensConfig.inbound)
-                ? lensConfig.inbound
-                : [],
-              outbound: Array.isArray(lensConfig.outbound)
-                ? lensConfig.outbound
-                : [],
-            }
+            options
           );
-
-          if (success && partnerName) {
-            try {
-              // The record that counts (an admin's), never the raw table —
-              // see holosphere FEDERATION.md "Who may federate".
-              const fedInfo = await holosphere.getFederation(source);
-              if (fedInfo && fedInfo.federated?.length) {
-                if (!fedInfo.partnerNames) fedInfo.partnerNames = {};
-                fedInfo.partnerNames[target] = partnerName;
-                await holosphere.putGlobal('federation', fedInfo);
-              }
-            } catch (e) {
-              log.warn('[setupFederation] Failed to store partner name', {
-                error: e.message,
-              });
-            }
-          }
-
-          holosphere.clearCache?.('federation');
           const federationData = await holosphere.getGlobal(
             'federation',
             source
           );
-          return { success, federationData };
+          return { success, outcome, federationData };
         },
 
-        async teardownFederation(sourceHolonId, targetHolonId) {
+        async teardownFederation(sourceHolonId, targetHolonId, options = {}) {
           const source = String(sourceHolonId);
           const target = String(targetHolonId);
-          if (source === target) return true;
-          const success = await holosphere.unfederate(
-            source,
-            target,
-            null,
-            null
-          );
-          holosphere.clearCache?.('federation');
-          return success;
+          if (source === target) return { success: true, outcome: null };
+          return unlinkHolons(holosphere, source, target, options);
         },
 
         // Older API kept for compatibility — sets up a single-lens federation.
@@ -554,6 +519,16 @@ export const serviceDefinitions = {
   joinRequests: {
     factory: ({ telebot, database, settings }) =>
       new JoinRequests(telebot, database, settings),
+    singleton: true,
+    dependencies: ['telebot', 'database', 'settings'],
+  },
+
+  // Federation requests reach the Telegram group: a partner that linked to
+  // a chat (and could not speak for it) is announced once, with Accept /
+  // Decline for the chat's admins.
+  federationRequests: {
+    factory: ({ telebot, database, settings }) =>
+      new FederationRequests(telebot, database, settings),
     singleton: true,
     dependencies: ['telebot', 'database', 'settings'],
   },

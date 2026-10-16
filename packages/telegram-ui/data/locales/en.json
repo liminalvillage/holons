@@ -402,6 +402,26 @@
         "joinClosed": "This request is no longer open.",
         "joinFailed": "Couldn't link that key. Try again.",
         "joinLinked": "✅ <b>{{name}}</b> is linked to this holon — by {{by}}.",
-        "joinDeclined": "✖️ <b>{{name}}</b> was not linked — declined by {{by}}."
+        "joinDeclined": "✖️ <b>{{name}}</b> was not linked — declined by {{by}}.",
+        "fedHeld": "⚠️ The bot can't change this holon's federation: its key is not an admin here.",
+        "fedLinkedBoth": "🔗 Linked on both sides with {{partner}}.",
+        "fedRemovedBoth": "✂️ Unlinked on both sides from {{partner}}.",
+        "fedUnlinkAsked": "✂️ Unlinked here. {{partner}}'s admins were asked to remove it on their side too.",
+        "fedAsked": "⏳ Asked {{partner}}'s admins to accept — the link counts on their side once they do.",
+        "fedWaitingPartner": "⏳ Waiting for {{partner}}'s admins to accept.",
+        "fedAsks": "🔗 <b>{{name}}</b> asks to federate with this holon.",
+        "fedEndedAsk": "✂️ <b>{{name}}</b> ended its federation link with this holon. Remove it on this side too?",
+        "fedWouldReceive": "This holon would receive: {{lenses}}",
+        "fedWouldSend": "This holon would send: {{lenses}}",
+        "fedNone": "nothing",
+        "fedAdminsDecide": "An admin of this group decides.",
+        "fedAccept": "✅ Accept",
+        "fedDecline": "✖️ Decline",
+        "fedAdminsOnly": "Only admins of this group can decide.",
+        "fedClosed": "This request is no longer open.",
+        "fedFailed": "Couldn't change the federation. Try again.",
+        "fedAcceptedBy": "🔗 Federated with <b>{{name}}</b> — accepted by {{by}}.",
+        "fedRemovedBy": "✂️ Unlinked from <b>{{name}}</b> on this side too — by {{by}}.",
+        "fedDeclinedBy": "✖️ Declined <b>{{name}}</b> — by {{by}}."
     }
 }

@@ -20,6 +20,7 @@
  * scenes.registerScenes(stage);
  */
 import i18next from 'i18next';
+import { linkContext, outcomeText } from './federationLinks.js';
 import { Scenes } from 'telegraf';
 
 export default class SettingsScenes {
@@ -158,21 +159,29 @@ export default class SettingsScenes {
 
         // Federate using KeyManager with proper public keys
         // console.log('Federation actually happens here, in the scenes!');
-        await this.db.keyManager.setupFederation(
+        const res = await this.db.keyManager.setupFederation(
           holonId.toString(),
           federationID.toString(),
           {
             lensConfig: { inbound: [], outbound: [] },
+            ...(await linkContext(ctx, federationID)),
           }
         );
 
-        // Success message
-        await ctx.reply(
-          i18next.t('settings_federation_success', {
-            lng: language,
-            defaultValue: `✅ Federated with ${federationID}. Configure lenses below.`,
-          })
-        );
+        // Success message, and what happened on the partner's side
+        if (res?.success) {
+          await ctx.reply(
+            i18next.t('settings_federation_success', {
+              lng: language,
+              defaultValue: `✅ Federated with ${federationID}. Configure lenses below.`,
+            })
+          );
+        }
+        const line =
+          res?.outcome?.partner !== 'unchanged'
+            ? outcomeText(res?.outcome, federationID, language)
+            : null;
+        if (line) await ctx.reply(line);
 
         // Store message IDs for cleanup
         ctx.scene.state.userMessageId = ctx.message.message_id;
