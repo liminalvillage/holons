@@ -75,6 +75,7 @@
   import PillSwitch from "./PillSwitch.svelte";
   import ScopePill from "./ScopePill.svelte";
   import Icon from "./Icon.svelte";
+  import { fedRequests } from "$lib/fedrequests";
 
   // Module consts carry catalog keys only; `ownPillsFor` resolves them with
   // the reactive translator so a language switch re-labels every pill live.
@@ -349,7 +350,13 @@
     open: () => settingsOpen.set(true),
   };
   $: gear = $viewSettings ?? kioskGear;
-  $: gearLabel = $t(gear.labelKey);
+  // The kiosk gear carries a dot while a federation request waits there.
+  $: gearDot = gear === kioskGear && $fedRequests.length > 0;
+  $: gearLabel =
+    $t(gear.labelKey) +
+    (gearDot
+      ? ` — ${$t("fed.requestsBadge", { n: $fedRequests.length })}`
+      : "");
 
   // The lock beside the gear: who can read the board on screen. Shown on
   // every tab whose board is one lens that can be sealed (quests, library,
@@ -462,6 +469,7 @@
           title={gearLabel}
         >
           <Icon name="gear" />
+          {#if gearDot}<span class="dot" aria-hidden="true"></span>{/if}
         </button>
       </div>
     </div>
@@ -500,6 +508,7 @@
         title={gearLabel}
       >
         <Icon name="gear" />
+        {#if gearDot}<span class="dot" aria-hidden="true"></span>{/if}
       </button>
     </div>
   {/if}
@@ -590,6 +599,19 @@
     transition:
       background 0.2s ease,
       transform 0.1s ease;
+  }
+  .gear {
+    position: relative;
+  }
+  .gear .dot {
+    position: absolute;
+    top: 0.3rem;
+    right: 0.3rem;
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 50%;
+    background: var(--caution);
+    border: 2px solid var(--paper);
   }
   .gear:active {
     transform: scale(0.92);

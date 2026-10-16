@@ -1250,7 +1250,10 @@
       partner={fedPair.partner}
       holonName={nameOf(fedPair.home)}
       partnerName={partnerLabel(fedPair.partner)}
-      on:unlinked={() => (fedPair = null)}
+      on:unlinked={(e) => {
+        fedPair = null;
+        if (e.detail?.notice) showNotice(e.detail.notice, 6000);
+      }}
     />
   </Modal>
 {/if}

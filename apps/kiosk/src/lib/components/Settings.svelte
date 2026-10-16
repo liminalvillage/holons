@@ -74,6 +74,13 @@
     type JoinRequest,
   } from "$lib/hubmembers";
   import { segmentFor } from "$lib/dock";
+  import {
+    answerFedRequest,
+    fedLensLabel,
+    fedRequests,
+    type FederationRequest,
+  } from "$lib/fedrequests";
+  import FederationLens from "./FederationLens.svelte";
   import { isHolonId, isTelegramChatId } from "@holons/core/protocol";
   import { keyLoginOffered } from "$lib/login/providers";
   import { linkedTelegramChats, type LinkRecord } from "@holons/core/linking";
@@ -307,6 +314,47 @@
     stopRequests = watchRequests(id, (r) => {
       if (id === $holonId) joinRequests = r;
     });
+  }
+
+  // Federation requests other holons' admins made of this one (the store
+  // is bound by the layout, for keys that may answer). One open at a time:
+  // "Open" shows the pair's flow editor inline.
+  let fedBusy = false;
+  let fedOpen: string | null = null;
+  const fedFlows = (r: FederationRequest) =>
+    r.kind === "unlink"
+      ? tr("fed.askUnlinkShort")
+      : [
+          r.inbound.length
+            ? tr("fed.askReceive", {
+                lenses: r.inbound.map((l) => fedLensLabel(tr, l)).join(", "),
+              })
+            : "",
+          r.outbound.length
+            ? tr("fed.askSend", {
+                lenses: r.outbound.map((l) => fedLensLabel(tr, l)).join(", "),
+              })
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" · ") || tr("fed.askNoFlows");
+  async function answerFed(r: FederationRequest, d: "accept" | "decline") {
+    if (!$holonId || fedBusy) return;
+    fedBusy = true;
+    try {
+      await answerFedRequest($holonId, r, d);
+      if (fedOpen === r.from) fedOpen = null;
+      showNotice(
+        tr(d === "accept" ? "fed.accepted" : "fed.declined", {
+          name: r.fromName || $nameOf(r.from),
+        }),
+      );
+    } catch (err) {
+      showNotice(tr("fed.answerError"));
+      console.error("[kiosk] federation request answer failed", err);
+    } finally {
+      fedBusy = false;
+    }
   }
 
   async function approve(req: JoinRequest) {
@@ -850,6 +898,67 @@
         </button>
       {/if}
     </div>
+
+    {#if $holonId && $fedRequests.length}
+      <!-- Other holons asking to federate with this one. Each holon's admins
+           set only their own half of a link; accepting writes ours. -->
+      <div class="field">
+        {$t("fed.requestsTitle")}
+        <span class="sub">{$t("fed.requestsSub")}</span>
+        {#each $fedRequests as r (r.from)}
+          <div class="map-row">
+            <span class="map-lens fed-req" title={r.from}
+              ><strong>{r.fromName || $nameOf(r.from)}</strong><span
+                class="shared">{fedFlows(r)}</span
+              ></span
+            >
+            <div class="map-lanes">
+              <button
+                type="button"
+                class="lane on"
+                aria-label={$t("fed.accept")}
+                title={$t("fed.accept")}
+                disabled={fedBusy}
+                on:click={() => answerFed(r, "accept")}
+                ><Icon name="check" /></button
+              >
+              <button
+                type="button"
+                class="lane"
+                aria-label={$t("fed.decline")}
+                title={$t("fed.decline")}
+                disabled={fedBusy}
+                on:click={() => answerFed(r, "decline")}
+                ><Icon name="close" /></button
+              >
+              {#if r.kind === "link"}
+                <button
+                  type="button"
+                  class="lane"
+                  class:on={fedOpen === r.from}
+                  aria-expanded={fedOpen === r.from}
+                  aria-label={$t("fed.openPair")}
+                  title={$t("fed.openPair")}
+                  on:click={() =>
+                    (fedOpen = fedOpen === r.from ? null : r.from)}
+                  ><Icon name="swap" /></button
+                >
+              {/if}
+            </div>
+          </div>
+          {#if fedOpen === r.from}
+            <div class="fed-pair">
+              <FederationLens
+                holon={$holonId}
+                partner={r.from}
+                partnerName={r.fromName ?? ""}
+                on:unlinked={() => (fedOpen = null)}
+              />
+            </div>
+          {/if}
+        {/each}
+      </div>
+    {/if}
 
     {#if $isLoggedIn && keyed($holonId)}
       <!-- Members: who is linked to this hub. One word for the whole story —
@@ -1710,6 +1819,21 @@
     background: transparent;
     color: var(--teal-ink);
     border: 1.5px solid var(--teal);
+  }
+  .map-lens.fed-req {
+    text-transform: none;
+    white-space: normal;
+  }
+  .map-lens.fed-req .shared {
+    display: block;
+    margin-left: 0;
+    font-size: 0.8em;
+  }
+  .fed-pair {
+    margin: 0.4rem 0 0.8rem;
+    padding: 0.8rem 0.6rem;
+    border-radius: 14px;
+    background: var(--glass);
   }
   .key-label {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

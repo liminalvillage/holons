@@ -25,6 +25,7 @@
   import { askToJoin, leave } from "$lib/hubmembers";
   import { isHolonId, isTelegramChatId } from "@holons/core/protocol";
   import { t, tr } from "$lib/i18n";
+  import { fedRequests } from "$lib/fedrequests";
 
   $: who = $holonName;
 
@@ -132,7 +133,13 @@
        look for "this board's" controls. -->
   <button class="row" on:click={openSettings}>
     <span class="ico"><Icon name="gear" /></span>
-    <span class="label">{$t("menu.settings")}</span>
+    <span class="label"
+      >{$t("menu.settings")}{#if $fedRequests.length}<span class="hint"
+          >{$t("fed.requestsBadge", { n: $fedRequests.length })}</span
+        >{/if}</span
+    >
+    {#if $fedRequests.length}<span class="count">{$fedRequests.length}</span
+      >{/if}
     <span class="chev">›</span>
   </button>
 
@@ -345,6 +352,18 @@
     min-width: 0;
     font-weight: 700;
     font-size: 1rem;
+  }
+  .row .count {
+    min-width: 1.5rem;
+    height: 1.5rem;
+    padding: 0 0.4rem;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    font-size: 0.8rem;
+    font-weight: 800;
+    background: var(--caution);
+    color: var(--paper);
   }
   .row .chev {
     color: var(--muted);

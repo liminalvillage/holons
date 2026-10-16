@@ -26,6 +26,7 @@
   import { moveId } from "$lib/taborder";
   import { noteColor } from "$lib/palette";
   import { currentUser, displayName } from "$lib/auth";
+  import { fedRequests } from "$lib/fedrequests";
   import { requestClose } from "$lib/dock";
   import { resolveAddTipSeen, markAddTipSeen } from "$lib/config";
   import { t, locale } from "$lib/i18n";
@@ -467,8 +468,12 @@
         class="account"
         class:in={$currentUser != null}
         on:click={() => userMenuOpen.set(true)}
-        aria-label={$t("tabbar.menu")}
+        aria-label={$fedRequests.length
+          ? `${$t("tabbar.menu")} — ${$t("fed.requestsBadge", { n: $fedRequests.length })}`
+          : $t("tabbar.menu")}
       >
+        {#if $fedRequests.length}<span class="badge" aria-hidden="true"
+          ></span>{/if}
         {#if $currentUser}
           {#if $currentUser.photo_url}
             <img src={$currentUser.photo_url} alt="" />
@@ -870,6 +875,20 @@
   }
   .account.in {
     color: var(--teal-ink);
+  }
+  .account {
+    position: relative;
+  }
+  /* Something waits for this key's answer (a federation request). */
+  .account .badge {
+    position: absolute;
+    top: 0.15rem;
+    left: 1.75rem;
+    width: 0.7rem;
+    height: 0.7rem;
+    border-radius: 50%;
+    background: var(--caution);
+    border: 2px solid var(--paper);
   }
   .account:active {
     transform: scale(0.96);

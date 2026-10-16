@@ -25,8 +25,13 @@
     setFederationPartner,
     removeFederationPartner,
     applyLensMode,
+    answerFederationRequest,
+    federationLinkState,
+    laneState,
     lensMode,
     type FederationLensMode,
+    type FederationLinkOutcome,
+    type FederationLinkState,
   } from "@holons/core/federation";
   import { may, writeAcceptance } from "@holons/core/holosphere";
   import {
@@ -40,7 +45,8 @@
   import type { HoloSphere } from "holosphere";
   import { getHolosphere } from "$lib/holosphere";
   import { holonColor, holonColors } from "$lib/palette";
-  import { t, type MessageKey, type Translator } from "$lib/i18n";
+  import { t, type Translator } from "$lib/i18n";
+  import { fedLensLabel } from "$lib/fedrequests";
 
   /** The board whose federation record is edited (the dragged/tapped one). */
   export let holon: string;
@@ -63,13 +69,6 @@
   // Lenses the kiosk renders; already-configured other lenses (set up from
   // Telegram, say) are shown too so a save never drops them.
   const KIOSK_LENSES = ["quests", "library", "roles", "checklists", "stock"];
-  const LENS_LABEL_KEYS: Record<string, MessageKey> = {
-    quests: "tabs.tasks",
-    library: "tabs.library",
-    roles: "tabs.roles",
-    checklists: "tabs.checklists",
-    stock: "tabs.stock",
-  };
 
   let hs: HoloSphere | null = null;
   let loading = true;
@@ -85,6 +84,15 @@
     inbound: [],
     outbound: [],
   };
+  /**
+   * Both halves of the link and the requests between them. Each holon's
+   * admins set only their own half: a flow drawn here and not yet taken by
+   * the partner is WAITING (asked, not agreed); one the partner offers and
+   * this side has not taken is OFFERED.
+   */
+  let link: FederationLinkState | null = null;
+  /** What the last edit did on the partner's side, said once. */
+  let notice = "";
   let confirmUnlink = false;
   let confirmTimer: ReturnType<typeof setTimeout> | null = null;
   let alive = true;
@@ -145,6 +153,35 @@
     dir: Dir,
   ) => (dir === "out" ? dirs.outbound : dirs.inbound).includes(lens);
 
+  /** Where one lane stands across both halves (this side's edits are optimistic). */
+  const laneOf = (
+    l: FederationLinkState | null,
+    c: { inbound: string[]; outbound: string[] },
+    isLinked: boolean,
+    lens: string,
+    dir: Dir,
+  ) =>
+    laneState(
+      { ours: isLinked ? c : null, theirs: l?.theirs ?? null },
+      lens,
+      dir,
+    );
+  $: waitingCount = lenses.reduce(
+    (n, lens) =>
+      n +
+      LANES.filter((d) => laneOf(link, cfg, linked, lens, d) === "waiting")
+        .length,
+    0,
+  );
+  $: offeredCount = lenses.reduce(
+    (n, lens) =>
+      n +
+      LANES.filter((d) => laneOf(link, cfg, linked, lens, d) === "offered")
+        .length,
+    0,
+  );
+  $: incoming = link?.incoming ?? null;
+
   /** Fold a pair of booleans back into the core's lens mode. */
   const modeOf = (inbound: boolean, outbound: boolean): FederationLensMode =>
     inbound && outbound
@@ -176,12 +213,58 @@
           inbound: snap.lensConfig[partner]?.inbound ?? [],
           outbound: snap.lensConfig[partner]?.outbound ?? [],
         };
+      await refreshLink();
       await loadPrivacy();
     } catch (err) {
       console.error("[kiosk] federation lens load failed", err);
       if (alive) error = $t("fed.loadError");
     } finally {
       if (alive) loading = false;
+    }
+  }
+
+  async function refreshLink() {
+    if (!hs) return;
+    try {
+      const next = await federationLinkState(hs, holon, partner);
+      if (alive) link = next;
+    } catch {
+      /* the arrows still show this side */
+    }
+  }
+
+  /** Say once what an edit did on the partner's side. */
+  function noticeFor(out: FederationLinkOutcome, unlinking: boolean): string {
+    if (out.self === "held") return $t("fed.adminOnly");
+    if (out.partner !== "requested") return "";
+    return $t(unlinking ? "fed.askedUnlink" : "fed.askedPartner", {
+      name: nameB(),
+    });
+  }
+
+  /** Accept or decline what the partner asked of this holon. */
+  async function answer(decision: "accept" | "decline") {
+    if (!hs || busy || !link?.incoming) return;
+    busy = true;
+    error = "";
+    try {
+      await answerFederationRequest(hs, holon, partner, decision);
+      announceChanged();
+      const snap = await getFederationSnapshot(hs, holon);
+      linked = snap.federated.includes(partner);
+      cfg = linked
+        ? {
+            inbound: snap.lensConfig[partner]?.inbound ?? [],
+            outbound: snap.lensConfig[partner]?.outbound ?? [],
+          }
+        : { inbound: [], outbound: [] };
+      await refreshLink();
+      if (decision === "accept" && !linked) dispatch("unlinked");
+    } catch (err) {
+      console.error("[kiosk] federation request answer failed", err);
+      error = $t("fed.answerError");
+    } finally {
+      busy = false;
     }
   }
 
@@ -199,19 +282,30 @@
     linked = !empty;
     busy = true;
     error = "";
+    notice = "";
     try {
       if (empty) {
         if (prevLinked) {
-          await removeFederationPartner(hs, holon, partner);
+          notice = noticeFor(
+            await removeFederationPartner(hs, holon, partner, {
+              holonName: nameA(),
+            }),
+            true,
+          );
           announceChanged();
         }
       } else {
-        await setFederationPartner(hs, holon, partner, {
-          ...next,
-          partnerName: partnerName || undefined,
-        });
+        notice = noticeFor(
+          await setFederationPartner(hs, holon, partner, {
+            ...next,
+            partnerName: partnerName || undefined,
+            holonName: nameA(),
+          }),
+          false,
+        );
         announceChanged();
       }
+      await refreshLink();
     } catch (err) {
       console.error("[kiosk] federation flow update failed", err);
       cfg = prevCfg;
@@ -298,9 +392,13 @@
     if (!hs || busy) return;
     busy = true;
     try {
-      await removeFederationPartner(hs, holon, partner);
+      const out = await removeFederationPartner(hs, holon, partner, {
+        holonName: nameA(),
+      });
       announceChanged();
-      dispatch("unlinked"); // the pair is gone — close the popup
+      // The partner was asked to drop its half: tell the caretaker before
+      // the popup goes, through the dock's toast.
+      dispatch("unlinked", { notice: noticeFor(out, true) });
     } catch (err) {
       console.error("[kiosk] unfederate failed", err);
       error = $t("fed.unlinkError");
@@ -308,10 +406,7 @@
     }
   }
 
-  function lensLabel(tr: Translator, lens: string): string {
-    const key = LENS_LABEL_KEYS[lens];
-    return key ? tr(key) : lens.charAt(0).toUpperCase() + lens.slice(1);
-  }
+  const lensLabel = fedLensLabel;
 
   const ariaFor = (tr: Translator, lens: string, dir: Dir) =>
     tr(dir === "out" ? "fed.sendAria" : "fed.receiveAria", {
@@ -350,6 +445,57 @@
   {#if loading}
     <p class="hint">{$t("fed.loading")}</p>
   {:else}
+    {#if incoming}
+      <!-- What the partner asked of this holon: its admins answer here. -->
+      <div class="ask" role="status">
+        <p class="ask-text">
+          {#if incoming.kind === "unlink"}
+            {$t("fed.askUnlink", { name: nameB() })}
+          {:else}
+            {$t("fed.askLink", { name: nameB() })}
+            {#if incoming.inbound.length}
+              <span class="ask-flow"
+                >{$t("fed.askReceive", {
+                  lenses: incoming.inbound
+                    .map((l) => lensLabel($t, l))
+                    .join(", "),
+                })}</span
+              >
+            {/if}
+            {#if incoming.outbound.length}
+              <span class="ask-flow"
+                >{$t("fed.askSend", {
+                  lenses: incoming.outbound
+                    .map((l) => lensLabel($t, l))
+                    .join(", "),
+                })}</span
+              >
+            {/if}
+          {/if}
+        </p>
+        {#if canEdit}
+          <div class="ask-actions">
+            <button
+              type="button"
+              class="ask-btn accept"
+              disabled={busy}
+              on:click={() => answer("accept")}
+            >
+              <Icon name="check" />
+              {$t("fed.accept")}
+            </button>
+            <button
+              type="button"
+              class="ask-btn"
+              disabled={busy}
+              on:click={() => answer("decline")}
+            >
+              {$t("fed.decline")}
+            </button>
+          </div>
+        {/if}
+      </div>
+    {/if}
     <!-- One row per lens, and the pair again in miniature: this holon's
          circle, the two arrows that cross between them, the partner's
          circle. The lens sits in the middle, between its own two arrows. -->
@@ -366,13 +512,23 @@
           <div class="flow">
             {#each LANES as dir (dir)}
               {@const on = r.master ? allOn[dir] : isOn(cfg, r.key, dir)}
+              {@const lane = r.master
+                ? null
+                : laneOf(link, cfg, linked, r.key, dir)}
               <button
                 type="button"
                 class="lane {dir}"
                 class:on
+                class:waiting={lane === "waiting"}
+                class:offered={lane === "offered"}
                 class:part={r.master && !on && someOn[dir]}
                 aria-pressed={on}
-                aria-label={ariaFor($t, r.label, dir)}
+                aria-label={ariaFor($t, r.label, dir) +
+                  (lane === "waiting"
+                    ? " — " + $t("fed.laneWaiting", { name: nameB() })
+                    : lane === "offered"
+                      ? " — " + $t("fed.laneOffered", { name: nameB() })
+                      : "")}
                 disabled={busy || !canEdit}
                 on:click={() =>
                   r.master ? toggleAll(dir) : toggle(r.key, dir)}
@@ -412,6 +568,17 @@
     {:else}
       <p class="hint">{$t("fed.arrowHint")}</p>
     {/if}
+    {#if waitingCount > 0}
+      <p class="hint pending">
+        {$t("fed.waitingFor", { n: waitingCount, name: nameB() })}
+      </p>
+    {/if}
+    {#if offeredCount > 0 && canEdit}
+      <p class="hint">
+        {$t("fed.offeredBy", { n: offeredCount, name: nameB() })}
+      </p>
+    {/if}
+    {#if notice}<p class="hint note" role="status">{notice}</p>{/if}
     {#if hasPrivate}
       <p class="hint">{$t("fed.privateHint")}</p>
       {#if partnerEntry(auds)}
@@ -696,6 +863,84 @@
   .lane.part .head-l,
   .lane.part .head-r {
     opacity: 0.6;
+  }
+
+  /* A flow this side opened and the partner has not taken yet: drawn, but
+     dashed and faded — asked, not agreed. */
+  .lane.on.waiting .line {
+    border-top-style: dashed;
+    opacity: 0.6;
+  }
+  .lane.on.waiting .head-l,
+  .lane.on.waiting .head-r {
+    opacity: 0.55;
+  }
+  /* A flow the partner opened and this side has not: a ghost in the
+     partner's colour, one tap to take it. */
+  .lane.offered:not(.on) {
+    color: color-mix(in srgb, var(--b, var(--teal)) 45%, var(--muted));
+  }
+  .lane.offered:not(.on) .line {
+    opacity: 0.7;
+  }
+  .lane.offered:not(.on) .head-l,
+  .lane.offered:not(.on) .head-r {
+    opacity: 0.55;
+  }
+  .hint.pending {
+    color: var(--caution);
+  }
+  .hint.note {
+    color: var(--teal-ink);
+  }
+
+  .ask {
+    margin: 0 0 0.6rem;
+    padding: 0.65rem 0.75rem;
+    border-radius: 12px;
+    background: var(--glass);
+    border: 1.5px solid var(--b, var(--teal));
+  }
+  .ask-text {
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .ask-flow {
+    display: block;
+    margin-top: 0.2rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+  .ask-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.55rem;
+  }
+  .ask-btn {
+    flex: 1;
+    min-height: 44px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    background: var(--ghost);
+    color: var(--ink);
+    font-weight: 700;
+    font-size: 0.88rem;
+  }
+  .ask-btn.accept {
+    background: var(--teal-deep);
+    color: var(--on-teal);
+  }
+  .ask-btn :global(svg) {
+    width: 1em;
+    height: 1em;
+  }
+  .ask-btn:disabled {
+    opacity: 0.5;
   }
 
   .unlink {

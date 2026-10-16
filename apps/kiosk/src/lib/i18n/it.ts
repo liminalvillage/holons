@@ -850,6 +850,40 @@ export const it: Record<MessageKey, Msg> = {
   "fed.privateHint":
     "Una lente con il lucchetto è privata: la freccia apre il flusso, la chiave condivide il contenuto.",
   "fed.unlinkError": "Lo scollegamento non è stato salvato — riprova.",
+  "fed.askedPartner":
+    "Chiesto agli admin di {name} — questi flussi contano dal loro lato quando accettano.",
+  "fed.askedUnlink":
+    "Scollegato qui. Agli admin di {name} è stato chiesto di togliere anche il loro lato.",
+  "fed.laneWaiting": "in attesa che {name} accetti",
+  "fed.laneOffered": "{name} lo offre — tocca per accettarlo",
+  "fed.waitingFor": {
+    one: "{n} flusso attende che gli admin di {name} accettino.",
+    other: "{n} flussi attendono che gli admin di {name} accettino.",
+  },
+  "fed.offeredBy": {
+    one: "{name} offre {n} flusso che non hai preso — la freccia tenue.",
+    other: "{name} offre {n} flussi che non hai preso — le frecce tenui.",
+  },
+  "fed.askLink": "{name} chiede di federarsi con questo holon.",
+  "fed.askUnlink":
+    "{name} ha chiuso il collegamento. Togliere anche il lato di questo holon?",
+  "fed.askUnlinkShort": "ha chiuso il collegamento — togliere anche il nostro?",
+  "fed.askReceive": "Riceveresti: {lenses}",
+  "fed.askSend": "Invieresti: {lenses}",
+  "fed.askNoFlows": "un collegamento ancora senza flussi",
+  "fed.accept": "Accetta",
+  "fed.decline": "Rifiuta",
+  "fed.accepted": "Accettato — {name} è federato da questo lato.",
+  "fed.declined": "Richiesta di {name} rifiutata.",
+  "fed.answerError": "La risposta non è stata salvata — riprova.",
+  "fed.openPair": "Apri i flussi",
+  "fed.requestsTitle": "Richieste di federazione",
+  "fed.requestsSub":
+    "Altri holon chiedono di collegarsi. Accettare imposta il lato di questo holon; gli admin di ogni lato decidono il proprio.",
+  "fed.requestsBadge": {
+    one: "{n} richiesta di federazione",
+    other: "{n} richieste di federazione",
+  },
 
   // Location (hex) picker
   "hex.aria": "Scegli una posizione",

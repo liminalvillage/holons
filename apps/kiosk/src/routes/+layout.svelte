@@ -49,7 +49,8 @@
   } from "$lib/config";
   import { activeTheme, themeMode, startTheme } from "$lib/theme";
   import { langMode, holonLang, startI18n, tr, type Lang } from "$lib/i18n";
-  import { writeAcceptance } from "@holons/core/holosphere";
+  import { may, writeAcceptance } from "@holons/core/holosphere";
+  import { bindFedRequests } from "$lib/fedrequests";
   import { sessionKeyPub } from "$lib/sessionKey";
   import { loadSettings } from "@holons/core/settings";
   import { get } from "svelte/store";
@@ -1022,6 +1023,14 @@
   // stamp the previous holon's name on the new board — the id changes a tick
   // before the async bind clears the name, and a holon that resolves no name
   // of its own would then keep that borrowed one forever.
+  // Federation requests waiting for this board's admins: followed only while
+  // this key could answer them, so nobody else is shown a badge.
+  $: if (mounted)
+    bindFedRequests(
+      $holonIdStore ?? null,
+      !!$standing && may($standing, "federation"),
+    );
+
   $: if (mounted && $holonIdStore) {
     rememberBoard($holonIdStore, "");
     // …and in the signed-in person's own holon, so it follows them.

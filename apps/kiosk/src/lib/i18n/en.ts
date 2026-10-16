@@ -834,6 +834,39 @@ export const en = {
   "fed.privateHint":
     "A locked lens is private: the arrow opens the flow, the key lets the partner read what is inside.",
   "fed.unlinkError": "Unlink didn't save — try again.",
+  "fed.askedPartner":
+    "Asked {name}'s admins — these flows count on their side once they accept.",
+  "fed.askedUnlink":
+    "Unlinked here. {name}'s admins were asked to drop their side too.",
+  "fed.laneWaiting": "waiting for {name} to accept",
+  "fed.laneOffered": "{name} offers this — tap to take it",
+  "fed.waitingFor": {
+    one: "{n} flow waits for {name}'s admins to accept.",
+    other: "{n} flows wait for {name}'s admins to accept.",
+  },
+  "fed.offeredBy": {
+    one: "{name} offers {n} flow you have not taken — the faint arrow.",
+    other: "{name} offers {n} flows you have not taken — the faint arrows.",
+  },
+  "fed.askLink": "{name} asks to federate with this holon.",
+  "fed.askUnlink": "{name} ended its link. Drop this holon's side too?",
+  "fed.askUnlinkShort": "ended its link — drop ours too?",
+  "fed.askReceive": "You would receive: {lenses}",
+  "fed.askSend": "You would send: {lenses}",
+  "fed.askNoFlows": "a link with no flows yet",
+  "fed.accept": "Accept",
+  "fed.decline": "Decline",
+  "fed.accepted": "Accepted — {name} is federated on this side.",
+  "fed.declined": "Declined {name}'s request.",
+  "fed.answerError": "The answer didn't save — try again.",
+  "fed.openPair": "Open the flows",
+  "fed.requestsTitle": "Federation requests",
+  "fed.requestsSub":
+    "Other holons asking to link. Accepting sets this holon's side; each side's admins decide their own.",
+  "fed.requestsBadge": {
+    one: "{n} federation request",
+    other: "{n} federation requests",
+  },
 
   // Location (hex) picker
   "hex.aria": "Pick a location",

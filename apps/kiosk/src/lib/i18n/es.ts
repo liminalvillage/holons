@@ -846,6 +846,40 @@ export const es: Record<MessageKey, Msg> = {
   "fed.privateHint":
     "Una lente con candado es privada: la flecha abre el flujo, la llave comparte el contenido.",
   "fed.unlinkError": "La desvinculación no se guardó — inténtalo de nuevo.",
+  "fed.askedPartner":
+    "Se preguntó a los admins de {name}: estos flujos cuentan de su lado cuando acepten.",
+  "fed.askedUnlink":
+    "Desvinculado aquí. Se pidió a los admins de {name} que quiten también su lado.",
+  "fed.laneWaiting": "esperando a que {name} acepte",
+  "fed.laneOffered": "{name} lo ofrece — toca para tomarlo",
+  "fed.waitingFor": {
+    one: "{n} flujo espera que los admins de {name} acepten.",
+    other: "{n} flujos esperan que los admins de {name} acepten.",
+  },
+  "fed.offeredBy": {
+    one: "{name} ofrece {n} flujo que no has tomado — la flecha tenue.",
+    other: "{name} ofrece {n} flujos que no has tomado — las flechas tenues.",
+  },
+  "fed.askLink": "{name} pide federarse con este holón.",
+  "fed.askUnlink":
+    "{name} terminó su vínculo. ¿Quitar también el lado de este holón?",
+  "fed.askUnlinkShort": "terminó su vínculo — ¿quitar también el nuestro?",
+  "fed.askReceive": "Recibirías: {lenses}",
+  "fed.askSend": "Enviarías: {lenses}",
+  "fed.askNoFlows": "un vínculo aún sin flujos",
+  "fed.accept": "Aceptar",
+  "fed.decline": "Rechazar",
+  "fed.accepted": "Aceptado — {name} queda federado de este lado.",
+  "fed.declined": "Solicitud de {name} rechazada.",
+  "fed.answerError": "La respuesta no se guardó — inténtalo de nuevo.",
+  "fed.openPair": "Abrir los flujos",
+  "fed.requestsTitle": "Solicitudes de federación",
+  "fed.requestsSub":
+    "Otros holones piden vincularse. Aceptar fija el lado de este holón; los admins de cada lado deciden el suyo.",
+  "fed.requestsBadge": {
+    one: "{n} solicitud de federación",
+    other: "{n} solicitudes de federación",
+  },
 
   // Location (hex) picker
   "hex.aria": "Elige una ubicación",
