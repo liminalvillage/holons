@@ -131,3 +131,7 @@ IP is held personally by **Roberto Valenti**, who grants an exclusive,
 irrevocable license to **Rigenerativa SRL** — the single Licensor, which
 publishes Holons under the AGPL and issues the commercial license — see
 [LICENSING.md](./LICENSING.md).
+
+## Ecosystem
+
+- [Commons Protocol](https://github.com/TerexitariusStomp/commons-protocol) — open-source NFT marketplace + public-goods funding protocol planning holon-based coordination for funded projects (AGPL-compatible).
