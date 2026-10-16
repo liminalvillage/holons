@@ -596,7 +596,7 @@ declare class HoloSphere {
 
     // Federation - v1 style
     federate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null, bidirectional?: boolean, lensConfig?: { inbound?: string[], outbound?: string[] }): Promise<boolean>;
-    unfederate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null): Promise<boolean>;
+    unfederate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null, bidirectional?: boolean): Promise<boolean>;
 
     // Federation - v2 style
     federateHolon(sourceHolon: string, targetHolon: string, options?: { lensConfig?: { inbound?: string[]; outbound?: string[] }; partnerName?: string }): Promise<boolean>;

@@ -448,7 +448,7 @@ export async function getFederatedConfig(holosphere, spaceId, targetSpaceId, pas
  * @param {string} [password2] - Optional password for the second space
  * @returns {Promise<boolean>} - True if federation was removed successfully
  */
-export async function unfederate(holosphere, spaceId1, spaceId2, password1 = null, password2 = null) {
+export async function unfederate(holosphere, spaceId1, spaceId2, password1 = null, password2 = null, bidirectional = true) {
     if (!spaceId1 || !spaceId2) {
         throw new Error('unfederate: Missing required space IDs');
     }
@@ -497,8 +497,10 @@ export async function unfederate(holosphere, spaceId1, spaceId2, password1 = nul
         // sides (even with null passwords), so removal must mirror too or the
         // partner's record keeps pointing back forever. Best-effort: if
         // space2's record is password-protected and we don't hold the
-        // password, the local removal above still stands.
-        {
+        // password, the local removal above still stands. One-sided
+        // (`bidirectional: false`) leaves the partner's record to its own
+        // admins — the federation-request path asks them instead.
+        if (bidirectional) {
             let fedInfo2 = null;
             try {
                 fedInfo2 = await federationBase(holosphere, spaceId2, password2);
@@ -1147,13 +1149,27 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
                 fedInfo = await getFederation(holosphere, holon);
             }
             if (closed || !partnersOn || token !== attachToken) return;
-            if (!fedInfo || !Array.isArray(fedInfo.inbound)) return;
+            if (!fedInfo || !Array.isArray(fedInfo.inbound)) {
+                // The record stopped counting (or was emptied): nobody is received.
+                let dropped = false;
+                for (const space of [...subs.keys()]) {
+                    if (space !== holon) { removeSpace(space); dropped = true; }
+                }
+                if (dropped) emit();
+                return;
+            }
             const lensConfig = fedInfo.lensConfig || {};
             let receiving = fedInfo.inbound.filter(space => {
                 const inb = lensConfig[space] && lensConfig[space].inbound;
                 return Array.isArray(inb) && inb.includes(lens);
             });
             if (maxFederatedSpaces !== -1) receiving = receiving.slice(0, maxFederatedSpaces);
+            // A re-read after the record changed: partners no longer received
+            // leave (their items with them), new ones join below.
+            const keep = new Set(receiving.map(String));
+            for (const space of [...subs.keys()]) {
+                if (space !== holon && !keep.has(space)) removeSpace(space);
+            }
             await Promise.all(receiving.map(async space => {
                 if (closed || !partnersOn || token !== attachToken || space === holon) return;
                 const name = await getHolonName(holosphere, space).catch(() => null);
@@ -1179,6 +1195,25 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
     emit();
     if (includeFederated) attachPartners();
 
+    // Follow the holon's own federation record: a partner linked, unlinked or
+    // re-laned from ANOTHER device re-reads the partner set here, instead of
+    // waiting for a reload. Debounced — one edit can land as several envelopes.
+    let recordTimer = null;
+    let recordSub = null;
+    if (typeof holosphere.subscribeGlobal === 'function') {
+        try {
+            recordSub = holosphere.subscribeGlobal('federation', String(holon), () => {
+                if (closed || !partnersOn) return;
+                if (recordTimer) clearTimeout(recordTimer);
+                recordTimer = setTimeout(() => {
+                    recordTimer = null;
+                    invalidateFederationCache(holosphere, holon);
+                    attachPartners();
+                }, 500);
+            }, { realtimeOnly: true });
+        } catch { /* no live record: the toggle and a reload still re-read */ }
+    }
+
     return {
         /**
          * Fold inbound partners in (`true`) or drop them (`false`) live, WITHOUT
@@ -1192,6 +1227,8 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
         },
         unsubscribe() {
             closed = true;
+            if (recordTimer) clearTimeout(recordTimer);
+            try { recordSub?.unsubscribe(); } catch { /* best-effort teardown */ }
             for (const un of subs.values()) {
                 try { un(); } catch { /* best-effort teardown */ }
             }

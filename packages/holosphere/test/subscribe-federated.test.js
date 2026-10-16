@@ -336,4 +336,40 @@ describe('subscribeFederated', () => {
 
         expect(latest.filter((i) => i.id === 'agenda')).toHaveLength(1);
     }, 90000);
+
+    // The record is followed live: a link made or removed elsewhere (another
+    // device, the bot) re-reads the partner set without a re-subscribe.
+    test('follows the federation record: a partner linked and unlinked later', async () => {
+        const local = `subfed_e_${Date.now()}_local`;
+        const partner = `subfed_e_${Date.now()}_partner`;
+        const noProp = { autoPropagate: false };
+        await hs.put(local, lens, { id: 'Drill', value: 1 }, noProp);
+        await hs.put(partner, lens, { id: 'Ladder', value: 2 }, noProp);
+        await wait(1000);
+
+        let latest = [];
+        const sub = hs.subscribeFederated(local, lens, (items) => { latest = items; });
+        await wait(5000); // the config ladder gives up: no partners yet
+        expect(latest.map((i) => i.id)).toEqual(['Drill']);
+
+        await federateRetry(hs, local, partner, { inbound: [lens], outbound: [] });
+        await wait(4000);
+        expect(latest.map((i) => i.id).sort()).toEqual(['Drill', 'Ladder']);
+
+        await hs.unfederate(local, partner);
+        await wait(4000);
+        sub.unsubscribe();
+        expect(latest.map((i) => i.id)).toEqual(['Drill']);
+    }, 90000);
+
+    test('a one-sided unfederate leaves the partner record alone', async () => {
+        const a = `subfed_f_${Date.now()}_a`;
+        const b = `subfed_f_${Date.now()}_b`;
+        await federateRetry(hs, a, b, { inbound: [lens], outbound: [] });
+        await wait(1000);
+        await hs.unfederate(a, b, null, null, false);
+        await wait(800);
+        expect((await hs.getFederation(a))?.federated ?? []).not.toContain(b);
+        expect((await hs.getFederation(b))?.federated ?? []).toContain(a);
+    }, 90000);
 });

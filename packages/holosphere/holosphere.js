@@ -857,8 +857,8 @@ class HoloSphere {
         return Federation.getFederatedConfig(this, holonId, targetHolonId, password);
     }
 
-    async unfederate(holonId1, holonId2, password1, password2 = null) {
-        return await Federation.unfederate(this, holonId1, holonId2, password1, password2);
+    async unfederate(holonId1, holonId2, password1, password2 = null, bidirectional = true) {
+        return await Federation.unfederate(this, holonId1, holonId2, password1, password2, bidirectional);
     }
 
     async removeNotify(holonId1, holonId2, password1 = null) {
