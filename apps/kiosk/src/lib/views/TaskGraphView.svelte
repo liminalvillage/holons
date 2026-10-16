@@ -347,6 +347,7 @@
   }
 
   onDestroy(() => {
+    unlistenChip();
     if (edgeRaf) cancelAnimationFrame(edgeRaf);
     clearTimeout(pinTimer);
   });
@@ -531,6 +532,7 @@
   // ghost follows the pointer (the drawer scrolls, so the chip can't travel).
   let chip: {
     task: BacklogTask;
+    pointerId: number;
     /** Ghost position, in viewport-independent page coordinates. */
     x: number;
     y: number;
@@ -539,10 +541,17 @@
     ok: boolean;
   } | null = null;
 
+  // The gesture is followed on the WINDOW, not on the chip: a live update
+  // that reorders the drawer moves the chip's node, and moving a node drops
+  // its pointer capture — the release then lands elsewhere, the chip never
+  // hears it, and the drag stays live with nothing to end it (chip greyed
+  // out and ungrabbable, "Drop … on the task" stuck on screen).
   function onChipDown(e: PointerEvent, task: BacklogTask) {
     if (e.button != null && e.button > 0) return;
+    if (chip) return; // a second finger doesn't restart the carry
     chip = {
       task,
+      pointerId: e.pointerId,
       x: e.clientX,
       y: e.clientY,
       travelled: 0,
@@ -550,10 +559,19 @@
       ok: false,
     };
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    window.addEventListener("pointermove", onChipMove);
+    window.addEventListener("pointerup", onChipUp);
+    window.addEventListener("pointercancel", onChipUp);
+  }
+
+  function unlistenChip() {
+    window.removeEventListener("pointermove", onChipMove);
+    window.removeEventListener("pointerup", onChipUp);
+    window.removeEventListener("pointercancel", onChipUp);
   }
 
   function onChipMove(e: PointerEvent) {
-    if (!chip) return;
+    if (!chip || e.pointerId !== chip.pointerId) return;
     const travelled =
       chip.travelled + Math.hypot(e.clientX - chip.x, e.clientY - chip.y);
     if (travelled > TAP_SLOP) {
@@ -575,8 +593,8 @@
   let tappedChip: string | null = null;
 
   function onChipUp(e: PointerEvent) {
-    if (!chip) return;
-    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+    if (!chip || e.pointerId !== chip.pointerId) return;
+    unlistenChip(); // capture itself ends with the pointer
     const dropped = chip;
     chip = null;
     dragClient = null;
@@ -790,9 +808,6 @@
             tabindex="0"
             title={task.title}
             on:pointerdown={(e) => onChipDown(e, task)}
-            on:pointermove={onChipMove}
-            on:pointerup={onChipUp}
-            on:pointercancel={onChipUp}
             on:click={() => onChipClick(task.id)}
             on:keydown={(e) => e.key === "Enter" && onOpen(task.id)}
             >{task.title}</span
