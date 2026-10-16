@@ -56,8 +56,10 @@
     "dependsOn": {
       "type": "array"
     },
-    "canvasId": {
-      "type": "string"
+    "boardUrl": {
+      "type": "string",
+      "format": "uri",
+      "description": "Whiteboard: an excalidraw.com live room (https://excalidraw.com/#room=<id>,<key>), minted once."
     },
     "_meta": {
       "type": "object"

@@ -19,3 +19,5 @@ export * from './completion-plan.js';
 export * from './completion-execute.js';
 export * from './stop.js';
 export * from './deletion.js';
+export * from './chat.js';
+export * from './board.js';
