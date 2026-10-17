@@ -27,8 +27,9 @@
  *           and deposits
  *   time    hours logged, from the time-tracking expenses and from
  *           `quest:time_logged`, the same hour counted once
- *   kudos   `appreciation:sent` (never its `received` mirror), quest
- *           initiatives and completions — the units the ledger reads them in
+ *   kudos   `appreciation:sent` (never its `received` mirror) — one person
+ *           thanking another. Starting or finishing a task is not kudos:
+ *           nobody gave them, so they stay out of this track.
  *   items   stock produced, consumed and transferred, each in its own unit;
  *           `item:borrowed` as lends
  *
@@ -296,8 +297,6 @@ export function buildPeopleFlows(input: BuildPeopleFlowsInput): PeopleFlowTrack[
         hours(giver, takerOrHolon, quantity, (event.context as { questId?: unknown } | undefined)?.questId, ts, true);
         break;
       case 'appreciation:sent':
-      case 'quest:initiated':
-      case 'quest:completed':
         flow('appreciation', 'kudos', giver, takerOrHolon, quantity);
         break;
       case 'item:borrowed':

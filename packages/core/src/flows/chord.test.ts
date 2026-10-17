@@ -140,8 +140,8 @@ describe('buildPeopleFlows', () => {
     expect(track.total).toBe(2);
   });
 
-  it('reads quest initiatives and completions as kudos given to the holon', () => {
-    const [track] = buildPeopleFlows({
+  it('does not read starting or finishing a task as kudos', () => {
+    const tracks = buildPeopleFlows({
       ...base,
       expenses: [],
       events: [
@@ -149,8 +149,7 @@ describe('buildPeopleFlows', () => {
         event({ eventType: 'quest:completed', resource: { type: 'appreciation', quantity: 3, unit: 'completion' }, receiver: undefined }),
       ],
     });
-    expect(track.id).toBe('appreciation');
-    expect(cell(track, 'a', 'h')).toBe(4);
+    expect(tracks).toEqual([]);
   });
 
   it('reads logged hours from time-tracking expenses and events, once each', () => {

@@ -495,32 +495,6 @@ function collectAppreciation(
 					kind: 'appreciation',
 				});
 				break;
-			case 'quest:initiated':
-				if (!provider) break;
-				out.push({
-					...base,
-					direction: 'in',
-					nodeId: `initiative-${provider}`,
-					nodeLabel: label(provider),
-					party: label(provider),
-					partyId: provider,
-					participants: [label(provider)],
-					kind: 'initiative',
-				});
-				break;
-			case 'quest:completed':
-				if (!provider) break;
-				out.push({
-					...base,
-					direction: 'in',
-					nodeId: `completion-${provider}`,
-					nodeLabel: label(provider),
-					party: label(provider),
-					partyId: provider,
-					participants: [label(provider)],
-					kind: 'completion',
-				});
-				break;
 			default:
 				break;
 		}

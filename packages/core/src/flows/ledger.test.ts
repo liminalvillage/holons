@@ -126,6 +126,16 @@ describe('buildLedger', () => {
     expect(new Set(entries.map((e) => e.id)).size).toBe(entries.length);
   });
 
+  it('lists no kudos for starting or finishing a task — nobody gave them', () => {
+    const { entries } = ledger({
+      events: [
+        event({ eventType: 'quest:initiated', resource: { type: 'appreciation', quantity: 1, unit: 'initiative' }, provider: { id: 'ana' } }),
+        event({ id: 'c', eventType: 'quest:completed', resource: { type: 'appreciation', quantity: 3, unit: 'completion' }, provider: { id: 'ana' } }),
+      ],
+    });
+    expect(entries.filter((e) => e.track === 'appreciation')).toHaveLength(0);
+  });
+
   it('carries the OpenCollective counterparty and description', () => {
     const { entries } = ledger({ collective });
     const donation = entries.find((e) => e.direction === 'in')!;
