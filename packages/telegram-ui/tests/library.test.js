@@ -1,5 +1,7 @@
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect, vi } from 'vitest';
 import { minuteKey, ymd } from '@holons/core/library';
 import Library from '../src/Library.js';
@@ -180,8 +182,8 @@ describe('Library (telegram)', () => {
       expect.arrayContaining(['00:00', '14:00', '23:00'])
     );
     const lengths = await tap('lb_h_11:00');
-    expect(buttons(lengths).map(([, data]) => data)).toContain('lb_n_60');
-    await tap('lb_n_60');
+    expect(buttons(lengths).map(([, data]) => data)).toContain('lb_l_60');
+    await tap('lb_l_60');
 
     // Back to back with Ana's hour: 11:00–12:00 stands.
     expect(store.get('car').bookings.map(b => [b.start, b.end])).toEqual([
@@ -194,7 +196,7 @@ describe('Library (telegram)', () => {
     await tap('lb_t', ANA);
     await tap(`lb_d_${tomorrow}`, ANA);
     await tap('lb_h_11:00', ANA);
-    const clash = await tap('lb_n_120', ANA);
+    const clash = await tap('lb_l_120', ANA);
     expect(clash.answerCbQuery.mock.calls[0][0]).toMatch(/^Booked by Roberto/);
     expect(store.get('car').bookings).toHaveLength(2);
   });
@@ -215,5 +217,37 @@ describe('Library (telegram)', () => {
     const hours = await tap(`lb_d_${day(0)}`);
     const first = buttons(hours)[0][0];
     expect(first).toBe(`${minuteKey(new Date()).slice(11, 13)}:00`);
+  });
+
+  // The bot shares one callback namespace, and the first handler that matches
+  // wins: the scheduler's unanchored /n_(.+)/ once swallowed the length tap.
+  it('no other module answers a booking button', () => {
+    const src = fileURLToPath(new URL('../src/', import.meta.url));
+    const others = [];
+    for (const file of readdirSync(src)) {
+      if (!/\.(ts|js)$/.test(file) || file === 'Library.ts') continue;
+      const code = readFileSync(src + file, 'utf8');
+      for (const m of code.matchAll(
+        /\.action\(\s*\/((?:\\.|[^/\n])+)\/([a-z]*)/g
+      )) {
+        others.push([file, new RegExp(m[1], m[2])]);
+      }
+    }
+    expect(others.length).toBeGreaterThan(20);
+    const taps = [
+      'lb_q_60',
+      'lb_t',
+      'lb_h_14:00',
+      'lb_l_60',
+      'lb_d_2026-10-12',
+      'lb_m_2026-10_mm',
+      'library_cancel_borrow',
+    ];
+    const shadowed = taps.flatMap(data =>
+      others
+        .filter(([, re]) => re.test(data))
+        .map(([file]) => `${data} ← ${file}`)
+    );
+    expect(shadowed).toEqual([]);
   });
 });

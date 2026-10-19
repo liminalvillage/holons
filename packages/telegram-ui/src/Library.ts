@@ -202,7 +202,7 @@ class Library {
         this.bot.action(/^lb_q_(\d+)$/, (ctx) => this.handleQuickBorrow(ctx, parseInt(ctx.match[1])));
         this.bot.action('lb_t', (ctx) => this.handlePickTime(ctx));
         this.bot.action(/^lb_h_(\d{2}:\d{2})$/, (ctx) => this.handleStartSelected(ctx, ctx.match[1]));
-        this.bot.action(/^lb_n_(\d+)$/, (ctx) => this.handleLengthSelected(ctx, parseInt(ctx.match[1])));
+        this.bot.action(/^lb_l_(\d+)$/, (ctx) => this.handleLengthSelected(ctx, parseInt(ctx.match[1])));
         this.bot.action(/lb_m_(.+)_(.+)/, (ctx) => this.handleCalendarNavigation(ctx));
         this.bot.action('library_cancel_borrow', (ctx) => this.cancelPendingBorrow(ctx));
 
@@ -578,7 +578,7 @@ class Library {
             return;
         }
         pending.start = bookingBound(pending.day, time);
-        const lengths = LENGTH_MINUTES.map(m => ({ text: fmtLength(m), callback_data: `lb_n_${m}` }));
+        const lengths = LENGTH_MINUTES.map(m => ({ text: fmtLength(m), callback_data: `lb_l_${m}` }));
         await ctx.answerCbQuery().catch(() => {});
         await ctx.editMessageText(
             `🕐 Booking ${pending.itemName} from ${fmtBound(pending.start)}\n\nFor how long?`,
