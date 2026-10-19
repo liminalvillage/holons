@@ -19,11 +19,13 @@ import {
   loadCascadeChildren,
   loadFlowGraph,
   refineFlowGraph,
+  refineFlowGraphResources,
   resourcesOf,
   scoreAllocationMembers,
   standingOf,
   type FlowGraph,
   type FlowGraphDrift,
+  type Capital,
   type FlowGraphIndex,
 } from "@holons/core/flows";
 import { resolveAppName, resolveDevGraphUrl, resolvePot } from "./config";
@@ -122,7 +124,11 @@ export function loadSnapshot(force = false): Promise<void> {
     if (!before.graph) {
       const cached = readCache();
       if (cached)
-        snapshot.set({ status: "loading", graph: cached, cached: true });
+        snapshot.set({
+          status: "loading",
+          graph: withLiveResources(cached),
+          cached: true,
+        });
     }
 
     const devUrl = resolveDevGraphUrl();
@@ -142,7 +148,11 @@ export function loadSnapshot(force = false): Promise<void> {
       if (loaded.ok) {
         writeCache(loaded.graph);
         refined.set({});
-        snapshot.set({ status: "ready", graph: loaded.graph, cached: false });
+        snapshot.set({
+          status: "ready",
+          graph: withLiveResources(loaded.graph),
+          cached: false,
+        });
       } else {
         // Whatever was on screen stays; the status says why it is not fresher.
         snapshot.update((s) => ({ ...s, status: loaded.reason }));
@@ -225,4 +235,34 @@ export async function refine(holonId: string, force = false): Promise<void> {
   } finally {
     refining.delete(holon);
   }
+}
+
+/** Party → its resource base as last read off its own log this visit. */
+const liveResources = new Map<string, Partial<Record<Capital, number>>>();
+
+/** A snapshot with every resource base read this visit folded in. */
+function withLiveResources(graph: FlowGraph): FlowGraph {
+  let out = graph;
+  for (const [id, byCapital] of liveResources)
+    out = refineFlowGraphResources(out, id, byCapital);
+  return out;
+}
+
+/**
+ * Fold one party's resource base, as just read from its log, into the graph
+ * on screen — the snapshot counts gifts as they were when it was published —
+ * and keep it, so a snapshot that lands later does not undo it. Not over the
+ * dev fixture, which is the whole truth in that mode.
+ */
+export function refineResources(
+  partyId: string,
+  byCapital: Partial<Record<Capital, number>>,
+): void {
+  if (resolveDevGraphUrl()) return;
+  liveResources.set(partyId, byCapital);
+  snapshot.update((s) =>
+    s.graph
+      ? { ...s, graph: refineFlowGraphResources(s.graph, partyId, byCapital) }
+      : s,
+  );
 }

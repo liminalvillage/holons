@@ -8,7 +8,9 @@
   // that the resource base sets financial bandwidth: a fund that turns it
   // on sends part of what it gives by resource base (`resourced`).
   //
-  // The ranking is core's (`rankByResources`); it reads the published map.
+  // The ranking is core's (`rankByResources`) over the published map, with
+  // each party's base read live off its own log once per visit — a gift
+  // received since the last publish moves the board without waiting for one.
   import { rankByResources, type FlowPartyKind } from "@holons/core/flows";
   import { page } from "$app/stores";
   import CapitalBlocks from "$lib/components/CapitalBlocks.svelte";
@@ -17,6 +19,7 @@
   import SnapshotStatus from "$lib/components/SnapshotStatus.svelte";
   import { pct } from "$lib/format";
   import { index } from "$lib/graph";
+  import { accountResources } from "$lib/resources";
   import { t, type MessageKey } from "$lib/i18n";
   import { hrefFor, withParam } from "$lib/urls";
 
@@ -35,6 +38,24 @@
     ? rankByResources($index.graph.nodes.filter((n) => n.kind === kind))
     : [];
   $: shown = ranked.slice(0, LIMIT);
+
+  /** How many of a kind's parties are read at once. */
+  const READING = 4;
+  const read = new Set<string>();
+  $: if ($index) readLive($index.graph.nodes.filter((n) => n.kind === kind));
+
+  /** Each party's base, off its log; `accountResources` folds it into the map. */
+  async function readLive(nodes: { id: string }[]) {
+    const queue = nodes.map((n) => n.id).filter((id) => !read.has(id));
+    for (const id of queue) read.add(id);
+    const next = async (): Promise<void> => {
+      const id = queue.shift();
+      if (id == null) return;
+      await accountResources(id);
+      return next();
+    };
+    await Promise.all(Array.from({ length: READING }, next));
+  }
 </script>
 
 <svelte:head><title>{$t("rise.title")} · Flows</title></svelte:head>

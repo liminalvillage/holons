@@ -19,6 +19,7 @@ import {
   type ResourceOffer,
   type ResourcesContext,
 } from "@holons/core/flows";
+import { refineResources } from "./graph";
 import { getHolosphere } from "./holosphere";
 
 export const EMPTY_RESOURCES: ResourcesContext = {
@@ -31,7 +32,10 @@ export const EMPTY_RESOURCES: ResourcesContext = {
 
 const cache = new Map<string, Promise<ResourcesContext>>();
 
-/** An account's gifts and offers. Quiet: one that cannot be read has none. */
+/**
+ * An account's gifts and offers. Quiet: one that cannot be read has none.
+ * What is read is folded into the map, so every ranking follows the log.
+ */
 export function accountResources(
   id: string,
   force = false,
@@ -39,7 +43,9 @@ export function accountResources(
   if (!force && cache.has(id)) return cache.get(id)!;
   const read = (async () => {
     try {
-      return await loadResources(await getHolosphere(), id);
+      const ctx = await loadResources(await getHolosphere(), id);
+      refineResources(id, ctx.base.byCapital);
+      return ctx;
     } catch {
       return EMPTY_RESOURCES;
     }
