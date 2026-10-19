@@ -33,6 +33,7 @@
 import { getholonId, getUserId } from './utilities.js';
 import { createIdentityContext } from '@holons/core/holosphere';
 import { ethers } from 'ethers';
+import { flowsLine } from './flowsLink.js';
 import {
   FLOW_CLAIMS_LENS,
   FLOW_MINTS_LENS,
@@ -55,8 +56,12 @@ import {
   loadPotRecord,
   loadRights,
   lunationAt,
+  resourcesOf,
   rightsByRef,
   scoreAllocationMembers,
+  FLOW_EXITS_LENS,
+  FLOW_NEEDS_LENS,
+  foldStandingFromLenses,
 } from '@holons/core/flows';
 import {
   GOVERNANCE_VOTES_LENS,
@@ -162,6 +167,23 @@ export default class FundClaims {
         secret: this.secret,
       })
     );
+  }
+
+  /** Who exited and who is in need, folded with the keys this bot knows. */
+  async standing(holon) {
+    const exits = await readLogContext(this.db, holon, FLOW_EXITS_LENS, {
+      secret: this.secret,
+    });
+    const needs = await readLogContext(this.db, holon, FLOW_NEEDS_LENS, {
+      secret: this.secret,
+    });
+    return foldStandingFromLenses({
+      ...exits,
+      exits: exits.entries,
+      needs: needs.entries,
+      exitImports: exits.imports,
+      needsImports: needs.imports,
+    }).standing;
   }
 
   /** Sign an entry as the member (derived key) and add it to the claims log. */
@@ -815,11 +837,24 @@ export default class FundClaims {
         chainId: pot.chainId,
         received,
         scoreOf: id => scoreAllocationMembers(db, id),
+        standingOf: id => this.standing(id),
+        resourcesOf: resourcesOf(db),
+        ...(pot.walk?.holons ? { maxHolons: pot.walk.holons } : {}),
+        ...(pot.walk?.depth ? { maxDepth: pot.walk.depth } : {}),
+        ...(pot.walk?.nodes ? { maxNodes: pot.walk.nodes } : {}),
       });
       if (!cut.complete || !cut.table) {
         console.warn(
           `[fundclaims] ${h}: table for lunation ${epoch} not cut — ${cut.problems.join('; ')}`
         );
+        if (/^-?\d+$/.test(h)) {
+          this.bot?.telegram
+            ?.sendMessage(
+              h,
+              `🌑 New moon: the rights table for lunation ${epoch} was NOT cut — ${cut.problems[0] || 'the walk did not complete'}. The income rolls into the next moon.`
+            )
+            .catch(() => {});
+        }
         continue;
       }
       const entry = buildRightsEntry({
@@ -835,7 +870,7 @@ export default class FundClaims {
         this.bot?.telegram
           ?.sendMessage(
             h,
-            `🌑 New moon: the rights table for lunation ${epoch} is published (${cut.table.rows.length} rows). Signers, sign and post it from the kiosk or the dashboard; it applies after the challenge window.`
+            `🌑 New moon: the rights table for lunation ${epoch} is published (${cut.table.rows.length} rows${cut.exited.length ? `, ${cut.exited.length} exited` : ''}${cut.lapsed.length ? `, ${cut.lapsed.length} unclaimed seats retired` : ''}). Signers, sign and post it from the kiosk or the dashboard; it applies after the challenge window.${flowsLine('Who gets what', 'h', h)}`
           )
           .catch(() => {});
       }

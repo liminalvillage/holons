@@ -22,6 +22,7 @@ import Tags from './Tags.js';
 import Participation from './RSVP.js';
 import Roles from './Roles.js';
 import FundClaims from './FundClaims.js';
+import ArtisanFork from './ArtisanFork.js';
 import GovernanceVotes from './GovernanceVotes.js';
 
 // Delete lock file if it exists
@@ -122,6 +123,7 @@ class HolonsBot {
     this.participation = new Participation(this.bot, this.db);
     this.roles = new Roles(this.bot, this.db, this.ui, this.settings);
     this.fundClaims = new FundClaims(this.bot, this.db);
+    this.artisanFork = new ArtisanFork(this.bot, this.db);
     this.governanceVotes = new GovernanceVotes(this.bot, this.db);
     this.quests = new Quests(this.bot, this.db, this.users, this.settings);
     this.settings.setQuestsInstance(this.quests);
