@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { formatDate, formatTime } from '../../utils/date';
-	import { resolveImage } from '../../utils/imageServer';
+	import { pictureUrl } from '@holons/core/media';
 	import SourceBadge from './SourceBadge.svelte';
 	import CategoryBadge from './badges/CategoryBadge.svelte';
 	import RecurringBadge from './badges/RecurringBadge.svelte';
@@ -125,7 +125,7 @@
 			{#if quest.picture}
 				<img
 					class="note-thumb"
-					src={resolveImage(quest.picture)}
+					src={pictureUrl(quest.picture)}
 					alt={quest.title}
 					loading="lazy"
 					onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
@@ -183,7 +183,7 @@
 			{#if quest.picture}
 				<img
 					class="row-thumb"
-					src={resolveImage(quest.picture)}
+					src={pictureUrl(quest.picture)}
 					alt={quest.title}
 					loading="lazy"
 					onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
@@ -272,7 +272,7 @@
 		{#if quest.picture}
 			<img
 				class="card-thumb"
-				src={resolveImage(quest.picture)}
+				src={pictureUrl(quest.picture)}
 				alt={quest.title}
 				loading="lazy"
 				onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}

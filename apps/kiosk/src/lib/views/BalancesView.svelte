@@ -36,7 +36,7 @@
   import { currentUser, loginOpen } from "$lib/auth";
   import { t, locale } from "$lib/i18n";
   import { getReaStore } from "$lib/holosphere";
-  import { resolveImage } from "$lib/image";
+  import { pictureUrl } from "@holons/core/media";
   import {
     coerceSplitWith,
     expenseSharers,
@@ -799,7 +799,7 @@
       {#if e.picture}
         <img
           class="receipt"
-          src={resolveImage(e.picture)}
+          src={pictureUrl(e.picture)}
           alt=""
           loading="lazy"
           on:error={hideImg}

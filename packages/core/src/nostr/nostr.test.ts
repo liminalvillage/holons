@@ -88,6 +88,12 @@ describe('calendar codec', () => {
     expect(tag(r.template.tags, 'status')![1]).toBe('accepted');
     expect(r.authorHint).toEqual({ userId: 42 });
   });
+  it('puts only hosted pictures in the image tag', () => {
+    for (const picture of ['data:image/jpeg;base64,/9j/4AAQ', 'AgACAgQAAyEFAAMBCIaEhgAD62rV4tEDzqRZePt7']) {
+      const out = quests.project(HOLON, { id: 2, title: 'x', when: '2026-09-01', picture }, ctx)!;
+      expect(tag(out.primary.tags, 'image')).toBeUndefined();
+    }
+  });
   it('projects a date-only quest to 31922 and skips undated / cancelled ones', () => {
     const out = quests.project(HOLON, { id: 1, title: 'x', when: '2026-09-01', ends: '2026-09-02' }, ctx)!;
     expect(out.primary.kind).toBe(CALENDAR_DATE_KIND);

@@ -8,7 +8,7 @@
   // the resulting order persists as each quest's orderIndex.
   import { glide } from "$lib/glide";
   import Avatars, { hideImg } from "$lib/components/Avatars.svelte";
-  import { resolveImage } from "$lib/image";
+  import { pictureUrl } from "@holons/core/media";
   import { currentUser } from "$lib/auth";
   import { sameId } from "$lib/ids";
   import type { BacklogTask } from "$lib/data";
@@ -76,7 +76,7 @@
           {#if task.picture}
             <img
               class="row-thumb"
-              src={resolveImage(task.picture)}
+              src={pictureUrl(task.picture)}
               alt=""
               loading="lazy"
               on:error={hideImg}

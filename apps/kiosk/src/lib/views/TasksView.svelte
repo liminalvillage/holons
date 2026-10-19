@@ -23,7 +23,7 @@
   import type { TaskSort } from "$lib/data";
   import { isLoggedIn, loginOpen, currentUser } from "$lib/auth";
   import { getHolosphere, getWriter } from "$lib/holosphere";
-  import { resolveImage } from "$lib/image";
+  import { pictureUrl } from "@holons/core/media";
   import { hideImg } from "$lib/components/Avatars.svelte";
   import { checkComplete, recordCompletion } from "$lib/complete";
   import {
@@ -932,7 +932,7 @@
                   {#if task.picture}
                     <img
                       class="thumb"
-                      src={resolveImage(task.picture)}
+                      src={pictureUrl(task.picture)}
                       alt=""
                       loading="lazy"
                       on:error={hideImg}

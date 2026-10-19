@@ -31,7 +31,7 @@
 		return 0;
 	}
 
-	import { resolveImage } from "../utils/imageServer";
+	import { pictureUrl } from "@holons/core/media";
 	import { Plus } from 'svelte-feathers';
 	import FeatureToolbar from "./shared/FeatureToolbar.svelte";
 	import TitleBar from "./shared/TitleBar.svelte";
@@ -770,7 +770,7 @@
 						<div class="expense-card">
 							{#if expense.picture}
 								<img
-									src={resolveImage(expense.picture)}
+									src={pictureUrl(expense.picture)}
 									alt={expense.description}
 									class="expense-thumb"
 									loading="lazy"

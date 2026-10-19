@@ -8,7 +8,7 @@
 	import type { HoloSphere } from "holosphere";
 	import TitleBar from "./shared/TitleBar.svelte";
 	import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
-	import { resolveImage } from '../utils/imageServer';
+	import { pictureUrl } from '@holons/core/media';
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -173,7 +173,7 @@
 
 	// Where a content item leads: a URL in its text, its own link, else its picture
 	function linkOf(content) {
-		return extractUrl(content.messageContent || '') || content.link || content.url || resolveImage(content.picture) || null;
+		return extractUrl(content.messageContent || '') || content.link || content.url || pictureUrl(content.picture) || null;
 	}
 
 	// Function to truncate text if needed
@@ -281,7 +281,7 @@
 												on:click={(e) => handleContentClick(content, e)}
 											>
 												{#if content.picture}
-													<img src={resolveImage(content.picture)} alt="" loading="lazy" class="w-full max-h-48 object-cover rounded-md mb-2" />
+													<img src={pictureUrl(content.picture)} alt="" loading="lazy" class="w-full max-h-48 object-cover rounded-md mb-2" />
 												{/if}
 												<div class="break-words whitespace-pre-wrap">
 													{truncateText(content.messageContent || '')}
@@ -337,7 +337,7 @@
 												on:click={(e) => handleContentClick(content, e)}
 											>
 												{#if content.picture}
-													<img src={resolveImage(content.picture)} alt="" loading="lazy" class="w-full max-h-48 object-cover rounded-md mb-2" />
+													<img src={pictureUrl(content.picture)} alt="" loading="lazy" class="w-full max-h-48 object-cover rounded-md mb-2" />
 												{/if}
 												<div class="break-words whitespace-pre-wrap">
 													{truncateText(content.messageContent || '')}

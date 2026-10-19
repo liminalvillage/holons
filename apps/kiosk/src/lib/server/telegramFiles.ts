@@ -28,7 +28,13 @@ export interface ResolvedFile {
 }
 
 function botTokens(): string[] {
-  const raw = [env.BOT_TOKEN, env.TELEGRAM, env.VITE_TELEGRAM_BOT_TOKEN];
+  // BOT_TOKENS lists every other bot whose file_ids are in the graph.
+  const raw = [
+    env.BOT_TOKEN,
+    env.TELEGRAM,
+    env.VITE_TELEGRAM_BOT_TOKEN,
+    ...(env.BOT_TOKENS ?? "").split(","),
+  ];
   // The .env values have been seen carrying stray control characters —
   // strip anything a real token can't contain, and dedupe.
   const cleaned = raw

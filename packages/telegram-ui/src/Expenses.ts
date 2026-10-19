@@ -7,6 +7,7 @@ import fs from 'fs';
 import i18next from 'i18next';
 import * as utils from './utilities.js';
 import { createPaddedCaption } from './utilities.js';
+import { hostTelegramPicture } from './Pictures.js';
 import { REAEventStore, REAEventFactory } from '@holons/core/rea';
 import { REAAggregator } from '@holons/core/scoring';
 import {
@@ -284,7 +285,11 @@ export default class Expenses {
         }
 
 
-        const picture = ctx.message.photo ? ctx.message.photo[ctx.message.photo.length - 1].file_id : null;
+        // A hosted URL every bot and surface can open (file_id on failure).
+        const picture = await hostTelegramPicture(
+            ctx.telegram,
+            ctx.message.photo ? ctx.message.photo[ctx.message.photo.length - 1].file_id : null,
+        );
         // The split starts empty: the payer picks who shares the cost from the
         // participant buttons, and "Select All" is the shortcut for everyone.
         const expense = await this.addExpense(messageId + 1, holonId, amount, normalizedCurrency, description, ctx.from.id, [], picture);

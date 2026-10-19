@@ -7,6 +7,7 @@
 // Telegram shell (command parsing + replies) over it.
 import { CARDS_TAG, getTagEntries, tagCard, tagMessage, type TagsDB } from '@holons/core/tags';
 import { transcribeImage } from './AI.js';
+import { hostTelegramPicture } from './Pictures.js';
 
 // Minimal structural types so we don't depend on the full Telegraf surface
 // area in this UI-only handler. The bot/db are duck-typed against what this
@@ -182,7 +183,7 @@ export default class Tags {
       await tagCard(this.db, ctx.chat.id.toString(), {
         messageId: source.message_id,
         text,
-        picture,
+        picture: await hostTelegramPicture(ctx.telegram, picture),
       });
       return ctx.reply(`🗂 Saved under #${CARDS_TAG}:\n\n${text}`, replyTo);
     } catch (error) {

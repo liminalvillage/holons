@@ -28,6 +28,7 @@ import {
     type Quest as CoreQuest,
 } from '@holons/core/tasks';
 import { DEFAULT_EQUATION } from '@holons/core/scoring';
+import { hostTelegramPicture } from './Pictures.js';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
@@ -247,7 +248,8 @@ export default class Events {
             message_thread_id: ctx.message?.is_topic_message ? ctx.message.message_thread_id : null,
             initiator: sender,
             title,
-            picture,
+            // A hosted URL every bot and surface can open (file_id on failure).
+            picture: await hostTelegramPicture(ctx.telegram, picture),
             type: 'event',
             status: 'ongoing',
             date: Date.now(),

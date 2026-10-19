@@ -32,6 +32,7 @@ import {
 import { DEFAULT_EQUATION } from '@holons/core/scoring';
 import { createOffer, publishOfferNearby } from '@holons/core/offers';
 import { parseOfferText } from './Offers.js';
+import { hostTelegramPicture } from './Pictures.js';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
@@ -369,6 +370,10 @@ export default class Quests {
             }
         }
         
+        // The record keeps a hosted URL every bot and surface can open; the
+        // reply below still sends this bot's own file_id.
+        const stored = await hostTelegramPicture(ctx.telegram, picture);
+
         // Create the record via the shared core/tasks factories so the bot and
         // the web app produce the same shape. Offers/requests are marketplace
         // items (carry exchange_type); everything else is a plain task/quest.
@@ -390,11 +395,11 @@ export default class Quests {
                       price: parsedOffer.price,
                       currency: parsedOffer.currency,
                       itemType: parsedOffer.itemType,
-                      picture,
+                      picture: stored,
                   })
                 : type === 'offer' || type === 'request'
-                  ? createMarketItem({ holonId, initiator: sender, kind: type, title, category, picture, messageThreadId })
-                  : createTask({ holonId, initiator: sender, title, type, category, picture, messageThreadId });
+                  ? createMarketItem({ holonId, initiator: sender, kind: type, title, category, picture: stored, messageThreadId })
+                  : createTask({ holonId, initiator: sender, title, type, category, picture: stored, messageThreadId });
         if (type === 'offer' && messageThreadId != null) quest.message_thread_id = messageThreadId;
         
         // Send message and save quest

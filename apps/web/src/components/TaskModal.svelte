@@ -11,7 +11,9 @@
     import ProposalVote from './governance/ProposalVote.svelte';
     import TaskChat from './TaskChat.svelte';
     import { formatDate } from "../utils/date";
-    import { resolveImage } from "../utils/imageServer";
+    import { get } from "svelte/store";
+    import { pictureUrl, resolveMediaServers, uploadBlob } from "@holons/core/media";
+    import { signerFromSecretKey } from "@holons/core/holosphere";
     import { fileToDownscaledDataURL } from "../utils/imageCompression";
     import {
         type ScoreEquation,
@@ -25,7 +27,7 @@
         subscribeToHolon,
         isSubscribed
     } from "../lib/holonCache";
-    import { nostrPublicKey } from "../lib/stores/nostr";
+    import { nostrPrivateKey, nostrPublicKey } from "../lib/stores/nostr";
     import { telegramStore } from "../lib/stores/telegram";
     import { notifyWriteDenied } from "../lib/stores/writeNotifications";
     import {
@@ -862,12 +864,11 @@
         }
     }
 
-    // Read a chosen image, downscale + re-encode as JPEG, and persist it on
-    // the quest as a `data:image/jpeg;base64,…` URL. The compression step is
-    // mandatory because the picture replicates through the Holosphere graph
-    // to every peer — uncompressed phone-camera shots would bloat state for
-    // the entire holon. Format stays compatible with telegram-ui inlined
-    // pictures and the existing resolveImage() render path.
+    // Read a chosen image, downscale + re-encode as JPEG, upload it to
+    // Blossom signed by the member's key, and store the hosted URL on the
+    // quest — the same shape the bot stores, so every surface, every bot and
+    // other Nostr clients can show it. If no media server takes it the
+    // compressed data: URL is stored instead, as before.
     async function handlePictureSelect(event: Event) {
         const input = event.currentTarget as HTMLInputElement;
         const file = input.files?.[0];
@@ -893,12 +894,32 @@
                 alert("Failed to read this image. Try a different file.");
                 return;
             }
-            await updateQuest({ picture: processed.src });
+            await updateQuest({ picture: await hostPicture(processed.src) });
         } catch (err) {
             console.error("[TaskModal.svelte] Failed to attach picture:", err);
             alert("Failed to attach picture.");
         } finally {
             pictureUploading = false;
+        }
+    }
+
+    async function hostPicture(dataUrl: string): Promise<string> {
+        const sk = get(nostrPrivateKey);
+        if (!sk) return dataUrl;
+        try {
+            const [head, b64] = dataUrl.split(",");
+            const type = /^data:([^;]+)/.exec(head)?.[1] ?? "image/jpeg";
+            const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+            const blob = await uploadBlob({
+                bytes,
+                type,
+                signer: signerFromSecretKey(sk),
+                servers: resolveMediaServers(import.meta.env.VITE_MEDIA_SERVERS),
+            });
+            return blob.url;
+        } catch (err) {
+            console.warn("[TaskModal.svelte] Blossom upload failed, storing the picture inline:", err);
+            return dataUrl;
         }
     }
 
@@ -1619,7 +1640,7 @@
                 {#if quest.picture}
                     <div class="relative rounded-lg overflow-hidden bg-gray-700/30 group">
                         <img
-                            src={resolveImage(quest.picture)}
+                            src={pictureUrl(quest.picture)}
                             alt={quest.title}
                             class="w-full max-h-64 object-cover"
                             loading="lazy"

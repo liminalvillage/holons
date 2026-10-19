@@ -58,8 +58,13 @@ export function isDateOnly(value: unknown): value is string {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
+/**
+ * A hosted http(s) URL — the only picture another Nostr client can load.
+ * Inline data: URIs would bloat the event past relay limits and Telegram
+ * file_ids open only with one bot's token, so neither goes in a tag.
+ */
 export function isUrl(value: unknown): value is string {
-  return typeof value === 'string' && /^(https?:\/\/|data:image\/)/i.test(value);
+  return typeof value === 'string' && /^https?:\/\//i.test(value);
 }
 
 /** Build a NIP-09 deletion for a set of addressable events. */

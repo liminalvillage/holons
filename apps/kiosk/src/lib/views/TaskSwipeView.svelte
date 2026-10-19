@@ -21,7 +21,7 @@
   import { tick } from "svelte";
   import { setTaskView } from "$lib/config";
   import { sameId } from "$lib/ids";
-  import { resolveImage } from "$lib/image";
+  import { pictureUrl } from "@holons/core/media";
   import { hideImg } from "$lib/components/Avatars.svelte";
   import {
     badgeOpacity,
@@ -449,7 +449,7 @@
             {#if task.picture}
               <img
                 class="thumb"
-                src={resolveImage(task.picture)}
+                src={pictureUrl(task.picture)}
                 alt=""
                 loading="lazy"
                 on:error={hideImg}

@@ -59,7 +59,7 @@
   import { linkify } from "$lib/linkify";
   import { openBoard } from "$lib/taskchat";
   import TaskChat from "./TaskChat.svelte";
-  import { resolveImage } from "$lib/image";
+  import { pictureUrl } from "@holons/core/media";
   import { avatarUrl, avatarInitial, hideImg, showImg } from "./Avatars.svelte";
   import {
     bookItem,
@@ -171,7 +171,7 @@
   // first, so one press backs out of the photo rather than the whole card.
   let lightbox: { src: string; alt: string } | null = null;
   function openLightbox(src: string | null | undefined, alt: string): void {
-    if (src) lightbox = { src: resolveImage(src), alt };
+    if (src) lightbox = { src: pictureUrl(src), alt };
   }
   function onLightboxKey(e: KeyboardEvent): void {
     if (!lightbox || e.key !== "Escape") return;
@@ -1466,7 +1466,7 @@
         >
           <img
             class="hero"
-            src={resolveImage(itemPicture)}
+            src={pictureUrl(itemPicture)}
             alt={item.id}
             loading="lazy"
             on:error={hideImg}
@@ -1734,7 +1734,7 @@
           >
             <img
               class="hero"
-              src={resolveImage(quest.picture)}
+              src={pictureUrl(quest.picture)}
               alt={quest.title}
               loading="lazy"
               on:error={hideImg}

@@ -24,7 +24,7 @@
   import { type CalendarEvent, type LibraryThing, holoSeed } from "$lib/data";
   import Modal from "$lib/components/Modal.svelte";
   import { hideImg } from "$lib/components/Avatars.svelte";
-  import { resolveImage } from "$lib/image";
+  import { pictureUrl } from "@holons/core/media";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
   import CalendarView from "./CalendarView.svelte";
   import {
@@ -192,7 +192,7 @@
               {#if thing.picture}
                 <img
                   class="shot"
-                  src={resolveImage(thing.picture)}
+                  src={pictureUrl(thing.picture)}
                   alt=""
                   loading="lazy"
                   on:error={hideImg}
@@ -257,7 +257,7 @@
                 {#if thing.picture}
                   <img
                     class="shot"
-                    src={resolveImage(thing.picture)}
+                    src={pictureUrl(thing.picture)}
                     alt=""
                     loading="lazy"
                     on:error={hideImg}
@@ -309,7 +309,7 @@
                 {#if thing.picture}
                   <img
                     class="rthumb"
-                    src={resolveImage(thing.picture)}
+                    src={pictureUrl(thing.picture)}
                     alt=""
                     loading="lazy"
                     on:error={hideImg}

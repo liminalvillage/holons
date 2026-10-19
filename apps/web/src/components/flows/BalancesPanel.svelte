@@ -35,7 +35,7 @@
   import { REAEventFactory } from "@holons/core/rea";
   import { getEventStore } from "../../lib/rea/eventStore";
   import { notifyWriteDenied } from "../../lib/stores/writeNotifications";
-  import { resolveImage } from "../../utils/imageServer";
+  import { pictureUrl } from "@holons/core/media";
   import PillSwitch from "./PillSwitch.svelte";
   import Sheet from "./Sheet.svelte";
   import Avatar from "./Avatar.svelte";
@@ -583,7 +583,7 @@
     <p class="big">{format(e.amount)}</p>
     <p class="sub">{stampFmt.format(stamp(e))}</p>
     {#if e.picture}
-      <img class="receipt" src={resolveImage(e.picture)} alt="Receipt" loading="lazy" />
+      <img class="receipt" src={pictureUrl(e.picture)} alt="Receipt" loading="lazy" />
     {/if}
     <dl class="rows">
       <div class="row">
