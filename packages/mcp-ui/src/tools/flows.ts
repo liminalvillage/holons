@@ -38,8 +38,12 @@ import {
   scoreAllocationMembers,
   loadCascadeChildren,
   resolveCascade,
+  saveAllocationAliases,
   saveAllocationConfig,
+  resourcesOf,
+  standingOf,
   summarizeCascade,
+  type AllocationBucket,
   type CascadeNode,
   type ClaimCeilings,
   type RightsLookup,
@@ -162,14 +166,33 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
-        const { configured, config, shares, zones, people, members, zoned } = await loadAllocationInputs(hs, args.holon, { scoreOf: scoreOf(hs) });
+        const { configured, config, shares, zones, people, members, zoned, buckets, aliases, genesis, byBucket, emptyBuckets, standing, claimWindow, lapsed } =
+          await loadAllocationInputs(hs, args.holon, { scoreOf: scoreOf(hs), standingOf: standingOf(hs), resourcesOf: resourcesOf(hs) });
         // With no total given, the pot the holon holds (mints + inbound) is
         // the honest one — the same rule the boards draw by (`potTotal`).
         const pot = args.total == null ? await potOf(hs, args.holon, args.unit) : null;
         const total = args.total ?? pot?.total ?? null;
         const unit = args.unit ?? pot?.unit;
         const result = allocate({ total, unit, config, members, zoned });
-        return ok({ success: true, holon: args.holon, configured, config, shares, zones, people, ...(pot ? { pot } : {}), allocation: result });
+        return ok({
+          success: true,
+          holon: args.holon,
+          configured,
+          config,
+          shares,
+          zones,
+          people,
+          buckets,
+          aliases,
+          genesis,
+          byBucket,
+          emptyBuckets,
+          standing: standing ?? { exited: {}, inNeed: {} },
+          claimWindow,
+          lapsed,
+          ...(pot ? { pot } : {}),
+          allocation: result,
+        });
       } catch (err) {
         return fail((err as Error).message);
       }
@@ -180,23 +203,57 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
     'allocation_save',
     {
       description:
-        "Save a holon's fund allocation split, merged onto its settings document (the off-chain mirror every surface reads; nothing is sent on-chain). Only the fields given change; `zones`, `people` and `shares` each REPLACE their whole map when given. An equal split is `interiorMode: 'custom'` with equal `shares` (e.g. {\"u1\":1,\"u2\":1}). Wraps @holons/core/flows: saveAllocationConfig.",
+        "Save a holon's fund allocation split, merged onto its settings document (the off-chain mirror every surface reads; nothing is sent on-chain). Only the fields given change; `zones`, `people`, `shares`, `buckets`, `aliases` and `codes` each REPLACE their whole map when given. An equal split is `interiorMode: 'custom'` with equal `shares` (e.g. {\"u1\":1,\"u2\":1}). BUCKETS divide the contributors share by several rules at once (e.g. 40% legacy credit as custom weights, 30% needs floor equal among members flagged in need, 30% impact by the value equation); `genesis: true` locks the rule (buckets, weights, interiorPercent) so a later change is refused and the new-moon cut refuses to sign a drifted split — `force` overrides. `claimWindow` closes the claims on this split's hand-set seats: past `until`, a seat no alias points at a claimant (and `keep` does not name) is retired like an exit; the lock holds the window too. Wraps @holons/core/flows: saveAllocationConfig.",
       inputSchema: {
         holon: z.string(),
         interiorPercent: z.number().min(0).max(100).optional().describe('Contributors share, 0-100; the zones get the rest.'),
         steepness: z.number().min(0).max(100).optional(),
         nzones: z.number().int().min(0).max(10).optional(),
         interiorMode: z.enum(['equation', 'custom']).optional(),
+        resourced: z
+          .number()
+          .min(0)
+          .max(100)
+          .optional()
+          .describe('Percent of the exterior sent by resource base (received non-financial gifts) instead of by zones — the public rule "resource base → financial bandwidth". 0 turns it off.'),
         zones: zoneMap.optional().describe('Federation partner holon id → ring (1-based).'),
         people: zoneMap.optional().describe('User id → ring (1-based).'),
         shares: zoneMap.optional().describe('Custom contributors split: user id → weight.'),
+        buckets: z
+          .array(
+            z.object({
+              id: z.string().describe("'legacy', 'needs', 'impact' — or any name."),
+              label: z.string().optional(),
+              percent: z.number().min(0).describe('Slice of the contributors share; read against the sum of all buckets.'),
+              mode: z.enum(['custom', 'equation', 'needs', 'equal']),
+              shares: zoneMap.optional().describe('custom only: party id → weight (what each was owed).'),
+            }),
+          )
+          .optional()
+          .describe('Replaces the bucket list; [] returns to a single-mode split.'),
+        aliases: z.record(z.string(), z.string()).optional().describe('Placeholder party id → the party who claimed it.'),
+        codes: z.record(z.string(), z.string()).optional().describe('sha256(code) → what the code claims.'),
+        claimWindow: z
+          .object({ until: z.number().positive().describe('When the window closes (ms).'), keep: z.array(z.string()).optional().describe('Seats that need no claim.') })
+          .nullable()
+          .optional()
+          .describe('Until when seats may be claimed; null removes the window.'),
+        genesis: z.boolean().optional().describe('true: lock the resulting split now. false: lift the lock (needs force).'),
+        force: z.boolean().optional().describe('Change a locked split anyway.'),
       },
     },
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
-        const { holon, zones, people, shares, ...config } = args;
-        const saved = await saveAllocationConfig(hs, holon, config, zones, people, shares);
+        const { holon, zones, people, shares, buckets, aliases, codes, claimWindow, genesis, force, ...config } = args;
+        const saved = await saveAllocationConfig(hs, holon, config, zones, people, shares, {
+          ...(buckets ? { buckets: buckets as AllocationBucket[] } : {}),
+          ...(aliases ? { aliases } : {}),
+          ...(codes ? { codes } : {}),
+          ...(claimWindow !== undefined ? { claimWindow } : {}),
+          ...(genesis === true ? { genesis: true as const } : genesis === false ? { genesis: null } : {}),
+          ...(force ? { force } : {}),
+        });
         return ok({ success: true, holon, config: saved });
       } catch (err) {
         return fail((err as Error).message);
@@ -214,12 +271,13 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
         total: z.number().positive().optional().describe('The pot to divide; omit for percentages only.'),
         unit: z.string().optional(),
         maxDepth: z.number().int().min(0).max(6).optional(),
+        maxHolons: z.number().int().min(1).max(2000).optional().describe('Settings reads allowed in total (default 50).'),
       },
     },
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
-        const { config, members, zoned } = await loadAllocationInputs(hs, args.holon, { scoreOf: scoreOf(hs) });
+        const { config, members, zoned, byBucket, emptyBuckets } = await loadAllocationInputs(hs, args.holon, { scoreOf: scoreOf(hs), standingOf: standingOf(hs), resourcesOf: resourcesOf(hs) });
         const rootPartyIds = [
           ...members.map((m) => m.id),
           ...zoned.filter((p) => p.zone >= 1).map((p) => p.id),
@@ -227,7 +285,10 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
         const loaded = await loadCascadeChildren(hs, rootPartyIds, {
           rootId: args.holon,
           maxDepth: args.maxDepth,
+          maxHolons: args.maxHolons,
           scoreOf: scoreOf(hs),
+          standingOf: standingOf(hs),
+          resourcesOf: resourcesOf(hs),
         });
         const pot = args.total == null ? await potOf(hs, args.holon, args.unit) : null;
         const cascade = resolveCascade({
@@ -237,6 +298,7 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
           root: { config, members, zoned },
           resolveChild: childResolver(loaded.children),
           maxDepth: args.maxDepth,
+          ...(args.maxHolons ? { maxNodes: Math.max(500, args.maxHolons * 20) } : {}),
         });
         return ok({
           success: true,
@@ -248,8 +310,31 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
           summary: summarizeCascade(cascade),
           truncated: cascade.truncated || loaded.truncated,
           holonsRead: loaded.visited,
+          byBucket,
+          emptyBuckets,
           ...(pot ? { pot } : {}),
         });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  server.registerTool(
+    'allocation_alias_set',
+    {
+      description:
+        "Point a placeholder party (one the importer seated, e.g. 'artisan:<id>', or a project holon id on its fund) at the party who claimed it. Patches `allocation.aliases` on the holon's settings document by read-merge-write; a null value removes an alias. Every split, cascade, ceiling and rights cut that names the placeholder then resolves to the real party. Aliases never trip a genesis lock. Wraps @holons/core/flows: saveAllocationAliases.",
+      inputSchema: {
+        holon: z.string(),
+        aliases: z.record(z.string(), z.string().nullable()).describe('Placeholder → party id; null removes.'),
+      },
+    },
+    async (args) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        const aliases = await saveAllocationAliases(hs, args.holon, args.aliases);
+        return ok({ success: true, holon: args.holon, aliases });
       } catch (err) {
         return fail((err as Error).message);
       }
@@ -267,6 +352,7 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
         amount: z.number().positive(),
         unit: z.string().describe('Currency code, e.g. EUR.'),
         memo: z.string().optional(),
+        rail: z.enum(['wallet', 'opencollective', 'paypal', 'bank']).optional().describe('How the party asks to be paid. PayPal and bank leave through the holon\'s OpenCollective, which holds the payee\'s details.'),
         onBehalfOf: z.string().optional().describe('Only the holon key may claim for a party; sets the delegated flag.'),
         force: z.boolean().optional().describe('Record the claim even past the headroom; it folds as `over`.'),
       },
@@ -280,7 +366,7 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
         if (!args.force && !fitsHeadroom(headroom, args.amount)) {
           return fail('over-right', { party: args.party, unit, headroom, amount: args.amount });
         }
-        const a = buildClaim({ party: args.party, amount: args.amount, unit, memo: args.memo, onBehalfOf: args.onBehalfOf });
+        const a = buildClaim({ party: args.party, amount: args.amount, unit, memo: args.memo, rail: args.rail, onBehalfOf: args.onBehalfOf });
         const event = await hs.append(args.holon, FLOW_CLAIMS_LENS, a.item, { refs: a.refs });
         return ok({
           success: true,
@@ -373,12 +459,14 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
         amount: z.number().positive(),
         unit: z.string(),
         memo: z.string().optional(),
+        rail: z.enum(['wallet', 'opencollective', 'paypal', 'bank']).optional().describe('How it was paid.'),
+        ref: z.string().optional().describe('Where the payment can be looked up: an expense page, a transaction. Never a bank detail.'),
       },
     },
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
-        const a = buildPayout({ claimId: args.claimId, party: args.party, amount: args.amount, unit: args.unit, memo: args.memo });
+        const a = buildPayout({ claimId: args.claimId, party: args.party, amount: args.amount, unit: args.unit, memo: args.memo, rail: args.rail, ref: args.ref });
         const event = await hs.append(args.holon, FLOW_CLAIMS_LENS, a.item, { refs: a.refs });
         return ok({ success: true, id: event.id, pubkey: event.pubkey });
       } catch (err) {

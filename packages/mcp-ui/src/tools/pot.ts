@@ -20,6 +20,8 @@ import {
   buildRightsEntry,
   buildRightsSignature,
   cutRights,
+  resourcesOf,
+  standingOf,
   loadPotRecord,
   loadRights,
   lunationAt,
@@ -235,6 +237,11 @@ export function registerPotTools(server: McpServer, deps: ToolDeps): void {
           chainId: ctx.pot.chainId,
           received: asReceived(args.received),
           scoreOf: (id) => scoreAllocationMembers(hs, id),
+          standingOf: standingOf(hs),
+          resourcesOf: resourcesOf(hs),
+          ...(ctx.pot.walk?.holons ? { maxHolons: ctx.pot.walk.holons } : {}),
+          ...(ctx.pot.walk?.depth ? { maxDepth: ctx.pot.walk.depth } : {}),
+          ...(ctx.pot.walk?.nodes ? { maxNodes: ctx.pot.walk.nodes } : {}),
         });
         let published: { id: string } | null = null;
         if (args.publish) {
@@ -243,7 +250,7 @@ export function registerPotTools(server: McpServer, deps: ToolDeps): void {
           const event = await hs.append(args.holon, FLOW_RIGHTS_LENS, a.item, { refs: a.refs });
           published = { id: event.id };
         }
-        return ok({ success: true, holon: args.holon, epoch, complete: cut.complete, problems: cut.problems, shares: cut.shares, table: tableOut(cut.table), published });
+        return ok({ success: true, holon: args.holon, epoch, complete: cut.complete, problems: cut.problems, exited: cut.exited, lapsed: cut.lapsed, shares: cut.shares, table: tableOut(cut.table), published });
       } catch (err) {
         return fail((err as Error).message);
       }
