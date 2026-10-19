@@ -25,6 +25,9 @@ yarn-error.log
 
 # ── Secrets & per-developer config (NEVER commit) ─────────────────────────
 .env
+# The Artisan importer's output: plain claim codes.
+artisan-map*.json
+flow-graph*.json
 .env.*
 !.env.example
 # Per-developer Claude Code MCP wiring (contains actor-id env defaults).

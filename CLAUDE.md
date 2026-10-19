@@ -11,6 +11,9 @@ One UI-agnostic domain core, five interfaces over it.
 
 ```
 apps/web/              holons-web — Svelte 5 / SvelteKit dashboard
+apps/kiosk/            kiosk — touch-first hub entrance PWA
+apps/wequest/          wequest — mobile-first needs network
+apps/flows/            flows — mobile-first fund-flow explorer
 packages/core/         @holons/core — ALL domain logic (TypeScript)
 packages/telegram-ui/  Telegraf bot (mixed JS+TS, migrating)
 packages/text-ui/      CLI / REPL

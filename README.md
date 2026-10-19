@@ -70,6 +70,7 @@ details in [`docs/architecture.md`](./docs/architecture.md).
 | `holons-web` | `apps/web/` | Svelte 5 / SvelteKit web dashboard — the primary UI (maps, governance, federation, expenses). |
 | `kiosk` | `apps/kiosk/` | Touch-first hub entrance PWA; one deploy serves every hub on `*.hubs.network`. |
 | `wequest` | `apps/wequest/` | WeQuest — mobile-first client of the geolocated needs network. |
+| `flows` | `apps/flows/` | Flows — mobile-first explorer of where a Pot's funds flow: your seats, each fund and project, the whole ecosystem, as Sankey diagrams. |
 | `@holons/telegram-ui` | `packages/telegram-ui/` | Telegraf Telegram bot. Stateful chat interface over `@holons/core`; holds the service signing key. |
 | `@holons/discord-ui` | `packages/discord-ui/` | Discord slash-command bot over `@holons/core`. |
 | `@holons/text-ui` | `packages/text-ui/` | Framework-agnostic CLI/REPL renderer over `@holons/core/commands`. |
