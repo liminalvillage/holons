@@ -677,3 +677,40 @@ describe('interior mode', () => {
     ]);
   });
 });
+
+describe('resourced: resource base → financial bandwidth', () => {
+  const zoned = [
+    { id: 'a', name: 'A', zone: 1, resources: 3 },
+    { id: 'b', name: 'B', zone: 1, resources: 1 },
+    { id: 'c', name: 'C', zone: 2 },
+  ];
+  const shares = (r: ReturnType<typeof allocate>) =>
+    Object.fromEntries(r.exterior.flatMap((z) => z.members ?? []).map((m) => [m.id, Math.round(m.percentage * 1000) / 1000]));
+
+  it('is off unless set, and normalizes to 0..100', () => {
+    expect(normalizeAllocationConfig({})).not.toHaveProperty('resourced');
+    expect(normalizeAllocationConfig({ resourced: 140 }).resourced).toBe(100);
+    expect(normalizeAllocationConfig({ resourced: -3 })).not.toHaveProperty('resourced');
+  });
+
+  it('leaves the zones untouched at 0', () => {
+    const config = { interiorPercent: 0, steepness: 50, nzones: 2 };
+    expect(shares(allocate({ total: null, config, members: [], zoned }))).toEqual({ a: 40, b: 40, c: 20 });
+  });
+
+  it('sends its percent of the exterior by resource base, the rest by zones, and still sums to 100', () => {
+    const config = { interiorPercent: 20, steepness: 50, nzones: 2, resourced: 50 };
+    const r = allocate({ total: 1000, config, members: [{ id: 'm', name: 'M', percentage: 100 }], zoned });
+    // Exterior 80: 40 by zones (16/16/8), 40 by base (30/10/0).
+    expect(shares(r)).toEqual({ a: 46, b: 26, c: 8 });
+    const sum = [...r.interior, ...r.exterior].reduce((s, x) => s + x.percentage, 0);
+    expect(sum).toBeCloseTo(100, 9);
+    expect(r.exterior[0].percentage).toBeCloseTo(72, 9);
+  });
+
+  it('with nobody resourced the zones carry it all', () => {
+    const config = { interiorPercent: 0, steepness: 50, nzones: 2, resourced: 100 };
+    const bare = zoned.map(({ resources: _r, ...p }) => p);
+    expect(shares(allocate({ total: null, config, members: [], zoned: bare }))).toEqual({ a: 40, b: 40, c: 20 });
+  });
+});

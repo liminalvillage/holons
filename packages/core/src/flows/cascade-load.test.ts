@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'vitest';
-import { childResolver, loadCascadeChildren } from './cascade-load.js';
+import { childResolver, loadAllocationInputs, loadCascadeChildren } from './cascade-load.js';
 import { resolveCascade } from './cascade.js';
 import { hasAllocationConfig } from './settings.js';
 
@@ -166,5 +166,119 @@ describe('loadCascadeChildren', () => {
     expect(result.leaves.u1.amount).toBeCloseTo(300);
     expect(result.leaves.u3.amount).toBeCloseTo(200);
     expect(result.leaves.u2.amount).toBeCloseTo(500);
+  });
+});
+
+describe('buckets and standing in the walk', () => {
+  const buckets = [
+    { id: 'legacy', percent: 50, mode: 'custom', shares: { 'artisan:ada': 3, 'artisan:bo': 1 } },
+    { id: 'needs', percent: 50, mode: 'needs' },
+  ];
+
+  it('composes a bucketed roster and reads the equation only when a bucket asks for it', async () => {
+    const hs = fakeHolosphere({ p1: { allocation: { interiorPercent: 100, interiorMode: 'custom', buckets, aliases: { 'artisan:ada': 'ada' } } } });
+    let scored = 0;
+    const read = await loadAllocationInputs(hs, 'p1', {
+      scoreOf: async () => {
+        scored += 1;
+        return [{ id: 'cy', name: 'Cy', percentage: 100 }];
+      },
+      standingOf: async () => ({ exited: {}, inNeed: { bo: { id: 'x', epoch: 1, createdAt: 1 } } }),
+    });
+    expect(scored).toBe(0);
+    expect(read.buckets).toEqual(buckets);
+    expect(read.aliases).toEqual({ 'artisan:ada': 'ada' });
+    expect(read.members.map((m) => [m.id, m.percentage])).toEqual([
+      ['ada', 37.5],
+      ['artisan:bo', 12.5],
+      ['bo', 50],
+    ]);
+    expect(read.byBucket.needs).toEqual({ bo: 50 });
+    expect(read.emptyBuckets).toEqual([]);
+  });
+
+  it('without a standing reader nobody has exited; with one, an exit empties every seat, rings included', async () => {
+    const doc = { allocation: { interiorPercent: 60, steepness: 50, nzones: 2, interiorMode: 'custom', shares: { ada: 1, bo: 1 }, people: { bo: 1, cy: 2 } } };
+    const plain = await loadAllocationInputs(fakeHolosphere({ p1: doc }), 'p1');
+    expect(plain.members.map((m) => m.id)).toEqual(['ada', 'bo']);
+    expect(plain.standing).toBeNull();
+    const gone = await loadAllocationInputs(fakeHolosphere({ p1: doc }), 'p1', {
+      standingOf: async () => ({ exited: { bo: { id: 'x', epoch: 1, createdAt: 1 } }, inNeed: {} }),
+    });
+    expect(gone.members.map((m) => m.id)).toEqual(['ada']);
+    expect(gone.zoned.map((p) => p.id)).toEqual(['cy']);
+    const quiet = await loadAllocationInputs(fakeHolosphere({ p1: doc }), 'p1', {
+      standingOf: async () => {
+        throw new Error('relay is quiet');
+      },
+    });
+    expect(quiet.members.map((m) => m.id)).toEqual(['ada', 'bo']);
+  });
+
+  it('a fund alias descends into the chat holon that claimed the project', async () => {
+    const hs = fakeHolosphere({
+      fund: { allocation: { interiorPercent: 100, interiorMode: 'custom', shares: { 'holon_proj': 1 }, aliases: { holon_proj: '-100' } } },
+      '-100': { allocation: { interiorPercent: 100, interiorMode: 'custom', shares: { ada: 1, bo: 1 } } },
+      holon_proj: { allocation: { interiorPercent: 100, interiorMode: 'custom', shares: { 'artisan:x': 1 } } },
+    });
+    const root = await loadAllocationInputs(hs, 'fund');
+    expect(root.members.map((m) => m.id)).toEqual(['-100']);
+    const loaded = await loadCascadeChildren(hs, root.members.map((m) => m.id), { rootId: 'fund' });
+    const cascade = resolveCascade({ holonId: 'fund', total: 100, root: { config: root.config, members: root.members, zoned: root.zoned }, resolveChild: childResolver(loaded.children) });
+    expect(Object.keys(cascade.leaves).sort()).toEqual(['ada', 'bo']);
+    expect(hs.reads).not.toContain('settings/holon_proj/holon_proj');
+  });
+
+  it('tells onRead about every party it reads, the unconfigured and the pruned included', async () => {
+    const hs = fakeHolosphere({
+      u1: { name: 'Una', ...passesOn(60, { u3: 1 }) },
+      u2: { name: 'Due', payout: { address: '0x' + '1'.repeat(40) } },
+      u3: { allocation: { interiorPercent: 100, aliases: { 'artisan:x': 'u9' } } },
+    });
+    const seen: Record<string, { configured: boolean; name?: string; aliases: Record<string, string> }> = {};
+    const { children } = await loadCascadeChildren(hs, ['u1', 'u2'], {
+      onRead: (id, read) => {
+        seen[id] = { configured: read.configured, name: read.name, aliases: read.aliases };
+      },
+    });
+    expect(Object.keys(children)).toEqual(['u1']);
+    expect(Object.keys(seen).sort()).toEqual(['u1', 'u2', 'u3']);
+    expect(seen.u2).toEqual({ configured: false, name: 'Due', aliases: {} });
+    expect(seen.u3.aliases).toEqual({ 'artisan:x': 'u9' });
+  });
+});
+
+describe('resource base → financial bandwidth', () => {
+  const fund = { allocation: { interiorPercent: 0, steepness: 50, nzones: 1, resourced: 50, zones: { a: 1, b: 1 } } };
+  const federation = { f: { federated: ['a', 'b'], partnerNames: { a: 'Alder', b: 'Birch' } } };
+  const base = (count: number) => ({ count, byCapital: { material: count }, amounts: {}, givers: 1 });
+
+  it('a resourced fund carries each placed partner\'s resource base, and the split follows it', async () => {
+    const hs = fakeHolosphere({ f: fund }, federation);
+    const asked: string[] = [];
+    const read = await loadAllocationInputs(hs, 'f', {
+      resourcesOf: async (id) => {
+        asked.push(id);
+        return base(id === 'a' ? 3 : 1);
+      },
+    });
+    expect(asked.sort()).toEqual(['a', 'b']);
+    expect(read.zoned.map((p) => [p.id, p.resources])).toEqual([
+      ['a', 3],
+      ['b', 1],
+    ]);
+    const { children } = await loadCascadeChildren(hs, ['f'], { resourcesOf: async (id) => base(id === 'a' ? 3 : 1) });
+    const cascade = resolveCascade({ holonId: 'root', total: 100, root: { config: { interiorPercent: 0, steepness: 50, nzones: 1 }, members: [], zoned: [{ id: 'f', name: 'F', zone: 1 }] }, resolveChild: childResolver(children) });
+    // Half by zones (25 each), half by base (37.5 / 12.5).
+    expect(Math.round(cascade.leaves.a.percentage * 100) / 100).toBe(62.5);
+    expect(Math.round(cascade.leaves.b.percentage * 100) / 100).toBe(37.5);
+  });
+
+  it('a split that is not resourced never asks', async () => {
+    const hs = fakeHolosphere({ f: { allocation: { ...fund.allocation, resourced: 0 } } }, federation);
+    let asked = 0;
+    const read = await loadAllocationInputs(hs, 'f', { resourcesOf: async () => (asked++, base(1)) });
+    expect(asked).toBe(0);
+    expect(read.zoned.every((p) => p.resources == null)).toBe(true);
   });
 });

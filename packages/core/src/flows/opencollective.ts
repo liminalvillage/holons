@@ -191,6 +191,27 @@ export function isValidCollectiveSlug(slug: string): boolean {
   return /^[a-z0-9][a-z0-9-]{0,63}$/.test(slug);
 }
 
+/** The collective's public page, or nothing for a slug that is not one. */
+export function collectiveUrl(slug: unknown): string {
+  const clean = normalizeCollectiveSlug(slug);
+  return isValidCollectiveSlug(clean) ? `https://opencollective.com/${clean}` : '';
+}
+
+/** Where anyone contributes to the collective. */
+export function collectiveDonateUrl(slug: unknown): string {
+  const base = collectiveUrl(slug);
+  return base ? `${base}/donate` : '';
+}
+
+/**
+ * Where a payee files an expense. OpenCollective asks for the PayPal address
+ * or the bank account there and pays it; we never hold either.
+ */
+export function collectiveExpenseUrl(slug: unknown): string {
+  const base = collectiveUrl(slug);
+  return base ? `${base}/expenses/new` : '';
+}
+
 const num = (value: unknown): number => {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;

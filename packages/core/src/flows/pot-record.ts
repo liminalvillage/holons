@@ -45,6 +45,16 @@ export interface TreasuryRecord {
   setAt?: number;
 }
 
+/** How far the new-moon cut walks the cascade below this Pot. */
+export interface PotWalk {
+  /** Settings reads allowed in total (`DEFAULT_RIGHTS_HOLONS` when unset). */
+  holons?: number;
+  /** Hops followed below the root (`DEFAULT_CASCADE_DEPTH` when unset). */
+  depth?: number;
+  /** Nodes the resolved tree may hold (default: 20 per holon read). */
+  nodes?: number;
+}
+
 /** The deployed Pot of a holon. */
 export interface PotRecord {
   address: string;
@@ -53,10 +63,31 @@ export interface PotRecord {
   challenge?: number;
   deployedAt?: number;
   txHash?: string;
+  /**
+   * The contract's owner, lower-cased — the one key that can veto a root
+   * and replace the signers. A Safe, if "no single key" is to hold.
+   */
+  owner?: string;
   /** The ERC-20s the Pot is read in, one per address. */
   tokens: PotToken[];
   /** The treasury that feeds the Pot, on the same chain. */
   treasury?: TreasuryRecord;
+  /** Bounds for the cut's walk, for a cascade wider than the defaults. */
+  walk?: PotWalk;
+}
+
+/** A stored walk made whole, or null when it sets nothing. */
+export function normalizePotWalk(raw: unknown): PotWalk | null {
+  const w = (raw ?? {}) as Record<string, unknown>;
+  const int = (v: unknown) => {
+    const n = Math.floor(Number(v));
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  };
+  const holons = int(w.holons);
+  const depth = int(w.depth);
+  const nodes = int(w.nodes);
+  if (holons == null && depth == null && nodes == null) return null;
+  return { ...(holons != null ? { holons } : {}), ...(depth != null ? { depth } : {}), ...(nodes != null ? { nodes } : {}) };
 }
 
 /** A stored token entry made whole, or null when it cannot be used. */
@@ -111,14 +142,17 @@ export function normalizePotRecord(raw: unknown): PotRecord | null {
   const challenge = num(p.challenge);
   const deployedAt = num(p.deployedAt);
   const treasury = normalizeTreasury(p.treasury);
+  const walk = normalizePotWalk(p.walk);
   return {
     address: p.address.toLowerCase(),
     chainId,
     ...(challenge != null ? { challenge } : {}),
     ...(deployedAt != null ? { deployedAt } : {}),
     ...(p.txHash != null ? { txHash: String(p.txHash) } : {}),
+    ...(isAddress(p.owner) ? { owner: p.owner.toLowerCase() } : {}),
     tokens: readPotTokens(p as { tokens?: unknown }),
     ...(treasury ? { treasury } : {}),
+    ...(walk ? { walk } : {}),
   };
 }
 
@@ -177,6 +211,15 @@ export async function removePotToken(holosphere: any, holonId: string, address: 
   const record = await loadPotRecord(holosphere, holonId);
   if (!record) throw new Error('No Pot recorded for this holon yet');
   return savePotRecord(holosphere, holonId, withoutPotToken(record, address));
+}
+
+/** Set (or clear, with null) how far the cut walks below the holon's Pot. */
+export async function savePotWalk(holosphere: any, holonId: string, walk: PotWalk | null): Promise<PotRecord> {
+  const record = await loadPotRecord(holosphere, holonId);
+  if (!record) throw new Error('No Pot recorded for this holon yet');
+  const { walk: _old, ...rest } = record;
+  const clean = normalizePotWalk(walk);
+  return savePotRecord(holosphere, holonId, clean ? { ...rest, walk: clean } : (rest as PotRecord));
 }
 
 /** Set (or clear, with null) the treasury that feeds the holon's Pot. */

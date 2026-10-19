@@ -17,6 +17,7 @@ export {
   createReadAuthority,
   resolveHolonAuthority,
   writeAcceptance,
+  isHolonAdmin,
   type WriteAcceptance,
   type WriteStanding,
   type AuthorityPredicate,

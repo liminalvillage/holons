@@ -25,6 +25,8 @@
  * the chain would pay (pinned by the Sepolia-parity cases in the spec).
  */
 
+import { bandwidthWeights } from './resources.js';
+
 /**
  * How the contributors' share is divided among members.
  *
@@ -44,6 +46,12 @@ export interface AllocationConfig {
   nzones: number;
   /** Absent means `equation`. */
   interiorMode?: InteriorMode;
+  /**
+   * 0..100: the percent of the exterior sent by resource base instead of by
+   * zones — the public rule "resource base → financial bandwidth"
+   * (`resources.ts`). Absent or 0: the zones alone, as always.
+   */
+  resourced?: number;
 }
 
 /** A custom interior split: member id → share weight (0..100, need not sum). */
@@ -88,6 +96,8 @@ export interface AllocationPartner {
   zone: number;
   /** A federation partner holon, or a person placed on a ring. Absent means holon. */
   kind?: 'holon' | 'person';
+  /** Its resource base: received gifts that are not money. Read only when the split is `resourced`. */
+  resources?: number;
 }
 
 export const DEFAULT_ALLOCATION_CONFIG: AllocationConfig = {
@@ -151,7 +161,8 @@ export function normalizeAllocationConfig(raw: unknown): AllocationConfig {
     Math.floor(num(doc.nzones, DEFAULT_ALLOCATION_CONFIG.nzones)),
   );
   const interiorMode: InteriorMode = doc.interiorMode === 'custom' ? 'custom' : 'equation';
-  return { interiorPercent, steepness, nzones, interiorMode };
+  const resourced = Math.min(100, Math.max(0, num(doc.resourced, 0)));
+  return { interiorPercent, steepness, nzones, interiorMode, ...(resourced > 0 ? { resourced } : {}) };
 }
 
 /** Only members with a usable positive share survive; anything else is "not in". */
@@ -318,14 +329,21 @@ export function allocate(input: {
     const placed = zoned.filter((p) => p.zone >= 1 && p.zone <= config.nzones);
     const totalWeight = placed.reduce((s, p) => s + weightOf(p.zone), 0);
     const zonePercentages = calculateZonePercentages(config.steepness, config.nzones);
+    // Resource base → financial bandwidth: `resourced`% of the exterior goes
+    // by each placed partner's resource base, the rest by the zones. With no
+    // base among the placed, the zones carry it all.
+    const bandwidth = totalWeight > 0 && (config.resourced ?? 0) > 0 ? bandwidthWeights(placed) : new Map<string, number>();
+    const byResources = bandwidth.size ? ((config.resourced ?? 0) / 100) * exteriorShare : 0;
+    const byZones = exteriorShare - byResources;
 
     for (let z = 0; z < config.nzones; z++) {
       const zone = z + 1;
       const partners = placed.filter((p) => p.zone === zone);
-      const each = totalWeight > 0 ? (weightOf(zone) / totalWeight) * exteriorShare : 0;
+      const each = totalWeight > 0 ? (weightOf(zone) / totalWeight) * byZones : 0;
+      const shareOf = (p: AllocationPartner) => each + (bandwidth.get(p.id) ?? 0) * byResources;
       const percentage =
         totalWeight > 0
-          ? each * partners.length
+          ? partners.reduce((s, p) => s + shareOf(p), 0)
           : (zonePercentages[z] / 100) * exteriorShare;
       exterior.push({
         id: `zone-${zone}`,
@@ -337,8 +355,8 @@ export function allocate(input: {
         members: partners.map((p) => ({
           id: p.id,
           label: p.name || p.id,
-          percentage: each,
-          amount: amountOf(each),
+          percentage: shareOf(p),
+          amount: amountOf(shareOf(p)),
           side: 'exterior' as const,
           zone,
         })),

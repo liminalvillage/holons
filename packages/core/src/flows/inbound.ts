@@ -24,16 +24,22 @@
 import { getFederationSnapshot } from '../federation/snapshot.js';
 import { myHolons } from '../holons/list.js';
 import { allocate, resolveInteriorMembers, type AllocationMember } from './allocation.js';
+import { applyStanding, applyStandingToRings, composeInterior, lapsedSeats } from './buckets.js';
 import { readPotRecord } from './pot-record.js';
 import { loadMints } from './mints-load.js';
 import {
   hasAllocationConfig,
+  readAllocationAliases,
+  readAllocationBuckets,
+  readAllocationClaimWindow,
   readAllocationConfig,
   readInteriorShares,
   readZoneAssignments,
   readZonePeople,
   toAllocationPartners,
 } from './settings.js';
+import type { ResourceBase } from './resources.js';
+import type { Standing } from './standing.js';
 import type { InboundRight } from './usage.js';
 
 /** One pot an upstream holon holds. */
@@ -55,6 +61,12 @@ export interface InboundRightInput {
   partnerNames?: Record<string, string> | null;
   /** The upstream's scored roster, when its contributors share is by equation. */
   scored?: readonly AllocationMember[] | null;
+  /** The upstream's standing — who exited, who is in need — when known. */
+  standing?: Standing | null;
+  /** Partner → resource base, for an upstream whose split is `resourced`. Absent: zones alone. */
+  resources?: Record<string, number> | null;
+  /** The clock the upstream's claim window is read against. Default: now. */
+  now?: number;
 }
 
 const round = (v: number) => Math.round(v * 100) / 100;
@@ -76,16 +88,22 @@ export function inboundRightFrom(input: InboundRightInput): InboundRight | null 
 
   const config = readAllocationConfig(settings);
   const shares = readInteriorShares(settings);
-  const zones = readZoneAssignments(settings);
-  const people = readZonePeople(settings);
+  const buckets = readAllocationBuckets(settings);
+  const aliases = readAllocationAliases(settings);
+  const exits = Object.keys(input.standing?.exited ?? {});
+  const zones = applyStandingToRings(readZoneAssignments(settings), { aliases, exits });
+  const people = applyStandingToRings(readZonePeople(settings), { aliases, exits });
   const custom = config.interiorMode === 'custom' && Object.keys(shares).length > 0;
-  const members = resolveInteriorMembers({
-    config,
-    scored: custom ? [] : [...(input.scored ?? [])],
-    shares,
-  });
+  const scored = [...(input.scored ?? [])];
+  const out = [...exits, ...lapsedSeats({ window: readAllocationClaimWindow(settings), now: input.now ?? Date.now(), buckets, shares, aliases })];
+  const members = buckets.length
+    ? composeInterior({ buckets, scored, needs: Object.keys(input.standing?.inNeed ?? {}), exits: out, aliases }).members
+    : applyStanding(resolveInteriorMembers({ config, scored: custom ? [] : scored, shares }), { aliases, exits: out });
   const federated = input.federated ? [...input.federated] : Object.keys(zones);
-  const zoned = toAllocationPartners(federated, input.partnerNames ?? {}, zones, people);
+  const zoned = toAllocationPartners(federated, input.partnerNames ?? {}, zones, people).map((p) => {
+    const n = Number(input.resources?.[p.id]);
+    return n > 0 ? { ...p, resources: n } : p;
+  });
 
   const result = allocate({ total, unit: input.pot.unit, config, members, zoned });
   let percentage = 0;
@@ -115,6 +133,10 @@ export interface LoadInboundOptions {
   potsOf?: (upstreamId: string) => Promise<UpstreamPot[]>;
   /** The scored roster of an equation-mode upstream; absent: no contributor seats resolve there. */
   scoreOf?: (holonId: string) => Promise<AllocationMember[]>;
+  /** An upstream's standing (exits, needs); absent: nobody exited, nobody in need. */
+  standingOf?: (holonId: string) => Promise<Standing>;
+  /** A holon's resource base, for an upstream whose split is `resourced`; absent: zones alone. */
+  resourcesOf?: (holonId: string) => Promise<ResourceBase>;
   /**
    * Who might seat `id`. Default: its federation partners and the holons it
    * keeps in its own `holons` lens (`myHolons`) — a person's hubs as much as
@@ -255,14 +277,31 @@ export async function loadInboundRights(
         snapshot = null;
       }
       const config = readAllocationConfig(settings);
+      const buckets = readAllocationBuckets(settings);
       const custom = config.interiorMode === 'custom' && Object.keys(readInteriorShares(settings)).length > 0;
+      const needsScore = buckets.length ? buckets.some((b) => b.mode === 'equation') : !custom;
       let scored: AllocationMember[] = [];
-      if (!custom && opts.scoreOf) {
+      if (needsScore && opts.scoreOf) {
         try {
           scored = (await opts.scoreOf(upstreamId)) ?? [];
         } catch {
           scored = [];
         }
+      }
+      let standing: Standing | null = null;
+      if (opts.standingOf) {
+        try {
+          standing = (await opts.standingOf(upstreamId)) ?? null;
+        } catch {
+          standing = null;
+        }
+      }
+      let resources: Record<string, number> | null = null;
+      if ((config.resourced ?? 0) > 0 && opts.resourcesOf) {
+        const resourcesOf = opts.resourcesOf;
+        const placed = Object.keys({ ...readZoneAssignments(settings), ...readZonePeople(settings) });
+        const counts = await Promise.all(placed.map((id) => resourcesOf(id).then((b) => b?.count ?? 0, () => 0)));
+        resources = Object.fromEntries(placed.map((id, i) => [id, counts[i]]));
       }
       const { pots, held } = await potsFor(upstreamId, hop, path);
       const heldAt = readPotRecord(settings);
@@ -275,6 +314,8 @@ export async function loadInboundRights(
           federated: snapshot?.federated ?? null,
           partnerNames: snapshot?.partnerNames ?? null,
           scored,
+          standing,
+          resources,
         });
       for (const pot of pots) {
         const right = seat(pot);

@@ -167,6 +167,26 @@ export async function writeAcceptance(hs: HoloSphere, holon: string, pubkey?: st
   return { status: accepted ? 'accepted' : 'held', anchor: summary.anchor, source };
 }
 
+/**
+ * May `pubkey` (default: the instance's signing key) steer `holon` — write
+ * the settings its readers guard: the split, the Pot, the collective? True
+ * for an admin, and for a holon nobody is defined for, where every write
+ * shows. A member's settings write is not refused anywhere: enforcing
+ * readers simply never see it, so a surface asks this BEFORE offering to edit.
+ */
+export async function isHolonAdmin(hs: HoloSphere, holon: string, pubkey?: string | null): Promise<boolean> {
+  const host = hs as AuthorityCarrier;
+  const key = String(pubkey ?? host.currentPubkey ?? '').toLowerCase();
+  const h = String(holon ?? '').trim();
+  if (!key || !h) return false;
+  const summary = resolveHolonAuthority(hs, h);
+  const predicate = host._readAuthority ? await host._readAuthority.authorityFor(hs, h) : null;
+  const now = Math.floor(Date.now() / 1000);
+  if (predicate?.roleAt) return predicate.roleAt(key, now) === 'admin';
+  if (summary.actors) return summary.actors.roleAt(key, now) === 'admin';
+  return !predicate;
+}
+
 /** `app/holon/lens/key` → its holon, or null. */
 function soulHolon(soul: unknown): string | null {
   if (typeof soul !== 'string') return null;

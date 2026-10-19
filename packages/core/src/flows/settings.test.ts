@@ -263,3 +263,95 @@ describe('readInteriorShares', () => {
     });
   });
 });
+
+describe('buckets, aliases, codes and the genesis lock', () => {
+  const legacy = { id: 'legacy', percent: 40, mode: 'custom' as const, shares: { 'artisan:ada': 300, 'artisan:bo': 100 } };
+  const needs = { id: 'needs', percent: 30, mode: 'needs' as const };
+
+  it('round-trips the new fields and leaves an old document alone', async () => {
+    const { readAllocationAliases, readAllocationBuckets, readAllocationCodes, readAllocationGenesis, saveAllocationAliases, saveAllocationCodes } = await import('./index.js');
+    const hs = fakeHolosphere(existingDoc);
+    await saveAllocationConfig(hs as any, 'h1', { interiorPercent: 100, interiorMode: 'custom' }, undefined, undefined, undefined, {
+      buckets: [legacy, needs, { id: 'bad', percent: -1, mode: 'equal' } as any],
+      aliases: { 'artisan:ada': 'ada' },
+      codes: { ['a'.repeat(64)]: 'artisan:bo' },
+    });
+    expect(hs.current.name).toBe('Casa');
+    expect(readAllocationBuckets(hs.current)).toEqual([legacy, needs]);
+    expect(readAllocationAliases(hs.current)).toEqual({ 'artisan:ada': 'ada' });
+    expect(readAllocationCodes(hs.current)).toEqual({ ['a'.repeat(64)]: 'artisan:bo' });
+    expect(readAllocationGenesis(hs.current)).toBeNull();
+    // readers on a document that never had them
+    expect(readAllocationBuckets(existingDoc)).toEqual([]);
+    expect(readAllocationAliases(existingDoc)).toEqual({});
+    expect(readAllocationCodes(existingDoc)).toEqual({});
+
+    // patching one map leaves the others and the buckets as they were
+    await saveAllocationAliases(hs as any, 'h1', { 'artisan:bo': 'bo', 'artisan:ada': null });
+    expect(readAllocationAliases(hs.current)).toEqual({ 'artisan:bo': 'bo' });
+    expect(readAllocationBuckets(hs.current)).toEqual([legacy, needs]);
+    await saveAllocationCodes(hs as any, 'h1', { ['a'.repeat(64)]: null, ['b'.repeat(64)]: 'artisan:cy' });
+    expect(readAllocationCodes(hs.current)).toEqual({ ['b'.repeat(64)]: 'artisan:cy' });
+
+    // a code kept on the holon itself claims its own seat one level up, and survives the store
+    const { seatClaim, parseSeatClaim } = await import('./index.js');
+    await saveAllocationCodes(hs as any, 'h1', { ['c'.repeat(64)]: seatClaim('holon_pot') });
+    expect(parseSeatClaim(readAllocationCodes(hs.current)['c'.repeat(64)])).toBe('holon_pot');
+    expect(parseSeatClaim('artisan:cy')).toBeNull();
+    expect(parseSeatClaim('seat:')).toBeNull();
+    expect(() => seatClaim(' ')).toThrow(/names the holon/);
+    expect(readAllocationAliases(hs.current)).toEqual({ 'artisan:bo': 'bo' });
+
+    // an empty bucket list returns to a single-mode split
+    await saveAllocationConfig(hs as any, 'h1', {}, undefined, undefined, undefined, { buckets: [] });
+    expect(readAllocationBuckets(hs.current)).toEqual([]);
+  });
+
+  it('a locked split refuses a change to its rule but not to its aliases, unless forced', async () => {
+    const { allocationSplitHash, readAllocationAliases, readAllocationGenesis } = await import('./index.js');
+    const hs = fakeHolosphere(existingDoc);
+    await saveAllocationConfig(hs as any, 'h1', { interiorPercent: 100, interiorMode: 'custom' }, undefined, undefined, undefined, {
+      buckets: [legacy, needs],
+      genesis: true,
+      now: 1234,
+    });
+    const genesis = readAllocationGenesis(hs.current);
+    expect(genesis).toEqual({ hash: allocationSplitHash(hs.current), at: 1234 });
+
+    await expect(saveAllocationConfig(hs as any, 'h1', { interiorPercent: 90 })).rejects.toThrow(/locked at genesis/);
+    await expect(saveAllocationConfig(hs as any, 'h1', {}, undefined, undefined, undefined, { buckets: [{ ...legacy, percent: 41 }, needs] })).rejects.toThrow(/locked/);
+    await expect(saveAllocationConfig(hs as any, 'h1', {}, undefined, undefined, undefined, { genesis: null })).rejects.toThrow(/locked/);
+    // the same rule again, aliases, codes and rings all pass
+    await saveAllocationConfig(hs as any, 'h1', { interiorPercent: 100 }, { p1: 2 }, undefined, undefined, { aliases: { 'artisan:ada': 'ada' } });
+    expect(readAllocationAliases(hs.current)).toEqual({ 'artisan:ada': 'ada' });
+    expect(readAllocationGenesis(hs.current)).toEqual(genesis);
+
+    // forced: the rule moves and the lock follows it
+    await saveAllocationConfig(hs as any, 'h1', { interiorPercent: 90 }, undefined, undefined, undefined, { force: true, now: 5678 });
+    expect(readAllocationGenesis(hs.current)).toEqual({ hash: allocationSplitHash(hs.current), at: 5678 });
+    await saveAllocationConfig(hs as any, 'h1', {}, undefined, undefined, undefined, { force: true, genesis: null });
+    expect(readAllocationGenesis(hs.current)).toBeNull();
+  });
+
+  it('keeps a claim window through other saves, and the lock holds it', async () => {
+    const { readAllocationClaimWindow, saveAllocationAliases } = await import('./index.js');
+    const hs = fakeHolosphere(existingDoc);
+    expect(readAllocationClaimWindow(existingDoc)).toBeNull();
+    await saveAllocationConfig(hs as any, 'h1', { interiorPercent: 100, interiorMode: 'custom' }, undefined, undefined, undefined, {
+      buckets: [legacy],
+      claimWindow: { until: 9000, keep: ['fund-b', 'fund-a', 'fund-a', ''] },
+      genesis: true,
+      now: 1234,
+    });
+    expect(readAllocationClaimWindow(hs.current)).toEqual({ until: 9000, keep: ['fund-a', 'fund-b'] });
+
+    await saveAllocationAliases(hs as any, 'h1', { 'artisan:ada': 'ada' });
+    expect(readAllocationClaimWindow(hs.current)).toEqual({ until: 9000, keep: ['fund-a', 'fund-b'] });
+
+    await expect(saveAllocationConfig(hs as any, 'h1', {}, undefined, undefined, undefined, { claimWindow: { until: 9999 } })).rejects.toThrow(/claim window is locked/);
+    await expect(saveAllocationConfig(hs as any, 'h1', {}, undefined, undefined, undefined, { claimWindow: null })).rejects.toThrow(/claim window is locked/);
+    await saveAllocationConfig(hs as any, 'h1', {}, undefined, undefined, undefined, { claimWindow: null, force: true });
+    expect(readAllocationClaimWindow(hs.current)).toBeNull();
+    expect(readAllocationClaimWindow({ allocation: { claimWindow: { until: 'soon' } } })).toBeNull();
+  });
+});

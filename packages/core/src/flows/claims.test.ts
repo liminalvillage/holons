@@ -6,7 +6,7 @@ import { bootstrapActors } from '../protocol/membership.js';
 import { membershipOp, shuffled, signedEntry, testKey } from '../protocol/testing.js';
 import { importPartnerLog } from '../protocol/federation.js';
 import type { LogEvent } from '../protocol/types.js';
-import { buildClaim, buildClaimVerdict, buildPayout, buildTransfer, claimTotalsOf, foldClaims, foldClaimsFromLenses } from './claims.js';
+import { buildClaim, buildClaimVerdict, buildPayout, buildTransfer, claimTotalsOf, foldClaims, foldClaimsFromLenses, readClaimRail } from './claims.js';
 import { lunationAt } from './lunation.js';
 import { buildFundUsage, fundAccount } from './usage.js';
 import { allocate } from './allocation.js';
@@ -333,5 +333,63 @@ describe('foldClaims with partner imports', () => {
       imports: [imported([theirs, theirWord])],
     });
     expect(ctx.folded.claims.map((c) => [c.party, c.status, c.origin])).toEqual([['P', 'approved', 'P']]);
+  });
+});
+
+describe('claim rails', () => {
+  it('carries the rail from the claim and the rail and reference from its payout', () => {
+    const c = entry(ada.sk, buildClaim({ party: 'ada', amount: 30, unit: 'eur', rail: 'paypal', at: T0 * 1000 }) as never, T0);
+    const p = entry(treasurer.sk, buildPayout({ claimId: c.id, party: 'ada', amount: 30, unit: 'eur', rail: 'opencollective', ref: ' https://opencollective.com/x/expenses/1 ' }) as never, T0 + 5);
+    const f = foldClaims({ entries: shuffled([c, p]), actors: actors(), partyOf, rights });
+    expect(f.claims[0]).toMatchObject({ rail: 'paypal', status: 'settled' });
+    expect(f.payouts[0]).toMatchObject({ rail: 'opencollective', ref: 'https://opencollective.com/x/expenses/1' });
+  });
+
+  it('reads an entry written before rails, and drops a rail it does not know', () => {
+    const old = entry(ada.sk, buildClaim({ party: 'ada', amount: 10, unit: 'eur', at: T0 * 1000 }) as never, T0);
+    const odd = entry(bob.sk, { item: { ...buildClaim({ party: 'bob', amount: 10, unit: 'eur', at: T0 * 1000 }).item, rail: 'cheque' } } as never, T0 + 1);
+    const f = foldClaims({ entries: [old, odd], actors: actors(), partyOf, rights });
+    expect(f.claims.map((c) => [c.status, 'rail' in c])).toEqual([['approved', false], ['approved', false]]);
+    expect(buildClaim({ party: 'ada', amount: 1, unit: 'eur', rail: 'cheque' as never }).item).not.toHaveProperty('rail');
+    expect(readClaimRail(' Bank ')).toBe('bank');
+  });
+});
+
+describe('a person seated under their own key', () => {
+  const keyed = testKey();
+  const outsider = testKey();
+  const founded = (entries: unknown[], rightsFor: Record<string, Record<string, number>>) =>
+    foldClaimsFromLenses({
+      holonId: 'h1',
+      entries: entries as never[],
+      membersLog: [
+        membershipOp({ sk: holon.sk, op: 'genesis', created_at: T0 - 10 }),
+        membershipOp({ sk: holon.sk, op: 'add', pubkey: keyed.pk, role: 'member', created_at: T0 - 5 }),
+      ] as never,
+      rights: rightsFor,
+    });
+  const claim = (sk: Uint8Array, party: string, at: number) => entry(sk, buildClaim({ party, amount: 30, unit: 'eur', at: T0 * 1000 }) as never, at);
+
+  it('a member key nobody else is bound to speaks for the party named by that key', () => {
+    const c = claim(keyed.sk, keyed.pk, T0);
+    expect(founded([c], { [keyed.pk]: { EUR: 100 } }).folded.claims.map((x) => [x.party, x.status])).toEqual([[keyed.pk, 'pending']]);
+    const yes = entry(holon.sk, buildClaimVerdict(c.id, 'attest') as never, T0 + 1);
+    expect(founded([c, yes], { [keyed.pk]: { EUR: 100 } }).folded.claims[0].status).toBe('approved');
+  });
+
+  it('speaks for nobody else, and widens nobody in: a key the holon does not accept is still refused', () => {
+    expect(founded([claim(keyed.sk, 'ada', T0)], { ada: { EUR: 100 } }).folded.claims[0]).toMatchObject({ status: 'rejected', reason: 'party-mismatch' });
+    expect(founded([claim(outsider.sk, outsider.pk, T0)], { [outsider.pk]: { EUR: 100 } }).folded.claims[0].status).toBe('rejected');
+  });
+
+  it('a key a lens already binds keeps that binding', () => {
+    // The holon's own key speaks for the holon, never for a seat under its hex.
+    const ctx = foldClaimsFromLenses({
+      holonId: 'h1',
+      entries: [claim(holon.sk, holon.pk, T0)] as never[],
+      settings: { holonPubkey: holon.pk },
+      rights: { [holon.pk]: { EUR: 100 } },
+    });
+    expect(ctx.folded.claims[0]).toMatchObject({ status: 'rejected', reason: 'party-mismatch' });
   });
 });

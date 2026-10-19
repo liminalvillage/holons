@@ -181,3 +181,99 @@ describe('value held in a Pot is collected there, never claimed here', () => {
     expect(ceilings[PICKER]).toEqual({ EVO: 0, L: 50 });
   });
 });
+
+describe('cutRights with standing and a genesis lock', () => {
+  const standingOf = (exited: string[], inNeed: string[] = []) => async () => ({
+    exited: Object.fromEntries(exited.map((p) => [p, { id: 'x', epoch: 1, createdAt: 1 }])),
+    inNeed: Object.fromEntries(inNeed.map((p) => [p, { id: 'y', epoch: 1, createdAt: 1 }])),
+  });
+
+  it('an exited party keeps its row and takes no new income; the others grow', async () => {
+    const hs = fakeHolosphere(baseSettings());
+    const first = await cutRights(hs, GROVE, { previous: null, epoch: 84, chainId: CHAIN, received: { [EVO]: 900n } });
+    expect(rightsRow(first.table, LIMINAL, EVO)?.cumulative).toBe(450n);
+    const second = await cutRights(hs, GROVE, {
+      previous: first.table,
+      epoch: 85,
+      chainId: CHAIN,
+      received: { [EVO]: 1200n },
+      standingOf: standingOf([LIMINAL]),
+    });
+    expect(second.complete).toBe(true);
+    expect(second.exited).toEqual([LIMINAL]);
+    expect(second.shares[LIMINAL]).toBeUndefined();
+    expect(rightsRow(second.table, LIMINAL, EVO)?.cumulative).toBe(450n);
+    expect(rightsRow(second.table, COLLECTORS, EVO)?.cumulative).toBe(500n);
+    expect(rightsRow(second.table, PICKER, EVO)?.cumulative).toBe(250n);
+    expect(second.table?.totals[EVO]).toBe(1200n);
+  });
+
+  it('a seat unclaimed past the claim window is retired like an exit; a claimed or kept one stands', async () => {
+    const settings = baseSettings();
+    settings[GROVE].allocation.claimWindow = { until: 1000, keep: [COLLECTORS] };
+    const hs = fakeHolosphere(settings);
+    const open = await cutRights(hs, GROVE, { previous: null, epoch: 84, chainId: CHAIN, received: { [EVO]: 900n }, now: 999 });
+    expect(open.lapsed).toEqual([]);
+    expect(rightsRow(open.table, LIMINAL, EVO)?.cumulative).toBe(450n);
+
+    const closed = await cutRights(hs, GROVE, { previous: open.table, epoch: 85, chainId: CHAIN, received: { [EVO]: 1200n }, now: 1000 });
+    expect(closed.complete).toBe(true);
+    expect(closed.lapsed).toEqual([LIMINAL]);
+    expect(closed.shares[LIMINAL]).toBeUndefined();
+    expect(rightsRow(closed.table, LIMINAL, EVO)?.cumulative).toBe(450n);
+    expect(rightsRow(closed.table, COLLECTORS, EVO)?.cumulative).toBe(500n);
+
+    // claimed in time: the alias carries the seat past the window
+    settings[GROVE].allocation.aliases = { [LIMINAL]: PICKER };
+    const claimed = await cutRights(fakeHolosphere(settings), GROVE, { previous: null, epoch: 85, chainId: CHAIN, received: { [EVO]: 900n }, now: 5000 });
+    expect(claimed.lapsed).toEqual([]);
+    expect(claimed.shares[PICKER]).toBeCloseTo(50 + 100 / 6, 1);
+  });
+
+  it('a needs bucket pays whoever is flagged; a locked split that moved is not signed', async () => {
+    const settings = baseSettings();
+    settings[GROVE].allocation = {
+      interiorPercent: 100,
+      steepness: 50,
+      nzones: 0,
+      interiorMode: 'custom',
+      buckets: [
+        { id: 'legacy', percent: 50, mode: 'custom', shares: { [LIMINAL]: 1 } },
+        { id: 'needs', percent: 50, mode: 'needs' },
+      ],
+    };
+    const hs = fakeHolosphere(settings);
+    const cut = await cutRights(hs, GROVE, { previous: null, epoch: 84, chainId: CHAIN, received: { [EVO]: 1000n }, standingOf: standingOf([], [PICKER]) });
+    expect(cut.complete).toBe(true);
+    expect(cut.shares).toEqual({ [LIMINAL]: 50, [PICKER]: 50 });
+    expect(rightsRow(cut.table, PICKER, EVO)?.cumulative).toBe(500n);
+
+    settings[GROVE].allocation.genesis = { hash: 'f'.repeat(64), at: 1 };
+    const moved = await cutRights(fakeHolosphere(settings), GROVE, { previous: null, epoch: 84, chainId: CHAIN, received: { [EVO]: 1000n } });
+    expect(moved.complete).toBe(false);
+    expect(moved.problems).toEqual(['the split differs from genesis']);
+    expect(moved.table).not.toBeNull();
+  });
+});
+
+describe('cutRights over a wide graph', () => {
+  it('gives the tree room for every holon the walk may read, and refuses when it is cut short', async () => {
+    // 60 projects that each pass on to 10 people: 660 nodes, past the default 500
+    const fund: Record<string, number> = {};
+    const docs: Record<string, any> = {};
+    for (let i = 0; i < 60; i++) {
+      fund[`proj${i}`] = 1;
+      const people: Record<string, number> = {};
+      for (let j = 0; j < 10; j++) people[`u${i}_${j}`] = 1;
+      docs[`proj${i}`] = { id: `proj${i}`, allocation: { interiorPercent: 100, nzones: 0, interiorMode: 'custom', shares: people } };
+    }
+    docs[GROVE] = { id: GROVE, allocation: { interiorPercent: 100, nzones: 0, interiorMode: 'custom', shares: fund } };
+    const opts = { previous: null, epoch: 84, chainId: CHAIN, received: { [EVO]: 600n }, maxHolons: 700 }; // every party is read once: 60 projects + 600 people
+    const tight = await cutRights(fakeHolosphere(docs), GROVE, { ...opts, maxNodes: 500 });
+    expect(tight.complete).toBe(false);
+    expect(tight.problems).toContain('the cascade reached its depth or node bound');
+    const roomy = await cutRights(fakeHolosphere(docs), GROVE, opts);
+    expect(roomy.complete).toBe(true);
+    expect(roomy.table?.rows).toHaveLength(600);
+  });
+});

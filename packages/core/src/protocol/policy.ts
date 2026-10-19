@@ -88,6 +88,9 @@ export function foldPolicies(entries: Iterable<LogEvent<unknown>>, actors: Accep
 export const LENS_DEFAULT_POLICIES: Readonly<Record<string, Partial<Policy>>> = Object.freeze({
   flow_claims: { quorum: 1 },
   flow_mints: { quorum: 1 },
+  // An exit is the party's own word; being in need is a claim on the others.
+  flow_exits: { quorum: 0 },
+  flow_needs: { quorum: 1 },
 });
 
 /** The default rule for a lens: `DEFAULT_POLICY`, tightened for the lenses that move value. */

@@ -91,3 +91,23 @@ describe('the Pot record', () => {
     await expect(savePotTreasury(hs, 'nope', { address: SAFE })).rejects.toThrow(/No Pot/);
   });
 });
+
+describe('the Pot record: owner and walk bounds', () => {
+  it('keeps a lower-cased owner and positive walk bounds, drops the rest', async () => {
+    const { normalizePotRecord, normalizePotWalk, savePotWalk } = await import('./pot-record.js');
+    const rec = normalizePotRecord({ address: '0x' + '9'.repeat(40), chainId: 1, owner: '0x' + 'A'.repeat(40), walk: { holons: '120', depth: 0 }, tokens: [] });
+    expect(rec?.owner).toBe('0x' + 'a'.repeat(40));
+    expect(rec?.walk).toEqual({ holons: 120 });
+    expect(normalizePotRecord({ address: '0x' + '9'.repeat(40), chainId: 1, owner: 'safe', walk: { holons: -1 } })).toMatchObject({ tokens: [] });
+    expect(normalizePotRecord({ address: '0x' + '9'.repeat(40), chainId: 1, owner: 'safe' })?.owner).toBeUndefined();
+    expect(normalizePotWalk({ depth: 4.7 })).toEqual({ depth: 4 });
+    expect(normalizePotWalk(null)).toBeNull();
+
+    const docs: Record<string, any> = { h: { id: 'h', pot: { address: '0x' + '9'.repeat(40), chainId: 1, tokens: [] } } };
+    const hs = { get: async (h: string) => docs[h] ?? null, put: async (h: string, _l: string, d: any) => void (docs[h] = d) };
+    const saved = await savePotWalk(hs, 'h', { holons: 200, depth: 3 });
+    expect(saved.walk).toEqual({ holons: 200, depth: 3 });
+    expect(docs.h.pot.walk).toEqual({ holons: 200, depth: 3 });
+    expect((await savePotWalk(hs, 'h', null)).walk).toBeUndefined();
+  });
+});

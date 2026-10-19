@@ -3,6 +3,9 @@ import {
   COLLECTIVE_OVERVIEW_QUERY,
   OPEN_EXPENSE_STATUSES,
   isValidCollectiveSlug,
+  collectiveDonateUrl,
+  collectiveExpenseUrl,
+  collectiveUrl,
   normalizeCollectiveSlug,
   parseOpenCollectiveResponse,
 } from './opencollective.js';
@@ -260,5 +263,19 @@ describe('parseOpenCollectiveResponse', () => {
       NOW,
     );
     expect(mixed.transactions[0].currency).toBe('GBP');
+  });
+});
+
+describe('collective links', () => {
+  it('builds the page, the contribute page and the expense form from a slug or a pasted URL', () => {
+    expect(collectiveUrl('our-collective')).toBe('https://opencollective.com/our-collective');
+    expect(collectiveDonateUrl('https://opencollective.com/Our-Collective/')).toBe('https://opencollective.com/our-collective/donate');
+    expect(collectiveExpenseUrl('our-collective')).toBe('https://opencollective.com/our-collective/expenses/new');
+  });
+
+  it('gives nothing for a slug that is not one', () => {
+    expect(collectiveUrl('')).toBe('');
+    expect(collectiveDonateUrl(null)).toBe('');
+    expect(collectiveExpenseUrl('-')).toBe('');
   });
 });

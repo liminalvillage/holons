@@ -198,6 +198,9 @@ export {
   COLLECTIVE_OVERVIEW_QUERY,
   OPENCOLLECTIVE_API_URL,
   OPEN_EXPENSE_STATUSES,
+  collectiveDonateUrl,
+  collectiveExpenseUrl,
+  collectiveUrl,
   isValidCollectiveSlug,
   normalizeCollectiveSlug,
   parseOpenCollectiveResponse,
@@ -212,16 +215,19 @@ export {
   loadPotRecord,
   normalizePotRecord,
   normalizePotToken,
+  normalizePotWalk,
   normalizeTreasury,
   readPotRecord,
   readPotTokens,
   removePotToken,
   savePotRecord,
   savePotTreasury,
+  savePotWalk,
   withPotToken,
   withoutPotToken,
   type PotRecord,
   type PotToken,
+  type PotWalk,
   type TreasuryRecord,
 } from './pot-record.js';
 
@@ -230,15 +236,29 @@ export { ERC20_META_ABI, formatHolding, fromBaseUnits, nativeUnit, treasuryLines
 export {
   ALLOCATION_KEY,
   COLLECTIVE_KEY,
+  allocationSplitHash,
   hasAllocationConfig,
+  readAllocationAliases,
+  readAllocationBuckets,
+  readAllocationClaimWindow,
+  readApplicationsOpen,
+  readAllocationCodes,
+  seatClaim,
+  parseSeatClaim,
   readAllocationConfig,
+  readAllocationGenesis,
   readCollectiveSlug,
   readInteriorShares,
   readZoneAssignments,
   readZonePeople,
+  saveAllocationAliases,
+  saveAllocationCodes,
   saveAllocationConfig,
   saveCollectiveSlug,
   toAllocationPartners,
+  type AllocationGenesis,
+  type ClaimCodes,
+  type SaveAllocationExtra,
 } from './settings.js';
 
 export {
@@ -256,6 +276,7 @@ export {
   type BuildTransferInput,
   type Claim,
   type ClaimBody,
+  type ClaimRail,
   type ClaimStatus,
   type ClaimTotals,
   type FoldClaimsInput,
@@ -267,7 +288,14 @@ export {
   type TransferBody,
   type TransferStatus,
 } from './claims.js';
-export { foldClaimsFromLenses, type ClaimsContext, type ClaimsFromLensesInput } from './claims.js';
+export { foldClaimsFromLenses, selfKeyedPartyOf, type ClaimsContext, type ClaimsFromLensesInput } from './claims.js';
+export {
+  loadJudgedClaims,
+  partyStandings,
+  type JudgedClaims,
+  type LoadJudgedClaimsOptions,
+  type PartyStanding,
+} from './claims-load.js';
 
 export { KNOWN_CHAINS, describeChain, explorerAddressUrl, requiredChainId, safeAppUrl, type ChainInfo } from './chain.js';
 
@@ -320,7 +348,178 @@ export {
   type LoadedClaimCeilings,
 } from './ceiling-load.js';
 export { loadAllocationInputs, onwardParties, type AllocationInputs } from './cascade-load.js';
+
+export {
+  applyStanding,
+  applyStandingToRings,
+  composeInterior,
+  lapsedSeats,
+  normalizeAliases,
+  normalizeBuckets,
+  resolveAlias,
+  splitHash,
+  type Aliases,
+  type AllocationBucket,
+  type BucketMode,
+  type ClaimWindow,
+  type ComposeInteriorInput,
+  type ComposedInterior,
+  type SplitRule,
+} from './buckets.js';
+
+export {
+  EMPTY_STANDING,
+  FLOW_EXITS_LENS,
+  FLOW_NEEDS_LENS,
+  buildExit,
+  buildNeeds,
+  buildStandingVerdict,
+  foldExits,
+  foldNeeds,
+  foldStandingFromLenses,
+  isExit,
+  isNeeds,
+  type ExitBody,
+  type FoldStandingInput,
+  type FoldedExits,
+  type FoldedNeeds,
+  type FoldedStanding,
+  type NeedsBody,
+  type Standing,
+  type StandingContext,
+  type StandingEntry,
+  type StandingFromLensesInput,
+  type StandingStatus,
+} from './standing.js';
+export { loadStanding, standingOf } from './standing-load.js';
 export { defaultUpstreams } from './inbound.js';
+
+// ── The flow graph: a whole Pot as one node per party ─────────────────────
+
+export {
+  buildFlowGraph,
+  classifyParty,
+  isPlaceholderParty,
+  type FlowGraph,
+  type FlowGraphLink,
+  type FlowGraphNode,
+  type FlowPartyKind,
+  type FlowPartyMeta,
+} from './flow-graph.js';
+export {
+  FLOW_GRAPH_HEAD_ID,
+  FLOW_GRAPH_LENS,
+  FLOW_GRAPH_PART_BYTES,
+  FLOW_GRAPH_VERSION,
+  decodeFlowGraph,
+  encodeFlowGraph,
+  type DecodedFlowGraph,
+  type FlowGraphHead,
+  type FlowGraphPart,
+} from './flow-graph-doc.js';
+export {
+  DEFAULT_FLOW_GRAPH_DEPTH,
+  DEFAULT_FLOW_GRAPH_HOLONS,
+  crawlFlowGraph,
+  loadFlowGraph,
+  publishFlowGraph,
+  type CrawlFlowGraphOptions,
+} from './flow-graph-load.js';
+export {
+  indexFlowGraph,
+  partiesByAddress,
+  resolveParty,
+  seatersOf,
+  type FlowGraphIndex,
+  type Seater,
+} from './flow-graph-index.js';
+export {
+  FLOW_DIRECT_ID,
+  FLOW_KEPT_ID,
+  FLOW_OTHER_FUNDS_ID,
+  FLOW_OTHER_PROJECTS_ID,
+  centredTrack,
+  ecosystemTrack,
+  listParties,
+  membershipsOf,
+  refineFlowGraph,
+  refineFlowGraphResources,
+  upstreamShares,
+  graphRights,
+  type CentredTrackOptions,
+  type FlowGraphDrift,
+  type FlowRow,
+  type FlowViewLabels,
+} from './flow-graph-views.js';
+export {
+  FLOW_SPACE_MIN_RADIUS,
+  FLOW_SPACE_ROOT_RADIUS,
+  flowSpaceLinkId,
+  flowSpaceWidth,
+  layoutFlowSpace,
+  type FlowSpace,
+  type FlowSpaceLink,
+  type FlowSpaceNode,
+} from './flow-graph-space.js';
+export { potAccount, potAccountSegments, type PotAccount } from './pot-account.js';
+export {
+  APPLICATION_NOTE_MAX,
+  FLOW_APPLICATIONS_LENS,
+  buildApplication,
+  buildApplicationVerdict,
+  buildWithdrawal,
+  foldApplications,
+  isApplication,
+  isWithdrawal,
+  type Application,
+  type ApplicationStatus,
+  type ApplyBody,
+  type FoldApplicationsInput,
+  type FoldedApplications,
+  type WithdrawBody,
+} from './applications.js';
+export {
+  applyToFund,
+  approveApplication,
+  declineApplication,
+  loadApplications,
+  setApplicationsOpen,
+  withdrawApplication,
+  type ApplicationsContext,
+  type ApprovedApplication,
+} from './applications-load.js';
+export {
+  MAX_SPLIT_RINGS,
+  addRecipient,
+  draftChanges,
+  draftFromInputs,
+  draftToSave,
+  previewDraft,
+  removeRecipient,
+  setKeep,
+  setRing,
+  setResourced,
+  setRingCount,
+  setSteepness,
+  type SplitChange,
+  type SplitDraft,
+  type SplitDraftInput,
+  type SplitPreview,
+  type SplitPreviewRow,
+  type SplitRecipient,
+  type SplitSave,
+} from './split-draft.js';
+export {
+  accountBalances,
+  claimRails,
+  logLine,
+  potLine,
+  type AccountBalance,
+  type AccountLine,
+  type AccountPlace,
+  type RailOption,
+  type RailReason,
+} from './account.js';
 
 // ── The Pot: value held, rights committed once per lunation ───────────────
 
@@ -397,3 +596,58 @@ export {
   savePayoutAddress,
   type PayoutRecord,
 } from './payout.js';
+
+// ── Resources: eight forms of capital, at any level ───────────────────────
+
+export {
+  CAPITALS,
+  EMPTY_RESOURCE_BASE,
+  FINANCIAL_CAPITAL,
+  FLOW_RESOURCES_LENS,
+  RESOURCE_NOTE_MAX,
+  RESOURCE_PROOF_MAX,
+  bandwidthWeights,
+  buildGift,
+  buildGiftVerdict,
+  capitalCounts,
+  capitalsFromCounts,
+  foldResources,
+  isCapital,
+  isGift,
+  normalizeCapital,
+  rankByResources,
+  resourceBaseOf,
+  resourceCount,
+  type BuildGiftInput,
+  type Capital,
+  type FoldResourcesInput,
+  type FoldedResources,
+  type GiftStatus,
+  type GiveBody,
+  type RankedParty,
+  type ResourceBase,
+  type ResourceGift,
+} from './resources.js';
+export {
+  RESOURCE_OFFERS_KEY,
+  RESOURCE_OFFERS_MAX,
+  hasFullTerms,
+  normalizeResourceOffer,
+  offerIdOf,
+  readResourceOffers,
+  withResourceOffer,
+  withoutResourceOffer,
+  type ResourceOffer,
+  type ResourceTerms,
+} from './resource-offers.js';
+export {
+  disputeGift,
+  giveResource,
+  loadResources,
+  receiveGift,
+  removeResourceOffer,
+  resourcesOf,
+  saveResourceOffer,
+  type ResourcesContext,
+} from './resources-load.js';
+export { TRACE_MAX_DEPTH, TRACE_MAX_PATHS, traceAmount, type Trace, type TraceHop, type TracePath } from './flow-graph-trace.js';

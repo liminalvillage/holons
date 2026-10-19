@@ -189,3 +189,46 @@ describe('loadInboundRights', () => {
     expect(got.truncated).toBe(true);
   });
 });
+
+describe('inboundRightFrom with buckets and standing', () => {
+  it('seats the holon through a bucketed split, an alias and past an exit', async () => {
+    const { inboundRightFrom } = await import('./inbound.js');
+    const upstreamSettings = {
+      allocation: {
+        interiorPercent: 100,
+        interiorMode: 'custom',
+        buckets: [
+          { id: 'legacy', percent: 50, mode: 'custom', shares: { 'artisan:p': 1, other: 1 } },
+          { id: 'needs', percent: 50, mode: 'needs' },
+        ],
+        aliases: { 'artisan:p': 'proj' },
+      },
+    };
+    const pot = { unit: 'EUR', total: 1000 };
+    const plain = inboundRightFrom({ upstreamId: 'fund', upstreamSettings, pot, holonId: 'proj' });
+    // needs is empty: legacy takes all; proj holds half of it
+    expect(plain).toMatchObject({ right: 500, percentage: 50 });
+    const flagged = inboundRightFrom({
+      upstreamId: 'fund',
+      upstreamSettings,
+      pot,
+      holonId: 'proj',
+      standing: { exited: {}, inNeed: { other: { id: 'n', epoch: 1, createdAt: 1 } } },
+    });
+    expect(flagged).toMatchObject({ right: 250, percentage: 25 });
+    const gone = inboundRightFrom({
+      upstreamId: 'fund',
+      upstreamSettings,
+      pot,
+      holonId: 'proj',
+      standing: { exited: { proj: { id: 'x', epoch: 1, createdAt: 1 } }, inNeed: {} },
+    });
+    expect(gone).toBeNull();
+
+    // past the upstream's claim window the unclaimed seat is gone and the claimed one holds it all
+    const windowed = { allocation: { ...upstreamSettings.allocation, claimWindow: { until: 1000, keep: [] } } };
+    expect(inboundRightFrom({ upstreamId: 'fund', upstreamSettings: windowed, pot, holonId: 'proj', now: 999 })).toMatchObject({ percentage: 50 });
+    expect(inboundRightFrom({ upstreamId: 'fund', upstreamSettings: windowed, pot, holonId: 'proj', now: 1000 })).toMatchObject({ percentage: 100 });
+    expect(inboundRightFrom({ upstreamId: 'fund', upstreamSettings: windowed, pot, holonId: 'other', now: 1000 })).toBeNull();
+  });
+});

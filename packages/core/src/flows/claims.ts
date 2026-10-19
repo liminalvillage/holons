@@ -65,6 +65,27 @@ import { lunationAt } from './lunation.js';
 /** The append-only lens fund claims live in. */
 export const FLOW_CLAIMS_LENS = 'flow_claims';
 
+/**
+ * How a claim is to be paid, or was. `wallet` is the party's payout address;
+ * the other three leave through the holon's OpenCollective, which holds the
+ * payee's details — none of them ever reach the log.
+ */
+export type ClaimRail = 'wallet' | 'opencollective' | 'paypal' | 'bank';
+
+export const CLAIM_RAILS: readonly ClaimRail[] = ['wallet', 'opencollective', 'paypal', 'bank'];
+
+/** A rail as written, or nothing: an entry from before rails, or a word we do not know. */
+export function readClaimRail(raw: unknown): ClaimRail | undefined {
+  const rail = String(raw ?? '').trim().toLowerCase();
+  return (CLAIM_RAILS as readonly string[]).includes(rail) ? (rail as ClaimRail) : undefined;
+}
+
+/** Where a payout can be looked up — an expense page, a transaction. Kept short; never a bank detail. */
+const refOf = (raw: unknown): string | undefined => {
+  const ref = String(raw ?? '').trim().slice(0, 300);
+  return ref || undefined;
+};
+
 export interface ClaimBody {
   t: 'action';
   kind: 'claim';
@@ -77,6 +98,8 @@ export interface ClaimBody {
   /** The party's share at claim time, frozen so a later re-split does not move it. */
   percentage?: number;
   memo?: string;
+  /** How the party asks to be paid. */
+  rail?: ClaimRail;
   /** Set when the holon key claims for a party (the bot on a member's word). */
   onBehalfOf?: string;
 }
@@ -88,6 +111,10 @@ export interface PayoutBody {
   amount: number;
   unit: string;
   memo?: string;
+  /** How it was paid. */
+  rail?: ClaimRail;
+  /** Where the payment can be looked up. */
+  ref?: string;
 }
 
 /** A give: `party` burns `amount` of their access in `unit` and `to` gains it. */
@@ -141,6 +168,8 @@ export interface Claim {
   epoch: number;
   percentage?: number;
   memo?: string;
+  /** How the party asked to be paid. */
+  rail?: ClaimRail;
   /** Unix seconds. */
   createdAt: number;
   pubkey: string;
@@ -164,6 +193,8 @@ export interface Payout {
   amount: number;
   unit: string;
   memo?: string;
+  rail?: ClaimRail;
+  ref?: string;
   createdAt: number;
   pubkey: string;
 }
@@ -217,6 +248,7 @@ export interface BuildClaimInput {
   amount: number;
   unit: string;
   memo?: string;
+  rail?: ClaimRail;
   percentage?: number;
   /** When the claim is raised (ms). Default now. Sets the epoch. */
   at?: number;
@@ -238,6 +270,7 @@ export function buildClaim(input: BuildClaimInput): Appendable<ClaimBody> {
     epoch: lunationAt(at).index,
     ...(input.percentage != null ? { percentage: input.percentage } : {}),
     ...(input.memo ? { memo: String(input.memo) } : {}),
+    ...(readClaimRail(input.rail) ? { rail: readClaimRail(input.rail) } : {}),
     ...(input.onBehalfOf ? { onBehalfOf: String(input.onBehalfOf) } : {}),
   };
   return action('claim', body as Record<string, unknown>, input.prev ? { prev: input.prev } : undefined) as unknown as Appendable<ClaimBody>;
@@ -278,12 +311,22 @@ export function buildTransfer(input: BuildTransferInput): Appendable<TransferBod
 }
 
 /** The `payout` an attester appends once a claim is paid; it consumes the claim. */
-export function buildPayout(input: { claimId: string; party: string; amount: number; unit: string; memo?: string }): Appendable<PayoutBody> {
+export function buildPayout(input: {
+  claimId: string;
+  party: string;
+  amount: number;
+  unit: string;
+  memo?: string;
+  rail?: ClaimRail;
+  ref?: string;
+}): Appendable<PayoutBody> {
   const body = {
     party: String(input.party),
     amount: round(Number(input.amount)),
     unit: unitOf(input.unit),
     ...(input.memo ? { memo: String(input.memo) } : {}),
+    ...(readClaimRail(input.rail) ? { rail: readClaimRail(input.rail) } : {}),
+    ...(refOf(input.ref) ? { ref: refOf(input.ref) } : {}),
   };
   return action('payout', body, { basis: [input.claimId] }) as unknown as Appendable<PayoutBody>;
 }
@@ -453,6 +496,8 @@ export function foldClaims(input: FoldClaimsInput): FoldedClaims {
           amount: Number(e.item.amount),
           unit: unitOf(e.item.unit),
           ...(e.item.memo ? { memo: e.item.memo } : {}),
+          ...(readClaimRail(e.item.rail) ? { rail: readClaimRail(e.item.rail) } : {}),
+          ...(refOf(e.item.ref) ? { ref: refOf(e.item.ref) } : {}),
           createdAt: e.created_at,
           pubkey: e.pubkey,
         });
@@ -530,6 +575,7 @@ export function foldClaims(input: FoldClaimsInput): FoldedClaims {
       epoch: Number(c.epoch),
       ...(c.percentage != null ? { percentage: Number(c.percentage) } : {}),
       ...(c.memo ? { memo: String(c.memo) } : {}),
+      ...(readClaimRail(c.rail) ? { rail: readClaimRail(c.rail) } : {}),
       createdAt: j.entry.created_at,
       pubkey: j.entry.pubkey,
       delegated: !!holonKey && j.entry.pubkey.toLowerCase() === holonKey && !!c.onBehalfOf,
@@ -606,6 +652,27 @@ export interface ClaimsContext {
   holonPubkey: string | null;
 }
 
+const HEX64 = /^[0-9a-f]{64}$/i;
+
+/**
+ * A key no lens binds to a party speaks for the party named by that very
+ * key, and for nobody else. A person who signs in with a key IS their key —
+ * the rule that makes a pubkey holon its key — and a split may seat them
+ * under it; without this their right could never be drawn, because no
+ * directory attests a bare key. It widens nothing: whether the signer is
+ * ACCEPTED is still the holon's membership's call (`collapse`), and a key
+ * already bound — an attested identity, the holon's own key — keeps that
+ * binding.
+ */
+export function selfKeyedPartyOf(partyOf: (pubkey: string) => string | null | undefined): (pubkey: string) => string | null {
+  return (pubkey) => {
+    const bound = partyOf(pubkey);
+    if (bound != null) return String(bound);
+    const key = String(pubkey ?? '').toLowerCase();
+    return HEX64.test(key) ? key : null;
+  };
+}
+
 /** Fold the claims log with the signer set and party map the lenses give. */
 export function foldClaimsFromLenses(input: ClaimsFromLensesInput): ClaimsContext {
   const ctx = lensContext(input);
@@ -614,7 +681,7 @@ export function foldClaimsFromLenses(input: ClaimsFromLensesInput): ClaimsContex
     entries: input.entries,
     actors: ctx.actors,
     policy,
-    partyOf: ctx.parties.partyOf,
+    partyOf: selfKeyedPartyOf(ctx.parties.partyOf),
     rights: input.rights,
     holonPubkey: ctx.holonPubkey,
     imports: input.imports,

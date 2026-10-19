@@ -36,6 +36,19 @@ export interface LoadClaimCeilingsOptions {
   claims: FoldedClaims | null | undefined;
   /** The scored roster of an equation-mode holon. Absent: no contributor seats resolve. */
   scoreOf?: (holonId: string) => Promise<AllocationMember[]>;
+  /**
+   * Who holds what share of the fund, when the surface already knows — the
+   * published map's `graphRights`. Given, the cascade is not walked at all.
+   */
+  shares?: AllocationResult | null;
+  /**
+   * Count only what the holon holds ITSELF — its mints, its collective, its
+   * Pot — and leave out what reaches it from upstream. A board of one holon
+   * wants the inbound: it is that holon's to divide. A statement read across
+   * several funds must not: the same money is already counted at the fund
+   * that holds it, where its leaves claim it.
+   */
+  ownOnly?: boolean;
   /** Cascade bounds. */
   maxHolons?: number;
   maxDepth?: number;
@@ -82,34 +95,43 @@ export async function loadClaimCeilings(
   if (!holosphere || !holon) return EMPTY;
   const quiet = <T>(p: Promise<T>, fallback: T): Promise<T> => p.then((v) => v ?? fallback).catch(() => fallback);
 
-  const inputs = await loadAllocationInputs(holosphere, holon, { scoreOf: opts.scoreOf });
-  if (!inputs.configured) return EMPTY;
-  const root = { config: inputs.config, members: inputs.members, zoned: inputs.zoned };
-  const rootPartyIds = [...new Set([...inputs.members.map((m) => m.id), ...inputs.zoned.filter((p) => p.zone >= 1).map((p) => p.id)])];
+  const known = opts.shares ?? null;
+  const inputs = known ? null : await loadAllocationInputs(holosphere, holon, { scoreOf: opts.scoreOf });
+  if (inputs && !inputs.configured) return EMPTY;
+  const rootPartyIds = inputs
+    ? [...new Set([...inputs.members.map((m) => m.id), ...inputs.zoned.filter((p) => p.zone >= 1).map((p) => p.id)])]
+    : [];
 
   const [loaded, mints, inbound, expenses, pot] = await Promise.all([
-    loadCascadeChildren(holosphere, rootPartyIds, {
-      rootId: holon,
-      maxDepth: opts.maxDepth,
-      maxHolons: opts.maxHolons ?? DEFAULT_CEILING_HOLONS,
-      scoreOf: opts.scoreOf,
-    }),
+    inputs
+      ? loadCascadeChildren(holosphere, rootPartyIds, {
+          rootId: holon,
+          maxDepth: opts.maxDepth,
+          maxHolons: opts.maxHolons ?? DEFAULT_CEILING_HOLONS,
+          scoreOf: opts.scoreOf,
+        })
+      : Promise.resolve({ children: {}, truncated: false } as Awaited<ReturnType<typeof loadCascadeChildren>>),
     quiet(loadMints(holosphere, holon).then((c) => c.folded), null),
-    quiet(loadInboundRights(holosphere, holon, { scoreOf: opts.scoreOf }), { inbound: [], upstreams: [], visited: 0, truncated: false }),
+    opts.ownOnly
+      ? Promise.resolve({ inbound: [], upstreams: [], visited: 0, truncated: false })
+      : quiet(loadInboundRights(holosphere, holon, { scoreOf: opts.scoreOf }), { inbound: [], upstreams: [], visited: 0, truncated: false }),
     opts.expenses !== undefined ? Promise.resolve(opts.expenses ?? []) : quiet<Expense[]>(holosphere.getAll(holon, 'expenses'), []),
     quiet(loadPotRecord(holosphere, holon), null),
   ]);
   // The units the holon reads on-chain are the ones its Pot holds.
   const held = pot ? [...new Set([nativeUnit(pot.chainId), ...pot.tokens.map((t) => t.symbol)].map((u) => normalizeCurrency(u)))] : [];
 
-  const cascade = resolveCascade({
-    holonId: holon,
-    total: null,
-    root,
-    resolveChild: childResolver(loaded.children),
-    maxDepth: opts.maxDepth ?? DEFAULT_CASCADE_DEPTH,
-  });
-  const shares = cascadeRights(cascade);
+  const cascade = inputs
+    ? resolveCascade({
+        holonId: holon,
+        total: null,
+        root: { config: inputs.config, members: inputs.members, zoned: inputs.zoned },
+        resolveChild: childResolver(loaded.children),
+        maxDepth: opts.maxDepth ?? DEFAULT_CASCADE_DEPTH,
+      })
+    : null;
+  const shares = known ?? cascadeRights(cascade!);
+  const cut = !!cascade?.truncated;
 
   const sources: PotSources = {
     collective: opts.collective ? { currency: opts.collective.currency, balance: opts.collective.balance } : null,
@@ -142,7 +164,7 @@ export async function loadClaimCeilings(
     shares,
     pots,
     usage,
-    truncated: loaded.truncated || inbound.truncated || cascade.truncated,
+    truncated: loaded.truncated || inbound.truncated || cut,
     held,
   };
 }
