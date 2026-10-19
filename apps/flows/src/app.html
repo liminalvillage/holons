@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link
+      rel="icon"
+      href="%sveltekit.assets%/favicon.svg"
+      type="image/svg+xml"
+    />
+    <link rel="icon" href="%sveltekit.assets%/favicon.png" type="image/png" />
+    <!-- PNG, full-bleed: iOS ignores an SVG here and screenshots the page. -->
+    <link
+      rel="apple-touch-icon"
+      href="%sveltekit.assets%/apple-touch-icon.png"
+    />
+    <link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
+    <meta name="theme-color" content="#0e6b66" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <!-- Zoom stays free: a diagram is something people pinch into. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta property="og:title" content="Flows" />
+    <meta
+      property="og:description"
+      content="Resource projects directly: space, tools, seeds, skills, time — money as one stream among eight, every flow traceable."
+    />
+    <title>Flows</title>
+    <!-- Chromium's install event fires once, possibly before the app bundle
+         has hydrated — keep it for lib/install.ts ("Add to Home Screen"). -->
+    <script>
+      addEventListener("beforeinstallprompt", function (e) {
+        e.preventDefault();
+        window.__installPrompt = e;
+      });
+    </script>
+    <!-- Restore the palette and the language before first paint so a reload
+         doesn't flash the wrong skin (lib/theme.ts takes over after mount). -->
+    <script>
+      try {
+        var pin = localStorage.getItem("flows_theme");
+        var dark =
+          pin === "dark" ||
+          (pin !== "light" &&
+            window.matchMedia &&
+            matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        var lp = localStorage.getItem("flows_lang");
+        var lr = localStorage.getItem("flows_lang_resolved");
+        var lang = lp === "en" || lp === "it" || lp === "es" ? lp : lr;
+        if (lang === "en" || lang === "it" || lang === "es")
+          document.documentElement.lang = lang;
+      } catch (e) {
+        /* private mode / no storage — default light skin, English */
+      }
+    </script>
+    %sveltekit.head%
+  </head>
+  <body data-sveltekit-preload-data="tap">
+    <div style="display: contents">%sveltekit.body%</div>
+  </body>
+</html>

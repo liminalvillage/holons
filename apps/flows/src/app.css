@@ -1,0 +1,233 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* flows — global styling. The kiosk's palette (paper, ink, a little teal) on a
+   phone-first shell. No web fonts (offline-first); system stack only. */
+
+:root {
+  /* Surfaces */
+  --paper: #f7f4ec;
+  --paper-deep: #efeadd;
+  --card: #fffdf8;
+
+  /* Three tiers of ink, and every one of them is TEXT: each clears WCAG AA
+     (4.5:1) on the paper, the deep paper and the card. */
+  --ink: #20302f;
+  --ink-soft: #4d5e5c;
+  --muted: #5c6966;
+  --teal: #0e6b66;
+  --teal-deep: #0a4f4a;
+  --teal-ink: var(--teal-deep);
+  --on-teal: #fff;
+  --line: #e3ddcd;
+  --warn: #b0461f;
+  --danger: #9a3b2f;
+  --caution: #8f4a0b;
+  --teal-wash: color-mix(in srgb, var(--teal) 10%, var(--card));
+  --ghost: rgba(255, 255, 255, 0.5);
+  --shadow-soft: 0 6px 18px rgba(28, 48, 46, 0.08);
+  --shadow-sheet: 0 -10px 30px rgba(28, 48, 46, 0.18);
+
+  /* What a party is, as a colour — always beside its name in words (KindChip),
+     never the only cue. Each reads as a bar on the paper and on the card. */
+  --kind-pot: #0a4f4a;
+  --kind-fund: #2f6fb3;
+  --kind-project: #7a55b8;
+  --kind-person: #b3622a;
+  --kind-placeholder: #7b8785;
+  --kind-other: #8b9694;
+
+  /* The eight forms of capital — always beside their name in words
+     (CapitalBlocks), never the only cue. Financial is water in the pipes. */
+  --cap-material: #8a5a2b;
+  --cap-living: #3d8b37;
+  --cap-social: #c8436b;
+  --cap-intellectual: #4a50c4;
+  --cap-experiential: #d9771a;
+  --cap-cultural: #8d47bd;
+  --cap-spiritual: #b8931c;
+  --cap-financial: #1f88c9;
+
+  --radius: 16px;
+  /* The least a finger needs. */
+  --tap: 48px;
+  --gutter: 16px;
+  --nav-h: 60px;
+
+  font-size: 16px;
+  font-family:
+    ui-rounded,
+    "SF Pro Rounded",
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Dark skin — `data-theme="dark"` on <html> (see lib/theme.ts). Only the
+   palette changes, so the same components render unchanged. */
+:root[data-theme="dark"] {
+  --paper: #14181a;
+  --paper-deep: #0d1012;
+  --card: #1c2226;
+
+  --ink: #eef2f0;
+  --ink-soft: #b3c0bd;
+  --muted: #93a19e;
+  --teal-ink: color-mix(in srgb, var(--teal) 30%, #fff);
+  --line: #2c3539;
+  --warn: #e8815c;
+  --danger: #ffa598;
+  --caution: #f0b060;
+  --teal-wash: color-mix(in srgb, var(--teal) 24%, var(--card));
+  --ghost: rgba(255, 255, 255, 0.08);
+  --shadow-soft: 0 6px 18px rgba(0, 0, 0, 0.42);
+  --shadow-sheet: 0 -10px 30px rgba(0, 0, 0, 0.6);
+
+  --kind-pot: #3fb5ac;
+  --kind-fund: #6aa9e6;
+  --kind-project: #b094e6;
+  --kind-person: #e39a63;
+  --kind-placeholder: #93a19e;
+  --kind-other: #7c8a87;
+
+  --cap-material: #d09a62;
+  --cap-living: #7cc96f;
+  --cap-social: #f07fa0;
+  --cap-intellectual: #8f95f2;
+  --cap-experiential: #f3a75a;
+  --cap-cultural: #c08ce8;
+  --cap-spiritual: #e6c55a;
+  --cap-financial: #5cb8ee;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background: var(--paper);
+}
+
+body {
+  overscroll-behavior-y: none;
+  /* The page never scrolls sideways: a wide diagram scrolls inside itself. */
+  overflow-x: hidden;
+}
+
+::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+a {
+  color: var(--teal-ink);
+  touch-action: manipulation;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+:focus-visible {
+  outline: 3px solid var(--teal);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Shared pieces every screen uses. */
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: var(--shadow-soft);
+}
+
+.section-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 22px 0 8px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--tap);
+  padding: 0 18px;
+  border-radius: 999px;
+  font-weight: 700;
+  background: var(--teal);
+  color: var(--on-teal);
+  text-decoration: none;
+}
+.btn.quiet {
+  background: transparent;
+  color: var(--teal-ink);
+  border: 1.5px solid var(--line);
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.notice {
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--teal-wash);
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+.notice.warn {
+  background: color-mix(in srgb, var(--caution) 14%, var(--card));
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

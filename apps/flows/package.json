@@ -1,0 +1,42 @@
+{
+  "name": "flows",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Flows — resource projects directly. A mobile-first account for everyone under a Pot: give any of eight forms of capital at any level, see who is most resourced, and trace every flow, money included.",
+  "author": {
+    "name": "Roberto Valenti"
+  },
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev --port 5473",
+    "build": "vite build",
+    "preview": "vite preview --port 5473",
+    "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "lint": "prettier --check ."
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-netlify": "^4.4.2",
+    "@sveltejs/kit": "^2.59.1",
+    "@sveltejs/vite-plugin-svelte": "^5.0.1",
+    "@tsconfig/svelte": "^5.0.4",
+    "@types/node": "^22.15.17",
+    "prettier": "^3.0.0",
+    "prettier-plugin-svelte": "^3.3.2",
+    "svelte": "^5.0.0",
+    "svelte-check": "^3.0.1",
+    "tslib": "^2.4.1",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.0",
+    "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "@holons/core": "workspace:*",
+    "@noble/curves": "^1.8.0",
+    "@noble/hashes": "^1.8.0",
+    "ethers": "^6.14.0",
+    "holosphere": "workspace:*",
+    "jose": "^6.2.3"
+  }
+}
