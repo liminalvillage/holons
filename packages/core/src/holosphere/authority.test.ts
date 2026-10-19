@@ -115,6 +115,56 @@ describe('createReadAuthority through the factory', () => {
     expect(await writeAcceptance(hs, '89283082803ffff', bot.pk)).toMatchObject({ status: 'open' });
   });
 
+  describe('a seated key speaks, then is removed', () => {
+    const H = '-900';
+    // The holon as founded, one record by the founder, and a member seated at T0+10 who rewrites it at T0+20.
+    const spoken = async () => {
+      const bot = testKey(), member = testKey();
+      const hs = sphere(bot.sk);
+      await hs.ready();
+      const forget = () => (hs as unknown as { _readAuthority: { invalidate(): void } })._readAuthority.invalidate();
+      const titles = async () => (await hs.getAll(H, 'tasks')).map((t: { title: string }) => t.title);
+      const pending = async () => (await hs.getPending(H, 'tasks')).map((t: { title: string }) => t.title);
+      await hs.foundHolon(H, { at: T0 });
+      hs.store.apply(signed(bot.sk, H, 'tasks', { id: 'a', title: 'as founded' }, T0 + 1), { origin: 'remote' });
+      await hs.addMember(H, member.pk, 'member', { at: T0 + 10 });
+      forget();
+      expect(await titles()).toEqual(['as founded']);
+      hs.store.apply(signed(member.sk, H, 'tasks', { id: 'a', title: 'as the member put it' }, T0 + 20), { origin: 'remote' });
+      expect(await titles()).toEqual(['as the member put it']);
+      expect(await pending()).toEqual([]);
+      return { hs, member, forget, titles, pending };
+    };
+
+    it('a removal that reaches back before it spoke takes its word away: the record falls back to what stood before', async () => {
+      const { hs, member, forget, titles, pending } = await spoken();
+      await hs.removeMember(H, member.pk, { at: T0 + 15 });
+      forget();
+      expect(await titles()).toEqual(['as founded']);
+      // The address is still backed by the founder's word, so nothing waits as pending.
+      expect(await pending()).toEqual([]);
+    });
+
+    it('a removal dated after it spoke keeps that word: removal is as of time', async () => {
+      const { hs, member, forget, titles, pending } = await spoken();
+      await hs.removeMember(H, member.pk, { at: T0 + 30 });
+      forget();
+      expect(await titles()).toEqual(['as the member put it']);
+      expect(await pending()).toEqual([]);
+    });
+
+    it('a removed key that writes again replaces its own accepted word, and the record falls back past it', async () => {
+      const { hs, member, forget, titles, pending } = await spoken();
+      await hs.removeMember(H, member.pk, { at: T0 + 30 });
+      forget();
+      // The store keeps one claim per author per address: the new envelope
+      // (not accepted) takes the place of the one that was.
+      hs.store.apply(signed(member.sk, H, 'tasks', { id: 'a', title: 'after the removal' }, T0 + 40), { origin: 'remote' });
+      expect(await titles()).toEqual(['as founded']);
+      expect(await pending()).toEqual([]);
+    });
+  });
+
   it('enforce: false reads the open graph', async () => {
     const bot = testKey(), stranger = testKey();
     const hs = sphere(bot.sk, false);
