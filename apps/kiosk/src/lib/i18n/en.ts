@@ -1502,6 +1502,11 @@ export const en = {
   "balances.paidToYou": "Paid to you",
   "balances.yourShare": "Your share {amount}",
   "balances.justYou": "Just you",
+  "balances.intoHolon": "Into {holon}",
+  "balances.intoHolonHint":
+    "Given to {holon}: it counts toward {name}'s share, and nobody owes it back.",
+  "balances.putInto": "{name} put into {holon}",
+  "balances.countsForYou": "Counts toward your share",
   "balances.you": "You",
   "balances.netPosition": "Net position",
   "balances.personOwed": "Is owed {amount}",

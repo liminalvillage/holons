@@ -20,6 +20,7 @@
   // Units never mix: one currency at a time, chosen by the pill.
 
   import { createEventDispatcher } from "svelte";
+  import { nameMap, resolveName, resolvedName } from "$lib/stores/nameResolver";
   import type { HoloSphere } from "holosphere";
   import {
     computeMutualCredit,
@@ -59,7 +60,8 @@
   const PAGE = 12;
 
   $: nameById = new Map(people.map((p) => [p.id, p.name]));
-  const nameOf = (id: unknown) => nameById.get(String(id)) ?? String(id ?? "");
+  $: nameOf = (id: unknown) =>
+    nameById.get(String(id)) ?? (String(id) === holonId ? holonName : String(id ?? ""));
   const isMe = (id: unknown) => !!selfId && String(id) === selfId;
 
   /** A name, or "You" when it is the viewer's. */
@@ -131,12 +133,26 @@
     return e.amount / n;
   }
 
+  $: if (holonId) resolveName(holonId);
+  $: holonName = resolvedName(holonId, $nameMap);
+
+  /**
+   * Given into the holon itself rather than split among people: the hours or
+   * money count toward the giver's share of the fund, and nobody owes them
+   * back. Task completions record logged hours the same way.
+   */
+  function isIntoHolon(e: Expense): boolean {
+    const split = coerceSplitWith(e.splitWith).map(String);
+    return !!holonId && split.length === 1 && split[0] === holonId;
+  }
+
   /** One line that says what a record is, without opening it. */
   function summary(e: Expense): string {
     if (isSettlement(e)) {
       const to = coerceSplitWith(e.splitWith)[0];
       return `${who(e.paidBy)} paid ${who(to, false)} back`;
     }
+    if (isIntoHolon(e)) return `${who(e.paidBy)} put into ${holonName}`;
     const n = sharers(e).length;
     return `${who(e.paidBy)} paid · split ${n === 1 ? "1 way" : `${n} ways`}`;
   }
@@ -152,6 +168,8 @@
       if (inSplit) return { text: "Paid to you", sign: "in" };
       return { text: "", sign: "" };
     }
+    if (isIntoHolon(e))
+      return paid ? { text: "Counts toward your share", sign: "in" } : { text: "", sign: "" };
     if (paid && inSplit) {
       const owed = e.amount - share(e);
       return owed > 0.005
@@ -240,10 +258,19 @@
     addSheet = true;
   }
 
+  // Into the holon is a split of its own: choosing it replaces the people,
+  // and choosing a person leaves it.
+  $: draftInto = draft.splitWith.length === 1 && draft.splitWith[0] === holonId;
+
   function toggleSplit(id: string) {
-    draft.splitWith = draft.splitWith.includes(id)
-      ? draft.splitWith.filter((x) => x !== id)
-      : [...draft.splitWith, id];
+    if (id === holonId) {
+      draft.splitWith = draftInto ? people.map((p) => p.id) : [holonId];
+      return;
+    }
+    const named = draft.splitWith.filter((x) => x !== holonId);
+    draft.splitWith = named.includes(id)
+      ? named.filter((x) => x !== id)
+      : [...named, id];
   }
 
   function splitEveryone() {
@@ -695,6 +722,20 @@
       </button>
     </div>
     <ul class="picks" aria-label="Split with">
+      {#if holonId}
+        <li>
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={draftInto}
+            class="pick"
+            class:on={draftInto}
+            on:click={() => toggleSplit(holonId)}
+          >
+            Into {holonName}
+          </button>
+        </li>
+      {/if}
       {#each people as p (p.id)}
         <li>
           <button
@@ -711,7 +752,9 @@
         </li>
       {/each}
     </ul>
-    {#if draftShare > 0}
+    {#if draftInto}
+      <p class="sub">Given to {holonName}: it counts toward {who(draft.paidBy, false)}'s share, and nobody owes it back.</p>
+    {:else if draftShare > 0}
       <p class="sub">{format(draftShare)} each, {draft.splitWith.length} {draft.splitWith.length === 1 ? "way" : "ways"}.</p>
     {/if}
     {#if error}<p class="error">{error}</p>{/if}

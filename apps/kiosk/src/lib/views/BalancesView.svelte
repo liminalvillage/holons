@@ -195,12 +195,27 @@
     return e.amount / n;
   }
 
+  /**
+   * Given into the holon itself rather than split among people: the hours or
+   * money count toward the giver's share of the fund, and nobody owes them
+   * back. Task completions record logged hours the same way.
+   */
+  $: isIntoHolon = (e: Expense): boolean => {
+    const split = coerceSplitWith(e.splitWith).map(String);
+    return !!holonId && split.length === 1 && split[0] === holonId;
+  };
+
   /** One line that says what a record is, without opening it. */
   function summary(e: Expense): string {
     if (isSettlement(e)) {
       const to = coerceSplitWith(e.splitWith)[0];
       return $t("balances.paidBack", { from: who(e.paidBy), to: who(to) });
     }
+    if (isIntoHolon(e))
+      return $t("balances.putInto", {
+        name: who(e.paidBy),
+        holon: nameOf(holonId),
+      });
     const n = sharers(e).length;
     return $t("balances.paidSplit", { name: who(e.paidBy), n });
   }
@@ -216,6 +231,10 @@
       if (inSplit) return { text: $t("balances.paidToYou"), sign: "in" };
       return { text: "", sign: "" };
     }
+    if (isIntoHolon(e))
+      return paid
+        ? { text: $t("balances.countsForYou"), sign: "in" }
+        : { text: "", sign: "" };
     if (paid && inSplit) {
       const owed = e.amount - share(e);
       return owed > 0.005
@@ -361,10 +380,19 @@
     addSheet = true;
   }
 
+  // Into the holon is a split of its own: choosing it replaces the people,
+  // and choosing a person leaves it.
+  $: draftInto = draft.splitWith.length === 1 && draft.splitWith[0] === holonId;
+
   function toggleSplit(id: string) {
-    draft.splitWith = draft.splitWith.includes(id)
-      ? draft.splitWith.filter((x) => x !== id)
-      : [...draft.splitWith, id];
+    if (id === holonId) {
+      draft.splitWith = draftInto ? members : [holonId];
+      return;
+    }
+    const named = draft.splitWith.filter((x) => x !== holonId);
+    draft.splitWith = named.includes(id)
+      ? named.filter((x) => x !== id)
+      : [...named, id];
   }
 
   function splitEveryone() {
@@ -972,6 +1000,19 @@
         </button>
       </div>
       <ul class="picks" aria-label={$t("balances.splitWith")}>
+        {#if holonId}
+          <li>
+            <button
+              role="checkbox"
+              aria-checked={draftInto}
+              class="pick"
+              class:on={draftInto}
+              on:click={() => toggleSplit(holonId)}
+            >
+              {$t("balances.intoHolon", { holon: nameOf(holonId) })}
+            </button>
+          </li>
+        {/if}
         {#each people as p (p.id)}
           <li>
             <button
@@ -986,7 +1027,14 @@
           </li>
         {/each}
       </ul>
-      {#if draftShare > 0}
+      {#if draftInto}
+        <p class="sub">
+          {$t("balances.intoHolonHint", {
+            holon: nameOf(holonId),
+            name: who(draft.paidBy),
+          })}
+        </p>
+      {:else if draftShare > 0}
         <p class="sub">
           {$t("balances.eachOf", {
             amount: format(draftShare),

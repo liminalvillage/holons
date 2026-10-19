@@ -1529,6 +1529,11 @@ export const it: Record<MessageKey, Msg> = {
   "balances.paidToYou": "Pagato a te",
   "balances.yourShare": "La tua quota {amount}",
   "balances.justYou": "Solo tu",
+  "balances.intoHolon": "In {holon}",
+  "balances.intoHolonHint":
+    "Dato a {holon}: conta per la quota di {name} e nessuno lo deve restituire.",
+  "balances.putInto": "{name} ha messo in {holon}",
+  "balances.countsForYou": "Conta per la tua quota",
   "balances.you": "Tu",
   "balances.netPosition": "Posizione netta",
   "balances.personOwed": "Deve ricevere {amount}",
