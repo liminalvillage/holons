@@ -1,7 +1,7 @@
 {
-  "name": "Holons",
-  "short_name": "Holons",
-  "description": "Calendar, tasks, and the library of things for the hub.",
+  "name": "Artizen",
+  "short_name": "Artizen",
+  "description": "Calendar, tasks, and the library of things for the pot.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

@@ -15,6 +15,7 @@
     buildRightsSignature,
     collectable,
     cutRights,
+    resourcesOf,
     describeChain,
     foldRightsFromLenses,
     fromBaseUnits,
@@ -209,6 +210,7 @@
         chainId: pot.chainId,
         received,
         scoreOf: (id) => scoreAllocationMembers(holosphere, id),
+        resourcesOf: resourcesOf(holosphere),
       });
     });
   const publishCut = () =>
@@ -247,6 +249,7 @@
         chainId: pot.chainId,
         received,
         scoreOf: (id) => scoreAllocationMembers(holosphere, id),
+        resourcesOf: resourcesOf(holosphere),
       });
       review = { same: !!again.table && rightsRoot(again.table.rows) === state.pending.root, problems: again.problems };
     });
@@ -263,9 +266,13 @@
       await sweepOnChain(pot, token);
       await refreshState();
     });
+  // The owner is the one key that can veto a root and replace the signers:
+  // the connected wallet by default, the genesis Safe for a Pot that must
+  // answer to no single key.
+  let ownerAddress = "";
   const deploy = () =>
     run("deploy", async () => {
-      await deployPotOnChain(holosphere, holonID, { signers: [], threshold: 1 });
+      await deployPotOnChain(holosphere, holonID, { signers: [], threshold: 1, owner: ownerAddress.trim() || null });
       dispatch("changed");
     });
 
@@ -345,7 +352,11 @@
     </h3>
     {#if !pot}
       <p class="note">This holon holds no value on chain yet. A Pot holds it and divides it by a rights table committed at each new moon.</p>
-      {#if canAttest}<button type="button" disabled={busy !== ""} on:click={deploy}>{busy === "deploy" ? "Creating…" : "Create a Pot"}</button>{/if}
+      {#if canAttest}
+        <label class="note">Owner (a Safe, or empty for your wallet) — the owner alone can veto a root and replace the signers
+          <input type="text" placeholder="0x…" bind:value={ownerAddress} disabled={busy !== ""} /></label>
+        <button type="button" disabled={busy !== ""} on:click={deploy}>{busy === "deploy" ? "Creating…" : "Create a Pot"}</button>
+      {/if}
     {:else if !state}
       <p class="note">{reading ? "Reading the chain…" : "The Pot cannot be read from here."}</p>
     {:else}

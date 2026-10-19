@@ -371,7 +371,7 @@
         <img class="logo" src={$brandLogo} alt={$holonName || "Kiosk"} />
       {:else}
         {#if $holonId}<Identicon class="mark" seed={$holonId} />{/if}
-        <span class="wordmark">{$holonName || "kiosk"}</span>
+        <span class="wordmark">{$holonName || "Artizen"}</span>
       {/if}
     </div>
 

@@ -14,7 +14,7 @@ import { holonForHost, holonForPath } from "./holons";
 
 export const MANIFEST_ROUTE = "/api/manifest";
 
-const DEFAULT_NAME = "Holons";
+const DEFAULT_NAME = "Artizen";
 const NAME_MAX = 60;
 /** `/`, `/<segment>`, or `/?holon=<id>` — nothing that leaves the origin. */
 const START_RE = /^\/(?:[A-Za-z0-9._~%-]+|\?holon=[A-Za-z0-9._~%-]+)?$/;
@@ -55,7 +55,7 @@ export function buildManifest(startRaw: string | null, nameRaw: string | null) {
   return {
     name,
     short_name: name,
-    description: "Calendar, tasks, and the library of things for the hub.",
+    description: "Calendar, tasks, and the library of things for the pot.",
     // The id is what makes two hubs two apps on one home screen.
     id: start,
     start_url: start,

@@ -95,7 +95,7 @@ describe("buildManifest", () => {
   });
 
   it("defaults and bounds the name", () => {
-    expect(buildManifest("/", "  ").name).toBe("Holons");
+    expect(buildManifest("/", "  ").name).toBe("Artizen");
     expect(buildManifest("/", "x".repeat(500)).name).toHaveLength(60);
   });
 

@@ -405,21 +405,21 @@ export const en = {
   "tabbar.pinView": "Pin this view",
 
   // Dock (the hub's window closed into a circle per visited hub)
-  "dock.close": "Close this hub",
-  "dock.boards": "Your hubs",
+  "dock.close": "Close this pot",
+  "dock.boards": "Your pots",
   "dock.open": "Open {name}",
   "dock.flows": "Flows between {a} and {b}",
   "dock.flowsTo": "{a} → {b}: {lenses}",
   "dock.noFlows": "Linked — no flows open yet",
   "dock.delete": "Remove {name}",
-  "dock.add": "Add a hub",
+  "dock.add": "Add a pot",
   "dock.addPlaceholder": "Holon id, name, npub, address, or link",
   "dock.addInvalid": "That doesn't name a holon.",
   // The map's search box: hubs — the dock's own, this deploy's labels, the
   // registry, or anything pasted whole — and places by name. A hub already
   // docked is flown to, not re-added; a place is flown to.
-  "dock.searchPlaceholder": "Find a hub or a place…",
-  "dock.searchHubs": "Hubs",
+  "dock.searchPlaceholder": "Find a pot or a place…",
+  "dock.searchHubs": "Pots",
   "dock.searchPlaces": "Places",
   "dock.searchDocked": "on your dock",
   "dock.searchNone": "Nothing by that name.",
@@ -430,25 +430,25 @@ export const en = {
   "dock.addToFailed": "That couldn't be added to this cell.",
   "dock.addToSave": "Add it",
   "dock.addToTagHint": "Type a tag, then Enter",
-  "dock.addHere": "Add a hub here",
-  "dock.addHereTaken": "That hub already has a place — it stays where it is.",
+  "dock.addHere": "Add a pot here",
+  "dock.addHereTaken": "That pot already has a place — it stays where it is.",
   "dock.hint":
-    "Tap a circle to open its hub, hold one to remove it — drag one onto another to open their flows.",
+    "Tap a circle to open its pot, hold one to remove it — drag one onto another to open their flows.",
   "dock.deck": "Holosphere",
   "dock.map": "Geosphere",
   "dock.list": "List",
   // The front door is the map: a bare sky says so and points at /about.
-  "dock.about": "About hubs",
-  "dock.emptyTitle": "No hubs here yet",
+  "dock.about": "About pots",
+  "dock.emptyTitle": "No pots here yet",
   "dock.emptyBody":
-    "This is the hubs network. Add a hub with the + below, or start one.",
-  "dock.emptyStart": "What is a hub? Start one",
+    "This is the Artizen network of pots. Add a pot with the + below, or start one.",
+  "dock.emptyStart": "What is a pot? Start one",
   // Removing a hub that brought its federation partners onto this dock.
   "dock.removeTitle": "Remove {name}?",
   "dock.removeBody":
-    "It brought {n} partner hubs onto this screen that you never opened. Nothing changes on the network either way.",
+    "It brought {n} partner pots onto this screen that you never opened. Nothing changes on the network either way.",
   "dock.removeWith": "Remove it and its {n} partners",
-  "dock.removeOnly": "Remove only this hub",
+  "dock.removeOnly": "Remove only this pot",
   "dock.mapUnavailable":
     "Showing the earth needs a Mapbox token — set VITE_MAPBOX_TOKEN to turn it on.",
 
@@ -492,7 +492,7 @@ export const en = {
   "map.field.origin": "From holon",
   "source.open": "Open {name}",
   // Confirmation before a provenance badge leaves the shown board.
-  "switch.title": "Go to another hub?",
+  "switch.title": "Go to another pot?",
   "switch.lead": "This came from {to}.",
   "switch.body":
     "{from} closes back into the map, then {to} opens in its place. Nothing here changes.",
@@ -554,15 +554,15 @@ export const en = {
   "tglink.group": "A group chat",
   "tglink.groupHint": "Add the bot to the group, or pick a group it is in",
   "tglink.personal": "My chat with the bot",
-  "tglink.personalHint": "Your personal hub",
+  "tglink.personalHint": "Your personal pot",
   "tglink.waiting": "Waiting for the bot…",
   "tglink.waitingBody": "Tap the link in Telegram as an admin of the chat.",
   "tglink.confirmTitle": "Link “{title}”?",
   "tglink.confirm": "Link it",
   "tglink.cancel": "Cancel",
   "tglink.failed": "Could not link — {reason}",
-  "hub.hereTitleKey": "New hub",
-  "hub.hereBodyKey": "Founded by your key, right now â no Telegram needed.",
+  "hub.hereTitleKey": "New pot",
+  "hub.hereBodyKey": "Founded by your key, right now — no Telegram needed.",
   "login.nostrLead": "Sign in with your key",
   "login.orOther": "or sign in another way",
   "login.telegramTile": "Telegram",
@@ -618,7 +618,7 @@ export const en = {
   "settings.title": "Kiosk settings",
   "settings.groupScreen": "This screen",
   "settings.groupLook": "Look",
-  "settings.groupHub": "This hub",
+  "settings.groupHub": "This pot",
   "settings.holon": "Holon",
   "settings.holonPlaceholder": "holon id",
   "settings.unpinHolon": "Clear — show the home page",
@@ -665,10 +665,10 @@ export const en = {
     "New currencies start at 0 — nothing changes until the group raises the weight.",
   "settings.location": "Location",
   "settings.locationSub": "— the H3 cell this holon claims on the shared map",
-  "settings.holonColor": "Hub colour",
+  "settings.holonColor": "Pot colour",
   "settings.holonColorSub":
-    "— the colour of this hub, its circle in the holosphere, its hexagon on the geosphere",
-  "settings.holonColorPick": "Choose the hub colour",
+    "— the colour of this pot, its circle in the holosphere, its hexagon on the geosphere",
+  "settings.holonColorPick": "Choose the pot colour",
   "settings.holonColorAuto": "Automatic",
   "settings.holonColorIsAuto": "automatic",
   "settings.holonColorFailed": "Could not save the colour.",
@@ -678,29 +678,29 @@ export const en = {
   // The home hex as a federation partner: which lenses reach the map, and
   // how far up the scalespace they travel.
   "members.title": "Members",
-  "members.sub": "— who is linked to this hub",
+  "members.sub": "— who is linked to this pot",
   "members.youLinked":
-    "Your key {key} is linked to this hub: your changes count for everyone.",
+    "Your key {key} is linked to this pot: your changes count for everyone.",
   "members.youNotLinked":
-    "Your key {key} isn’t linked to this hub yet, so only this screen sees your changes. Ask below — the ask is signed by your key, nothing else is needed.",
+    "Your key {key} isn’t linked to this pot yet, so only this screen sees your changes. Ask below — the ask is signed by your key, nothing else is needed.",
   "members.youNotLinkedTelegram":
     "Or link this key to your Telegram account, so the bot seats it in every chat you are in.",
   "members.linkTelegram": "Link via Telegram",
   "members.linkTelegramOpen": "Open Telegram and tap Start",
   "members.linkTelegramHint":
-    "The proof is published from this device; the bot checks it and links the key to your account. Your hubs seat it on their next refresh.",
+    "The proof is published from this device; the bot checks it and links the key to your account. Your pots seat it on their next refresh.",
   "members.linkTelegramFailed": "Couldn't publish the proof: {reason}",
   "members.youNoKey":
-    "You are signed in without a key, so nothing links you to this hub. Sign in with your key (nsec, passkey or wallet).",
+    "You are signed in without a key, so nothing links you to this pot. Sign in with your key (nsec, passkey or wallet).",
   "members.youNoKeyTelegram":
-    "Your Telegram login did not bring a key, so nothing links you to this hub. Whoever runs this screen has to set up key derivation (NOSTR_DERIVATION_SECRET).",
+    "Your Telegram login did not bring a key, so nothing links you to this pot. Whoever runs this screen has to set up key derivation (NOSTR_DERIVATION_SECRET).",
   "members.linkMe": "Link my key",
   "members.asked":
     "Asked — an admin links your key; this page updates when they do.",
   "members.signIn": "Sign in with a key",
   "members.chat": "Telegram chat",
   "members.chatBorn":
-    "This hub started in a Telegram chat and stays linked to it: the chat’s members are linked here.",
+    "This pot started in a Telegram chat and stays linked to it: the chat’s members are linked here.",
   "members.chatLinkedHint":
     "A linked chat’s members are linked here, and its boards show here.",
   "members.chatLink": "Link a Telegram chat",
@@ -718,30 +718,30 @@ export const en = {
   "members.addAdmin": "Link as admin",
   "members.remove": "Unlink {key}",
   "members.failed": "Could not change that link — {reason}",
-  "members.invite": "Invite people with this hub’s link:",
+  "members.invite": "Invite people with this pot’s link:",
   "members.inviteCopy": "Copy link",
   "members.noKey":
-    "This hub has no key of its own yet, so nothing can be linked to it and every write counts.",
+    "This pot has no key of its own yet, so nothing can be linked to it and every write counts.",
   "members.noKeyBot":
-    "This hub started in Telegram; its bot gives it a key the first time it runs with signing on. Until then nothing can be linked to it.",
+    "This pot started in Telegram; its bot gives it a key the first time it runs with signing on. Until then nothing can be linked to it.",
   "members.noKeyOpen":
-    "This hub has no key of its own yet. Start it with yours: you become its first admin.",
+    "This pot has no key of its own yet. Start it with yours: you become its first admin.",
   "members.noKeyNeedsKey":
-    "This hub has no key of its own yet. Sign in with your own key (nsec, passkey or wallet) to start it.",
-  "members.start": "Start this hub with my key",
-  "members.started": "Started: your key now signs for this hub.",
-  "members.startFailed": "Could not start this hub — {reason}",
-  "menu.linked": "Your key is linked to this hub",
+    "This pot has no key of its own yet. Sign in with your own key (nsec, passkey or wallet) to start it.",
+  "members.start": "Start this pot with my key",
+  "members.started": "Started: your key now signs for this pot.",
+  "members.startFailed": "Could not start this pot — {reason}",
+  "menu.linked": "Your key is linked to this pot",
   "menu.notLinked":
-    "Not linked — your key isn’t linked to this hub yet, so only this screen sees your changes",
-  "menu.linkMe": "Link my key to this hub",
-  "menu.linkAsked": "Asked. An admin of the hub links your key.",
-  "menu.unlinkMe": "Unlink my key from this hub",
-  "menu.unlinked": "Told the hub you are leaving. An admin unlinks your key.",
+    "Not linked — your key isn’t linked to this pot yet, so only this screen sees your changes",
+  "menu.linkMe": "Link my key to this pot",
+  "menu.linkAsked": "Asked. An admin of the pot links your key.",
+  "menu.unlinkMe": "Unlink my key from this pot",
+  "menu.unlinked": "Told the pot you are leaving. An admin unlinks your key.",
   "layout.notLinked":
-    "Your key isn’t linked to this hub yet — your changes stay on this screen until an admin links it (Settings → Members).",
+    "Your key isn’t linked to this pot yet — your changes stay on this screen until an admin links it (Settings → Members).",
   "tglink.confirmBody":
-    "The chat’s members are linked here, the bot’s key becomes an admin of this hub, and both boards show each other’s items.",
+    "The chat’s members are linked here, the bot’s key becomes an admin of this pot, and both boards show each other’s items.",
   "tglink.done": "Linked. The chat’s members appear as the bot syncs them.",
   "audience.locked": "Private",
   "audience.open": "Public",
@@ -762,11 +762,11 @@ export const en = {
     "The whole board is locked; its cards follow it. Change that from the board settings.",
   "audience.failed": "Could not change that — try again.",
   "audience.whenLockLens":
-    "Making it private seals every card on this board — the ones already here and every new one — so only this hub's members and the holons you share it with can read them. What was read before stays read.",
+    "Making it private seals every card on this board — the ones already here and every new one — so only this pot's members and the holons you share it with can read them. What was read before stays read.",
   "audience.whenUnlockLens":
     "Making it public rewrites every card on this board in the clear, old and new, for anyone to read.",
   "audience.whenLockCard":
-    "Making it private seals this card and every change to it, so only this hub's members and the holons you share it with can read it. What was read before stays read.",
+    "Making it private seals this card and every change to it, so only this pot's members and the holons you share it with can read it. What was read before stays read.",
   "audience.whenUnlockCard":
     "Making it public rewrites this card in the clear, and its changes stay public, for anyone to read.",
   "audience.makePrivate": "Make private",
@@ -867,7 +867,7 @@ export const en = {
   "detail.completeFailed": "Could not complete.",
   "detail.deleteConfirm": 'Delete "{title}"? This can\'t be undone.',
   "detail.hideConfirm":
-    'Hide "{title}" from this hub? It belongs to another holon and stays there — this only removes it from your view.',
+    'Hide "{title}" from this pot? It belongs to another holon and stays there — this only removes it from your view.',
   "detail.thisTask": "this task",
   "detail.deleteFailed": "Could not delete — try again.",
   "detail.hideFailed": "Could not hide — try again.",
@@ -1097,71 +1097,71 @@ export const en = {
   "voice.plan.failed": "Failed",
 
   // ── Add a hub — the sheet behind the dock's "+" ─────────────────────────
-  "hub.addTitle": "Add a hub",
-  "hub.addHereTitle": "Add a hub here",
-  "hub.haveTitle": "I already have a hub",
+  "hub.addTitle": "Add a pot",
+  "hub.addHereTitle": "Add a pot here",
+  "hub.haveTitle": "I already have a pot",
   "hub.haveBody": "Paste its link or its id.",
-  "hub.newTitle": "Start a new hub",
+  "hub.newTitle": "Start a new pot",
   "hub.newBody": "For yourself, or for a group — through Telegram.",
   "hub.newLead":
-    "A hub is a Telegram chat. Pick which: Telegram opens, the bot answers there, and the hub appears here by itself.",
-  "hub.personal": "A hub for me",
+    "A pot is a Telegram chat. Pick which: Telegram opens, the bot answers there, and the pot appears here by itself.",
+  "hub.personal": "A pot for me",
   "hub.personalHint": "A private chat with the bot",
-  "hub.group": "A hub for a group",
+  "hub.group": "A pot for a group",
   "hub.groupHint": "Add the bot to a group, or create one",
   "hub.waiting": "Waiting for the bot…",
   "hub.waitingBody":
-    "Once the bot has answered in Telegram, come back to this tab: the hub opens on its own.",
+    "Once the bot has answered in Telegram, come back to this tab: the pot opens on its own.",
   "hub.orPaste": "Or paste what the bot answered",
-  "hub.pasteHint": "Run /id in the hub's chat if you need it again.",
+  "hub.pasteHint": "Run /id in the pot's chat if you need it again.",
   "hub.open": "Add it",
   "hub.back": "Back",
 
-  "hub.hereTitle": "Start a hub here",
+  "hub.hereTitle": "Start a pot here",
   "hub.hereBody": "No Telegram: your key founds it, right now.",
   "hub.hereLead":
-    "A hub of your own, founded by your key: you are its first admin, and you link others by their public key.",
+    "A pot of your own, founded by your key: you are its first admin, and you link others by their public key.",
   "hub.hereName": "Name",
-  "hub.hereNamePlaceholder": "What is this hub called?",
+  "hub.hereNamePlaceholder": "What is this pot called?",
   "hub.hereCreate": "Found it",
   "hub.hereNeedsKey":
     "Founding needs a key of your own. Sign in with an nsec, a passkey or a wallet first.",
   "hub.hereSignIn": "Sign in with a key",
-  "hub.hereFailed": "Could not found the hub — {reason}",
+  "hub.hereFailed": "Could not found the pot — {reason}",
   // Home / landing page — the front door. Short on purpose: what a hub is, the
   // two ways to start one, and how hubs connect. The long read lives at
   // docs.holons.io. The bot is never named here — a fork points
   // VITE_TELEGRAM_BOT_USERNAME elsewhere and every deep link follows.
-  "home.metaTitle": "Hubs Network — a hub for every group",
+  "home.metaTitle": "Artizen — a pot for every project",
   "home.metaDescription":
-    "Every group is a hub: its own tools, on its own terms, connected to the hubs it trusts. Start one in Telegram.",
+    "Every group is a pot: its own tools, on its own terms, connected to the pots it trusts. Start one in Telegram.",
 
   "home.artNetAlt":
-    "Five hubs drawn as circles of members, linked to each other, one at the centre.",
+    "Five pots drawn as circles of members, linked to each other, one at the centre.",
   "home.artConnectAlt":
-    "Two hubs side by side, with things crossing the boundary in both directions.",
+    "Two pots side by side, with things crossing the boundary in both directions.",
 
   "home.heroTitle": "You are not just visiting. You become a part of it.",
   "home.heroLead":
-    "Hubs are spaces where people build in the open, across disciplines, for the commons. This is the layer they coordinate on: every group is a hub, with its own tools, on its own terms, connected to the hubs it trusts.",
+    "Pots are spaces where people build in the open, across disciplines, for the commons. This is the layer they coordinate on: every group is a pot, with its own tools, on its own terms, connected to the pots it trusts.",
 
   "home.personalKicker": "For a person",
-  "home.personalTitle": "Your personal hub",
+  "home.personalTitle": "Your personal pot",
   "home.personalBody":
-    "A private chat is a hub of your own: what you are making, what you have, what you need — and everything you take on across the network, in one place.",
-  "home.personalButton": "Open your personal hub",
+    "A private chat is a pot of your own: what you are making, what you have, what you need — and everything you take on across the network, in one place.",
+  "home.personalButton": "Open your personal pot",
   "home.groupKicker": "For a group",
-  "home.groupTitle": "Every group is a hub",
+  "home.groupTitle": "Every group is a pot",
   "home.groupBody":
-    "Add the bot to any chat group — the one you already use, or a new one. The group itself becomes the hub: nothing to sign up for, nobody to invite twice, nothing to move.",
+    "Add the bot to any chat group — the one you already use, or a new one. The group itself becomes the pot: nothing to sign up for, nobody to invite twice, nothing to move.",
   "home.groupButton": "Add the bot to a group",
   "home.pathsNote":
-    "Both are real hubs, and either can connect to the rest of the network.",
+    "Both are real pots, and either can connect to the rest of the network.",
 
-  "home.toolsKicker": "Every hub",
+  "home.toolsKicker": "Every pot",
   "home.toolsTitle": "Its own tools, on its own terms.",
   "home.toolsLead":
-    "Every hub gets the same set and decides what to use, who can see it, and what counts as a contribution. Not a single app or value system — a constellation of hubs in development with each other.",
+    "Every pot gets the same set and decides what to use, who can see it, and what counts as a contribution. Not a single app or value system — a constellation of pots in development with each other.",
   "home.tool1": "Tasks",
   "home.tool2": "Calendar",
   "home.tool3": "Library of things",
@@ -1171,30 +1171,30 @@ export const en = {
   "home.tool7": "Expenses and flows",
   "home.tool8": "A memory of contributions",
   "home.toolsNote":
-    "This screen is one of them: point it at a hub and it becomes that hub, on the wall by the door.",
+    "This screen is one of them: point it at a pot and it becomes that pot, on the wall by the door.",
 
   "home.fedKicker": "Connectors",
-  "home.fedTitle": "How hubs connect.",
+  "home.fedTitle": "How pots connect.",
   "home.fedP1":
-    "A hub declares trust with another hub, and things cross the boundary: work that needs hands, tools and spaces that could circulate, people moving from hub to hub, needs someone nearby can meet, appreciations that travel with the person who earned them.",
+    "A pot declares trust with another pot, and things cross the boundary: work that needs hands, tools and spaces that could circulate, people moving from pot to pot, needs someone nearby can meet, appreciations that travel with the person who earned them.",
   "home.fedP2":
-    "Only what each side publishes, in either direction, revocable at any time. No hub gives up governing itself in order to be part of something larger — privacy, self-sovereignty and decentralised power are how the software is built, not a promise about intentions.",
+    "Only what each side publishes, in either direction, revocable at any time. No pot gives up governing itself in order to be part of something larger — privacy, self-sovereignty and decentralised power are how the software is built, not a promise about intentions.",
   "home.fedP3":
     "We cannot depend on the system we disrupt. We choose to depend on each other instead. As a network.",
 
   "home.backToMap": "Back to the map",
   "home.backTitle": "Welcome back.",
   "home.backLead":
-    "Once the bot is in your chat it posts a link straight to this hub. If you missed it, run the command below in that chat and paste its answer here.",
-  "home.openTitle": "Already have a hub?",
-  "home.openLead": "Paste its link or its id, and this screen becomes its hub.",
+    "Once the bot is in your chat it posts a link straight to this pot. If you missed it, run the command below in that chat and paste its answer here.",
+  "home.openTitle": "Already have a pot?",
+  "home.openLead": "Paste its link or its id, and this screen becomes its pot.",
   "home.openHint":
-    "Type this in your hub's chat. The bot answers with the id — paste the whole reply, it will find it.",
+    "Type this in your pot's chat. The bot answers with the id — paste the whole reply, it will find it.",
   "home.openPlaceholder": "-1001234567890, or a link to your group",
-  "home.openButton": "Open the hub",
+  "home.openButton": "Open the pot",
   "home.openInvalid":
-    "No hub id in there. Run /id in your hub's chat and paste what the bot answers.",
-  "home.openAria": "Hub id or link",
+    "No pot id in there. Run /id in your pot's chat and paste what the bot answers.",
+  "home.openAria": "Pot id or link",
 
   "home.footerDocs": "Documentation",
   "home.footerDashboard": "Web dashboard",
@@ -1202,9 +1202,9 @@ export const en = {
   "home.footerSource": "Source code",
   "home.footerSetup": "Set up this screen",
   "home.footerLicense":
-    "Open source under AGPL-3.0-or-later — local-first, peer-to-peer, no hub depending on anyone else's server.",
+    "Open source under AGPL-3.0-or-later — local-first, peer-to-peer, no pot depending on anyone else's server.",
   "home.caretakerNote":
-    "Mounting this on a wall? Settings points the screen at a hub and remembers it on this device — or open the kiosk at /<holon id> to skip the setup entirely.",
+    "Mounting this on a wall? Settings points the screen at a pot and remembers it on this device — or open the kiosk at /<holon id> to skip the setup entirely.",
 
   // Shell
   "layout.resync": "Live view stalled — resyncing…",
@@ -1868,10 +1868,13 @@ export const en = {
 
   // ── The Pot: rights committed at each new moon ──────────────────────
   "pot.title": "Pot",
+  "pot.exploreFlows": "Explore the flows",
   "pot.none":
     "This holon holds no value on chain yet. A Pot holds it and divides it by a rights table committed at each new moon.",
   "pot.deploy": "Create a Pot",
   "pot.deploying": "Creating…",
+  "pot.owner":
+    "Owner — a Safe, or empty for your wallet. The owner alone can veto a root and replace the signers.",
   "pot.reading": "Reading the chain…",
   "pot.unreadable": "The Pot cannot be read from here.",
   "pot.held": "received {received} all time",

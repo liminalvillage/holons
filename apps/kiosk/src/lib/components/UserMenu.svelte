@@ -180,7 +180,7 @@
     </button>
     {#if installSteps && $installMode !== "prompt"}
       <div class="install">
-        <p>{$t("install.hint", { name: who || "Holons" })}</p>
+        <p>{$t("install.hint", { name: who || "Artizen" })}</p>
         {#if $installMode === "ios"}
           <ol>
             <li>

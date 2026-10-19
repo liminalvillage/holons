@@ -122,6 +122,19 @@ export function botChatUrl(payload = "hub"): string {
   return `https://t.me/${resolveBotUsername()}?start=${encodeURIComponent(payload)}`;
 }
 
+/**
+ * The Flows explorer (apps/flows) page of a holon — the same split the Pot
+ * panel lists, as a diagram to follow from one party to the next. Null until
+ * `VITE_FLOWS_URL` says where the explorer is served.
+ */
+export function flowsUrl(holonId: string): string | null {
+  const base = String(import.meta.env.VITE_FLOWS_URL ?? "")
+    .trim()
+    .replace(/\/+$/, "");
+  const id = String(holonId ?? "").trim();
+  return base && id ? `${base}/h/${encodeURIComponent(id)}` : null;
+}
+
 function readParam(name: string): string | null {
   if (typeof window === "undefined") return null;
   const v = new URLSearchParams(window.location.search).get(name);

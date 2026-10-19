@@ -417,18 +417,18 @@ export const es: Record<MessageKey, Msg> = {
   "tabbar.pinView": "Fijar esta vista",
 
   // Dock (the hub's window closed into a circle per visited hub)
-  "dock.close": "Cerrar este hub",
-  "dock.boards": "Tus hubs",
+  "dock.close": "Cerrar este pot",
+  "dock.boards": "Tus pots",
   "dock.open": "Abrir {name}",
   "dock.flows": "Flujos entre {a} y {b}",
   "dock.flowsTo": "{a} → {b}: {lenses}",
   "dock.noFlows": "Vinculados — aún sin flujos abiertos",
   "dock.delete": "Quitar {name}",
-  "dock.add": "Añadir un hub",
+  "dock.add": "Añadir un pot",
   "dock.addPlaceholder": "Id del holon, nombre, npub, dirección o enlace",
   "dock.addInvalid": "Eso no identifica un holon.",
-  "dock.searchPlaceholder": "Busca un hub o un lugar…",
-  "dock.searchHubs": "Hubs",
+  "dock.searchPlaceholder": "Busca un pot o un lugar…",
+  "dock.searchHubs": "Pots",
   "dock.searchPlaces": "Lugares",
   "dock.searchDocked": "ya aquí",
   "dock.searchNone": "Nada con ese nombre.",
@@ -437,23 +437,23 @@ export const es: Record<MessageKey, Msg> = {
   "dock.addToFailed": "No se pudo añadir a esta celda.",
   "dock.addToSave": "Añadir",
   "dock.addToTagHint": "Escribe una etiqueta y pulsa Intro",
-  "dock.addHere": "Añadir un hub aquí",
-  "dock.addHereTaken": "Ese hub ya tiene un lugar — se queda donde está.",
+  "dock.addHere": "Añadir un pot aquí",
+  "dock.addHereTaken": "Ese pot ya tiene un lugar — se queda donde está.",
   "dock.hint":
-    "Toca un círculo para abrir su hub, manténlo pulsado para quitarlo — arrastra uno sobre otro para abrir sus flujos.",
+    "Toca un círculo para abrir su pot, manténlo pulsado para quitarlo — arrastra uno sobre otro para abrir sus flujos.",
   "dock.deck": "Holosfera",
   "dock.map": "Geosfera",
   "dock.list": "Lista",
-  "dock.about": "Qué son los hubs",
-  "dock.emptyTitle": "Aún no hay hubs aquí",
+  "dock.about": "Qué son los pots",
+  "dock.emptyTitle": "Aún no hay pots aquí",
   "dock.emptyBody":
-    "Esta es la red de hubs. Añade un hub con el + de abajo, o inicia uno.",
-  "dock.emptyStart": "¿Qué es un hub? Inicia uno",
+    "Esta es la red de pots de Artizen. Añade un pot con el + de abajo, o inicia uno.",
+  "dock.emptyStart": "¿Qué es un pot? Inicia uno",
   "dock.removeTitle": "¿Quitar {name}?",
   "dock.removeBody":
-    "Trajo a esta pantalla {n} hubs asociados que nunca abriste. En la red no cambia nada en ningún caso.",
+    "Trajo a esta pantalla {n} pots asociados que nunca abriste. En la red no cambia nada en ningún caso.",
   "dock.removeWith": "Quitar con sus {n} asociados",
-  "dock.removeOnly": "Quitar solo este hub",
+  "dock.removeOnly": "Quitar solo este pot",
   "dock.mapUnavailable":
     "Mostrar la tierra necesita un token de Mapbox — define VITE_MAPBOX_TOKEN para activarla.",
 
@@ -495,7 +495,7 @@ export const es: Record<MessageKey, Msg> = {
   "map.field.link": "Enlace",
   "map.field.origin": "Del holon",
   "source.open": "Abrir {name}",
-  "switch.title": "¿Ir a otro hub?",
+  "switch.title": "¿Ir a otro pot?",
   "switch.lead": "Esto viene de {to}.",
   "switch.body":
     "{from} se cierra en el mapa y luego se abre {to} en su lugar. Nada de aquí cambia.",
@@ -558,15 +558,15 @@ export const es: Record<MessageKey, Msg> = {
   "tglink.group": "Un chat de grupo",
   "tglink.groupHint": "Añade el bot al grupo, o elige un grupo donde ya esté",
   "tglink.personal": "Mi chat con el bot",
-  "tglink.personalHint": "Tu hub personal",
+  "tglink.personalHint": "Tu pot personal",
   "tglink.waiting": "Esperando al bot…",
   "tglink.waitingBody": "Toca el enlace en Telegram como admin del chat.",
   "tglink.confirmTitle": "¿Enlazar “{title}”?",
   "tglink.confirm": "Enlazar",
   "tglink.cancel": "Cancelar",
   "tglink.failed": "No se pudo enlazar — {reason}",
-  "hub.hereTitleKey": "Nuevo hub",
-  "hub.hereBodyKey": "Fundado por tu clave, ahora mismo â sin Telegram.",
+  "hub.hereTitleKey": "Nuevo pot",
+  "hub.hereBodyKey": "Fundado por tu clave, ahora mismo — sin Telegram.",
   "login.nostrLead": "Entra con tu clave",
   "login.orOther": "o entra de otra manera",
   "login.telegramTile": "Telegram",
@@ -622,7 +622,7 @@ export const es: Record<MessageKey, Msg> = {
   "settings.title": "Ajustes del quiosco",
   "settings.groupScreen": "Esta pantalla",
   "settings.groupLook": "Aspecto",
-  "settings.groupHub": "Este hub",
+  "settings.groupHub": "Este pot",
   "settings.holon": "Holón",
   "settings.holonPlaceholder": "id del holón",
   "settings.unpinHolon": "Borrar — mostrar la página de inicio",
@@ -671,10 +671,10 @@ export const es: Record<MessageKey, Msg> = {
   "settings.location": "Ubicación",
   "settings.locationSub":
     "— la celda H3 que este holón reclama en el mapa compartido",
-  "settings.holonColor": "Color del hub",
+  "settings.holonColor": "Color del pot",
   "settings.holonColorSub":
-    "— el color de este hub, de su círculo en la holosfera, de su hexágono en la geosfera",
-  "settings.holonColorPick": "Elige el color del hub",
+    "— el color de este pot, de su círculo en la holosfera, de su hexágono en la geosfera",
+  "settings.holonColorPick": "Elige el color del pot",
   "settings.holonColorAuto": "Automático",
   "settings.holonColorIsAuto": "automático",
   "settings.holonColorFailed": "No se pudo guardar el color.",
@@ -682,29 +682,29 @@ export const es: Record<MessageKey, Msg> = {
   "settings.change": "Cambiar…",
   "settings.setLocation": "Fijar la ubicación…",
   "members.title": "Miembros",
-  "members.sub": "— quién está vinculado a este hub",
+  "members.sub": "— quién está vinculado a este pot",
   "members.youLinked":
-    "Tu clave {key} está vinculada a este hub: tus cambios cuentan para todos.",
+    "Tu clave {key} está vinculada a este pot: tus cambios cuentan para todos.",
   "members.youNotLinked":
-    "Tu clave {key} aún no está vinculada a este hub, así que solo esta pantalla ve tus cambios. Pídelo abajo — la petición va firmada con tu clave, no hace falta nada más.",
+    "Tu clave {key} aún no está vinculada a este pot, así que solo esta pantalla ve tus cambios. Pídelo abajo — la petición va firmada con tu clave, no hace falta nada más.",
   "members.youNotLinkedTelegram":
     "O vincula esta clave a tu cuenta de Telegram, para que el bot la vincule en cada chat en el que estés.",
   "members.linkTelegram": "Vincular vía Telegram",
   "members.linkTelegramOpen": "Abre Telegram y pulsa Iniciar",
   "members.linkTelegramHint":
-    "La prueba se publica desde este dispositivo; el bot la comprueba y vincula la clave a tu cuenta. Tus hubs la vinculan en su próxima actualización.",
+    "La prueba se publica desde este dispositivo; el bot la comprueba y vincula la clave a tu cuenta. Tus pots la vinculan en su próxima actualización.",
   "members.linkTelegramFailed": "No se pudo publicar la prueba: {reason}",
   "members.youNoKey":
-    "Has entrado sin clave, así que nada te vincula a este hub. Entra con tu clave (nsec, passkey o wallet).",
+    "Has entrado sin clave, así que nada te vincula a este pot. Entra con tu clave (nsec, passkey o wallet).",
   "members.youNoKeyTelegram":
-    "Tu acceso con Telegram no trajo una clave, así que nada te vincula a este hub. Quien administra esta pantalla debe configurar la derivación de claves (NOSTR_DERIVATION_SECRET).",
+    "Tu acceso con Telegram no trajo una clave, así que nada te vincula a este pot. Quien administra esta pantalla debe configurar la derivación de claves (NOSTR_DERIVATION_SECRET).",
   "members.linkMe": "Vincular mi clave",
   "members.asked":
     "Pedido enviado — un admin vincula tu clave; esta página se actualiza cuando lo haga.",
   "members.signIn": "Entrar con una clave",
   "members.chat": "Chat de Telegram",
   "members.chatBorn":
-    "Este hub nació en un chat de Telegram y sigue vinculado a él: los miembros del chat están vinculados aquí.",
+    "Este pot nació en un chat de Telegram y sigue vinculado a él: los miembros del chat están vinculados aquí.",
   "members.chatLinkedHint":
     "Los miembros de un chat vinculado están vinculados aquí, y sus tableros se muestran aquí.",
   "members.chatLink": "Vincular un chat de Telegram",
@@ -722,31 +722,31 @@ export const es: Record<MessageKey, Msg> = {
   "members.addAdmin": "Vincular como admin",
   "members.remove": "Desvincular {key}",
   "members.failed": "No se pudo cambiar ese vínculo — {reason}",
-  "members.invite": "Invita a gente con el enlace de este hub:",
+  "members.invite": "Invita a gente con el enlace de este pot:",
   "members.inviteCopy": "Copiar enlace",
   "members.noKey":
-    "Este hub aún no tiene clave propia, así que nada puede vincularse a él y toda escritura cuenta.",
+    "Este pot aún no tiene clave propia, así que nada puede vincularse a él y toda escritura cuenta.",
   "members.noKeyBot":
-    "Este hub nació en Telegram; su bot le da una clave la primera vez que corre con la firma activa. Hasta entonces nada puede vincularse a él.",
+    "Este pot nació en Telegram; su bot le da una clave la primera vez que corre con la firma activa. Hasta entonces nada puede vincularse a él.",
   "members.noKeyOpen":
-    "Este hub aún no tiene clave propia. Inícialo con la tuya: te conviertes en su primer admin.",
+    "Este pot aún no tiene clave propia. Inícialo con la tuya: te conviertes en su primer admin.",
   "members.noKeyNeedsKey":
-    "Este hub aún no tiene clave propia. Entra con tu clave (nsec, passkey o wallet) para iniciarlo.",
-  "members.start": "Iniciar este hub con mi clave",
-  "members.started": "Iniciado: tu clave ahora firma por este hub.",
-  "members.startFailed": "No se pudo iniciar este hub — {reason}",
-  "menu.linked": "Tu clave está vinculada a este hub",
+    "Este pot aún no tiene clave propia. Entra con tu clave (nsec, passkey o wallet) para iniciarlo.",
+  "members.start": "Iniciar este pot con mi clave",
+  "members.started": "Iniciado: tu clave ahora firma por este pot.",
+  "members.startFailed": "No se pudo iniciar este pot — {reason}",
+  "menu.linked": "Tu clave está vinculada a este pot",
   "menu.notLinked":
-    "Sin vincular — tu clave aún no está vinculada a este hub, así que solo esta pantalla ve tus cambios",
-  "menu.linkMe": "Vincular mi clave a este hub",
-  "menu.linkAsked": "Pedido enviado. Un admin del hub vincula tu clave.",
-  "menu.unlinkMe": "Desvincular mi clave de este hub",
+    "Sin vincular — tu clave aún no está vinculada a este pot, así que solo esta pantalla ve tus cambios",
+  "menu.linkMe": "Vincular mi clave a este pot",
+  "menu.linkAsked": "Pedido enviado. Un admin del pot vincula tu clave.",
+  "menu.unlinkMe": "Desvincular mi clave de este pot",
   "menu.unlinked":
-    "Le has dicho al hub que te vas. Un admin desvincula tu clave.",
+    "Le has dicho al pot que te vas. Un admin desvincula tu clave.",
   "layout.notLinked":
-    "Tu clave aún no está vinculada a este hub — tus cambios se quedan en esta pantalla hasta que un admin la vincule (Ajustes → Miembros).",
+    "Tu clave aún no está vinculada a este pot — tus cambios se quedan en esta pantalla hasta que un admin la vincule (Ajustes → Miembros).",
   "tglink.confirmBody":
-    "Los miembros del chat quedan vinculados aquí, la clave del bot pasa a ser admin de este hub y ambos tableros muestran los elementos del otro.",
+    "Los miembros del chat quedan vinculados aquí, la clave del bot pasa a ser admin de este pot y ambos tableros muestran los elementos del otro.",
   "tglink.done":
     "Vinculado. Los miembros del chat aparecen a medida que el bot los sincroniza.",
   "audience.locked": "Privada",
@@ -769,11 +769,11 @@ export const es: Record<MessageKey, Msg> = {
     "Todo el tablero está bloqueado; las tarjetas lo siguen. Cámbialo desde los ajustes del tablero.",
   "audience.failed": "No se pudo cambiar — inténtalo de nuevo.",
   "audience.whenLockLens":
-    "Hacerlo privado sella cada tarjeta de este tablero — las que ya están y cada una nueva — para que solo los miembros de este hub y los holones con los que lo compartas puedan leerlas. Lo que ya se leyó sigue leído.",
+    "Hacerlo privado sella cada tarjeta de este tablero — las que ya están y cada una nueva — para que solo los miembros de este pot y los holones con los que lo compartas puedan leerlas. Lo que ya se leyó sigue leído.",
   "audience.whenUnlockLens":
     "Hacerlo público reescribe cada tarjeta de este tablero en claro, viejas y nuevas, para que cualquiera las lea.",
   "audience.whenLockCard":
-    "Hacerla privada sella esta tarjeta y cada cambio, para que solo los miembros de este hub y los holones con los que la compartas puedan leerla. Lo que ya se leyó sigue leído.",
+    "Hacerla privada sella esta tarjeta y cada cambio, para que solo los miembros de este pot y los holones con los que la compartas puedan leerla. Lo que ya se leyó sigue leído.",
   "audience.whenUnlockCard":
     "Hacerla pública reescribe esta tarjeta en claro, y sus cambios quedan públicos, para que cualquiera la lea.",
   "audience.makePrivate": "Hacer privada",
@@ -879,7 +879,7 @@ export const es: Record<MessageKey, Msg> = {
   "detail.completeFailed": "No se pudo completar.",
   "detail.deleteConfirm": '¿Eliminar "{title}"? No se puede deshacer.',
   "detail.hideConfirm":
-    '¿Ocultar "{title}" de este hub? Pertenece a otro holón y permanece allí — solo desaparece de tu vista.',
+    '¿Ocultar "{title}" de este pot? Pertenece a otro holón y permanece allí — solo desaparece de tu vista.',
   "detail.thisTask": "esta tarea",
   "detail.deleteFailed": "No se pudo eliminar — inténtalo de nuevo.",
   "detail.hideFailed": "No se pudo ocultar — inténtalo de nuevo.",
@@ -1112,68 +1112,68 @@ export const es: Record<MessageKey, Msg> = {
   "voice.plan.failed": "Falló",
 
   // ── Añadir un hub — la hoja detrás del "+" del dock ────────────────────
-  "hub.addTitle": "Añadir un hub",
-  "hub.addHereTitle": "Añadir un hub aquí",
-  "hub.haveTitle": "Ya tengo un hub",
+  "hub.addTitle": "Añadir un pot",
+  "hub.addHereTitle": "Añadir un pot aquí",
+  "hub.haveTitle": "Ya tengo un pot",
   "hub.haveBody": "Pega su enlace o su id.",
-  "hub.newTitle": "Iniciar un hub nuevo",
+  "hub.newTitle": "Iniciar un pot nuevo",
   "hub.newBody": "Para ti, o para un grupo — a través de Telegram.",
   "hub.newLead":
-    "Un hub es un chat de Telegram. Elige cuál: se abre Telegram, el bot responde allí y el hub aparece aquí solo.",
-  "hub.personal": "Un hub para mí",
+    "Un pot es un chat de Telegram. Elige cuál: se abre Telegram, el bot responde allí y el pot aparece aquí solo.",
+  "hub.personal": "Un pot para mí",
   "hub.personalHint": "Un chat privado con el bot",
-  "hub.group": "Un hub para un grupo",
+  "hub.group": "Un pot para un grupo",
   "hub.groupHint": "Añade el bot a un grupo, o crea uno",
   "hub.waiting": "Esperando al bot…",
   "hub.waitingBody":
-    "Cuando el bot haya respondido en Telegram, vuelve a esta pestaña: el hub se abre solo.",
+    "Cuando el bot haya respondido en Telegram, vuelve a esta pestaña: el pot se abre solo.",
   "hub.orPaste": "O pega lo que respondió el bot",
-  "hub.pasteHint": "Escribe /id en el chat del hub si lo necesitas de nuevo.",
+  "hub.pasteHint": "Escribe /id en el chat del pot si lo necesitas de nuevo.",
   "hub.open": "Añadirlo",
   "hub.back": "Atrás",
 
-  "hub.hereTitle": "Iniciar un hub aquí",
+  "hub.hereTitle": "Iniciar un pot aquí",
   "hub.hereBody": "Sin Telegram: lo funda tu clave, ahora mismo.",
   "hub.hereLead":
-    "Un hub propio, fundado por tu clave: eres su primer admin, y sientas a los demás por su clave pública.",
+    "Un pot propio, fundado por tu clave: eres su primer admin, y sientas a los demás por su clave pública.",
   "hub.hereName": "Nombre",
-  "hub.hereNamePlaceholder": "¿Cómo se llama este hub?",
+  "hub.hereNamePlaceholder": "¿Cómo se llama este pot?",
   "hub.hereCreate": "Fundarlo",
   "hub.hereNeedsKey":
     "Fundar necesita una clave propia. Inicia sesión primero con un nsec, una passkey o un wallet.",
   "hub.hereSignIn": "Iniciar sesión con una clave",
-  "hub.hereFailed": "No se pudo fundar el hub — {reason}",
+  "hub.hereFailed": "No se pudo fundar el pot — {reason}",
   // Home / landing page
-  "home.metaTitle": "Hubs Network — un hub para cada grupo",
+  "home.metaTitle": "Artizen — un pot para cada proyecto",
   "home.metaDescription":
-    "Cada grupo es un hub: sus propias herramientas, en sus propios términos, conectado a los hubs en los que confía. Empieza uno en Telegram.",
+    "Cada grupo es un pot: sus propias herramientas, en sus propios términos, conectado a los pots en los que confía. Empieza uno en Telegram.",
 
   "home.artNetAlt":
-    "Cinco hubs dibujados como círculos de miembros, enlazados entre sí, uno en el centro.",
+    "Cinco pots dibujados como círculos de miembros, enlazados entre sí, uno en el centro.",
   "home.artConnectAlt":
-    "Dos hubs uno al lado del otro, con cosas que cruzan la frontera en ambos sentidos.",
+    "Dos pots uno al lado del otro, con cosas que cruzan la frontera en ambos sentidos.",
 
   "home.heroTitle": "No estás solo de visita. Pasas a formar parte.",
   "home.heroLead":
-    "Los hubs son espacios donde se construye en abierto, entre disciplinas, para los bienes comunes. Esta es la capa en la que se coordinan: cada grupo es un hub, con sus propias herramientas, en sus propios términos, conectado a los hubs en los que confía.",
+    "Los pots son espacios donde se construye en abierto, entre disciplinas, para los bienes comunes. Esta es la capa en la que se coordinan: cada grupo es un pot, con sus propias herramientas, en sus propios términos, conectado a los pots en los que confía.",
 
   "home.personalKicker": "Para una persona",
-  "home.personalTitle": "Tu hub personal",
+  "home.personalTitle": "Tu pot personal",
   "home.personalBody":
-    "Un chat privado es un hub tuyo: qué estás construyendo, qué tienes, qué necesitas — y todo lo que asumes en la red, reunido en un solo lugar.",
-  "home.personalButton": "Abre tu hub personal",
+    "Un chat privado es un pot tuyo: qué estás construyendo, qué tienes, qué necesitas — y todo lo que asumes en la red, reunido en un solo lugar.",
+  "home.personalButton": "Abre tu pot personal",
   "home.groupKicker": "Para un grupo",
-  "home.groupTitle": "Cada grupo es un hub",
+  "home.groupTitle": "Cada grupo es un pot",
   "home.groupBody":
-    "Añade el bot a cualquier grupo de chat — el que ya usáis, o uno nuevo. El grupo mismo se convierte en el hub: no hay nada que registrar, nadie a quien invitar dos veces, nada que mover.",
+    "Añade el bot a cualquier grupo de chat — el que ya usáis, o uno nuevo. El grupo mismo se convierte en el pot: no hay nada que registrar, nadie a quien invitar dos veces, nada que mover.",
   "home.groupButton": "Añade el bot a un grupo",
   "home.pathsNote":
-    "Los dos son hubs de verdad, y cualquiera de ellos puede conectarse al resto de la red.",
+    "Los dos son pots de verdad, y cualquiera de ellos puede conectarse al resto de la red.",
 
-  "home.toolsKicker": "Cada hub",
+  "home.toolsKicker": "Cada pot",
   "home.toolsTitle": "Sus herramientas, en sus propios términos.",
   "home.toolsLead":
-    "Cada hub recibe el mismo conjunto y decide qué usar, quién puede verlo y qué cuenta como contribución. No una sola app ni un único sistema de valores — una constelación de hubs que se desarrollan unos con otros.",
+    "Cada pot recibe el mismo conjunto y decide qué usar, quién puede verlo y qué cuenta como contribución. No una sola app ni un único sistema de valores — una constelación de pots que se desarrollan unos con otros.",
   "home.tool1": "Tareas",
   "home.tool2": "Calendario",
   "home.tool3": "Biblioteca de cosas",
@@ -1183,31 +1183,31 @@ export const es: Record<MessageKey, Msg> = {
   "home.tool7": "Gastos y flujos",
   "home.tool8": "Una memoria de las contribuciones",
   "home.toolsNote":
-    "Esta pantalla es una de ellas: apúntala a un hub y se convierte en ese hub, colgado en la pared junto a la puerta.",
+    "Esta pantalla es una de ellas: apúntala a un pot y se convierte en ese pot, colgado en la pared junto a la puerta.",
 
   "home.fedKicker": "Conectores",
-  "home.fedTitle": "Cómo se conectan los hubs.",
+  "home.fedTitle": "Cómo se conectan los pots.",
   "home.fedP1":
-    "Un hub declara confianza con otro hub y las cosas cruzan la frontera: trabajo que busca manos, herramientas y espacios que podrían circular, personas que se mueven de hub en hub, necesidades que alguien cerca puede cubrir, agradecimientos que viajan con quien se los ganó.",
+    "Un pot declara confianza con otro pot y las cosas cruzan la frontera: trabajo que busca manos, herramientas y espacios que podrían circular, personas que se mueven de pot en pot, necesidades que alguien cerca puede cubrir, agradecimientos que viajan con quien se los ganó.",
   "home.fedP2":
-    "Solo lo que cada parte publica, en ambas direcciones, revocable en cualquier momento. Ningún hub renuncia a gobernarse para formar parte de algo mayor — la privacidad, la autosoberanía y el poder descentralizado son la forma en que está construido el software, no una promesa sobre intenciones.",
+    "Solo lo que cada parte publica, en ambas direcciones, revocable en cualquier momento. Ningún pot renuncia a gobernarse para formar parte de algo mayor — la privacidad, la autosoberanía y el poder descentralizado son la forma en que está construido el software, no una promesa sobre intenciones.",
   "home.fedP3":
     "No podemos depender del sistema que cuestionamos. Elegimos depender los unos de los otros. Como red.",
 
   "home.backToMap": "Volver al mapa",
   "home.backTitle": "Bienvenida de vuelta.",
   "home.backLead":
-    "En cuanto el bot entra en tu chat, publica un enlace directo a este hub. Si te lo perdiste, lanza el comando de abajo en ese chat y pega aquí su respuesta.",
-  "home.openTitle": "¿Ya tienes un hub?",
+    "En cuanto el bot entra en tu chat, publica un enlace directo a este pot. Si te lo perdiste, lanza el comando de abajo en ese chat y pega aquí su respuesta.",
+  "home.openTitle": "¿Ya tienes un pot?",
   "home.openLead":
-    "Pega su enlace o su id y esta pantalla se convierte en su hub.",
+    "Pega su enlace o su id y esta pantalla se convierte en su pot.",
   "home.openHint":
-    "Escríbelo en el chat de tu hub. El bot responde con el id — pega la respuesta entera, la encontrará.",
+    "Escríbelo en el chat de tu pot. El bot responde con el id — pega la respuesta entera, la encontrará.",
   "home.openPlaceholder": "-1001234567890, o un enlace a tu grupo",
-  "home.openButton": "Abrir el hub",
+  "home.openButton": "Abrir el pot",
   "home.openInvalid":
-    "Ahí dentro no hay ningún id. Lanza /id en el chat de tu hub y pega lo que responda el bot.",
-  "home.openAria": "Id o enlace del hub",
+    "Ahí dentro no hay ningún id. Lanza /id en el chat de tu pot y pega lo que responda el bot.",
+  "home.openAria": "Id o enlace del pot",
 
   "home.footerDocs": "Documentación",
   "home.footerDashboard": "Panel web",
@@ -1215,9 +1215,9 @@ export const es: Record<MessageKey, Msg> = {
   "home.footerSource": "Código fuente",
   "home.footerSetup": "Configurar esta pantalla",
   "home.footerLicense":
-    "Código abierto con licencia AGPL-3.0-or-later — local-first, peer-to-peer, ningún hub dependiendo del servidor de otra persona.",
+    "Código abierto con licencia AGPL-3.0-or-later — local-first, peer-to-peer, ningún pot dependiendo del servidor de otra persona.",
   "home.caretakerNote":
-    "¿La vas a montar en la pared? Los Ajustes apuntan la pantalla a un hub y lo recuerdan en este dispositivo — o abre el quiosco en /<id del holón> y sáltate la configuración por completo.",
+    "¿La vas a montar en la pared? Los Ajustes apuntan la pantalla a un pot y lo recuerdan en este dispositivo — o abre el quiosco en /<id del holón> y sáltate la configuración por completo.",
 
   // Shell
   "layout.resync": "Vista en vivo detenida — resincronizando…",
@@ -1892,10 +1892,13 @@ export const es: Record<MessageKey, Msg> = {
 
   // ── The Pot: rights committed at each new moon ──────────────────────
   "pot.title": "Pot",
+  "pot.exploreFlows": "Explorar los flujos",
   "pot.none":
     "Este holon aún no guarda valor en cadena. Un Pot lo guarda y lo reparte con una tabla de derechos comprometida en cada luna nueva.",
   "pot.deploy": "Crear un Pot",
   "pot.deploying": "Creando…",
+  "pot.owner":
+    "Propietario — una Safe, o vacío para tu billetera. Solo el propietario puede vetar una root y reemplazar a los firmantes.",
   "pot.reading": "Leyendo la cadena…",
   "pot.unreadable": "El Pot no se puede leer desde aquí.",
   "pot.held": "recibidos {received} en total",

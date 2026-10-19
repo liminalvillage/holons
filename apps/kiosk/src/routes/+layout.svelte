@@ -1106,10 +1106,10 @@
   {#if isHome}
     <title>hubs network</title>
   {:else if !isAbout}
-    <title>{$holonName || $holonIdStore || "Holons"}</title>
+    <title>{$holonName || $holonIdStore || "Artizen"}</title>
   {/if}
   <!-- iOS labels the home screen icon from this, ahead of the manifest. -->
-  <meta name="apple-mobile-web-app-title" content={appName || "Holons"} />
+  <meta name="apple-mobile-web-app-title" content={appName || "Artizen"} />
 </svelte:head>
 
 <svelte:window

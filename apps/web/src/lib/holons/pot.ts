@@ -287,7 +287,11 @@ async function sent(run: () => Promise<any>): Promise<string> {
   return String(tx.hash);
 }
 
-/** Deploy a Pot for `holonId`, owned by the connected wallet, and record it. */
+/**
+ * Deploy a Pot for `holonId` and record it. The OWNER is the one key that
+ * can veto a root and replace the signers: the connected wallet by default,
+ * or — for a Pot that must answer to no single key — the genesis Safe.
+ */
 export async function deployPotOnChain(
   store: any,
   holonId: string,
@@ -295,6 +299,8 @@ export async function deployPotOnChain(
     signers: readonly string[];
     threshold: number;
     challengeSeconds?: number;
+    /** The contract's owner; default the connected wallet. */
+    owner?: string | null;
   },
 ): Promise<PotRecord> {
   const eth = (window as any).ethereum;
@@ -302,11 +308,12 @@ export async function deployPotOnChain(
   const provider = new ethers.BrowserProvider(eth);
   await provider.send("eth_requestAccounts", []);
   const signer = await provider.getSigner();
-  const owner = await signer.getAddress();
+  const wallet = await signer.getAddress();
+  const owner = String(input.owner ?? "").trim() || wallet;
   const args = potConstructorArgs({
     owner,
     holonId,
-    signers: input.signers.length ? input.signers : [owner],
+    signers: input.signers.length ? input.signers : [wallet],
     threshold: input.threshold,
     challengeSeconds: input.challengeSeconds ?? DEFAULT_POT_CHALLENGE_SECONDS,
   });
@@ -329,6 +336,7 @@ export async function deployPotOnChain(
     challenge: Number(args.challenge),
     deployedAt: Date.now(),
     txHash: String(tx?.hash ?? ""),
+    owner: args.owner,
     tokens: [],
   });
 }

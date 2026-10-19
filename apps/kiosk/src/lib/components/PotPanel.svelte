@@ -17,11 +17,13 @@
     buildRightsSignature,
     collectable,
     cutRights,
+    resourcesOf,
     foldRightsFromLenses,
     fromBaseUnits,
     latestRights,
     lunationAt,
     payoutAddressOf,
+    potAccount,
     potClaimArgs,
     potCommitment,
     rightsByRef,
@@ -41,6 +43,7 @@
   } from "@holons/core/flows";
   import { describeChain } from "@holons/core/flows";
   import { t } from "$lib/i18n";
+  import { flowsUrl } from "$lib/config";
   import { now } from "$lib/stores";
   import { ChainError, connectedWallet, isWalletAvailable } from "$lib/chain";
   import {
@@ -111,6 +114,7 @@
     }
   }
   const timer = setInterval(() => void refreshState(), 60_000);
+  $: flows = flowsUrl(holon);
 
   // ── The published tables ────────────────────────────────────────────────
   let logs: ClaimsLogs | null = null;
@@ -168,8 +172,14 @@
   $: accruing = units
     .map((u) => ({
       unit: u,
-      amount:
-        fromBaseUnits(u.received - u.declared, u.decimals) * (myShare / 100),
+      amount: potAccount({
+        sharePct: myShare,
+        decimals: u.decimals,
+        received: u.received,
+        declared: u.declared,
+        cumulative: null,
+        released: null,
+      }).accruing,
     }))
     .filter((r) => r.amount > 0);
   $: nextMoon = lunationAt($now.getTime()).to;
@@ -255,6 +265,7 @@
         chainId: pot.chainId,
         received,
         scoreOf: (id) => scoreAllocationMembers(hs, id),
+        resourcesOf: resourcesOf(hs),
       });
     } catch (err) {
       fail(err);
@@ -348,6 +359,7 @@
         chainId: pot.chainId,
         received,
         scoreOf: (id) => scoreAllocationMembers(hs, id),
+        resourcesOf: resourcesOf(hs),
       });
       const same =
         !!again.table && rightsRoot(again.table.rows) === state.pending.root;
@@ -388,11 +400,19 @@
     }
   }
 
+  // The owner is the one key that can veto a root and replace the signers:
+  // the connected wallet by default, the genesis Safe for a Pot that must
+  // answer to no single key.
+  let ownerAddress = "";
   async function deploy() {
     busy = "deploy";
     error = "";
     try {
-      await deployPotOnChain(hs, holon, { signers: [], threshold: 1 });
+      await deployPotOnChain(hs, holon, {
+        signers: [],
+        threshold: 1,
+        owner: ownerAddress.trim() || null,
+      });
       dispatch("changed");
     } catch (err) {
       fail(err);
@@ -501,10 +521,24 @@
         >
       {/if}
     </div>
+    {#if pot && flows}
+      <a class="sub" href={flows} target="_blank" rel="noreferrer"
+        >{$t("pot.exploreFlows")}</a
+      >
+    {/if}
 
     {#if !pot}
       <p class="sub">{$t("pot.none")}</p>
       {#if canAttest}
+        <label class="sub"
+          >{$t("pot.owner")}
+          <input
+            type="text"
+            placeholder="0x…"
+            bind:value={ownerAddress}
+            disabled={busy !== ""}
+          /></label
+        >
         <button class="btn" disabled={busy !== ""} on:click={deploy}
           >{busy === "deploy" ? $t("pot.deploying") : $t("pot.deploy")}</button
         >
