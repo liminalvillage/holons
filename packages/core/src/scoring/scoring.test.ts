@@ -23,6 +23,7 @@ import {
   type ScoreEquation,
   type UserAggregates,
 } from './index.js';
+import { REAEventFactory } from '../rea/index.js';
 
 /**
  * A deliberately weighted equation for the arithmetic tests below. The
@@ -265,14 +266,15 @@ describe('calculateUserScore', () => {
     expect(calculateUserScore(aggregates, equation)).toBe(8);
   });
 
-  it('does not double-count hours when both currencies.hour and equation.hours are set', () => {
+  it('adds mutual-credit hours to task hours, weighting them once', () => {
     const aggregates: UserAggregates = {
       initiated: 0, completed: 0, sent: 0, received: 0,
       hours: 4, collaboration: 0,
     };
     const equation = { ...WEIGHTED, hours: 2, currencies: { hour: 2 } };
-    // Explicit hour balance wins; aggregates.hours fallback is suppressed.
-    expect(calculateUserScore(aggregates, equation, { hour: 4 })).toBe(8);
+    // 4 task hours + 3 hours given in mutual credit, at currencies.hour = 2;
+    // the legacy equation.hours weight is not applied on top.
+    expect(calculateUserScore(aggregates, equation, { hour: 3 })).toBe(14);
   });
 });
 
@@ -545,6 +547,55 @@ describe('REAAggregator', () => {
     const score = await aggregator.calculateUserScore('h1', 'u1', WEIGHTED);
     // 1 initiated + 1*2 completed = 3
     expect(score).toBe(3);
+  });
+
+  describe('hours and money given into the holon', () => {
+    // The Collector's guild equation: only time and money carry value.
+    const TIME_AND_MONEY: ScoreEquation = {
+      ...DEFAULT_EQUATION,
+      currencies: { hour: 10, euro: 1 },
+    };
+    const HOLON = 'guild';
+    const intoHolon = (id: string, paidBy: string, amount: number, currency: string, extra = {}) =>
+      REAEventFactory.expenseEvents(HOLON, {
+        id, amount, currency, description: id, paidBy, splitWith: [HOLON], ...extra,
+      });
+    const events = [
+      // picker logged 3 h on a task, and completing it wrote the hour expense
+      // (tagged, and an older untagged one recognised by its id)
+      { eventType: 'quest:time_logged', provider: { id: 'picker', type: 'user' }, resource: { type: 'time', quantity: 3, unit: 'hours' }, context: { questId: 'q1' } },
+      ...intoHolon('q1_time_picker', 'picker', 3, 'hour', { fromTimeTracking: true }),
+      { eventType: 'quest:time_logged', provider: { id: 'picker', type: 'user' }, resource: { type: 'time', quantity: 1, unit: 'hours' }, context: { questId: 'q0' } },
+      ...intoHolon('q0_time_picker', 'picker', 1, 'hour'),
+      // picker declared 8 h of olive picking in mutual credit
+      ...intoHolon('picking', 'picker', 8, 'hour'),
+      // funder put 100 euro into the guild
+      ...intoHolon('press', 'funder', 100, 'euro'),
+    ];
+    const roster = [{ id: 'picker' }, { id: 'funder' }, { id: 'idle' }];
+
+    it('counts declared hours and money in full, completion hours once', async () => {
+      const aggregator = new REAAggregator(buildStore(events));
+      const scored = await computeHolonUserScores(aggregator, HOLON, roster, TIME_AND_MONEY);
+      const score = Object.fromEntries(scored.map((s) => [s.userId, s.score]));
+      // (3 + 1 task hours + 8 declared) × 10 = 120; 100 euro × 1 = 100.
+      expect(score).toEqual({ picker: 120, funder: 100, idle: 0 });
+      expect(scored.find((s) => s.userId === 'picker')?.breakdown.hours).toBe(120);
+    });
+
+    it('scores the same through REAAggregator.calculateUserScore', async () => {
+      const aggregator = new REAAggregator(buildStore(events));
+      expect(await aggregator.calculateUserScore(HOLON, 'picker', TIME_AND_MONEY)).toBe(120);
+      expect(await aggregator.calculateUserScore(HOLON, 'funder', TIME_AND_MONEY)).toBe(100);
+    });
+
+    it('keeps completion hours in the plain hour balance', async () => {
+      const aggregator = new REAAggregator(buildStore(events));
+      expect(await aggregator.getCurrencyBalance(HOLON, 'picker', 'hour')).toBe(12);
+      expect(
+        await aggregator.getCurrencyBalance(HOLON, 'picker', 'hour', { excludeTimeTracking: true }),
+      ).toBe(8);
+    });
   });
 
   it('derives the active-user roster from the event stream', async () => {

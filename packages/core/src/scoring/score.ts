@@ -52,10 +52,12 @@ export interface ActionScore {
 }
 
 /**
- * Resolve the effective per-currency balances for scoring, applying the
- * `aggregates.hours → currencyBalances.hour` fallback when the caller hasn't
- * supplied an explicit hour balance. Used by every scoring helper so the
- * fallback rule lives in one place.
+ * Resolve the effective per-currency balances for scoring. A member's hours
+ * are the hours logged on tasks (`aggregates.hours`) plus any hour balance
+ * the caller supplies — hours given in mutual credit, e.g. declared into the
+ * holon. The hour balance must leave out the hour expenses a task completion
+ * writes ({@link loadHolonUserData} does), or those hours count twice. Used by
+ * every scoring helper so the rule lives in one place.
  */
 function resolveCurrencyBalances(
   aggregates: UserAggregates,
@@ -63,12 +65,9 @@ function resolveCurrencyBalances(
   currencyBalances: Record<string, number>,
 ): Record<string, number> {
   const balances = { ...currencyBalances };
-  if (
-    balances.hour === undefined &&
-    aggregates.hours &&
-    (equation.currencies?.hour ?? 0) > 0
-  ) {
-    balances.hour = aggregates.hours;
+  if ((equation.currencies?.hour ?? 0) > 0) {
+    const hours = (aggregates.hours || 0) + (balances.hour ?? 0);
+    if (hours || balances.hour !== undefined) balances.hour = hours;
   }
   return balances;
 }
@@ -409,15 +408,21 @@ export function calculateAllUserScores(
  *  Structural (not a class import) to avoid a score.ts ↔ aggregator.ts cycle. */
 export interface ScoringAggregator {
   getUserAggregates(holonId: string, userId: string): Promise<UserAggregates>;
-  getCurrencyBalance(holonId: string, userId: string, currency: string): Promise<number>;
+  getCurrencyBalance(
+    holonId: string,
+    userId: string,
+    currency: string,
+    options?: { excludeTimeTracking?: boolean },
+  ): Promise<number>;
 }
 
 /** A user's REA-sourced scoring inputs: aggregates + money balances. */
 export interface HolonUserData {
   userId: string;
   aggregates: UserAggregates;
-  /** Money-currency balances (code → balance). `hour` is omitted — the scorer
-   *  derives it from `aggregates.hours`. */
+  /** Currency balances (code → balance). `hour` is the mutual-credit hour
+   *  balance without completion-logged hours; the scorer adds
+   *  `aggregates.hours` to it. */
   balances: Record<string, number>;
 }
 
@@ -481,8 +486,9 @@ function dropUncontributingSelf(
 
 /**
  * Async: pull each user's scoring inputs from the REA store — aggregates plus
- * the balance of every code in `currencyCodes` (money; `hour` is skipped, the
- * scorer derives it from aggregates.hours).
+ * the balance of every code in `currencyCodes`. For `hour` that is the hours
+ * given in mutual credit, less the hour expenses a task completion writes —
+ * the scorer adds the task-logged `aggregates.hours` to it.
  *
  * The holon's own id is dropped from the result when it turns out to be a
  * group rather than a person — see {@link dropUncontributingSelf} for why a
@@ -498,7 +504,7 @@ export async function loadHolonUserData(
   currencyCodes: string[] = [],
 ): Promise<HolonUserData[]> {
   const hid = String(holonId);
-  const money = currencyCodes.filter((c) => c && c !== 'hour');
+  const codes = currencyCodes.filter(Boolean);
   const loaded = await Promise.all(
     users.map(async (u) => {
       const userId = String(u.id);
@@ -510,9 +516,11 @@ export async function loadHolonUserData(
       }
       const balances: Record<string, number> = {};
       await Promise.all(
-        money.map(async (c) => {
+        codes.map(async (c) => {
           try {
-            balances[c] = await aggregator.getCurrencyBalance(hid, userId, c);
+            balances[c] = await aggregator.getCurrencyBalance(hid, userId, c, {
+              excludeTimeTracking: c === 'hour',
+            });
           } catch {
             balances[c] = 0;
           }

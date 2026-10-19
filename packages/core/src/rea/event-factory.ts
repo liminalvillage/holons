@@ -319,6 +319,9 @@ export class REAEventFactory {
       return Date.now();
     })();
     const splitWith = Array.isArray(expense.splitWith) ? expense.splitWith : [];
+    // Hours a task completion already logged as `quest:time_logged`; the
+    // scorer must not count them a second time from the hour balance.
+    const timeTracking = expense.fromTimeTracking === true ? { fromTimeTracking: true } : {};
     const shareAmount = splitWith.length > 0 ? expense.amount / splitWith.length : 0;
 
     events.push(vf({
@@ -335,6 +338,7 @@ export class REAEventFactory {
         holonId: String(holonId),
         expenseId: String(expense.id),
         note: expense.description,
+        ...timeTracking,
       },
       eventType: 'expense:paid',
       status: 'confirmed',
@@ -356,6 +360,7 @@ export class REAEventFactory {
             holonId: String(holonId),
             expenseId: String(expense.id),
             note: expense.description,
+            ...timeTracking,
           },
           eventType: 'expense:share',
           status: 'confirmed',
