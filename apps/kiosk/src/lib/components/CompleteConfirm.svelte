@@ -5,12 +5,14 @@
   // Confirm who took part before a completion is recorded — the participant set
   // drives the REA accounting, so this keeps credit honest. Toggle people off
   // who didn't actually participate, and add anyone from the holon's members
-  // who isn't already listed. This dialog IS the participation gate: you never
+  // who isn't already listed — or, through "Search the federation…", someone
+  // from a partner holon (FederationSearch). This dialog IS the participation gate: you never
   // have to join a task before you can complete it (see complete.ts), so the
   // current user is always one of the rows.
   // Avatars come from the kiosk's /api/avatar route.
   import { get } from "svelte/store";
   import Modal from "./Modal.svelte";
+  import FederationSearch from "./FederationSearch.svelte";
   import { avatarUrl } from "./Avatars.svelte";
   import { completionRequest, holonId } from "$lib/stores";
   import { currentUser } from "$lib/auth";
@@ -36,6 +38,7 @@
     }
     if (req.task === task) return;
     task = req.task;
+    searching = false;
     // An event that names hosts credits THEM (core's creditedMembers), so the
     // dialog confirms the hosts instead of the participants.
     const hostList = hostsOf(task) as Member[];
@@ -95,12 +98,23 @@
     rows[i].on = !rows[i].on;
     rows = rows;
   }
+  /** The select's last entry: open the federation search instead. */
+  const FEDERATION = "__federation";
+  let searching = false;
+
   function addMember(e: Event) {
     const id = (e.target as HTMLSelectElement).value;
     (e.target as HTMLSelectElement).value = "";
     if (!id) return;
+    if (id === FEDERATION) {
+      searching = true;
+      return;
+    }
     const m = members.find((x) => String(x.id) === id);
-    if (!m) return;
+    if (m) addRow(m);
+  }
+  function addRow(m: Member) {
+    if (rows.some((r) => String(r.user?.id) === String(m.id))) return;
     rows = [
       ...rows,
       { key: String(m.id), name: partName(m), on: true, user: m },
@@ -170,19 +184,22 @@
         {/each}
       </ul>
 
-      {#if available.length}
-        <label class="add">
-          <span class="add-ico">＋</span>
-          <select
-            on:change={addMember}
-            aria-label={$t("complete.addMemberAria")}
-          >
-            <option value="">{$t("complete.addMember")}</option>
-            {#each available as m (m.id)}
-              <option value={String(m.id)}>{partName(m)}</option>
-            {/each}
-          </select>
-        </label>
+      <label class="add">
+        <span class="add-ico">＋</span>
+        <select on:change={addMember} aria-label={$t("complete.addMemberAria")}>
+          <option value="">{$t("complete.addMember")}</option>
+          {#each available as m (m.id)}
+            <option value={String(m.id)}>{partName(m)}</option>
+          {/each}
+          <option value={FEDERATION}>{$t("people.searchFederation")}</option>
+        </select>
+      </label>
+      {#if searching}
+        <FederationSearch
+          exclude={rows.map((r) => r.user?.id)}
+          on:pick={(e) => addRow(e.detail)}
+          on:close={() => (searching = false)}
+        />
       {/if}
 
       <div class="actions">

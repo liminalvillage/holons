@@ -14,6 +14,19 @@ export const it: Record<MessageKey, Msg> = {
   "common.send": "Invia",
   "common.untitled": "Senza titolo",
 
+  // People pickers: the federation beyond the holon (FederationSearch)
+  "people.searchFederation": "Cerca nella federazione…",
+  "people.searchFederationPlaceholder": "Nome o @username negli holon partner",
+  "people.searchingFederation": "Lettura degli holon partner…",
+  "people.federationEmpty":
+    "Nessun altro nella federazione — questo holon non ha ancora partner, o non elencano nessuno di nuovo.",
+  "people.federationNoHits": "Nessuno con questo nome nella federazione.",
+  "people.federationHint": {
+    one: "{n} persona negli holon partner — scrivi un nome.",
+    other: "{n} persone negli holon partner — scrivi un nome.",
+  },
+  "people.via": "in {name}",
+
   // Relative dates
   "dates.today": "oggi",
   "dates.tomorrow": "domani",

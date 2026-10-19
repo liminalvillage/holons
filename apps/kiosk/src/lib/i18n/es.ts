@@ -14,6 +14,20 @@ export const es: Record<MessageKey, Msg> = {
   "common.send": "Enviar",
   "common.untitled": "Sin título",
 
+  // People pickers: the federation beyond the holon (FederationSearch)
+  "people.searchFederation": "Buscar en la federación…",
+  "people.searchFederationPlaceholder":
+    "Nombre o @usuario en los holones socios",
+  "people.searchingFederation": "Leyendo los holones socios…",
+  "people.federationEmpty":
+    "Nadie más en la federación — este holón aún no tiene socios, o no listan a nadie nuevo.",
+  "people.federationNoHits": "Nadie con ese nombre en la federación.",
+  "people.federationHint": {
+    one: "{n} persona en los holones socios — escribe un nombre.",
+    other: "{n} personas en los holones socios — escribe un nombre.",
+  },
+  "people.via": "en {name}",
+
   // Relative dates
   "dates.today": "hoy",
   "dates.tomorrow": "mañana",

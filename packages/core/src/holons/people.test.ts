@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it, vi } from 'vitest';
-import { loadPeopleAcross, peopleAcross } from './people.js';
+import { findPeople, loadFederationPeople, loadPeopleAcross, peopleAcross } from './people.js';
 
 const KEY_A = 'a'.repeat(64);
 const KEY_B = 'b'.repeat(64);
@@ -102,5 +102,63 @@ describe('loadPeopleAcross', () => {
 		]);
 		const out = await loadPeopleAcross({ getAll, getAllGlobal }, ['-100', 'holon_abcdefghijkl']);
 		expect(out.connectors.map((p) => p.id)).toEqual(['7']);
+	});
+});
+
+describe('loadFederationPeople', () => {
+	const rosters: Record<string, unknown> = {
+		home: [{ id: 1, first_name: 'Ada' }, { id: KEY_A }],
+		p1: [{ id: 1, first_name: 'Ada' }, { id: 2, first_name: 'Bea', last_name: 'Rossi', username: 'bea' }, { id: 9, is_bot: true }],
+		p2: { x: { id: 2 }, y: { id: 3, username: 'cleo' }, z: { id: 7 } },
+	};
+	const getAll = vi.fn(async (holon: string) => rosters[holon] ?? []);
+
+	it("lists the partners' people who are not in the holon, once each", async () => {
+		const out = await loadFederationPeople({ getAll } as never, 'home', { partners: ['p1', 'p2', 'home'], identity: new Map([[KEY_A, '7']]) });
+		expect(out).toEqual([
+			{ id: '2', first_name: 'Bea', last_name: 'Rossi', username: 'bea', name: 'Bea Rossi', holons: ['p1', 'p2'] },
+			{ id: '3', username: 'cleo', name: 'cleo', holons: ['p2'] },
+		]);
+	});
+
+	it("reads the partners from the holon's federation record", async () => {
+		const getFederation = vi.fn(async () => ({ federated: ['p2'] }));
+		const out = await loadFederationPeople({ getAll, getFederation } as never, 'home', { identity: new Map() });
+		expect(getFederation).toHaveBeenCalledWith('home');
+		expect(out.map((p) => p.id)).toEqual(['3', '2', '7']);
+	});
+
+	it('is empty with no federation, or when it cannot be read', async () => {
+		expect(await loadFederationPeople({ getAll, getFederation: async () => null } as never, 'home')).toEqual([]);
+		expect(
+			await loadFederationPeople({ getAll, getFederation: async () => Promise.reject(new Error('offline')) } as never, 'home'),
+		).toEqual([]);
+	});
+});
+
+describe('findPeople', () => {
+	const people = [
+		{ id: '11', name: 'Marco Bianchi', first_name: 'Marco', last_name: 'Bianchi' },
+		{ id: '12', name: 'Anna Marconi', first_name: 'Anna', last_name: 'Marconi' },
+		{ id: '13', name: 'Lucía', first_name: 'Lucía', username: 'lu_cia' },
+		{ id: '123456', name: '' },
+	];
+
+	it('puts a name starting with the query before one containing it', () => {
+		expect(findPeople(people, 'marc').map((p) => p.id)).toEqual(['11', '12']);
+		expect(findPeople(people, 'bian').map((p) => p.id)).toEqual(['11']);
+	});
+
+	it('ignores case, accents and a leading @', () => {
+		expect(findPeople(people, 'LUCIA').map((p) => p.id)).toEqual(['13']);
+		expect(findPeople(people, '@lu_c').map((p) => p.id)).toEqual(['13']);
+	});
+
+	it('finds by id, and nobody for a blank query', () => {
+		expect(findPeople(people, '3456').map((p) => p.id)).toEqual(['123456']);
+		expect(findPeople(people, '12').map((p) => p.id)).toEqual(['12']);
+		expect(findPeople(people, '23').map((p) => p.id)).toEqual([]);
+		expect(findPeople(people, '  ')).toEqual([]);
+		expect(findPeople(people, 'a', 1)).toHaveLength(1);
 	});
 });

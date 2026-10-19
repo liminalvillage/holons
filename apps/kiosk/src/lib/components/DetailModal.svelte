@@ -37,7 +37,7 @@
     toggleJoin,
     toggleAppreciate,
   } from "$lib/membership";
-  import { loadMembers, members } from "$lib/members";
+  import { loadMembers, members, type Member } from "$lib/members";
   import {
     checkComplete,
     checkOccurrenceComplete,
@@ -108,6 +108,7 @@
     type SwitchableKind,
   } from "@holons/core/tasks";
   import PeoplePicker from "./PeoplePicker.svelte";
+  import FederationSearch from "./FederationSearch.svelte";
   import ProposalVote from "./ProposalVote.svelte";
   import { breakdownAvailable, requestBreakdownProposal } from "$lib/breakdown";
   import { t, locale, type MessageKey } from "$lib/i18n";
@@ -885,9 +886,29 @@
    */
   async function addSomeone(e: Event) {
     const select = e.currentTarget as HTMLSelectElement;
-    const m = $members.find((x) => String(x.id) === select.value);
+    const value = select.value;
     select.value = ""; // back to the label so the next pick fires change too
-    if (!m || !sel || sel.kind === "thing" || !$holonId) return;
+    if (value === FEDERATION) {
+      fedSearch = true;
+      return;
+    }
+    const m = $members.find((x) => String(x.id) === value);
+    if (m) await addPerson(m);
+  }
+
+  /** The dropdown's last entry: search the federation's people instead. */
+  const FEDERATION = "__federation";
+  let fedSearch = false;
+  // A different card closes the search; a new roster on the same one does not.
+  let fedSearchFor: unknown = null;
+  $: if ((quest?.id ?? null) !== fedSearchFor) {
+    fedSearchFor = quest?.id ?? null;
+    fedSearch = false;
+  }
+
+  /** Someone from the dropdown or the federation search, onto this card. */
+  async function addPerson(m: Member) {
+    if (!sel || sel.kind === "thing" || !$holonId) return;
     saving = true;
     message = "";
     try {
@@ -1883,9 +1904,10 @@
                 ? ` · ${appreciationCount}`
                 : ""}</button
             >
-            {#if addable.length && quest?.status !== "completed"}
+            {#if quest?.status !== "completed"}
               <!-- Put anyone in the holon on the card: the members not yet on
-                   it, as a native dropdown laid invisibly over the button. -->
+                   it, as a native dropdown laid invisibly over the button;
+                   its last entry searches the federation beyond the holon. -->
               <span class="ghost addperson" class:busy={saving}>
                 <Icon name="plus" />
                 {$t("detail.addSomeone")}
@@ -1899,6 +1921,9 @@
                   {#each addable as m (m.id)}
                     <option value={String(m.id)}>{personName(m)}</option>
                   {/each}
+                  <option value={FEDERATION}
+                    >{$t("people.searchFederation")}</option
+                  >
                 </select>
               </span>
             {/if}
@@ -1958,6 +1983,13 @@
               >
             {/if}
           </div>
+          {#if fedSearch && quest?.status !== "completed"}
+            <FederationSearch
+              exclude={[...onRoster]}
+              on:pick={(e) => void addPerson(e.detail)}
+              on:close={() => (fedSearch = false)}
+            />
+          {/if}
 
           {#if breakdownSteps !== null}
             <div class="breakdown">

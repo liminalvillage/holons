@@ -3,7 +3,9 @@
   // A roster of people on a card — the hosts of an event, or its participants.
   // Each person is a chip with a clear "×" badge to drop them; one round "+"
   // opens the holon's members as a native dropdown (the select sits invisibly
-  // over the button, so the tap lands on it). What the list *means* is core's
+  // over the button, so the tap lands on it); its last entry opens a search
+  // of the federation's people below the row (FederationSearch), for someone
+  // from a partner holon. What the list *means* is core's
   // (`hostsOf`, `setParticipants`); this only edits the array the card form
   // will save.
   import { onMount } from "svelte";
@@ -12,6 +14,8 @@
   import { loadMembers, members, type Member } from "$lib/members";
   import { personName } from "$lib/data";
   import { avatarUrl, avatarInitial, hideImg, showImg } from "./Avatars.svelte";
+  import FederationSearch from "./FederationSearch.svelte";
+  import { t } from "$lib/i18n";
 
   export let people: QuestParticipant[] = [];
   /** The dropdown's accessible name and empty entry, e.g. "Add a host…". */
@@ -26,11 +30,24 @@
   $: taken = new Set(people.map((h) => String(h.id)));
   $: available = $members.filter((m) => !taken.has(String(m.id)));
 
+  /** The select's last entry: open the federation search instead. */
+  const FEDERATION = "__federation";
+  let searching = false;
+
   function add(e: Event) {
     const select = e.currentTarget as HTMLSelectElement;
-    const m = $members.find((x) => String(x.id) === select.value);
+    const value = select.value;
     select.value = ""; // back to the "+" so the next pick fires change too
-    if (!m) return;
+    if (value === FEDERATION) {
+      searching = true;
+      return;
+    }
+    const m = $members.find((x) => String(x.id) === value);
+    if (m) put(m);
+  }
+
+  function put(m: Member) {
+    if (taken.has(String(m.id))) return;
     // The stored shape of a person on a card — see membership.ts `person`.
     const p: QuestParticipant = { id: m.id };
     if (m.username) p.username = m.username;
@@ -72,20 +89,26 @@
       >
     </li>
   {/each}
-  {#if available.length}
-    <li class="add">
-      <span class="add-face" aria-hidden="true"><Icon name="plus" /></span>
-      <!-- The real control: a native dropdown of the rest of the holon,
+  <li class="add">
+    <span class="add-face" aria-hidden="true"><Icon name="plus" /></span>
+    <!-- The real control: a native dropdown of the rest of the holon,
            drawn transparent over the "+" so the tap opens the list. -->
-      <select on:change={add} aria-label={addLabel} title={addLabel}>
-        <option value="">{addLabel}</option>
-        {#each available as m (m.id)}
-          <option value={String(m.id)}>{nameOf(m)}</option>
-        {/each}
-      </select>
-    </li>
-  {/if}
+    <select on:change={add} aria-label={addLabel} title={addLabel}>
+      <option value="">{addLabel}</option>
+      {#each available as m (m.id)}
+        <option value={String(m.id)}>{nameOf(m)}</option>
+      {/each}
+      <option value={FEDERATION}>{$t("people.searchFederation")}</option>
+    </select>
+  </li>
 </ul>
+{#if searching}
+  <FederationSearch
+    exclude={[...taken]}
+    on:pick={(e) => put(e.detail)}
+    on:close={() => (searching = false)}
+  />
+{/if}
 
 <style>
   .roster {
