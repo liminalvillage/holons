@@ -455,12 +455,14 @@ export {
   FLOW_SPACE_MIN_RADIUS,
   FLOW_SPACE_ROOT_RADIUS,
   flowSpaceLinkId,
+  flowSpaceRadius,
   flowSpaceWidth,
   layoutFlowSpace,
   type FlowSpace,
   type FlowSpaceLink,
   type FlowSpaceNode,
 } from './flow-graph-space.js';
+export { FLOW_FORCE_KINDS, layoutFlowForce, type FlowForceOptions } from './flow-graph-force.js';
 export { potAccount, potAccountSegments, type PotAccount } from './pot-account.js';
 export {
   APPLICATION_NOTE_MAX,

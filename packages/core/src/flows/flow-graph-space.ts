@@ -91,10 +91,12 @@ export function flowSpaceLinkId(source: string, target: string): string {
   return `${source}\u0000${target}`;
 }
 
-const radiusOf = (share: number, isRoot: boolean): number =>
-  isRoot
+/** The disc of a party holding `share` percent of the root pot: the root's is the unit. */
+export function flowSpaceRadius(share: number, isRoot = false): number {
+  return isRoot
     ? FLOW_SPACE_ROOT_RADIUS
     : Math.max(FLOW_SPACE_MIN_RADIUS, FLOW_SPACE_ROOT_RADIUS * Math.sqrt(Math.max(0, share) / 100) * 0.8);
+}
 
 /** The width of a link carrying `share` percent of the root pot. */
 export function flowSpaceWidth(share: number): number {
@@ -204,7 +206,7 @@ export function layoutFlowSpace(index: FlowGraphIndex): FlowSpace {
 
   const placing = new Map<string, Placing>();
   for (const node of graph.nodes) {
-    placing.set(node.id, { id: node.id, r: radiusOf(node.share, node.id === rootId), children: [], ball: 0, reach: [] });
+    placing.set(node.id, { id: node.id, r: flowSpaceRadius(node.share, node.id === rootId), children: [], ball: 0, reach: [] });
   }
   for (const node of graph.nodes) {
     const p = parent.get(node.id);
