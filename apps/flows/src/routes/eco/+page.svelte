@@ -8,7 +8,13 @@
   //
   // That is the diagram. The map is the other way to see it: every party,
   // none gathered, in a space that turns (`FlowSpace`), each line as wide as
-  // the share of the Pot it carries. `?view=diagram` is the Sankey.
+  // the share of the Pot it carries. `?view=network` pulls the funds and the
+  // projects together by their links instead (`layoutFlowForce`, laid out
+  // off the main thread), so a project several funds back sits between them.
+  // `?view=diagram` is the Sankey.
+  //
+  // Over the map and the network sits a search: what it finds stays lit and
+  // named while the rest fades, and choosing one flies there.
   //
   // The map shows more than money: its drops take the eight capitals'
   // colours, and every party that was resourced glows with its count
@@ -20,6 +26,7 @@
     listParties,
     partyNodeId,
     type FlowPartyKind,
+    type FlowSpace as FlowSpaceLayout,
     type FlowSpaceNode,
     type FlowViewLabels,
   } from "@holons/core/flows";
@@ -27,6 +34,7 @@
   import FlowChart from "$lib/components/FlowChart.svelte";
   import FlowList from "$lib/components/FlowList.svelte";
   import FlowSpace from "$lib/components/FlowSpace.svelte";
+  import Icon from "$lib/components/Icon.svelte";
   import { capitalColour, capitalName } from "$lib/capitals";
   import KindChip from "$lib/components/KindChip.svelte";
   import SnapshotBadge from "$lib/components/SnapshotBadge.svelte";
@@ -34,6 +42,7 @@
   import { NARROW_PX } from "$lib/config";
   import { pct } from "$lib/format";
   import { index } from "$lib/graph";
+  import { networkOf } from "$lib/network";
   import { t, type MessageKey } from "$lib/i18n";
   import { hrefFor, searchHref, withParam } from "$lib/urls";
   import type { FlowListRow } from "$lib/viewTypes";
@@ -53,7 +62,12 @@
     : null;
   $: root = $index?.byId.get($index.graph.root) ?? null;
 
-  $: diagram = $page.url.searchParams.get("view") === "diagram";
+  $: view = (
+    ["diagram", "network"].includes($page.url.searchParams.get("view") ?? "")
+      ? $page.url.searchParams.get("view")
+      : "map"
+  ) as "map" | "network" | "diagram";
+  $: diagram = view === "diagram";
   $: streams = (
     $page.url.searchParams.get("streams") === "money" ? "money" : "eight"
   ) as "money" | "eight";
@@ -65,7 +79,20 @@
       )
     : null;
   $: resourced = capitals?.size ?? 0;
-  $: space = $index && !diagram ? layoutFlowSpace($index) : null;
+  $: tree = $index && view === "map" ? layoutFlowSpace($index) : null;
+  // The network arrives when the worker is done; until then it is arranging.
+  let network: FlowSpaceLayout | null = null;
+  let arranging = false;
+  $: if ($index && view === "network") arrange($index.graph);
+  function arrange(graph: NonNullable<typeof $index>["graph"]) {
+    arranging = true;
+    void networkOf(graph).then((laid) => {
+      if ($index?.graph !== graph) return;
+      network = laid;
+      arranging = false;
+    });
+  }
+  $: space = view === "network" ? network : tree;
   let picked: FlowSpaceNode | null = null;
   // A refined graph keeps the selection, as the party it now is.
   $: chosen = picked
@@ -96,6 +123,40 @@
       : [];
   $: funds = $index ? top("fund") : [];
   $: projects = $index ? top("project") : [];
+  // ── Find on the map ──
+  let query = "";
+  let open = false;
+  let active = 0;
+  $: inView = space ? new Set(space.nodes.map((n) => n.id)) : null;
+  $: found =
+    $index && inView && query.trim()
+      ? listParties($index, { query }).filter((r) => inView!.has(r.id))
+      : [];
+  $: highlight = query.trim() ? new Set(found.map((r) => r.id)) : null;
+  $: suggestions = found.slice(0, 6);
+  $: if (active >= suggestions.length) active = 0;
+
+  function choose(id: string) {
+    const node = space?.nodes.find((n) => n.id === id);
+    if (!node) return;
+    picked = node;
+    open = false;
+  }
+  function onFindKey(e: KeyboardEvent) {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      open = true;
+      const n = suggestions.length || 1;
+      active = (active + (e.key === "ArrowDown" ? 1 : n - 1)) % n;
+    } else if (e.key === "Enter" && suggestions[active]) {
+      e.preventDefault();
+      choose(suggestions[active].id);
+    } else if (e.key === "Escape") {
+      if (open) open = false;
+      else query = "";
+    }
+  }
+
   $: hrefOf = (row: FlowListRow) => {
     const n = $index?.byId.get(row.id);
     return n ? hrefFor(n) : null;
@@ -126,33 +187,102 @@
   </ul>
 
   <div class="switch" role="group" aria-label={$t("eco.viewLabel")}>
-    <a
-      href={withParam($page.url, "view", null)}
-      class:on={!diagram}
-      aria-current={!diagram ? "true" : undefined}
-      data-sveltekit-replacestate
-      data-sveltekit-noscroll>{$t("eco.viewSpace")}</a
-    >
-    <a
-      href={withParam($page.url, "view", "diagram")}
-      class:on={diagram}
-      aria-current={diagram ? "true" : undefined}
-      data-sveltekit-replacestate
-      data-sveltekit-noscroll>{$t("eco.viewDiagram")}</a
-    >
+    {#each [{ v: "map", label: $t("eco.viewSpace") }, { v: "network", label: $t("eco.viewNetwork") }, { v: "diagram", label: $t("eco.viewDiagram") }] as o (o.v)}
+      <a
+        href={withParam($page.url, "view", o.v === "map" ? null : o.v)}
+        class:on={view === o.v}
+        aria-current={view === o.v ? "true" : undefined}
+        data-sveltekit-replacestate
+        data-sveltekit-noscroll>{o.label}</a
+      >
+    {/each}
   </div>
 
-  {#if space && space.links.length}
+  {#if !diagram && (arranging || (space && space.links.length))}
+    <div class="find">
+      <label class="field">
+        <Icon name="search" />
+        <span class="sr">{$t("eco.findLabel")}</span>
+        <input
+          type="search"
+          bind:value={query}
+          placeholder={$t("eco.findPlaceholder")}
+          autocomplete="off"
+          spellcheck="false"
+          role="combobox"
+          aria-expanded={open && suggestions.length > 0}
+          aria-controls="find-list"
+          aria-activedescendant={open && suggestions[active]
+            ? `find-${active}`
+            : undefined}
+          on:input={() => ((open = true), (active = 0))}
+          on:focus={() => (open = true)}
+          on:blur={() => setTimeout(() => (open = false), 150)}
+          on:keydown={onFindKey}
+        />
+        {#if query}
+          <button
+            class="clear"
+            type="button"
+            aria-label={$t("eco.findClear")}
+            on:click={() => ((query = ""), (open = false))}
+            ><Icon name="close" /></button
+          >
+        {/if}
+      </label>
+      {#if query.trim()}
+        <p class="found muted" aria-live="polite">
+          {found.length
+            ? $t("eco.findCount", { n: found.length })
+            : $t("eco.findNone")}
+        </p>
+      {/if}
+      {#if open && suggestions.length}
+        <ul class="suggest" id="find-list" role="listbox">
+          {#each suggestions as r, i (r.id)}
+            <li
+              id="find-{i}"
+              role="option"
+              aria-selected={i === active}
+              class:active={i === active}
+            >
+              <button
+                type="button"
+                tabindex="-1"
+                on:mousedown|preventDefault={() => choose(r.id)}
+                on:click={() => choose(r.id)}
+              >
+                <KindChip kind={r.kind} />
+                <span class="name">{r.label}</span>
+                <span class="share">{pct(r.share)}</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+  {/if}
+
+  {#if !diagram && arranging && !space}
+    <section class="card chart arranging" aria-busy="true">
+      <p class="muted">{$t("eco.arranging")}</p>
+    </section>
+  {:else if space && space.links.length}
     <section class="card chart">
-      <FlowSpace
-        {space}
-        {capitals}
-        {streams}
-        format={pct}
-        selectedId={chosen?.id ?? null}
-        onSelect={(node) => (picked = node)}
-        label={$t("eco.spaceSummary", { name: root.label })}
-      />
+      {#key view}
+        <FlowSpace
+          {space}
+          {capitals}
+          {streams}
+          {highlight}
+          format={pct}
+          selectedId={chosen?.id ?? null}
+          onSelect={(node) => (picked = node)}
+          label={view === "network"
+            ? $t("eco.networkSummary", { name: root.label })
+            : $t("eco.spaceSummary", { name: root.label })}
+        />
+      {/key}
     </section>
     {#if chosen}
       <section class="card picked" aria-live="polite">
@@ -211,6 +341,7 @@
       {/each}
     </ul>
     <p class="muted hint">
+      {#if view === "network"}{$t("eco.networkHint")}{/if}
       {$t("eco.spaceHint")}
       {#if streams === "eight"}
         {resourced
@@ -339,6 +470,106 @@
   .chart {
     padding: 10px 6px;
     overflow: hidden;
+  }
+  .arranging {
+    min-height: 320px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .find {
+    position: relative;
+    margin-bottom: 10px;
+  }
+  .field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: var(--tap);
+    padding: 0 6px 0 14px;
+    border-radius: 999px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    color: var(--ink-soft);
+  }
+  .field:focus-within {
+    border-color: var(--teal);
+    box-shadow: 0 0 0 3px var(--teal-wash);
+  }
+  .field input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 44px;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    outline: none;
+  }
+  .field input::-webkit-search-cancel-button {
+    display: none;
+  }
+  .clear {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    color: var(--ink-soft);
+  }
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .found {
+    margin: 6px 4px 0;
+    font-size: 0.82rem;
+  }
+  .suggest {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(var(--tap) + 4px);
+    z-index: 5;
+    list-style: none;
+    margin: 0;
+    padding: 4px;
+    border-radius: 16px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-soft);
+  }
+  .suggest button {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: var(--tap);
+    padding: 0 10px;
+    border-radius: 12px;
+    text-align: start;
+    color: var(--ink);
+  }
+  .suggest li.active button {
+    background: var(--teal-wash);
+  }
+  .suggest .name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+  .suggest .share {
+    flex: 0 0 auto;
+    font-size: 0.82rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
   }
   .picked {
     display: flex;

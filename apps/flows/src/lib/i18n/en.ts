@@ -125,9 +125,20 @@ export const en = {
     "Flow diagram of {name}: the Pot, the funds it seats, and who they and the Pot pay. The largest are listed below.",
   "eco.hint": "Tap a bar or a ribbon to see what is behind it.",
   "eco.empty": "This Pot seats nobody yet.",
-  "eco.viewLabel": "Map or diagram",
+  "eco.viewLabel": "Map, connections or diagram",
   "eco.viewSpace": "Map",
   "eco.viewDiagram": "Diagram",
+  "eco.viewNetwork": "Connections",
+  "eco.networkSummary":
+    "The funds and the projects of {name}, pulled together by what links them: a project several funds back sits between them.",
+  "eco.networkHint":
+    "Funds and projects only, pulled together by their links: a project several funds back sits between them, and funds that back the same projects drift close.",
+  "eco.arranging": "Arranging the connections…",
+  "eco.findLabel": "Find on the map",
+  "eco.findPlaceholder": "Find a fund, project or person",
+  "eco.findCount": { one: "{n} found", other: "{n} found" },
+  "eco.findNone": "Nothing on this view matches.",
+  "eco.findClear": "Clear the search",
   "eco.spaceSummary":
     "Map of {name} in space: the Pot in the middle, everyone it pays around it, and everyone they pay beyond. Each line is as wide as the share of the Pot it carries. The largest are listed below.",
   "eco.spaceHint":

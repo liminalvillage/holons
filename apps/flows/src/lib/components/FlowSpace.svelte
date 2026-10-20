@@ -22,6 +22,9 @@
   // given (`capitals`), and every resourced party wears a halo and the count
   // of what it received: resources first, finance follows.
   //
+  // `highlight` (what a search found) keeps those parties lit, ringed and
+  // named, and fades the rest back.
+  //
   // With "reduce motion" set nothing moves unless it is moved.
   //
   // A canvas says nothing to a screen reader: the page lists the same parties
@@ -51,6 +54,8 @@
     null;
   /** What the drops in the lines are: money alone, or all eight capitals. */
   export let streams: "money" | "eight" = "eight";
+  /** Parties to keep lit while the rest fade (a search's matches); null lights all. */
+  export let highlight: Set<string> | null = null;
 
   /** Radians a second the camera drifts when left alone: a turn in three minutes. */
   const DRIFT = (2 * Math.PI) / 180;
@@ -94,6 +99,9 @@
   let dropMix: Capital[][] = [];
   let haloCap: (Capital | null)[] = [];
   let badged = new Set<number>();
+  /** Per party: 1 when `highlight` names it. */
+  let hl = new Uint8Array(0);
+  let hlOn = false;
 
   // The camera: on a sphere of `dist` about `target`, looking at it.
   let yaw = 0.6;
@@ -113,6 +121,7 @@
   $: if (space) load(space, capitals);
   // A switch of streams is a new picture, even when nothing moves.
   $: if (streams) dirty = true;
+  $: lightUp(highlight, at);
   $: selectedIdx = selectedId != null ? (at.get(selectedId) ?? -1) : -1;
   $: if (selectedIdx >= -1) follow(selectedIdx);
 
@@ -160,6 +169,21 @@
     if (fresh) home();
     dirty = true;
   }
+
+  function lightUp(ids: Set<string> | null, where: Map<string, number>) {
+    hl = new Uint8Array(nodes.length);
+    for (const id of ids ?? []) {
+      const i = where.get(id);
+      if (i != null) hl[i] = 1;
+    }
+    hlOn = ids != null;
+    dirty = true;
+  }
+
+  /** How much of itself a party keeps while a search lights others. */
+  const lift = (i: number) => (hlOn && !hl[i] ? 0.18 : 1);
+  const liftLine = (a: number, b: number) =>
+    hlOn && !hl[a] && !hl[b] ? 0.25 : 1;
 
   function home() {
     yaw = 0.6;
@@ -303,7 +327,10 @@
         continue;
       }
       const alpha =
-        Math.max(0.1, px) * fog((sz[a] + sz[b]) / 2) * (lit >= 0 ? 0.4 : 1);
+        Math.max(0.1, px) *
+        fog((sz[a] + sz[b]) / 2) *
+        (lit >= 0 ? 0.4 : 1) *
+        liftLine(a, b);
       shade[i] = alpha < 0.15 ? 0 : alpha < 0.28 ? 1 : alpha < 0.48 ? 2 : 3;
     }
     ctx.lineWidth = 1;
@@ -325,7 +352,10 @@
       const px = links[i].width * (sk[a] + sk[b]) * 0.5;
       ctx.globalAlpha = on
         ? clamp(px, 0.3, 0.9)
-        : 0.5 * fog((sz[a] + sz[b]) / 2) * (lit >= 0 ? 0.35 : 1);
+        : 0.5 *
+          fog((sz[a] + sz[b]) / 2) *
+          (lit >= 0 ? 0.35 : 1) *
+          liftLine(a, b);
       ctx.strokeStyle = on ? palette.accent : palette[nodes[a].kind];
       ctx.lineWidth = Math.max(1, px);
       ctx.beginPath();
@@ -377,8 +407,13 @@
         if (!sk[i] || nodes[i].kind !== kind || nodes[i].r * sk[i] >= 1.6)
           continue;
         ctx.globalAlpha =
-          fog(sz[i]) * (nodes[i].reached ? 0.9 : 0.45) * (lit >= 0 ? 0.6 : 1);
-        ctx.fillRect(sx[i] - 1, sy[i] - 1, 2, 2);
+          fog(sz[i]) *
+          (nodes[i].reached ? 0.9 : 0.45) *
+          (lit >= 0 ? 0.6 : 1) *
+          lift(i);
+        // A found speck is drawn larger, so it can be seen at all.
+        const d = hl[i] ? 2 : 1;
+        ctx.fillRect(sx[i] - d, sy[i] - d, 2 * d, 2 * d);
       }
     }
     ctx.lineWidth = 1;
@@ -389,7 +424,8 @@
       ctx.globalAlpha =
         fog(sz[i]) *
         (nodes[i].reached ? 1 : 0.45) *
-        (lit >= 0 && i !== lit ? 0.75 : 1);
+        (lit >= 0 && i !== lit ? 0.75 : 1) *
+        lift(i);
       ctx.fillStyle = palette[nodes[i].kind];
       ctx.beginPath();
       ctx.arc(sx[i], sy[i], px, 0, Math.PI * 2);
@@ -398,6 +434,7 @@
     }
 
     if (streams === "eight") halos(ctx, now, lit);
+    if (hlOn) rings(ctx);
     names(ctx);
     if (selectedIdx >= 0) gimbal(ctx, selectedIdx, palette.accent, 1);
     if (hoverIdx >= 0 && hoverIdx !== selectedIdx)
@@ -412,7 +449,7 @@
       if (!sk[i] || resCount[i] <= 0) continue;
       const px = Math.max(2, nodes[i].r * sk[i]);
       const colour = palette[`cap-${haloCap[i] ?? "financial"}`];
-      const dim = lit >= 0 && i !== lit ? 0.5 : 1;
+      const dim = (lit >= 0 && i !== lit ? 0.5 : 1) * lift(i);
       const glow = ctx.createRadialGradient(
         sx[i],
         sy[i],
@@ -455,6 +492,25 @@
     }
   }
 
+  /** A ring about each party a search found. */
+  function rings(ctx: CanvasRenderingContext2D) {
+    ctx.strokeStyle = palette.accent;
+    ctx.lineWidth = 2;
+    for (const i of order) {
+      if (!hl[i] || !sk[i]) continue;
+      ctx.globalAlpha = fog(sz[i]);
+      ctx.beginPath();
+      ctx.arc(
+        sx[i],
+        sy[i],
+        Math.max(2, nodes[i].r * sk[i]) + 3,
+        0,
+        Math.PI * 2,
+      );
+      ctx.stroke();
+    }
+  }
+
   /** The 3D cursor: three rings about a party, turning with the space. */
   function gimbal(
     ctx: CanvasRenderingContext2D,
@@ -494,11 +550,26 @@
     if (selectedIdx >= 0) picked.push(selectedIdx);
     if (hoverIdx >= 0 && hoverIdx !== selectedIdx) picked.push(hoverIdx);
     const forced = picked.length;
+    const bySize = (p: number, q: number) =>
+      nodes[q].r * sk[q] - nodes[p].r * sk[p];
+    // What a search found is named before whatever is merely large.
+    const found = hlOn
+      ? Array.from(order)
+          .filter((i) => hl[i] && sk[i] && !picked.includes(i))
+          .sort(bySize)
+          .slice(0, NAMES * 2)
+      : [];
     const large = Array.from(order)
-      .filter((i) => sk[i] && nodes[i].r * sk[i] >= 5 && !picked.includes(i))
-      .sort((p, q) => nodes[q].r * sk[q] - nodes[p].r * sk[p])
+      .filter(
+        (i) =>
+          sk[i] &&
+          nodes[i].r * sk[i] >= 5 &&
+          !picked.includes(i) &&
+          !(hlOn && !hl[i]),
+      )
+      .sort(bySize)
       .slice(0, NAMES * 2);
-    picked.push(...large);
+    picked.push(...found, ...large.filter((i) => !found.includes(i)));
 
     ctx.font = "600 12px system-ui, -apple-system, 'Segoe UI', sans-serif";
     ctx.textBaseline = "middle";

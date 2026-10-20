@@ -126,9 +126,20 @@ export const es: Record<MessageKey, Msg> = {
     "Diagrama de flujos de {name}: el Pot, los fondos que sienta y a quién pagan. Los más grandes aparecen abajo.",
   "eco.hint": "Toca una barra o una cinta para ver qué hay detrás.",
   "eco.empty": "Este Pot aún no sienta a nadie.",
-  "eco.viewLabel": "Mapa o diagrama",
+  "eco.viewLabel": "Mapa, conexiones o diagrama",
   "eco.viewSpace": "Mapa",
   "eco.viewDiagram": "Diagrama",
+  "eco.viewNetwork": "Conexiones",
+  "eco.networkSummary":
+    "Los fondos y los proyectos de {name}, acercados por lo que los une: un proyecto que varios fondos apoyan queda entre ellos.",
+  "eco.networkHint":
+    "Solo fondos y proyectos, acercados por sus vínculos: un proyecto que varios fondos apoyan queda entre ellos, y los fondos que apoyan los mismos proyectos se acercan.",
+  "eco.arranging": "Ordenando las conexiones…",
+  "eco.findLabel": "Buscar en el mapa",
+  "eco.findPlaceholder": "Busca un fondo, un proyecto o una persona",
+  "eco.findCount": { one: "{n} encontrado", other: "{n} encontrados" },
+  "eco.findNone": "Nada en esta vista coincide.",
+  "eco.findClear": "Borrar la búsqueda",
   "eco.spaceSummary":
     "Mapa de {name} en el espacio: el Pot en el centro, alrededor a quienes paga, y más allá a quienes pagan ellos. Cada línea es tan ancha como la cuota del Pot que lleva. Los mayores se listan abajo.",
   "eco.spaceHint":

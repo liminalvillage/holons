@@ -21,6 +21,10 @@ export default defineConfig({
     external: ["ws"],
     noExternal: ["holosphere"],
   },
+  // The network layout's worker imports core: ES modules, so it can split.
+  worker: {
+    format: "es",
+  },
   build: {
     target: "es2022",
     rollupOptions: {
