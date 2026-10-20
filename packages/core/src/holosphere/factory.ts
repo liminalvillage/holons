@@ -29,6 +29,7 @@ import { FLOW_RIGHTS_LENS } from '../flows/rights-log.js';
 import { FLOW_EXITS_LENS, FLOW_NEEDS_LENS } from '../flows/standing.js';
 import { FLOW_APPLICATIONS_LENS } from '../flows/applications.js';
 import { FLOW_RESOURCES_LENS } from '../flows/resources.js';
+import { FLOW_PROJECT_CLAIMS_LENS } from '../flows/project-claims.js';
 import { GOVERNANCE_VOTES_LENS } from '../governance/votes.js';
 import type { ProjectionHook } from '../nostr/types.js';
 import { createReadAuthority, type VouchContext } from './authority.js';
@@ -48,6 +49,7 @@ export const APPEND_LENSES: readonly string[] = [
   FLOW_NEEDS_LENS,
   FLOW_APPLICATIONS_LENS,
   FLOW_RESOURCES_LENS,
+  FLOW_PROJECT_CLAIMS_LENS,
   GOVERNANCE_VOTES_LENS,
 ];
 

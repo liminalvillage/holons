@@ -183,6 +183,10 @@ describe('lapsedSeats', () => {
     expect(lapsedSeats({ window: { until: 1000, keep: [] }, now: 2000, shares: { a: 1, b: 1 }, aliases: { a: 'x' } })).toEqual(['b']);
   });
 
+  it('a seat claimed in place stands past the window', () => {
+    expect(lapsedSeats({ window, now: 1000, buckets: [pot], aliases, claimed: ['unclaimed'] })).toEqual([]);
+  });
+
   it('spreads a lapsed share over everyone left, in proportion', () => {
     const exits = lapsedSeats({ window, now: 2000, buckets: [pot], aliases });
     const { members } = composeInterior({ buckets: [pot], scored: [], exits, aliases });

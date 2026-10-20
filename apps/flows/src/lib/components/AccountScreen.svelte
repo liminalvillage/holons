@@ -25,6 +25,8 @@
   import ActivityList from "./ActivityList.svelte";
   import ApplicationsInbox from "./ApplicationsInbox.svelte";
   import ApplySheet from "./ApplySheet.svelte";
+  import ClaimProjectSheet from "./ClaimProjectSheet.svelte";
+  import ProjectClaimsInbox from "./ProjectClaimsInbox.svelte";
   import BalanceCard from "./BalanceCard.svelte";
   import ClaimSheet from "./ClaimSheet.svelte";
   import FundSheet from "./FundSheet.svelte";
@@ -46,6 +48,7 @@
     type Statement,
   } from "$lib/account";
   import { myApplications, type MyApplication } from "$lib/applications";
+  import { seatingHolonOf } from "$lib/projectClaims";
   import { currentUser, displayName } from "$lib/auth";
   import { pct } from "$lib/format";
   import { labelOf, nameFor } from "$lib/graph";
@@ -75,7 +78,14 @@
   let applications: MyApplication[] = [];
   /** The holons I steward, to ask on their behalf. */
   let mine: string[] = [];
-  let sheet: "none" | "claim" | "fund" | "apply" | "give" | "offer" = "none";
+  let sheet:
+    | "none"
+    | "claim"
+    | "fund"
+    | "apply"
+    | "give"
+    | "offer"
+    | "claimProject" = "none";
   let resources: ResourcesContext = EMPTY_RESOURCES;
   let readingResources = true;
   /** The offer a give answers, or an offer being edited. */
@@ -153,7 +163,25 @@
   /** Asking this account for a seat makes sense when it is a holon that is not mine. */
   $: canApplyHere = isHolon && !!selfId && !unsigned && !own && !steer;
 
+  /**
+   * An imported project nobody has claimed yet, while its window is open:
+   * the signed-in person may ask to steward it. Asked on the holon that
+   * seats it; the key they sign with is the one approval seats.
+   */
+  $: claimHolder = node.kind === "project" ? seatingHolonOf(index, id) : null;
+  $: canClaimProject =
+    !!claimHolder &&
+    !!node.unclaimedUntil &&
+    node.unclaimedUntil > Date.now() &&
+    !!selfId &&
+    !unsigned &&
+    !own &&
+    !steer;
+
   $: actions = [
+    ...(canClaimProject
+      ? [{ id: "claimProject", icon: "key", label: $t("action.claimProject") }]
+      : []),
     { id: "claim", icon: "download", label: $t("action.claim"), main: true },
     { id: "fund", icon: "plus", label: $t("action.fund") },
     ...(canGive
@@ -251,7 +279,13 @@
   {actions}
   onAct={(act) => {
     if (act === "give") offer = null;
-    if (act === "claim" || act === "fund" || act === "apply" || act === "give")
+    if (
+      act === "claim" ||
+      act === "fund" ||
+      act === "apply" ||
+      act === "give" ||
+      act === "claimProject"
+    )
       sheet = act;
   }}
 />
@@ -282,6 +316,7 @@
 {/if}
 
 {#if steer}
+  <ProjectClaimsInbox holder={id} on:changed={refresh} />
   <ApplicationsInbox fund={id} on:changed={refresh} />
   {#if queue.length}
     <h2 class="section-title">{$t("account.toPay")} · {queue.length}</h2>
@@ -392,6 +427,15 @@
     holon={node}
     {offer}
     on:changed={() => void readResources(true)}
+    on:close={() => (sheet = "none")}
+  />
+{:else if sheet === "claimProject" && claimHolder && selfId}
+  <ClaimProjectSheet
+    project={node}
+    holder={claimHolder}
+    party={selfId}
+    partyName={$currentUser ? displayName($currentUser) : ""}
+    on:changed={refresh}
     on:close={() => (sheet = "none")}
   />
 {:else if sheet === "apply"}

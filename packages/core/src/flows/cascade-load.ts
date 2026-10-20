@@ -36,6 +36,7 @@ import {
   readAllocationBuckets,
   readAllocationConfig,
   readAllocationClaimWindow,
+  readAllocationClaimed,
   readAllocationGenesis,
   readInteriorShares,
   readZoneAssignments,
@@ -131,6 +132,8 @@ export interface AllocationInputs extends CascadeInputs {
   standing: Standing | null;
   /** The claim window on this split's seats, when it has one. */
   claimWindow: ClaimWindow | null;
+  /** Seats claimed in place: they stand past the window. */
+  claimed: string[];
   /** Seats the closed window retired: unclaimed, and so in no bucket. */
   lapsed: string[];
 }
@@ -178,7 +181,8 @@ export async function loadAllocationInputs(
   const people = applyStandingToRings(readZonePeople(settings), { aliases, exits });
   // A lapsed seat leaves the interior only: a ring is its holder's curation, not the fork's.
   const claimWindow = readAllocationClaimWindow(settings);
-  const lapsed = lapsedSeats({ window: claimWindow, now: opts.now ?? Date.now(), buckets, shares, aliases });
+  const claimed = readAllocationClaimed(settings);
+  const lapsed = lapsedSeats({ window: claimWindow, now: opts.now ?? Date.now(), buckets, shares, aliases, claimed });
   const out = lapsed.length ? [...exits, ...lapsed] : exits;
 
   // Only a holon that placed partners needs its federation record: it is what
@@ -260,6 +264,7 @@ export async function loadAllocationInputs(
     emptyBuckets,
     standing,
     claimWindow,
+    claimed,
     lapsed,
     config,
     members,

@@ -354,4 +354,17 @@ describe('buckets, aliases, codes and the genesis lock', () => {
     expect(readAllocationClaimWindow(hs.current)).toBeNull();
     expect(readAllocationClaimWindow({ allocation: { claimWindow: { until: 'soon' } } })).toBeNull();
   });
+
+  it('marks seats claimed in place, keeps them through other saves, and a locked split still takes them', async () => {
+    const { readAllocationClaimed, saveAllocationClaimed, saveAllocationAliases } = await import('./index.js');
+    const hs = fakeHolosphere(existingDoc);
+    await saveAllocationConfig(hs as any, 'h1', { interiorPercent: 100, interiorMode: 'custom' }, undefined, undefined, undefined, { buckets: [legacy], genesis: true, now: 1 });
+    expect(await saveAllocationClaimed(hs as any, 'h1', 'holon_b')).toEqual(['holon_b']);
+    expect(await saveAllocationClaimed(hs as any, 'h1', 'holon_a')).toEqual(['holon_a', 'holon_b']);
+    await saveAllocationAliases(hs as any, 'h1', { 'artisan:ada': 'ada' });
+    await saveAllocationConfig(hs as any, 'h1', {});
+    expect(readAllocationClaimed(hs.current)).toEqual(['holon_a', 'holon_b']);
+    expect(await saveAllocationClaimed(hs as any, 'h1', 'holon_b', false)).toEqual(['holon_a']);
+    expect(readAllocationClaimed({ allocation: { claimed: 'holon_a' } })).toEqual([]);
+  });
 });

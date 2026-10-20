@@ -32,6 +32,7 @@ import {
   readAllocationAliases,
   readAllocationBuckets,
   readAllocationClaimWindow,
+  readAllocationClaimed,
   readAllocationConfig,
   readInteriorShares,
   readZoneAssignments,
@@ -95,7 +96,7 @@ export function inboundRightFrom(input: InboundRightInput): InboundRight | null 
   const people = applyStandingToRings(readZonePeople(settings), { aliases, exits });
   const custom = config.interiorMode === 'custom' && Object.keys(shares).length > 0;
   const scored = [...(input.scored ?? [])];
-  const out = [...exits, ...lapsedSeats({ window: readAllocationClaimWindow(settings), now: input.now ?? Date.now(), buckets, shares, aliases })];
+  const out = [...exits, ...lapsedSeats({ window: readAllocationClaimWindow(settings), now: input.now ?? Date.now(), buckets, shares, aliases, claimed: readAllocationClaimed(settings) })];
   const members = buckets.length
     ? composeInterior({ buckets, scored, needs: Object.keys(input.standing?.inNeed ?? {}), exits: out, aliases }).members
     : applyStanding(resolveInteriorMembers({ config, scored: custom ? [] : scored, shares }), { aliases, exits: out });

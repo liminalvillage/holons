@@ -91,6 +91,14 @@ const CODES_KEY = 'codes';
 const CLAIM_WINDOW_KEY = 'claimWindow';
 const APPLICATIONS_KEY = 'applications';
 
+/**
+ * Field under `allocation` listing the seats claimed IN PLACE: a project
+ * holon whose claimant was seated as its admin (`project-claims.ts`) rather
+ * than aliased to a chat. Such a seat stands past the claim window. Like
+ * aliases, the rule at work, never the rule: no genesis lock holds it.
+ */
+const CLAIMED_KEY = 'claimed';
+
 export interface AllocationGenesis {
   hash: string;
   /** When the split was locked (ms). */
@@ -257,6 +265,16 @@ function cleanClaimWindow(raw: unknown): ClaimWindow | null {
   return { until, keep };
 }
 
+/** The seats of this holon's split that were claimed in place. */
+export function readAllocationClaimed(settings: unknown): string[] {
+  const doc = (settings ?? {}) as Record<string, unknown>;
+  const allocation = (doc[ALLOCATION_KEY] ?? {}) as Record<string, unknown>;
+  return cleanClaimed(allocation[CLAIMED_KEY]);
+}
+
+const cleanClaimed = (raw: unknown): string[] =>
+  Array.isArray(raw) ? [...new Set(raw.map((id) => String(id ?? '').trim()).filter(Boolean))].sort() : [];
+
 /** The claim codes still open on this holon. */
 export function readAllocationCodes(settings: unknown): ClaimCodes {
   const doc = (settings ?? {}) as Record<string, unknown>;
@@ -351,6 +369,8 @@ export interface SaveAllocationExtra {
   aliases?: Aliases;
   /** Replaces the claim codes when given. */
   codes?: ClaimCodes;
+  /** Replaces the seats claimed in place when given. */
+  claimed?: string[];
   /** Sets the claim window when given; `null` removes it. A locked split needs `force`. */
   claimWindow?: { until: number; keep?: string[] } | null;
   /** `true` locks the resulting split now; `null` lifts the lock (needs `force`). */
@@ -400,6 +420,7 @@ export async function saveAllocationConfig(
   const existingBuckets = readAllocationBuckets(existing);
   const existingAliases = readAllocationAliases(existing);
   const existingCodes = readAllocationCodes(existing);
+  const existingClaimed = readAllocationClaimed(existing);
   const existingWindow = readAllocationClaimWindow(existing);
   const locked = readAllocationGenesis(existing);
   const nextWindow = extra.claimWindow === undefined ? existingWindow : cleanClaimWindow(extra.claimWindow);
@@ -429,6 +450,7 @@ export async function saveAllocationConfig(
       ...(nextBuckets.length ? { [BUCKETS_KEY]: nextBuckets } : {}),
       ...(Object.keys(extra.aliases ?? existingAliases).length ? { [ALIASES_KEY]: normalizeAliases(extra.aliases ?? existingAliases) } : {}),
       ...(Object.keys(extra.codes ?? existingCodes).length ? { [CODES_KEY]: cleanCodes(extra.codes ?? existingCodes) } : {}),
+      ...(cleanClaimed(extra.claimed ?? existingClaimed).length ? { [CLAIMED_KEY]: cleanClaimed(extra.claimed ?? existingClaimed) } : {}),
       ...(genesis ? { [GENESIS_KEY]: genesis } : {}),
       ...(nextWindow ? { [CLAIM_WINDOW_KEY]: nextWindow } : {}),
       ...((extra.applications ?? (readApplicationsOpen(existing) ? 'open' : 'closed')) === 'closed' ? { [APPLICATIONS_KEY]: 'closed' } : {}),
@@ -488,4 +510,19 @@ export async function saveAllocationCodes(
   }
   await saveAllocationConfig(holosphere, holonId, {}, undefined, undefined, undefined, { codes });
   return cleanCodes(codes);
+}
+
+/** Mark the seat `id` claimed in place (or not, with `false`), by read-merge-write of that one field. */
+export async function saveAllocationClaimed(holosphere: any, holonId: string, id: string, claimed = true): Promise<string[]> {
+  let existing: any = null;
+  try {
+    existing = await holosphere.get(String(holonId), 'settings', String(holonId));
+  } catch {
+    // See saveCollectiveSlug.
+  }
+  const seat = String(id ?? '').trim();
+  const rest = readAllocationClaimed(existing).filter((s) => s !== seat);
+  const next = cleanClaimed(claimed && seat ? [...rest, seat] : rest);
+  await saveAllocationConfig(holosphere, holonId, {}, undefined, undefined, undefined, { claimed: next });
+  return next;
 }

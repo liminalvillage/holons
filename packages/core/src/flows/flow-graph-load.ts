@@ -70,6 +70,7 @@ function metaOf(read: AllocationInputs, chainId: number | null): FlowPartyMeta {
     pot: pot ? { chainId: pot.chainId, address: pot.address } : null,
     aliases: read.aliases,
     claimWindow: read.claimWindow,
+    claimed: read.claimed,
     seats,
   };
 }

@@ -261,11 +261,14 @@ export interface LapsedSeatsInput {
   /** The single-mode custom split, when the node has no buckets. */
   shares?: InteriorShares | null;
   aliases?: Aliases | null;
+  /** Seats claimed in place (`allocation.claimed`): the holon itself was handed over. */
+  claimed?: Iterable<string> | null;
 }
 
 /**
  * The seats a closed claim window retires: hand-set seats nobody claimed (no
- * alias points them at a claimant) and the window does not `keep`. They are
+ * alias points them at a claimant, none was claimed in place) and the window
+ * does not `keep`. They are
  * read as exits — in no bucket of the node, their share spread over everyone
  * left in proportion to what each holds. Empty while the window is open, or
  * when the node has none.
@@ -273,7 +276,7 @@ export interface LapsedSeatsInput {
 export function lapsedSeats(input: LapsedSeatsInput): string[] {
   const window = input.window;
   if (!window || !(window.until > 0) || !(input.now >= window.until)) return [];
-  const keep = new Set(window.keep ?? []);
+  const keep = new Set([...(window.keep ?? []), ...(input.claimed ?? [])]);
   const buckets = normalizeBuckets(input.buckets ?? []);
   const seats = new Set<string>();
   if (buckets.length) {

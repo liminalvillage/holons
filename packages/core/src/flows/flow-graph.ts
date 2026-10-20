@@ -83,6 +83,8 @@ export interface FlowPartyMeta {
   pot?: { chainId: number; address: string } | null;
   aliases?: Aliases | null;
   claimWindow?: ClaimWindow | null;
+  /** Seats claimed in place. */
+  claimed?: string[];
   /** The hand-set seats of its split, as stored (before any alias). */
   seats?: string[];
   /** Received resource gifts per capital. */
@@ -216,7 +218,7 @@ export function buildFlowGraph(input: {
   for (const m of Object.values(meta)) {
     const window = m.claimWindow;
     if (!window || !(window.until > 0)) continue;
-    const kept = new Set(window.keep ?? []);
+    const kept = new Set([...(window.keep ?? []), ...(m.claimed ?? [])]);
     for (const id of m.seats ?? []) {
       if (kept.has(id) || m.aliases?.[id]) continue;
       const seen = unclaimed.get(id);

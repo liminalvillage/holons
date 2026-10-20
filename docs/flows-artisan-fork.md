@@ -171,6 +171,32 @@ they never trip a genesis lock.
   aliases the placeholder to their Telegram id. `/wallet <0x…>` writes the
   payout address on their own record (`settings.payout`).
 
+### Claiming a project from Flows
+
+A project with no Telegram group, or whose people never got a code, is
+claimed from its page in Flows: **Claim this project** appends a `request`
+(`project`, the claimant's id, name, role, a public evidence link, a note) to
+`flow_project_claims` on the holon that seats it — the Pot — so the
+onboarding team reads one inbox, not two thousand logs. Anyone signed in with
+a key that signs as them may ask (a Telegram login needs
+`NOSTR_DERIVATION_SECRET`); the log is public, so the evidence is a link,
+never a phone number.
+
+The **master keys** answer: an admin of the seating holon, which must also be
+an admin of the project — the importer's `--admins`. Approving
+(`approveProjectClaim`):
+
+1. seats the key that SIGNED the request as an admin of the project holon
+   (`_members`; never founds a project that has no log);
+2. marks the seat claimed in place: `allocation.claimed` on the seating
+   holon, which `lapsedSeats` and the graph read like an alias, so the seat
+   stands past the window (not part of the genesis hash);
+3. consumes the project's claim codes, so nobody can take it by code after;
+4. attests the request.
+
+Declining carries a reason the claimant reads. The new steward then receives
+the project's resource gifts, edits its offers and its split from Flows.
+
 ## Fixed at genesis
 
 `allocation.genesis = { hash, at }` pins the rule: `splitHash` over the
@@ -361,6 +387,7 @@ asks first (`isHolonAdmin`) and is read-only for everyone else.
 | MCP                              | `allocation_save` (buckets, aliases, codes, genesis, force), `allocation_get` / `allocation_cascade` (byBucket, standing), `allocation_alias_set`, `standing_state`, `standing_exit_record`, `standing_needs_record`, `standing_verdict`, `pot_rights_cut` (exited, lapsed, walk); `allocation_save` / `allocation_get` (claimWindow, lapsed) |
 | bot                              | `packages/telegram-ui/src/ArtisanFork.js`: `/claimproject`, `/claimcredit`, `/wallet`, `/split`, `/needs`, `/needsattest`, `/needsdispute`, `/exit`, `/pot`; the new-moon cut in `FundClaims.js` reads standing and the walk bounds; with `FLOWS_ADDRESS` set, `/pot`, `/split`, `/wallet`, the two claims and the new-moon notice end with a link into Flows (`flowsLink.js`)                                       |
 | the importer                     | `scripts/import-artisan-graph.mjs`                                                                                                                                                                                                                                        |
+| project claims (Flows) | `@holons/core/flows` `project-claims.ts` (lens `flow_project_claims`, `foldProjectClaims`), `project-claims-load.ts` (`requestProjectClaim`, `approveProjectClaim`, `declineProjectClaim`, `projectSeats`), `settings.ts` (`readAllocationClaimed`, `saveAllocationClaimed`); drawn by `apps/flows` (`ClaimProjectSheet`, `ProjectClaimsInbox`) |
 | the account, claims by rail, applications, the split editor | `@holons/core/flows` `account.ts` (`accountBalances`, `claimRails`), `claims.ts` (`ClaimRail`, `rail` / `ref`, `selfKeyedPartyOf`), `claims-load.ts` (`loadJudgedClaims`, `partyStandings`), `ceiling-load.ts` (`shares`, `ownOnly`), `flow-graph-views.ts` (`graphRights`), `opencollective.ts` (`collectiveDonateUrl`, `collectiveExpenseUrl`), `applications.ts` / `applications-load.ts` (lens `flow_applications`), `split-draft.ts`, `settings.ts` (`readApplicationsOpen`); `@holons/core/holosphere` `isHolonAdmin`; MCP `fund_apply`, `fund_applications`, `fund_application_verdict`, `rail` / `ref` on `flow_claim_record` / `flow_payout_record`; drawn by `apps/flows` |
 | the flow graph (the map)         | `@holons/core/flows` `flow-graph.ts` (`buildFlowGraph`, `classifyParty`), `flow-graph-doc.ts` (lens `flow_graph`, parts), `flow-graph-load.ts` (`crawlFlowGraph`, `publishFlowGraph`, `loadFlowGraph`), `flow-graph-index.ts` (`seatersOf`, `partiesByAddress`, `resolveParty`), `flow-graph-views.ts` (`centredTrack`, `ecosystemTrack`, `refineFlowGraph`), `flow-graph-space.ts` (`layoutFlowSpace` — every party placed in 3D, a link's width linear in its share of the Pot), `pot-account.ts`; `scripts/publish-flow-graph.mjs`; MCP `flow_graph_publish`, `flow_graph_get`; drawn by `apps/flows` |
 
