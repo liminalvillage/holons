@@ -209,7 +209,7 @@ export const es: Record<MessageKey, Msg> = {
   "cal.set.colorAuto": "Automático",
   "cal.set.saveFailed":
     "No se pudo guardar — entra como cuidador/a e inténtalo de nuevo.",
-  "cal.newTask": "Nueva tarea",
+  "cal.newEvent": "Nuevo evento",
 
   // Roles
   "roles.untitledRole": "Rol sin título",

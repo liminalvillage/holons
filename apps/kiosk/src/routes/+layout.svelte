@@ -152,6 +152,7 @@
   import SwitchConfirm from "$lib/components/SwitchConfirm.svelte";
   import VoiceWidget from "$lib/components/VoiceWidget.svelte";
   import VoiceDrawer from "$lib/components/VoiceDrawer.svelte";
+  import { swallowsContextMenu } from "$lib/holdmenu";
 
   let booting = true;
   let mounted = false;
@@ -1098,6 +1099,20 @@
     noteInteraction();
   }
 
+  // Android pops its context menu on a touch long-press, which kills every
+  // hold gesture (lift a chip to schedule, hold a slot to draw an event,
+  // hold a note to reorder). Swallow it for touch/pen outside fields — the
+  // decision lives in $lib/holdmenu; the last pointerdown says which kind of
+  // pointer the menu came from.
+  let lastPointerType: string | null = null;
+  function onPointerDown(e: PointerEvent) {
+    lastPointerType = e.pointerType || null;
+    onActivity();
+  }
+  function onContextMenu(e: Event) {
+    if (swallowsContextMenu(lastPointerType, e.target)) e.preventDefault();
+  }
+
   // Mouse movement (no click) also counts as presence, but fires constantly —
   // throttle it so we don't reset the stores on every pixel.
   let lastMove = 0;
@@ -1126,7 +1141,8 @@
 </svelte:head>
 
 <svelte:window
-  on:pointerdown|capture={onActivity}
+  on:pointerdown|capture={onPointerDown}
+  on:contextmenu={onContextMenu}
   on:touchstart|capture={onActivity}
   on:keydown|capture={onActivity}
   on:wheel|capture={onActivity}

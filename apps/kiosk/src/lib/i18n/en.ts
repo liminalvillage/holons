@@ -205,7 +205,7 @@ export const en = {
   "cal.set.colorCustom": "Custom colour",
   "cal.set.colorAuto": "Automatic",
   "cal.set.saveFailed": "Couldn't save — log in as a caretaker and try again.",
-  "cal.newTask": "New task",
+  "cal.newEvent": "New event",
 
   // Roles
   "roles.untitledRole": "Untitled role",

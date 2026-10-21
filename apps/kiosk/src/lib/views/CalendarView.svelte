@@ -5,6 +5,7 @@
   import { get } from "svelte/store";
   import { autoScrollToEnd } from "$lib/autoscroll";
   import { createEdgeScroll } from "$lib/edgescroll";
+  import { createMoment, type DayWindow } from "$lib/calendarcreate";
   import {
     events as questEvents,
     backlog,
@@ -706,13 +707,31 @@
     selection.set({ kind: "task", quest: draft, isNew: true });
   }
 
-  // The + button prefills the draft with the current date and time, so an
-  // event added on the spot starts as "now" and the user only adjusts if
-  // needed.
+  // The + button drafts an event in the window on screen — today while
+  // today is in it, else the window's first day — at the present time, so
+  // what is added turns up where the person is looking (`$lib/calendarcreate`
+  // has the rule). It used to be "now" regardless, which wrote a ＋ pressed
+  // over another day into today, out of sight.
   function openCreate() {
-    const t = get(now);
+    const t = createMoment(shownWindow, get(now));
     void createAt(isoDay(t), t.getHours() * 60 + t.getMinutes());
   }
+
+  /** The days the current window shows, `[start, end)`. */
+  $: shownWindow = ((): DayWindow => {
+    if (view === "day") return { start: anchorDay, end: addDays(anchorDay, 1) };
+    if (view === "week")
+      return { start: weekDays[0], end: addDays(weekDays[0], 7) };
+    if (view === "month")
+      return {
+        start: monthAnchor,
+        end: new Date(monthAnchor.getFullYear(), monthAnchor.getMonth() + 1, 1),
+      };
+    return {
+      start: new Date(displayYear, 0, 1),
+      end: new Date(displayYear + 1, 0, 1),
+    };
+  })();
 
   // ── Resize: drag a day-event's bottom edge to change its length ───────────--
   let resize: {
@@ -1867,8 +1886,8 @@
       <button
         class="fab"
         on:click={openCreate}
-        aria-label={$t("cal.newTask")}
-        title={$t("cal.newTask")}>＋</button
+        aria-label={$t("cal.newEvent")}
+        title={$t("cal.newEvent")}>＋</button
       >
     </div>
   {/if}
