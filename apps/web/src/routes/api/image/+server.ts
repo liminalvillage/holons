@@ -10,6 +10,7 @@ import {
   forgetResolved,
   hasBotToken,
   hasProxyConfigured,
+  imageFromBotServer,
   PROXY_HOP_HEADER,
   proxyImage,
   resolveFileById,
@@ -52,6 +53,10 @@ export const GET: RequestHandler = async ({ url, request }) => {
     request.headers.has(PROXY_HOP_HEADER),
   );
   if (proxied) return proxied;
+
+  // … and last the community bot server, which holds the other bots' tokens.
+  const fromBot = await imageFromBotServer(fileId, CACHE);
+  if (fromBot) return fromBot;
 
   return new Response("file not found", { status: 404 });
 };
