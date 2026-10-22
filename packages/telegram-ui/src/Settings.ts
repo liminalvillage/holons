@@ -59,19 +59,17 @@ function boardUrl(holonId: string | number): string {
 }
 
 /**
- * The welcome, and the whole of it: the holon's id and the link that opens
- * its board. The bot is the on-ramp, the board is the place — a group that
- * just added the bot needs the way there, not a manual (that is /help).
- * Opening the link docks the holon on that device's map, so from then on it
- * is loaded there by default.
+ * The welcome, and the whole of it: the holon's id, pointing at the buttons
+ * under it (see boardButtons) — the links live there once, not in the text
+ * as well. The bot is the on-ramp, the board is the place; the manual is
+ * one tap away (📖, the same guide as /help).
  */
 function welcomeText(holonId: string | number, language: string): string {
   const id = String(holonId ?? '').trim();
   return i18next.t('holonWelcome', {
     lng: language,
     id,
-    url: boardUrl(id),
-    defaultValue: `🔑 Holon ID: \`${id}\`\n🌱 Open its board: ${boardUrl(id)}\n\nType /help for the guide.`,
+    defaultValue: `🔑 Holon ID: \`${id}\`\n\nOpen its board, the dashboard or its settings below — or tap 📖 for how it works.`,
   });
 }
 
@@ -99,6 +97,9 @@ function translated(
   );
 }
 
+/** The welcome's 📖 button: posts the /help guide in the chat. */
+const WELCOME_GUIDE_ACTION = 'welcome_guide';
+
 function boardButtons(holonId: string | number, language: string) {
   const raw = String(holonId ?? '').trim();
   // `getholonId` falls back to "0" when it can't read the chat — a link built
@@ -117,6 +118,16 @@ function boardButtons(holonId: string | number, language: string) {
         {
           text: `🔍 ${i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' })}`,
           url: `${DASHBOARD_ADDRESS}/${id}`,
+        },
+      ],
+      [
+        {
+          text: `⚙️ ${i18next.t('openSettings', { lng: language, defaultValue: 'Settings' })}`,
+          url: `${DASHBOARD_ADDRESS}/${id}/settings`,
+        },
+        {
+          text: `📖 ${i18next.t('howItWorks', { lng: language, defaultValue: 'How it works' })}`,
+          callback_data: WELCOME_GUIDE_ACTION,
         },
       ],
     ],
@@ -341,8 +352,9 @@ export default class Settings {
     });
 
     // /help — the guide the welcome used to be: what a holon is, the
-    // commands, and the test-network disclaimer.
-    this.bot.command('help', async ctx => {
+    // commands, and the test-network disclaimer. The welcome's 📖 button
+    // posts the same guide.
+    const sendGuide = async ctx => {
       try {
         const holonId = utils.getholonId(ctx);
         const language = await this.getLanguage(holonId);
@@ -353,6 +365,11 @@ export default class Settings {
         console.error('Error sending help:', error);
         ctx.reply('Type / for a list of commands.');
       }
+    };
+    this.bot.command('help', sendGuide);
+    this.bot.action(WELCOME_GUIDE_ACTION, async ctx => {
+      await ctx.answerCbQuery().catch(() => {});
+      await sendGuide(ctx);
     });
 
     // Handle bot being added to a group
