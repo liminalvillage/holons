@@ -23,6 +23,14 @@
  *   - a partner holon with a seat votes in ITS OWN log; the entries it
  *     accepted fold here as votes by the partner party (`protocol/federation`).
  *
+ * The same log holds EQUATION proposals (`kind:'equation'`): a member puts a
+ * patch to the value equation on the table as a signed entry, so what the
+ * holon votes on can never be rewritten after the fact. The first accepted
+ * entry for an id is the proposal; a later one for the same id, one from a
+ * partner's log, or one for an id that already has votes is rejected. Its
+ * signed time fixes the new moon it closes at (`equationClosesAt`), and a
+ * vote on it after that is `late`. The quest that shows it is display only.
+ *
  * Counting — weights, delegation, the threshold — stays in `tally.ts`
  * (`tallyBallots`), over the ballots this fold yields.
  */
@@ -43,6 +51,8 @@ import {
   type PartyResolver,
   type Policy,
 } from '../protocol/index.js';
+import { migrateEquation, type ScoreEquation } from '../scoring/index.js';
+import { equationClosesAt, sanitizeEquationPatch, type EquationPatch } from './equation.js';
 
 /** The append-only lens votes live in. */
 export const GOVERNANCE_VOTES_LENS = 'governance_votes';
@@ -61,6 +71,39 @@ export interface VoteBody {
   memo?: string;
   /** Set when the holon key votes for a party (the bot on a member's word). */
   onBehalfOf?: string;
+}
+
+/** A change to the value equation, put to the holon's vote. */
+export interface EquationProposalBody {
+  t: 'action';
+  kind: 'equation';
+  /** The proposal's id — the quest that shows it carries the same. */
+  proposal: string;
+  /** The proposer — a member id. */
+  party: string;
+  /** Only the weights it moves. */
+  patch: EquationPatch;
+  /** The equation in force as the proposer saw it (see `foldEquation`). */
+  from?: ScoreEquation;
+  title?: string;
+  onBehalfOf?: string;
+}
+
+/** An equation proposal as the log fixed it. */
+export interface EquationEntry {
+  /** The proposal id votes name. */
+  id: string;
+  /** The log entry that holds it. */
+  entryId: string;
+  party: string;
+  pubkey: string;
+  title?: string;
+  patch: EquationPatch;
+  from?: ScoreEquation;
+  /** When it was signed, ms. */
+  createdAt: number;
+  /** The new moon its vote closes at, ms. */
+  closesAt: number;
 }
 
 export type VoteStatus = 'counted' | 'superseded' | 'pending' | 'disputed' | 'rejected';
@@ -92,6 +135,8 @@ export interface FoldedVotes {
   /** Every vote in log order, judged. */
   votes: Vote[];
   ballots: Ballots;
+  /** The accepted equation proposals, in log order. */
+  equations: EquationEntry[];
   /** The entries that count, in log order — what a checkpoint covers. */
   accepted: LogEvent<unknown>[];
   source: AcceptedActors['source'];
@@ -133,6 +178,33 @@ export function buildVoteVerdict(voteId: string, verdict: 'attest' | 'dispute', 
 
 export const isVote = (item: unknown): item is VoteBody => isAction(item) && item.kind === 'vote';
 
+export interface BuildEquationProposalInput {
+  proposal: string;
+  party: string;
+  patch: unknown;
+  from?: unknown;
+  title?: string;
+  onBehalfOf?: string;
+}
+
+/** The `equation` action a member appends to put a patch to the vote. */
+export function buildEquationProposal(input: BuildEquationProposalInput): Appendable<EquationProposalBody> {
+  const patch = sanitizeEquationPatch(input.patch);
+  if (!patch) throw new Error('An equation proposal must move at least one weight');
+  const body: Omit<EquationProposalBody, 't' | 'kind'> = {
+    proposal: String(input.proposal),
+    party: String(input.party),
+    patch,
+    ...(input.from != null ? { from: migrateEquation(input.from) } : {}),
+    ...(input.title ? { title: String(input.title).slice(0, 140) } : {}),
+    ...(input.onBehalfOf ? { onBehalfOf: String(input.onBehalfOf) } : {}),
+  };
+  return action('equation', body) as unknown as Appendable<EquationProposalBody>;
+}
+
+export const isEquationProposal = (item: unknown): item is EquationProposalBody =>
+  isAction(item) && item.kind === 'equation';
+
 export interface FoldVotesInput {
   entries: Iterable<LogEvent<unknown>>;
   actors: AcceptedActors;
@@ -148,6 +220,10 @@ export interface FoldVotesInput {
 interface FoldState {
   /** `proposal|party` → the counted vote's id. */
   latest: Map<string, string>;
+  /** Proposals some accepted vote names. */
+  voted: Set<string>;
+  /** Equation proposal id → its entry. */
+  equations: Map<string, EquationEntry>;
 }
 
 /** Fold the `governance_votes` log into ballots. */
@@ -163,32 +239,67 @@ export function foldVotes(input: FoldVotesInput): FoldedVotes {
   };
   const entries: LogEvent<unknown>[] = [...input.entries];
   for (const p of imports) entries.push(...p.accepted);
+  /** Does the signer act for the party it names? A reason when not. */
+  const partyCheck = (e: LogEvent<unknown>, body: { party?: unknown; onBehalfOf?: unknown }) => {
+    const delegated = !!holonKey && e.pubkey.toLowerCase() === holonKey && !!body.onBehalfOf;
+    if (delegated) return String(body.onBehalfOf) !== String(body.party) ? 'party-mismatch' : null;
+    const actsFor = partyOf(e.pubkey, e.created_at);
+    if (!actsFor) return 'unknown-party';
+    return actsFor !== String(body.party) ? 'party-mismatch' : null;
+  };
 
   const result = collapse<unknown, FoldState>({
     entries,
     actors,
     policy: input.policy,
-    initial: { latest: new Map() },
-    validate: (e) => {
+    initial: { latest: new Map(), voted: new Set(), equations: new Map() },
+    validate: (e, state) => {
+      if (isEquationProposal(e.item)) {
+        const p = e.item;
+        const id = String(p.proposal ?? '').trim();
+        if (!id) return 'no-proposal';
+        // A partner's proposal is the partner's business: never this holon's equation.
+        if (actors.originOf(e.pubkey, e.created_at)) return 'foreign';
+        const party = partyCheck(e, p);
+        if (party) return party;
+        if (!sanitizeEquationPatch(p.patch)) return 'bad-patch';
+        if (state.equations.has(id)) return 'duplicate';
+        // An id that already has votes would inherit them.
+        if (state.voted.has(id)) return 'id-in-use';
+        return null;
+      }
       if (!isVote(e.item)) return 'unknown-kind';
       const v = e.item;
       if (!String(v.proposal ?? '').trim()) return 'no-proposal';
       if (!choiceOf(v.choice)) return 'bad-choice';
-      const delegated = !!holonKey && e.pubkey.toLowerCase() === holonKey && !!v.onBehalfOf;
-      if (delegated) {
-        if (String(v.onBehalfOf) !== String(v.party)) return 'party-mismatch';
-      } else {
-        const actsFor = partyOf(e.pubkey, e.created_at);
-        if (!actsFor) return 'unknown-party';
-        if (actsFor !== String(v.party)) return 'party-mismatch';
-      }
-      const closes = input.closesAt?.(String(v.proposal));
+      const party = partyCheck(e, v);
+      if (party) return party;
+      const eq = state.equations.get(String(v.proposal));
+      const closes = eq ? Math.floor(eq.closesAt / 1000) : input.closesAt?.(String(v.proposal));
       if (closes != null && Number.isFinite(Number(closes)) && e.created_at > Number(closes)) return 'late';
       return null;
     },
     fold: (state, e) => {
+      if (isEquationProposal(e.item)) {
+        const p = e.item;
+        const id = String(p.proposal).trim();
+        const createdAt = e.created_at * 1000;
+        state.equations.set(id, {
+          id,
+          entryId: e.id,
+          party: String(p.party),
+          pubkey: e.pubkey,
+          ...(p.title ? { title: String(p.title) } : {}),
+          patch: sanitizeEquationPatch(p.patch)!,
+          ...(p.from != null ? { from: migrateEquation(p.from) } : {}),
+          createdAt,
+          closesAt: equationClosesAt(createdAt),
+        });
+        return state;
+      }
       const v = e.item as VoteBody;
       state.latest.set(`${v.proposal}|${v.party}`, e.id);
+      state.voted.add(String(v.proposal));
       return state;
     },
   });
@@ -233,6 +344,7 @@ export function foldVotes(input: FoldVotesInput): FoldedVotes {
   return {
     votes,
     ballots,
+    equations: [...result.state.equations.values()],
     accepted: result.accepted,
     source: result.source,
     policy: result.policy,

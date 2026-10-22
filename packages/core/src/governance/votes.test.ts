@@ -7,7 +7,8 @@ import { bootstrapActors } from '../protocol/membership.js';
 import { membershipOp, shuffled, signedEntry, testKey } from '../protocol/testing.js';
 import type { LogEvent } from '../protocol/types.js';
 import { tallyBallots, tallyProposal } from './tally.js';
-import { ballotsFor, buildVote, buildVoteVerdict, foldVotes, foldVotesFromLenses, voteOf } from './votes.js';
+import { equationClosesAt } from './equation.js';
+import { ballotsFor, buildEquationProposal, buildVote, buildVoteVerdict, foldVotes, foldVotesFromLenses, voteOf } from './votes.js';
 
 const T0 = 1_760_000_000;
 const holon = testKey();
@@ -117,6 +118,63 @@ describe('foldVotes', () => {
     expect(ctx.policy.quorum).toBe(0);
     expect(ctx.folded.ballots).toEqual({ p1: { bob: 'yes' } });
     expect(ctx.folded.votes[0].delegated).toBe(true);
+  });
+});
+
+describe('equation proposals in the votes log', () => {
+  const propose = (sk: Uint8Array, party: string, patch: object, at: number, proposal = 'eq1') =>
+    entry(sk, buildEquationProposal({ proposal, party, patch }), at);
+  const closeS = Math.floor(equationClosesAt(T0 * 1000) / 1000);
+
+  it('the signed entry is the proposal: its time fixes the close, and votes after it are late', () => {
+    const p = propose(ada.sk, 'ada', { participation: 2 }, T0);
+    const yes = entry(bob.sk, buildVote({ proposal: 'eq1', choice: 'yes', party: 'bob' }), closeS);
+    const late = entry(ada.sk, buildVote({ proposal: 'eq1', choice: 'yes', party: 'ada' }), closeS + 1);
+    const f = foldVotes({ entries: [p, yes, late], actors: actors(), partyOf });
+    expect(f.equations).toEqual([
+      expect.objectContaining({ id: 'eq1', entryId: p.id, party: 'ada', patch: { participation: 2 }, createdAt: T0 * 1000, closesAt: equationClosesAt(T0 * 1000) }),
+    ]);
+    expect(f.votes.map((v) => [v.party, v.status, v.reason ?? null])).toEqual([
+      ['bob', 'counted', null],
+      ['ada', 'rejected', 'late'],
+    ]);
+  });
+
+  it('cannot be rewritten: a second entry for the same id changes nothing, the deadline included', () => {
+    const p = propose(ada.sk, 'ada', { participation: 2 }, T0);
+    const yes = entry(bob.sk, buildVote({ proposal: 'eq1', choice: 'yes', party: 'bob' }), T0 + 10);
+    const rewrite = propose(bob.sk, 'bob', { participation: 50 }, T0 + 20);
+    const ownRewrite = propose(ada.sk, 'ada', { participation: 50 }, T0 + 30 * 86400);
+    const f = foldVotes({ entries: shuffled([p, yes, rewrite, ownRewrite]), actors: actors(), partyOf });
+    expect(f.equations).toHaveLength(1);
+    expect(f.equations[0]).toMatchObject({ entryId: p.id, patch: { participation: 2 }, closesAt: equationClosesAt(T0 * 1000) });
+    expect(f.ballots).toEqual({ eq1: { bob: 'yes' } });
+  });
+
+  it('cannot take over an id that already has votes', () => {
+    const fundingYes = entry(bob.sk, buildVote({ proposal: 'fund', choice: 'yes', party: 'bob' }), T0);
+    const hijack = propose(ada.sk, 'ada', { participation: 50 }, T0 + 1, 'fund');
+    expect(foldVotes({ entries: [fundingYes, hijack], actors: actors(), partyOf }).equations).toEqual([]);
+  });
+
+  it('is signed by its proposer: not for someone else, not by a stranger, not with a junk patch', () => {
+    const forBob = propose(ada.sk, 'bob', { participation: 2 }, T0, 'a');
+    const nobody = propose(stranger.sk, 'ada', { participation: 2 }, T0, 'b');
+    const junk = entry(ada.sk, { item: { t: 'action', kind: 'equation', proposal: 'c', party: 'ada', patch: { participation: 'lots' } } }, T0);
+    expect(foldVotes({ entries: [forBob, nobody, junk], actors: actors(), partyOf }).equations).toEqual([]);
+    expect(() => buildEquationProposal({ proposal: 'x', party: 'ada', patch: {} })).toThrow();
+  });
+
+  it("a partner's equation proposal never folds here", () => {
+    const partnerKey = testKey();
+    const pam = testKey();
+    const partnerLog = [
+      membershipOp({ sk: partnerKey.sk, op: 'genesis', created_at: T0 - 100, holon: 'P' }),
+      membershipOp({ sk: partnerKey.sk, op: 'add', pubkey: pam.pk, role: 'member', created_at: T0 - 90, holon: 'P' }),
+    ];
+    const theirs = entry(pam.sk, buildEquationProposal({ proposal: 'eqP', party: 'P', patch: { sent: 9 } }), T0, 'P');
+    const imported = importPartnerLog({ holon: 'P', genesis: partnerKey.pk, entries: [theirs], membersLog: partnerLog }, 'governance_votes');
+    expect(foldVotes({ entries: [], actors: actors(), partyOf, imports: [imported] }).equations).toEqual([]);
   });
 });
 

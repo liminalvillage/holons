@@ -190,15 +190,30 @@ export async function loadEquation(
 }
 
 /**
- * Refresh equation cache from holosphere settings.
+ * Refresh equation cache from the holon.
  *
- * Reads `settings.valueEquation` (new) or `settings.equation` (legacy),
- * runs `migrateEquation()` so callers always see `currencies.hour` set.
+ * The equation in force is what the holon's votes decided
+ * (`@holons/core/governance` `loadGovernedEquation`): the base in settings
+ * until the first equation vote passes, the votes after. A host that cannot
+ * read the votes log (a bare lens store) falls back to the settings alone:
+ * `settings.valueEquation` (new) or `settings.equation` (legacy), through
+ * `migrateEquation()` so callers always see `currencies.hour` set.
  */
 async function refreshEquationCache(
   holosphere: any,
   holonId: string,
 ): Promise<ScoreEquation> {
+  if (typeof holosphere?.getLog === 'function') {
+    try {
+      // Imported lazily: governance reads scoring, so a static import would cycle.
+      const { loadGovernedEquation } = await import('../governance/equation-load.js');
+      const { equation } = await loadGovernedEquation(holosphere, String(holonId));
+      equationCache.set(holonId, equation);
+      return equation;
+    } catch {
+      // Fall through to the settings read.
+    }
+  }
   try {
     const settings = await holosphere.get(holonId, 'settings', holonId);
     const raw = settings?.valueEquation ?? settings?.equation;
@@ -261,6 +276,9 @@ export function parseCurrencyCodes(
  * `id` is stamped so the record collides with the bot's settings doc (read via
  * `get(holonId, 'settings', holonId)`) instead of forking a second one.
  *
+ * Once the holon's votes have taken the equation over (a proposal passed),
+ * this refuses: the field would be ignored by every reader.
+ *
  * Returns the equation as it was actually stored.
  */
 export async function saveEquation(
@@ -268,6 +286,10 @@ export async function saveEquation(
   holonId: string,
   equation: ScoreEquation,
 ): Promise<ScoreEquation> {
+  if (typeof holosphere?.getLog === 'function') {
+    const { assertEquationEditable } = await import('../governance/equation-load.js');
+    await assertEquationEditable(holosphere, String(holonId));
+  }
   const migrated = migrateEquation(equation);
   const currencies: Record<string, number> = {};
   for (const [code, weight] of Object.entries(migrated.currencies ?? {})) {
@@ -330,11 +352,10 @@ export function subscribeToEquationChanges(
   const existing = equationSubscriptions.get(holonId);
   if (existing) return existing;
 
-  const sub = holosphere.subscribe(holonId, 'settings', (settings: any) => {
-    const raw = settings?.valueEquation ?? settings?.equation;
-    if (raw) {
-      equationCache.set(holonId, migrateEquation(raw));
-    }
+  // A settings change may move the base; fold again rather than trusting it,
+  // since once the holon governs its equation by vote, settings no longer do.
+  const sub = holosphere.subscribe(holonId, 'settings', () => {
+    refreshEquationCache(holosphere, holonId).catch(() => {});
   });
 
   const unsubscribe = () => {

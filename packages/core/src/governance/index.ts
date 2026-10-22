@@ -44,14 +44,19 @@ export {
   GOVERNANCE_VOTES_LENS,
   VOTE_CHOICES,
   ballotsFor,
+  buildEquationProposal,
   buildVote,
   buildVoteVerdict,
   foldVotes,
   foldVotesFromLenses,
+  isEquationProposal,
   isVote,
   voteOf,
   type Ballots,
+  type BuildEquationProposalInput,
   type BuildVoteInput,
+  type EquationEntry,
+  type EquationProposalBody,
   type FoldVotesInput,
   type FoldedVotes,
   type Vote,
@@ -76,3 +81,22 @@ export {
   type ExecuteStoreLike,
   type FundableProposal,
 } from './treasury.js';
+
+export {
+  EQUATION_GOVERNED_MESSAGE,
+  EQUATION_WEIGHT_KEYS,
+  MIN_OPEN_MS,
+  applyEquationPatch,
+  equationChanges,
+  equationClosesAt,
+  foldEquation,
+  sanitizeEquationPatch,
+  type EquationChange,
+  type EquationPatch,
+  type EquationProposalState,
+  type EquationWeightKey,
+  type FoldEquationInput,
+  type GovernedEquation,
+} from './equation.js';
+
+export { assertEquationEditable, loadGovernedEquation } from './equation-load.js';
