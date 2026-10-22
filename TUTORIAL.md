@@ -18,13 +18,13 @@ If those two are green, your environment is correct.
 ## Step 2 — Run the web UI
 
 ```bash
-cp apps/web/.env.example apps/web/.env
+cp .env.example .env         # one root .env serves every app
 pnpm dev
 ```
 
 Open <http://localhost:5173>. You're looking at `holons-web` reading from a
-Holosphere (GUN) namespace. No keys are required just to boot the UI; features
-like maps need their token (`VITE_MAPBOX_TOKEN`) in `apps/web/.env`.
+Holosphere namespace. No keys are required just to boot the UI; features
+like maps need their token (`VITE_MAPBOX_TOKEN`) in the root `.env`.
 
 ## Step 3 — Find the logic, not the pixels
 
@@ -88,7 +88,7 @@ git push -u origin feat/scoring-tutorial
 ```
 
 `-s` adds your `Signed-off-by:` line, which records acceptance of the
-[CLA](./CLA.md). Open a pull request against `main` using the template and
+[CLA](./CLA.md). Open a pull request against `dev` using the template and
 fill in *what* and *why*.
 
 ## What you just learned
@@ -96,7 +96,7 @@ fill in *what* and *why*.
 - **Core-first:** change meaning in `@holons/core`, presentation in the UI.
 - **Test-first:** every domain change ships with a `vitest` spec.
 - **One gate:** `typecheck`, `test`, `lint` must pass from a clean clone.
-- **One data layer:** Holosphere (GUN) is the source of truth; UIs are renderers.
+- **One data layer:** Holosphere (signed events on relays) is the source of truth; UIs are renderers.
 
 Next: skim [`docs/architecture.md`](./docs/architecture.md) for the full
 picture, and [`CONTRIBUTING.md`](./CONTRIBUTING.md) for conventions.

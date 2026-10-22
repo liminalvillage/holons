@@ -19,9 +19,9 @@
 	let store: Record<string, Quest> = {};
 	$: quests = Object.entries(store);
 
-	// Live-subscription handles. `questsSub` is the Gun listener; it MUST be
+	// Live-subscription handles. `questsSub` is the store listener; it MUST be
 	// torn down before re-subscribing (and on destroy) or every holon switch
-	// leaks a `.map().on()` callback that Gun keeps forever. `idUnsub` is the
+	// leaks a watch callback that the store keeps forever. `idUnsub` is the
 	// manual ID-store subscription that drives the re-subscribe.
 	let idUnsub: (() => void) | undefined;
 	let questsSub: { unsubscribe: () => void } | undefined;
@@ -65,7 +65,7 @@
 	});
 
 	function subscribe() {
-		// Tear down any previous Gun listener before opening a new one so a
+		// Tear down any previous store listener before opening a new one so a
 		// holon switch (or repeated calls) can't stack listeners.
 		questsSub?.unsubscribe();
 		questsSub = undefined;

@@ -18,12 +18,40 @@ import {
   getPublicKey as ntGetPublicKey,
   generateSecretKey as ntGenerateSecretKey,
 } from 'nostr-tools/pure';
-import { hexToBytes } from '@noble/hashes/utils';
+import { hexToBytes, bytesToHex } from '@noble/hashes/utils';
+import * as nip19 from 'nostr-tools/nip19';
 
 /** Default kind: app-specific parameterized-replaceable (NIP-33 range). */
 export const HOLOSPHERE_KIND = 30078;
 
-const toBytes = (sk) => (typeof sk === 'string' ? hexToBytes(sk) : sk);
+/**
+ * Normalize a secret key given as 64-char hex, NIP-19 `nsec1…` or raw
+ * bytes. Strings come back as hex, bytes as-is — so callers can keep
+ * whichever shape they hold while accepting the nsec form everywhere.
+ */
+export function normalizeSecretKey(sk) {
+  if (sk == null || sk === '') return sk;
+  if (typeof sk !== 'string') return sk;
+  const v = sk.trim();
+  if (/^nsec1[02-9ac-hj-np-z]+$/i.test(v)) {
+    const { type, data } = nip19.decode(v.toLowerCase());
+    if (type !== 'nsec') throw new Error(`secret key: expected an nsec, got ${type}`);
+    return bytesToHex(data);
+  }
+  if (!/^[0-9a-f]{64}$/i.test(v)) throw new Error('secret key: expected 64 hex chars or an nsec1… string');
+  return v.toLowerCase();
+}
+
+/** NIP-19 `nsec1…` encoding of a secret key (hex, nsec or bytes). */
+export function toNsec(sk) {
+  const n = normalizeSecretKey(sk);
+  return nip19.nsecEncode(typeof n === 'string' ? hexToBytes(n) : n);
+}
+
+const toBytes = (sk) => {
+  const n = normalizeSecretKey(sk);
+  return typeof n === 'string' ? hexToBytes(n) : n;
+};
 const nowSec = () => Math.floor(Date.now() / 1000);
 
 /** Generate a fresh secret key (Uint8Array). */
@@ -48,9 +76,11 @@ export function getEventHash(event) {
  * @param {string} params.lens  - lens name
  * @param {object} params.item  - item payload (must carry an `id`)
  * @param {string|Uint8Array} params.sk - author secret key
+ * @param {string} [params.content] - override for the content string (sealed
+ *   payloads, see store/sealed.js); the d-tag still comes from `item.id`
  * @returns {object} signed NIP-01 event whose content is the item JSON
  */
-export function buildEvent({ holon, lens, item, sk, kind = HOLOSPHERE_KIND, created_at, extraTags = [] }) {
+export function buildEvent({ holon, lens, item, sk, kind = HOLOSPHERE_KIND, created_at, extraTags = [], content }) {
   if (!holon || !lens) throw new Error('buildEvent: holon and lens are required');
   if (!item || !item.id) throw new Error('buildEvent: item.id is required (becomes the d-tag)');
 
@@ -70,7 +100,7 @@ export function buildEvent({ holon, lens, item, sk, kind = HOLOSPHERE_KIND, crea
         ['d', `${holon}/${lens}/${item.id}`],
         ...extraTags,
       ],
-      content: JSON.stringify(item),
+      content: typeof content === 'string' ? content : JSON.stringify(item),
     },
     toBytes(sk),
   );
@@ -129,7 +159,73 @@ export function tag(event, name) {
   return t ? t[1] : undefined;
 }
 
+// ---------------------------------------------------------------- log entries
+
+/**
+ * Append-only log entries ride a REGULAR kind (NIP-01 1000–9999: stored,
+ * never replaced), so every signed entry survives next to every other. The
+ * store addresses each one by its event id. 1808 is unassigned in the NIP
+ * registry.
+ */
+export const HOLOSPHERE_LOG_KIND = 1808;
+
+/** The `e`-tag markers a log entry uses to point at other entries. */
+export const LOG_REF_MARKERS = ['prev', 'basis', 'attests', 'disputes'];
+
+/** `{ prev: id, basis: [ids] }` or `[{ id, marker }]` → `[{ id, marker }]`. */
+function normalizeRefs(refs) {
+  const out = [];
+  if (!refs) return out;
+  if (Array.isArray(refs)) {
+    for (const r of refs) {
+      if (!r) continue;
+      if (typeof r === 'string') out.push({ id: r, marker: '' });
+      else if (r.id) out.push({ id: String(r.id), marker: r.marker ? String(r.marker) : '' });
+    }
+    return out;
+  }
+  for (const [marker, v] of Object.entries(refs)) {
+    for (const id of Array.isArray(v) ? v : [v]) if (id) out.push({ id: String(id), marker });
+  }
+  return out;
+}
+
+/**
+ * Build + sign a log entry (kind 1808). Tags: `h`, `l`, one `['e', id, '',
+ * marker]` per ref, then `extraTags` (the caller adds the `n` namespace tag,
+ * as for `buildEvent`). The body's `id` and `_log` are dropped: a log entry's
+ * id IS its event id, and `_log` is what the store's decode adds.
+ */
+export function buildLogEvent({ holon, lens, item, sk, created_at, refs, extraTags = [] }) {
+  if (!holon || !lens) throw new Error('buildLogEvent: holon and lens are required');
+  if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('buildLogEvent: item must be an object');
+  const { id: _id, _log: _meta, ...body } = item;
+  const tags = [['h', String(holon)], ['l', String(lens)]];
+  for (const { id, marker } of normalizeRefs(refs)) tags.push(['e', id, '', marker]);
+  tags.push(...extraTags);
+  return finalizeEvent(
+    {
+      kind: HOLOSPHERE_LOG_KIND,
+      created_at: created_at ?? nowSec(),
+      tags,
+      content: JSON.stringify(body),
+    },
+    toBytes(sk),
+  );
+}
+
+/** The entries a log event points at, by marker (`other` for unmarked `e` tags). */
+export function logRefs(event) {
+  const out = { prev: [], basis: [], attests: [], disputes: [], other: [] };
+  for (const t of event?.tags || []) {
+    if (t[0] !== 'e' || typeof t[1] !== 'string') continue;
+    const marker = t[3] || '';
+    (LOG_REF_MARKERS.includes(marker) ? out[marker] : out.other).push(t[1]);
+  }
+  return out;
+}
+
 export default {
-  HOLOSPHERE_KIND, generateSecretKey, getPublicKey, getEventHash,
-  buildEvent, signEvent, verifyEvent, eventToItem, tag,
+  HOLOSPHERE_KIND, HOLOSPHERE_LOG_KIND, generateSecretKey, getPublicKey, getEventHash,
+  buildEvent, buildLogEvent, logRefs, signEvent, verifyEvent, eventToItem, tag,
 };

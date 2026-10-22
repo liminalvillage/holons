@@ -21,6 +21,17 @@ produces. It already exists; nobody has to fill in a form or "join a
 marketplace." This network publishes that signal — **by consent, to a chosen
 radius** — and lets nearby producers answer it directly.
 
+Not every need is groceries. "Learn guitar", "a ladder for a week", "a ride
+to town on Friday" never reach a shopping list, so the network is
+**demand-first**: a need can be asked for directly (`createNeed` in
+`@holons/core/needs`, the kiosk's *Ask for something*, the MCP `need_create`
+tool), carrying `demand: {quantity, unit}` in the requester's own measure. A
+time unit makes it a service. The shopping list remains the zero-effort
+source: behind a per-holon switch (`settings.shopping.autoNeed`, on by
+default, the twin of the shelf's surplus offers) whatever is still to buy
+stands as a need, fulfilled when the row is checked off, taken back when the
+row leaves the list before anyone answered (`syncNeedsFromShopping`).
+
 The economics are deliberately simple: a published need is a **commitment to
 purchase at market price**. The buyer pays what they would have paid at the
 store; the producer earns the retail price instead of the farm-gate price.
@@ -34,7 +45,7 @@ invented for it.
 
 - **Holons and lenses.** Every group is a holon; every data type is a lens
   (`quests`, `needs`, `library`, `checklists`, …) namespaced under it in the
-  Holosphere GUN graph — peer-to-peer and local-first.
+  Holosphere store — signed events on relays, local-first.
 - **Every H3 cell is a holon.** Geography is addressable: an H3 hexagon id is
   a valid holon id (`app/<cellId>/<lens>`), so "the map" is just holons at
   geographic addresses, from res 0 (continental) to res 14 (doorstep).
@@ -78,30 +89,48 @@ streets away before buying one. Needs and existing resources become two layers
 of the same geographic picture: *what is wanted here* and *what is available
 here*.
 
-## 5. Provider response and disintermediation
+## 5. One shape for every commitment
 
-Any holon that can see a need — via federation or the public map — can
-**respond** to it: a message ("fresh eggs, can deliver Friday") with an
-optional price. Responses are embedded on the need record (the same pattern as
-library bookings) and written via `sourceRef`, so they reach the requester's
-holon regardless of where the responder saw the need. The first response flips
-the need to `offered`; several providers may respond; the requester's board
+Every commitment is an **offer and a need joined by a reservation**. There
+is one move on each side, and each side's move creates the record the other
+side would otherwise have to write:
+
+- A provider **answers** a need (`answerNeed`): from a standing offer when
+  one stands, otherwise by raising an offer for exactly what the need asks —
+  its title, category, unit and quantity, `source: {kind:'need'}` pointing
+  back — and answering from that. The need gets a response naming the offer;
+  the offer holds a reservation. The promise shows in the provider's supply
+  and cannot be promised twice.
+- A requester **requests** an offer (`requestOffer`): a need is published on
+  their holon naming the offer (`wants`), the matcher leans that way, and the
+  provider's one tap answers it. Nothing is written on the provider's side
+  until the provider acts.
+
+Responses are embedded on the need record (the same pattern as library
+bookings) and written via `sourceRef`, so they reach the requester's holon
+regardless of where the responder saw the need. The first response flips the
+need to `offered`; several providers may respond; the requester's board
 updates live with no notification infrastructure needed.
 
-Fulfillment stays conversational by design in this phase — the network's job
-is *visibility and matchmaking*, not escrow. Trust is local; the parties
-close the loop themselves, and checking off the shopping item records the
-outcome.
+When the requester **claims** one response, the others are released
+(`releaseNeedReservations`): a standing offer gets its units back, an offer
+raised for this need alone is withdrawn. Nobody accumulates stray standing
+offers for asks that went elsewhere. The handoff then settles the winning
+reservation and moves the stock on both ledgers.
 
-## 6. The need → offer flywheel *(next phase)*
+Fulfillment stays conversational by design — the network's job is
+*visibility and matchmaking*, not escrow. Trust is local; the parties close
+the loop themselves with the handoff code.
+
+## 6. The need → offer flywheel
 
 Every fulfilled need is proof of capability: someone actually delivered eggs
-in this hexagon. On fulfillment, the network mints a standing **offer**
-attributed to the provider — published to their own holon and optionally
-their hex. Providers therefore accrue a discoverable catalog **by fulfilling,
-not by listing**: reputation is earned through delivery. Over time the map's
-offers layer becomes an accurate, self-maintaining directory of who actually
-produces what, where.
+in this hexagon. Because every answer is an offer, that proof is the offer
+itself — raised for the need, fulfilled on the provider's own holon, never
+pushed further unless the provider shares it. Providers therefore accrue a
+record **by fulfilling, not by listing**: reputation is earned through
+delivery. (An earlier phase minted a separate standing offer at settlement;
+that record is gone — the answering offer is the catalog entry.)
 
 ## 7. Solidarity purchase groups *(later phase)*
 
@@ -123,8 +152,8 @@ day it is suddenly needed for blankets, water, or a rescue location.
 - The record type doesn't change — an urgent need is a need with an
   `urgency` field, cross-posted to the `announcements` lens of the hex and
   its partners, and rendered with priority on the map.
-- The infrastructure is the part designed to survive: GUN sync is local-first
-  and peer-to-peer, so the neighborhood's data lives *in the neighborhood*,
+- The infrastructure is the part designed to survive: the store is local-first
+  and any relay can carry the signed events, so the neighborhood's data lives *in the neighborhood*,
   not in a cloud that may be unreachable. And the providers the network
   surfaces are precisely the ones that keep functioning when long supply
   chains fail — they are three kilometers away.
@@ -167,3 +196,13 @@ shopping item carries `needId` back to the need.
 
 MCP surface: `need_publish_from_shopping_item`, `need_respond`, `need_close`,
 `needs_list_at_hex`.
+
+**Any lens can now do this.** What `publishNeedNearby` hand-rolls for needs is
+available to every lens by linking the home hex as a federation partner: tick
+the lenses on the Federation page, set a reach, and ordinary writes place
+themselves on the map at that many zoom levels. Needs keep their own path
+because they publish to partners and the map with different consent and a
+cross-lens soul (`quests` record, `needs` layer); everything else should use the
+home-hex link rather than growing a second bespoke publisher. See
+`@holons/core/federation` (`setHomeHexLink`) and the *home hex* section of
+`packages/holosphere/FEDERATION.md`.

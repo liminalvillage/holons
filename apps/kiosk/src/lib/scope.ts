@@ -3,7 +3,7 @@
 // Scope filtering over raw lens records. The subscription layer already gates
 // partner data (`includeFederated` follows the scope), but its purge after a
 // networked→local flip arrives on the next re-emit; filtering here makes the
-// Show pill instant. Keyed on `_federation.origin` ONLY: `_hologram` records
+// Show federated switch instant. Keyed on `_federation.origin` ONLY: `_hologram` records
 // are local pointers deliberately placed in this holon and must stay visible
 // in every scope, even though they render with a source chip.
 

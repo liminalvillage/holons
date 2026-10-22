@@ -14,21 +14,40 @@
  *
  *   interior — `interiorPercent` of the pot, divided among members in
  *              proportion to their contribution score
- *   exterior — the remainder, divided across `nzones` rings by a geometric
- *              decay, then evenly among the federated partners in each ring
+ *   exterior — the remainder, divided among the federated partners placed in
+ *              `nzones` rings: each partner carries its ring's geometric decay
+ *              weight and shares are normalized over placed partners only,
+ *              the same rule the retired Bundle contract applied on-chain
  *
  * The on-chain contract remains the authority wherever a bundle is deployed;
- * `readAllocationConfig` is the off-chain mirror that wallet-less surfaces read.
+ * `readAllocationConfig` is the off-chain mirror that wallet-less surfaces read,
+ * and this math is kept in lockstep with the contract so the mirror shows what
+ * the chain would pay (pinned by the Sepolia-parity cases in the spec).
  */
 
-/** The three knobs that shape the split. */
+/**
+ * How the contributors' share is divided among members.
+ *
+ *   equation — by contribution score, as the holon's value equation ranks
+ *              them (the default, and the only way it used to work)
+ *   custom   — by a hand-set share per member (`interiorShares`), with the
+ *              equation split offered as the starting point to copy from
+ */
+export type InteriorMode = 'equation' | 'custom';
+
+/** The knobs that shape the split. */
 export interface AllocationConfig {
   /** 0..100. The exterior gets whatever is left. */
   interiorPercent: number;
   /** 0..100 UI scale. Higher means a flatter spread across zones. */
   steepness: number;
   nzones: number;
+  /** Absent means `equation`. */
+  interiorMode?: InteriorMode;
 }
+
+/** A custom interior split: member id → share weight (0..100, need not sum). */
+export type InteriorShares = Record<string, number>;
 
 export interface AllocationSlice {
   id: string;
@@ -67,12 +86,15 @@ export interface AllocationPartner {
   id: string;
   name: string;
   zone: number;
+  /** A federation partner holon, or a person placed on a ring. Absent means holon. */
+  kind?: 'holon' | 'person';
 }
 
 export const DEFAULT_ALLOCATION_CONFIG: AllocationConfig = {
   interiorPercent: 50,
   steepness: 50,
   nzones: 6,
+  interiorMode: 'equation',
 };
 
 /**
@@ -128,7 +150,91 @@ export function normalizeAllocationConfig(raw: unknown): AllocationConfig {
     0,
     Math.floor(num(doc.nzones, DEFAULT_ALLOCATION_CONFIG.nzones)),
   );
-  return { interiorPercent, steepness, nzones };
+  const interiorMode: InteriorMode = doc.interiorMode === 'custom' ? 'custom' : 'equation';
+  return { interiorPercent, steepness, nzones, interiorMode };
+}
+
+/** Only members with a usable positive share survive; anything else is "not in". */
+export function normalizeInteriorShares(raw: unknown): InteriorShares {
+  const shares: InteriorShares = {};
+  for (const [id, value] of Object.entries((raw ?? {}) as Record<string, unknown>)) {
+    const share = Number(value);
+    if (id && Number.isFinite(share) && share > 0) shares[id] = share;
+  }
+  return shares;
+}
+
+/**
+ * What each hand-set share comes to, as a percentage of the split.
+ *
+ * Shares are weights: 1/2/3, 50/25/25 or 33.3/33.3/33.3 all describe a split,
+ * and `allocate` reads them against their own sum. This is that same reading
+ * for an editor to show beside the box — so a caretaker can type plain
+ * numbers and see the percentages they amount to. Full precision; the caller
+ * rounds for display. An empty or all-zero split has no percentages.
+ */
+export function interiorSharePercentages(shares: InteriorShares | null | undefined): Record<string, number> {
+  const clean = normalizeInteriorShares(shares);
+  const total = Object.values(clean).reduce((s, v) => s + v, 0);
+  const out: Record<string, number> = {};
+  if (total <= 0) return out;
+  for (const [id, share] of Object.entries(clean)) out[id] = (share / total) * 100;
+  return out;
+}
+
+/**
+ * The equation split as a custom one — what "copy from the value equation"
+ * hands the editor.
+ *
+ * The percentages are carried over EXACTLY as `normalizeShares` produced
+ * them, with no rounding and no renormalizing of its own. That is the whole
+ * point: a copied split has to draw the same diagram and pay the same shares
+ * as the equation it came from, and an editor that rounded here would show a
+ * member 4.1% beside an equation hint reading 4.2%. Shares are read in
+ * proportion to each other (`allocate` normalizes them against their own sum),
+ * so they need no tidying to be a valid split — only the display rounds, and
+ * it rounds the equation figure and the copied one the same way.
+ *
+ * Members with no positive share are left out: a split is a list of who gets
+ * something.
+ */
+export function sharesFromMembers(members: AllocationMember[]): InteriorShares {
+  const shares: InteriorShares = {};
+  for (const member of uniqueById(members ?? [])) {
+    if (Number.isFinite(member.percentage) && member.percentage > 0) {
+      shares[member.id] = member.percentage;
+    }
+  }
+  return shares;
+}
+
+/**
+ * The members the contributors' share is divided among, by the configured mode.
+ *
+ * `equation` returns the scored roster as is. `custom` builds the roster from
+ * the shares map, naming each member from the scored roster when it is there
+ * and through `nameOf` otherwise (someone hand-added who has no score yet).
+ * A custom split with nobody in it is not a split: the equation stands until
+ * someone is entered, so a half-configured holon never pays its interior to
+ * no one — on the mirror or on the chain, which reads the same roster.
+ */
+export function resolveInteriorMembers(input: {
+  config: Pick<AllocationConfig, 'interiorMode'>;
+  scored: AllocationMember[];
+  shares?: InteriorShares | null;
+  nameOf?: (id: string) => string | undefined;
+}): AllocationMember[] {
+  const scored = uniqueById(input.scored ?? []);
+  if (input.config?.interiorMode !== 'custom') return scored;
+  const shares = normalizeInteriorShares(input.shares);
+  const ids = Object.keys(shares);
+  if (ids.length === 0) return scored;
+  const named = new Map(scored.map((m) => [m.id, m.name]));
+  return ids.map((id) => ({
+    id,
+    name: named.get(id) || input.nameOf?.(id) || id,
+    percentage: shares[id],
+  }));
 }
 
 /**
@@ -136,8 +242,10 @@ export function normalizeAllocationConfig(raw: unknown): AllocationConfig {
  *
  * Every returned `percentage` is a share of the whole, so the interior and
  * exterior slices together sum to 100 and their amounts sum to `total`. A zone
- * with no partners keeps its share and simply shows as unassigned — hiding it
- * would misreport how much is actually committed outward.
+ * with no partners pays nothing while others are occupied — the contract
+ * redistributes its weight to the placed partners, and the mirror must not
+ * show value going where the chain would never send it. Only when no partner
+ * is placed at all do zones keep their decay shares, as a structural preview.
  */
 function uniqueById<T extends { id: string }>(items: T[]): T[] {
   const seen = new Set<string>();
@@ -147,6 +255,30 @@ function uniqueById<T extends { id: string }>(items: T[]): T[] {
     seen.add(id);
     return true;
   });
+}
+
+/**
+ * The same split over another pot: every percentage kept, every amount
+ * re-read against `total` in `unit`. A split is a rule about shares, so a
+ * holon that holds euros AND litres divides both by the one rule — this is
+ * how a wallet prices each unit without allocating twice. `null` leaves the
+ * shape percentage-only, as `allocate` would.
+ */
+export function withPot(result: AllocationResult, total: number | null, unit: string): AllocationResult {
+  const pot = total != null && Number.isFinite(total) && total > 0 ? total : null;
+  const amountOf = (percentage: number) => (pot == null ? null : (percentage / 100) * pot);
+  const reprice = (slice: AllocationSlice): AllocationSlice => ({
+    ...slice,
+    amount: amountOf(slice.percentage),
+    ...(slice.members ? { members: slice.members.map(reprice) } : {}),
+  });
+  return {
+    ...result,
+    unit: unit ?? '',
+    total: pot,
+    interior: result.interior.map(reprice),
+    exterior: result.exterior.map(reprice),
+  };
 }
 
 export function allocate(input: {
@@ -196,16 +328,29 @@ export function allocate(input: {
     }
   }
 
-  // Exterior: split across zones by the steepness decay, then evenly among the
-  // partners in each zone.
-  const zonePercentages = calculateZonePercentages(config.steepness, config.nzones);
+  // Exterior: contract parity. The (retired) Bundle contract weighed each PLACED member
+  // by its zone's geometric decay and normalizes over those members only —
+  // an empty zone pays nothing and the whole exterior pot reaches actual
+  // partners (verified against the deployed contract on Sepolia, 2026-08-30).
+  // With nobody placed the contract retains the exterior pot, so there is no
+  // payout to mirror; the zones then keep their configured decay shares as a
+  // structural preview of the split being edited.
   const exterior: AllocationSlice[] = [];
   if (exteriorShare > 0) {
+    const decay = config.steepness / 100;
+    const weightOf = (zone: number) => Math.pow(decay, zone - 1);
+    const placed = zoned.filter((p) => p.zone >= 1 && p.zone <= config.nzones);
+    const totalWeight = placed.reduce((s, p) => s + weightOf(p.zone), 0);
+    const zonePercentages = calculateZonePercentages(config.steepness, config.nzones);
+
     for (let z = 0; z < config.nzones; z++) {
       const zone = z + 1;
-      const percentage = (zonePercentages[z] / 100) * exteriorShare;
-      const partners = zoned.filter((p) => p.zone === zone);
-      const each = partners.length > 0 ? percentage / partners.length : 0;
+      const partners = placed.filter((p) => p.zone === zone);
+      const each = totalWeight > 0 ? (weightOf(zone) / totalWeight) * exteriorShare : 0;
+      const percentage =
+        totalWeight > 0
+          ? each * partners.length
+          : (zonePercentages[z] / 100) * exteriorShare;
       exterior.push({
         id: `zone-${zone}`,
         label: `Zone ${zone}`,

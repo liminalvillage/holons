@@ -1,0 +1,32 @@
+{
+  "title": "taskchat",
+  "description": "Records stored at (holonId, 'taskchat', <id>). One message of a task's chat, kept in the task's home holon and projected as a NIP-29 kind-9 in the task's group.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "<unix ms, base36>-<random>."
+    },
+    "task": {
+      "type": "string",
+      "description": "Key of the task (quests lens, same holon) the message belongs to."
+    },
+    "text": {
+      "type": "string"
+    },
+    "at": {
+      "type": "number",
+      "description": "Wall-clock ms."
+    },
+    "author": {
+      "type": "string",
+      "description": "Writer's hex pubkey as stated by the sender; readers prefer the envelope's signer."
+    }
+  },
+  "required": [
+    "id",
+    "task",
+    "text",
+    "at"
+  ]
+}

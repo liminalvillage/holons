@@ -86,3 +86,14 @@ describe('nostr-events: signing & verification', () => {
     expect(verifyEvent({ ...ev, pubkey: victim })).toBe(false);
   });
 });
+
+describe('nostr-events: content override', () => {
+  test('a content override is signed and verifies, and the d-tag still follows item.id', async () => {
+    const { buildEvent, verifyEvent, tag, generateSecretKey } = await import('../nostr-events.js');
+    const sk = generateSecretKey();
+    const evt = buildEvent({ holon: 'h1', lens: 'quests', item: { id: 'q1', title: 'hidden' }, sk, content: '{"enc":"nip44","v":1,"kid":"abc","ct":"zzz"}' });
+    expect(verifyEvent(evt)).toBe(true);
+    expect(evt.content).not.toContain('hidden');
+    expect(tag(evt, 'd')).toBe('h1/quests/q1');
+  });
+});

@@ -50,6 +50,22 @@ const ALICE: TelegramUserLike = {
 
 const BOT: TelegramUserLike = { id: 1, is_bot: true };
 
+describe('getUserProfile remembers the holon for the person', () => {
+  it('writes the holon into the person\'s own `holons` lens the first time, and never into their own holon', async () => {
+    const db = makeFakeDB();
+    const user: TelegramUserLike = { id: 42, first_name: 'Ada' };
+    await getUserProfile(db, user, '-100');
+    const kept = (await db.getAll('42', 'holons')) as Array<{ id: string }>;
+    expect(kept.map((h) => h.id)).toEqual(['-100']);
+    // A second read is not a second join.
+    await getUserProfile(db, user, '-100');
+    expect((await db.getAll('42', 'holons')).length).toBe(1);
+    // Their personal holon is not a hub they keep.
+    await getUserProfile(db, user, '42');
+    expect((await db.getAll('42', 'holons')).length).toBe(1);
+  });
+});
+
 describe('createDefaultProfile', () => {
   it('falls back to id when no username present', () => {
     const p = createDefaultProfile({ id: 7, first_name: 'Anon' });

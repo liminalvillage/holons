@@ -6,7 +6,38 @@
  * factory + permission logic.
  */
 
-export { createHoloSphere, type CreateHoloSphereOptions } from './factory.js';
+export {
+  APPEND_LENSES,
+  createHoloSphere,
+  type CreateHoloSphereOptions,
+  type HoloSphereStoreOptions,
+  type HoloSphereNostrOptions,
+} from './factory.js';
+export {
+  CAPABILITIES,
+  GUARDED_SETTINGS_FIELDS,
+  HOLON_OWNED_GLOBAL_TABLES,
+  ROLES,
+  may,
+  requiredRole,
+  whyNot,
+  type Capability,
+} from './capabilities.js';
+export {
+  createReadAuthority,
+  resolveHolonAuthority,
+  roleOfSync,
+  writeAcceptance,
+  type WriteAcceptance,
+  type WriteStanding,
+  type AuthorityPredicate,
+  type HolonAuthority,
+  type ReadAuthority,
+  type ReadAuthorityOptions,
+  namesHolon,
+  sourceHolonOf,
+  type VouchContext,
+} from './authority.js';
 export {
   writeWithIdentity,
   createHolonWriter,
@@ -15,18 +46,27 @@ export {
   type HolonWriter,
 } from './write.js';
 export {
-  enableRelayBackup,
-  parseRelayBackupMode,
+  DEFAULT_RELAYS,
   parseRelayList,
-  type RelayBackupMode,
-  type RelayBackupOptions,
-} from './relayBackup.js';
+  resolveRelays,
+  resolveEnforce,
+} from './relays.js';
 export { canWriteToHolon, resolveActingAs, type ActingAsResolver } from './identity.js';
-export { sourceHolonId, sourceRef, recordKey } from './provenance.js';
+export {
+  createIdentityContext,
+  signerFromSecretKey,
+  type IdentityContext,
+  type NostrSigner,
+  type SignableTemplate,
+} from './signers.js';
+export { sourceHolonId, sourceRef, deleteRef, recordKey, type DeleteRef } from './provenance.js';
 export {
   HOLONS_REGISTRY_TABLE,
   buildRegistryEntry,
   registerHolon,
+  searchHolons,
+  searchRegistry,
   type HolonRegistryEntry,
+  type HolonSearchHit,
   type RegisterHolonInput,
 } from './registry.js';

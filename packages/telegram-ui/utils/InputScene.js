@@ -285,6 +285,7 @@ export default class InputScene {
         // NOTE: The ctx here is the fresh context from when the user sent their text,
         // NOT the original context from when scene.enter() was called.
         // Always use ctx.chat.id, ctx.from, etc. from this ctx parameter in your callback.
+        const entered = ctx.session?.__scenes;
         const result = await state.onComplete(ctx, finalInput);
 
         // Call the onConfirm callback if provided (for UI refresh after async operations)
@@ -294,7 +295,7 @@ export default class InputScene {
         }
 
         // Leave the scene
-        return ctx.scene.leave();
+        return this.leaveUnlessMoved(ctx, entered);
       } catch (error) {
         console.error('InputScene text handler error:', error);
 
@@ -328,13 +329,14 @@ export default class InputScene {
         // Check if location is allowed and message is location
         if (state.allowLocation && message.location) {
           await this.cleanup(ctx);
+          const entered = ctx.session?.__scenes;
           const result = await state.onComplete(ctx, message.location);
 
           // Call the onConfirm callback if provided
           if (state.onConfirm && typeof state.onConfirm === 'function') {
             await state.onConfirm(ctx, result);
           }
-          return ctx.scene.leave();
+          return this.leaveUnlessMoved(ctx, entered);
         }
 
         // Check for media
@@ -357,13 +359,14 @@ export default class InputScene {
 
           // Process media
           await this.cleanup(ctx);
+          const entered = ctx.session?.__scenes;
           const result = await state.onComplete(ctx, media);
 
           // Call the onConfirm callback if provided
           if (state.onConfirm && typeof state.onConfirm === 'function') {
             await state.onConfirm(ctx, result);
           }
-          return ctx.scene.leave();
+          return this.leaveUnlessMoved(ctx, entered);
         }
 
         // No recognized input
@@ -538,10 +541,25 @@ export default class InputScene {
     await ctx.reply(cancelText);
 
     // Call custom handler
+    const entered = ctx.session?.__scenes;
     if (state.onCancel && typeof state.onCancel === 'function') {
       await state.onCancel(ctx);
     }
 
+    return this.leaveUnlessMoved(ctx, entered);
+  }
+
+  /**
+   * Leave once the caller's callback has run — unless that callback already
+   * moved the member into another scene. Telegraf replaces the scene session
+   * object on every `enter`, so a changed object means "somewhere else now";
+   * leaving then would drop them out of the scene they were just sent to,
+   * with its prompt on screen and nothing listening for the answer.
+   * @param {object} ctx - Telegraf context
+   * @param {object} entered - `ctx.session.__scenes` from before the callback
+   */
+  leaveUnlessMoved(ctx, entered) {
+    if (ctx.session?.__scenes !== entered) return undefined;
     return ctx.scene.leave();
   }
 

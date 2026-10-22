@@ -1,14 +1,43 @@
 <script lang="ts">
   import { readHolonSettings } from '@holons/core/settings';
-  import { onMount, getContext } from 'svelte';
+  import { onMount, onDestroy, getContext } from 'svelte';
+  import { get } from 'svelte/store';
+  import { approveJoin, removeSeat, requestToJoin, watchJoinRequests, type JoinRequest } from '@holons/core/holons';
+  import {
+    completeTelegramLink,
+    federateLinkedChat,
+    linkedTelegramChats,
+    offerTelegramLink,
+    unfederateLinkedChat,
+    unlinkTelegram,
+    watchTelegramLink,
+    type LinkAccept,
+    type LinkRecord,
+  } from '@holons/core/linking';
+  import { telegramDeepLinks } from '@holons/core/onboarding';
+  import { isHolonId, isTelegramChatId } from '@holons/core/protocol';
+  import { signerFromSecretKey, writeAcceptance } from '@holons/core/holosphere';
+  import { nostrPrivateKey } from '$lib/stores/nostr';
+  import { telegramUser } from '$lib/stores/telegram';
   import { settingsStore, settingsHelpers, supportedLanguages } from '../stores/settings';
   import { skin, setSkin, accentOverride, setAccent, clearAccent, DEFAULT_ACCENT } from '$lib/stores/skin';
 
   // Colour-picker value: the active skin's custom accent, or its built-in default.
   $: accentValue = $accentOverride ?? DEFAULT_ACCENT[$skin];
   import { nameMap, resolvedName, resolveName, forceRefresh, setName } from '$lib/stores/nameResolver';
+  import { shortId } from '@holons/core/identity';
   import { registerName as hnsRegister } from '$lib/hns';
   import { nostrStore } from '$lib/stores/nostr';
+  import {
+    addHolonMember,
+    foundHolon,
+    holonMembers,
+    myHolonRole,
+    removeHolonMember,
+    syncFoundingAuthority,
+    type FoundingAuthority
+  } from '@holons/core/protocol';
+  import { nostrUtils } from 'holosphere';
   import TitleBar from './shared/TitleBar.svelte';
   import Modal from './shared/Modal.svelte';
   // HexPicker pulls in mapbox-gl (~1.9 MB); load it lazily (see {#await} below)
@@ -210,11 +239,272 @@
     }
   }
 
+  // ── Members ────────────────────────────────────────────────────────────────
+  // Who speaks for this hub (core's rule, @holons/core/protocol founding): a
+  // Telegram chat is founded by its bot; a hub started here, or one nobody has
+  // founded yet, can be founded by the signed-in member's own key — this
+  // instance signs with it — who then seats others by public key.
+  let founding: FoundingAuthority | null = null;
+  let foundBusy = false;
+  let hubKeys: Map<string, 'admin' | 'member'> = new Map();
+  let hubRole: 'admin' | 'member' | null = null;
+  let keyDraft = '';
+  let keyBusy = false;
+  // Hubs that seat members by key: founded from a screen, or born in Telegram
+  // (its bot founds the signed log). A person's own holon and a cell seat nobody.
+  const keyed = (id: string | null | undefined) => !!id && (isHolonId(id) || isTelegramChatId(id));
+  // Where the signed-in key stands here — the rule every read applies. The way
+  // in by key alone is a signed ask (kind-9021) an admin answers; the
+  // signature is the proof of holding the key, nothing else is challenged.
+  let standing: 'accepted' | 'held' | 'open' | null = null;
+  let askBusy = false;
+  let asked = new Set<string>();
+  $: askedHere = asked.has(`${holonId}|${holosphere?.currentPubkey ?? ''}`);
+  async function askSeat() {
+    const s = signer();
+    if (!holosphere || !s || askBusy) return;
+    askBusy = true;
+    try {
+      const u = get(telegramUser) as { id?: string | number; first_name?: string; username?: string } | null;
+      // A Telegram login names its Telegram id: the bot of a Telegram group
+      // proves it from the key and links a member of the group at once.
+      requestToJoin(holosphere, holonId, s, { ...publishOpts(), reason: u?.first_name || u?.username || '', telegramId: u?.id });
+      asked = new Set(asked).add(`${holonId}|${holosphere.currentPubkey}`);
+    } catch (err) {
+      console.warn('[settings] could not ask to join:', err);
+    } finally {
+      askBusy = false;
+    }
+  }
+
+  async function loadFounding(id: string) {
+    if (!holosphere) return;
+    try {
+      const auth = await syncFoundingAuthority(holosphere, id);
+      if (id !== holonId) return;
+      founding = auth;
+      if (auth.kind === 'anchored') {
+        hubRole = await myHolonRole(holosphere, id);
+        hubKeys = hubRole === 'admin' ? await holonMembers(holosphere, id) : new Map();
+        try {
+          standing = (await writeAcceptance(holosphere, id)).status;
+        } catch {
+          standing = null;
+        }
+      } else {
+        hubRole = null;
+        hubKeys = new Map();
+        standing = null;
+      }
+      void loadKeyHolonBits(id);
+    } catch (err) {
+      console.warn('[settings] could not read who founds this hub:', err);
+      founding = null;
+    }
+  }
+
+  const reasonOf = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+  // ── Members by key (NIP-29 join requests) and a linked Telegram chat ──────
+  // Both belong to holons founded from a screen (@holons/core/holons,
+  // @holons/core/linking); the signed-in member's key signs what they need.
+  const signer = () => {
+    const sk = get(nostrPrivateKey);
+    return sk ? signerFromSecretKey(sk) : null;
+  };
+  const publishOpts = () => ({ appName: holosphere?.appname as string | undefined });
+  let joinRequests: JoinRequest[] = [];
+  let stopJoins: (() => void) | null = null;
+  let dismissed = new Set<string>();
+  let telegramLinks: LinkRecord[] = [];
+  const BOT = (import.meta.env.VITE_TELEGRAM_BOT_USERNAME as string | undefined) || 'HolonsBot';
+  const LINK_KEY = 'holons_hub_link';
+  let linkPending: { hub: string; token: string; id: string; at: number } | null = null;
+  let linkUrls: { personal: string; group: string } | null = null;
+  let linkAccept: LinkAccept | null = null;
+  let linkBusy = false;
+  let linkError = '';
+  let stopLink: (() => void) | null = null;
+  onDestroy(() => {
+    stopJoins?.();
+    stopLink?.();
+  });
+
+  function watchJoins(id: string) {
+    stopJoins?.();
+    stopJoins = null;
+    joinRequests = [];
+    if (!holosphere || hubRole !== 'admin' || !keyed(id)) return;
+    stopJoins = watchJoinRequests(holosphere, id, (r) => {
+      if (id === holonId) joinRequests = r.filter((x) => !dismissed.has(x.pubkey));
+    });
+  }
+
+  async function loadKeyHolonBits(id: string) {
+    watchJoins(id);
+    if (!holosphere || !isHolonId(id)) {
+      telegramLinks = [];
+      return;
+    }
+    try {
+      const links = await linkedTelegramChats(holosphere, id);
+      if (id === holonId) telegramLinks = links;
+    } catch {
+      telegramLinks = [];
+    }
+    // A wait left pending for this hub (they left for Telegram, or reloaded).
+    try {
+      const raw = localStorage.getItem(LINK_KEY);
+      const p = raw ? JSON.parse(raw) : null;
+      if (p && p.hub === id && Date.now() - p.at < 6 * 60 * 60 * 1000) armLink(p);
+      else if (p) localStorage.removeItem(LINK_KEY);
+    } catch {
+      /* no pending link */
+    }
+  }
+
+  async function approve(req: JoinRequest) {
+    const s = signer();
+    if (!holosphere || !holonId || !s || keyBusy) return;
+    keyBusy = true;
+    try {
+      const pub = await approveJoin(holosphere, holonId, req.pubkey, s, { ...publishOpts(), name: req.reason });
+      hubKeys = new Map(hubKeys).set(pub, 'member');
+      joinRequests = joinRequests.filter((r) => r.pubkey !== pub);
+    } catch (err) {
+      showNotification(`Could not link that key — ${reasonOf(err)}`, 'error');
+    } finally {
+      keyBusy = false;
+    }
+  }
+  function decline(req: JoinRequest) {
+    dismissed = new Set(dismissed).add(req.pubkey);
+    joinRequests = joinRequests.filter((r) => r.pubkey !== req.pubkey);
+  }
+
+  function armLink(p: { hub: string; token: string; id: string; at: number }) {
+    if (!holosphere) return;
+    linkPending = p;
+    linkUrls = telegramDeepLinks(BOT, `link_${p.hub}_${p.token}`);
+    stopLink?.();
+    stopLink = watchTelegramLink(holosphere, { holon: p.hub, id: p.id }, (a) => (linkAccept = a), {
+      onFailed: () => (linkError = 'The chat answered, but its acceptance could not be verified. Try the link again.'),
+    });
+  }
+  async function startTelegramLink() {
+    if (!holosphere || !holonId || linkBusy) return;
+    linkBusy = true;
+    linkError = '';
+    try {
+      const { token, id } = await offerTelegramLink(holosphere, holonId);
+      const p = { hub: holonId, token, id, at: Date.now() };
+      localStorage.setItem(LINK_KEY, JSON.stringify(p));
+      armLink(p);
+    } catch (err) {
+      linkError = reasonOf(err);
+    } finally {
+      linkBusy = false;
+    }
+  }
+  function cancelTelegramLink() {
+    stopLink?.();
+    stopLink = null;
+    linkPending = null;
+    linkUrls = null;
+    linkAccept = null;
+    linkError = '';
+    localStorage.removeItem(LINK_KEY);
+  }
+  async function confirmTelegramLink() {
+    if (!holosphere || !holonId || !linkPending || !linkAccept || linkBusy) return;
+    linkBusy = true;
+    try {
+      const name = linkAccept.record.chat?.title?.trim() || linkAccept.chat;
+      await completeTelegramLink(holosphere, { holon: holonId, id: linkPending.id, chat: linkAccept.chat, anchor: linkAccept.anchor, name });
+      await federateLinkedChat(holosphere, holonId, linkAccept.chat, name).catch(() => {});
+      showNotification(`Linked to ${name}`, 'success');
+      cancelTelegramLink();
+      window.dispatchEvent(new CustomEvent('federationChanged'));
+      await loadFounding(holonId);
+    } catch (err) {
+      linkError = reasonOf(err);
+    } finally {
+      linkBusy = false;
+    }
+  }
+  async function unlinkChat(link: LinkRecord) {
+    if (!holosphere || !holonId || keyBusy) return;
+    keyBusy = true;
+    try {
+      const gone = await unlinkTelegram(holosphere, holonId, link.id);
+      if (gone && link.peer) await unfederateLinkedChat(holosphere, holonId, link.peer).catch(() => {});
+      telegramLinks = telegramLinks.filter((l) => l.id !== link.id);
+      showNotification('Unlinked', 'success');
+      window.dispatchEvent(new CustomEvent('federationChanged'));
+      await loadFounding(holonId);
+    } catch (err) {
+      showNotification(`Could not unlink — ${reasonOf(err)}`, 'error');
+    } finally {
+      keyBusy = false;
+    }
+  }
+
+  async function foundThisHub() {
+    if (!holosphere || !holonId || foundBusy) return;
+    foundBusy = true;
+    try {
+      await foundHolon(holosphere, holonId, { name: settings.name || undefined });
+      showNotification('Started: your key now signs for this hub', 'success');
+      await loadFounding(holonId);
+    } catch (err) {
+      showNotification(`Could not start this hub — ${reasonOf(err)}`, 'error');
+    } finally {
+      foundBusy = false;
+    }
+  }
+
+  async function addKey(role: 'admin' | 'member') {
+    const key = keyDraft.trim();
+    if (!holosphere || !holonId || !key || keyBusy) return;
+    keyBusy = true;
+    try {
+      const s = signer();
+      const pub = s ? await approveJoin(holosphere, holonId, key, s, { ...publishOpts(), role }) : await addHolonMember(holosphere, holonId, key, role);
+      hubKeys = new Map(hubKeys).set(pub, role);
+      keyDraft = '';
+    } catch (err) {
+      showNotification(`Could not link that key — ${reasonOf(err)}`, 'error');
+    } finally {
+      keyBusy = false;
+    }
+  }
+
+  async function removeKey(pub: string) {
+    if (!holosphere || !holonId || keyBusy) return;
+    keyBusy = true;
+    try {
+      const s = signer();
+      if (s) await removeSeat(holosphere, holonId, pub, s, publishOpts());
+      else await removeHolonMember(holosphere, holonId, pub);
+      const next = new Map(hubKeys);
+      next.delete(pub);
+      hubKeys = next;
+    } catch (err) {
+      showNotification(`Could not unlink that key — ${reasonOf(err)}`, 'error');
+    } finally {
+      keyBusy = false;
+    }
+  }
+
   // React to holonId changes
   $: if (holonId) {
     holosphere = getContext('holosphere');
     loadSettings();
     resolveName(holonId);
+    founding = null;
+    hubRole = null;
+    hubKeys = new Map();
+    void loadFounding(holonId);
   }
 
   // UI logic
@@ -576,7 +866,7 @@
                 <option value="">Select admin</option>
                 {#each realUsers as user}
                   <option value={user.id || user.username}>
-                    {user.first_name || user.username || `User ${user.id}`}
+                    {resolvedName(user.id ?? user.username, $nameMap, user)}
                   </option>
                 {/each}
               </select>
@@ -590,7 +880,7 @@
                     <div class="member__main">
                       <span class="member__avatar">👤</span>
                       <span class="member__name">
-                        {user.first_name || user.username || `User ${user.id}`}
+                        {resolvedName(user.id ?? user.username, $nameMap, user)}
                       </span>
                       {#if settings.admin === uid?.toString()}
                         <span class="member__badge">Admin</span>
@@ -613,6 +903,172 @@
               <p class="empty-state">No members yet.</p>
             {/if}
           </section>
+
+          <!-- Members: who is linked to this hub. One word for the whole story — a
+               Telegram chat is linked to the hub (a hub born in a chat stays linked to
+               it), a person's key is linked directly or through that chat, admins link
+               and unlink. Underneath: the signed `_members` log and kind-9021 asks. -->
+          <section class="settings-section">
+            <h3 class="settings-section__title">Members</h3>
+            {#if founding?.kind === 'anchored'}
+              {#if keyed(holonId) && standing === 'held'}
+                <p class="hub-key__note hub-key__note--warn">
+                  You (<strong>{resolvedName(holosphere?.currentPubkey ?? '', $nameMap)}</strong>) aren't linked to this hub yet,
+                  so only this device sees your changes. Ask below — the ask is signed by your key, nothing else is needed.
+                  {#if isTelegramChatId(holonId)}
+                    Or link this key to your Telegram account: send <code>/key</code> to the bot in a private chat.
+                  {/if}
+                </p>
+                {#if askedHere}
+                  <p class="hub-key__note">
+                    {isTelegramChatId(holonId) && String(holonId).startsWith('-')
+                      ? 'Asked — the admins were told in the Telegram group.'
+                      : 'Asked — an admin links your key.'}
+                  </p>
+                {:else}
+                  <button type="button" class="btn btn--primary btn--sm" disabled={askBusy || !signer()} on:click={askSeat}>
+                    Link my key
+                  </button>
+                {/if}
+              {:else if keyed(holonId) && standing === 'accepted'}
+                <p class="hub-key__note">Your key is linked to this hub: your changes count for everyone.</p>
+              {/if}
+              {#if isTelegramChatId(holonId)}
+                <p class="hub-key__note">
+                  <strong>Telegram chat</strong> · This hub started in a Telegram chat and stays linked to it: the chat's members are linked here.
+                </p>
+              {/if}
+            {:else if founding?.kind === 'self'}
+              <p class="hub-key__note">This holon is its own key.</p>
+            {:else if founding?.kind === 'bot'}
+              <p class="hub-key__note hub-key__note--warn">
+                This hub started in Telegram; its bot gives it a key the first time it runs with
+                signing on. Until then nothing can be linked to it.
+              </p>
+            {:else if founding?.kind === 'open'}
+              <p class="hub-key__note hub-key__note--warn">
+                This hub has no key of its own yet. Start it with yours: you become its first admin.
+              </p>
+              <button type="button" class="btn btn--primary btn--sm" disabled={foundBusy} on:click={foundThisHub}>
+                Start this hub with my key
+              </button>
+            {:else if founding?.kind === 'cell'}
+              <p class="hub-key__note">A cell aggregates many holons: nobody starts it.</p>
+            {:else}
+              <p class="hub-key__note">Reading the relays…</p>
+            {/if}
+
+            {#if hubRole === 'admin' && joinRequests.length}
+              <div class="settings-field">
+                <span class="settings-field__label">Asking to be linked</span>
+                <ul class="member-list">
+                  {#each joinRequests as req (req.pubkey)}
+                    <li class="member">
+                      <div class="member__main">
+                        <span class="member__avatar">🙋</span>
+                        <span class="member__name">{req.reason.trim() || resolvedName(req.pubkey, $nameMap)}</span>
+                        <code class="member__badge" title={req.pubkey}>{shortId(req.pubkey)}</code>
+                      </div>
+                      <div class="hub-key__actions">
+                        <button type="button" class="btn btn--primary btn--sm" disabled={keyBusy} on:click={() => approve(req)}>Link</button>
+                        <button type="button" class="btn btn--ghost btn--sm" disabled={keyBusy} on:click={() => decline(req)}>Dismiss</button>
+                      </div>
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
+            {#if hubRole === 'admin'}
+              <div class="settings-field">
+                <span class="settings-field__label">Linked keys</span>
+                <ul class="member-list">
+                  {#each [...hubKeys] as [pub, role] (pub)}
+                    <li class="member">
+                      <div class="member__main">
+                        <span class="member__avatar">🔑</span>
+                        <span class="member__name" title={pub}>{resolvedName(pub, $nameMap)}</span>
+                        <span class="member__badge">{role}</span>
+                        {#if founding?.kind === 'anchored' && pub === founding.anchor}
+                          <span class="member__badge">founder</span>
+                        {/if}
+                      </div>
+                      {#if pub !== holosphere?.currentPubkey}
+                        <button
+                          type="button"
+                          class="btn btn--ghost btn--sm"
+                          disabled={keyBusy}
+                          on:click={() => removeKey(pub)}
+                          title="Unlink this key"
+                        >
+                          Unlink
+                        </button>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+              <div class="settings-field">
+                <label for="hub-key-add" class="settings-field__label">Link a key</label>
+                <input
+                  id="hub-key-add"
+                  type="text"
+                  class="input"
+                  bind:value={keyDraft}
+                  placeholder="npub or hex public key"
+                  autocomplete="off"
+                  spellcheck="false"
+                  on:keydown={(e) => e.key === 'Enter' && addKey('member')}
+                />
+                <div class="hub-key__actions">
+                  <button type="button" class="btn btn--primary btn--sm" disabled={keyBusy || !keyDraft} on:click={() => addKey('member')}>
+                    Link
+                  </button>
+                  <button type="button" class="btn btn--ghost btn--sm" disabled={keyBusy || !keyDraft} on:click={() => addKey('admin')}>
+                    Link as admin
+                  </button>
+                </div>
+              </div>
+            {/if}
+          </section>
+
+          {#if hubRole === 'admin' && isHolonId(holonId)}
+            <!-- A Telegram chat linked to this hub: its members are linked here, both boards show each other. -->
+            <section class="settings-section">
+              <h3 class="settings-section__title">Telegram chat</h3>
+              <p class="hub-key__note">A linked chat's members are linked here, and its boards show here.</p>
+              {#each telegramLinks as link (link.id)}
+                <div class="member">
+                  <div class="member__main">
+                    <span class="member__avatar">💬</span>
+                    <span class="member__name" title={link.peer}>{link.name || resolvedName(link.peer, $nameMap)}</span>
+                  </div>
+                  <button type="button" class="btn btn--ghost btn--sm" disabled={keyBusy} on:click={() => unlinkChat(link)}>Unlink</button>
+                </div>
+              {/each}
+              {#if linkAccept}
+                <p class="hub-key__note">
+                  Link <strong>{linkAccept.record.chat?.title || linkAccept.chat}</strong>? The chat's members are linked here, the bot's key becomes an admin of this hub, and both boards show each other's items.
+                </p>
+                <div class="hub-key__actions">
+                  <button type="button" class="btn btn--primary btn--sm" disabled={linkBusy} on:click={confirmTelegramLink}>Link it</button>
+                  <button type="button" class="btn btn--ghost btn--sm" disabled={linkBusy} on:click={cancelTelegramLink}>Cancel</button>
+                </div>
+              {:else if linkPending && linkUrls}
+                <p class="hub-key__note">Open Telegram with one of these links as an admin of the chat. The bot answers here; nothing to copy.</p>
+                <div class="hub-key__actions">
+                  <a class="btn btn--primary btn--sm" href={linkUrls.group} target="_blank" rel="noopener">A group chat</a>
+                  <a class="btn btn--ghost btn--sm" href={linkUrls.personal} target="_blank" rel="noopener">My chat with the bot</a>
+                  <button type="button" class="btn btn--ghost btn--sm" on:click={cancelTelegramLink}>Cancel</button>
+                </div>
+                <p class="hub-key__note">Waiting for the bot…</p>
+              {:else}
+                <button type="button" class="btn btn--primary btn--sm" disabled={linkBusy} on:click={startTelegramLink}>Link a Telegram chat</button>
+              {/if}
+              {#if linkError}
+                <p class="hub-key__note hub-key__note--warn">{linkError}</p>
+              {/if}
+            </section>
+          {/if}
         {/if}
       </div>
     </div>
@@ -1037,6 +1493,24 @@
     letter-spacing: 0.04em;
   }
 
+  .hub-key__note {
+    margin: 0 0 0.75rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--text-secondary, #6b7280);
+  }
+  .hub-key__note code {
+    font-size: 0.85em;
+  }
+  .hub-key__note--warn {
+    color: var(--warning, #b45309);
+  }
+  .hub-key__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
   .empty-state {
     color: var(--color-text-muted, var(--color-text-muted));
     font-size: 0.875rem;

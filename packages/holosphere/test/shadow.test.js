@@ -1,6 +1,6 @@
 /**
  * Shadow-mode verification (Phase 1, last step): signed envelopes are stored in
- * Gun and reads are classified accounted-vs-would-drop WITHOUT changing output.
+ * the store and reads are classified accounted-vs-would-drop WITHOUT changing output.
  */
 import os from 'node:os';
 import path from 'node:path';
@@ -20,7 +20,7 @@ describe('shadow-mode verification (Phase 1)', () => {
     sphere = new HoloSphere({
       appName: 'shadow-test',
       privateKey: generateSecretKey(),
-      gunOptions: { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false },
+      store: { adapter: 'memory' },
     });
     // shadow mode (no relay needed) — stores signed envelopes locally
     await sphere.enableSigning({ relays: [], shadow: true });

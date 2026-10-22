@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors -->
 <script lang="ts">
-	// The sign-in card. Telegram is the suggested path; passkey, your own Nostr
+	// The sign-in card. Your own key is the suggested path; passkey, your own Nostr
 	// key and an Ethereum wallet are equal secondary options. Every option ends
 	// in a `login` event carrying a ProviderLogin (a usable Nostr key) — except
 	// Telegram, which is a full-page OIDC redirect (`telegram` event).
@@ -65,17 +65,22 @@
 	{:else}
 		<p class="subtitle">Your holon, your key. Pick how you'd like to sign in.</p>
 
-		<button class="telegram" type="button" disabled={!!busy} on:click={() => dispatch('telegram')}>
-			<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-				<path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
+		<button class="telegram nostr" type="button" disabled={!!busy} on:click={() => { sheet = 'nostr'; error = ''; }}>
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<circle cx="8" cy="15" r="4.5" /><path d="M11.2 11.8 20 3M16 7l2.5 2.5M13.5 9.5 16 12" />
 			</svg>
-			<span>Continue with Telegram</span>
+			<span>Sign in with your key</span>
 			<span class="pill">Recommended</span>
 		</button>
 
-		<div class="divider" role="separator"><span>or use your own key</span></div>
+		<div class="divider" role="separator"><span>or sign in another way</span></div>
 
 		<div class="tiles">
+			<ProviderTile label="Telegram" hint="Through the bot" disabled={!!busy} on:click={() => dispatch('telegram')}>
+				<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+					<path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
+				</svg>
+			</ProviderTile>
 			<ProviderTile
 				label="Passkey"
 				hint={passkeyOk ? 'Face ID, Touch ID or security key' : 'Not available in this browser'}
@@ -85,16 +90,6 @@
 			>
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
 					<circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c0-3.6 2.9-6 6.5-6 1.4 0 2.6.3 3.6.9" /><circle cx="17.5" cy="13.5" r="2.5" /><path d="M17.5 16v5l1.5-1.2M17.5 18.5l1.5 1" />
-				</svg>
-			</ProviderTile>
-			<ProviderTile
-				label="Nostr key"
-				hint="Paste an nsec or create one"
-				disabled={!!busy}
-				on:click={() => { sheet = 'nostr'; error = ''; }}
-			>
-				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-					<circle cx="8" cy="15" r="4.5" /><path d="M11.2 11.8 20 3M16 7l2.5 2.5M13.5 9.5 16 12" />
 				</svg>
 			</ProviderTile>
 			<ProviderTile
@@ -154,6 +149,9 @@
 		margin: 0 0 1.25rem;
 		font-size: 0.9375rem;
 		color: var(--color-text-secondary);
+	}
+	.telegram.nostr {
+		background: var(--accent, #0e6b66);
 	}
 	.telegram {
 		position: relative;

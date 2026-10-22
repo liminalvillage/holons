@@ -23,13 +23,12 @@
  */
 
 import type { REAEvent } from '../rea/index.js';
-import { normalizeCurrency, coerceSplitWith, type Expense } from '../expenses/index.js';
+import { normalizeCurrency, expenseSharers, type Expense } from '../expenses/index.js';
 import { readTreasuryRate, splitHours, TREASURY_ID } from '../governance/index.js';
 import type { BuildFlowsInput } from './build.js';
 import type { OpenCollectiveSnapshot } from './opencollective.js';
 import type { TrackId } from './types.js';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
+import { resolveWindow } from './window.js';
 
 export const DEFAULT_LEDGER_WINDOW_DAYS = 90;
 
@@ -101,16 +100,14 @@ interface Collector {
  */
 export function buildLedger(input: BuildFlowsInput): LedgerResult {
 	const now = input.now ?? Date.now();
-	const windowDays =
-		input.windowDays === undefined ? DEFAULT_LEDGER_WINDOW_DAYS : input.windowDays;
-	const from = windowDays == null ? 0 : now - windowDays * DAY_MS;
+	const { from, to } = resolveWindow(input, DEFAULT_LEDGER_WINDOW_DAYS);
 	const nameOf = input.nameOf ?? (() => undefined);
 	const label = (id: string, fallback?: string) => nameOf(id) || fallback || id;
 
 	const inWindow = (ts: unknown) => {
 		const t = Number(ts);
 		if (!Number.isFinite(t)) return false;
-		return t >= from && t <= now;
+		return t >= from && t <= to;
 	};
 
 	const entries: LedgerEntry[] = [];
@@ -129,23 +126,25 @@ export function buildLedger(input: BuildFlowsInput): LedgerResult {
 		},
 	};
 
-	collectExpenses(collector, input.expenses ?? [], inWindow, label);
+	collectExpenses(collector, input.expenses ?? [], input.members ?? [], inWindow, label);
 	const events = (input.events ?? []).filter((e) => e && inWindow(e.timestamp));
 	collectReaMoney(collector, events, label);
 	collectCollective(collector, input.collective ?? null, inWindow);
 	collectTime(collector, events, input.settings, label, now);
 	collectAppreciation(collector, events, label);
 
-	return { from, to: now, entries };
+	return { from, to, entries };
 }
 
 /**
  * The expenses lens is canonical for shared money: `paidBy` funds the holon and
- * each sharer owes their split back out.
+ * each sharer owes their split back out. An expense with no split is shared by
+ * every member.
  */
 function collectExpenses(
 	out: Collector,
 	expenses: Expense[],
+	members: readonly string[],
 	inWindow: (ts: unknown) => boolean,
 	label: (id: string, fallback?: string) => string,
 ): void {
@@ -161,9 +160,11 @@ function collectExpenses(
 		const reference = String(expense.id ?? '');
 		const description = String(expense.description ?? '');
 		const payer = String(expense.paidBy ?? '');
-		const splitWith = coerceSplitWith(expense.splitWith);
+		const splitWith = expenseSharers(expense, members);
 		const isTreasury = payer === TREASURY_ID;
 		const payerName = isTreasury ? 'Treasury' : payer ? label(payer) : '';
+		// A repayment between members is a transfer, not a cost — say so.
+		const kind = isTreasury ? 'treasury' : expense.kind === 'settlement' ? 'settlement' : 'expense';
 
 		// Every name on the record, so a row can be read without opening it.
 		const participants = [
@@ -187,7 +188,7 @@ function collectExpenses(
 				partyId: isTreasury ? undefined : payer,
 				participants,
 				description,
-				kind: isTreasury ? 'treasury' : 'expense',
+				kind,
 				source: 'expenses',
 				reference,
 			});
@@ -209,7 +210,7 @@ function collectExpenses(
 				partyId: id,
 				participants,
 				description,
-				kind: 'expense',
+				kind,
 				source: 'expenses',
 				reference,
 			});
@@ -492,32 +493,6 @@ function collectAppreciation(
 						label(receiver),
 					],
 					kind: 'appreciation',
-				});
-				break;
-			case 'quest:initiated':
-				if (!provider) break;
-				out.push({
-					...base,
-					direction: 'in',
-					nodeId: `initiative-${provider}`,
-					nodeLabel: label(provider),
-					party: label(provider),
-					partyId: provider,
-					participants: [label(provider)],
-					kind: 'initiative',
-				});
-				break;
-			case 'quest:completed':
-				if (!provider) break;
-				out.push({
-					...base,
-					direction: 'in',
-					nodeId: `completion-${provider}`,
-					nodeLabel: label(provider),
-					party: label(provider),
-					partyId: provider,
-					participants: [label(provider)],
-					kind: 'completion',
 				});
 				break;
 			default:

@@ -2,7 +2,7 @@
 
 _A list is a signal._ Mobile-first client of the geolocated needs network
 (see [`docs/needs-offers-network.md`](../../docs/needs-offers-network.md)),
-fully live on the **Holosphere** backend — the same decentralized GUN graph
+fully live on the **Holosphere** backend — the same relay-backed Holosphere store
 the web dashboard, kiosk, and Telegram bot share. Designed in the Claude
 Design project **WeQuest App** (Organic design system — Caprasimo + Figtree,
 terracotta and sage on warm paper).
@@ -40,8 +40,8 @@ http://localhost:5373/?holon=<holonId>&user=<userId>&username=<name>
 ```
 
 Env fallbacks in the root `.env` (see `.env.example` at the repo root):
-`VITE_WEQUEST_HOLON`, `VITE_WEQUEST_APP`, `VITE_WEQUEST_PEER` (defaults to
-the production relay `gun.holons.io`), `VITE_MAPBOX_TOKEN` (real basemap),
+`VITE_WEQUEST_HOLON`, `VITE_WEQUEST_APP`, `VITE_WEQUEST_RELAYS` (defaults to
+the production relays `relay.holons.io` + `relay.commonshub.dev`), `VITE_MAPBOX_TOKEN` (real basemap),
 `VITE_BOT_API_URL` (need-lifecycle DMs through the Telegram bot). An
 unconfigured **dev** run lands in the `HolonsDebug` namespace; only
 production builds default to the live `Holons` graph.

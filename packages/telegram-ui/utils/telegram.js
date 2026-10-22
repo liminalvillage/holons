@@ -110,22 +110,6 @@ export const getUserName = ctx => {
 };
 
 /**
- * Get display name for a user (formatted for UI)
- */
-export const getDisplayName = user => {
-  if (!user) return 'Unknown';
-
-  const firstName = user.first_name || '';
-  const lastName = user.last_name || '';
-
-  if (!firstName && !lastName) {
-    return user.username || 'Unknown User';
-  }
-
-  return firstName + (lastName ? ` ${lastName.charAt(0)}.` : '');
-};
-
-/**
  * Get chat name with error handling
  */
 export const getChatName = async (ctx, holonId) => {
@@ -286,7 +270,6 @@ export default {
   getParameters,
   getCallbackData,
   getUserName,
-  getDisplayName,
   getChatName,
   isAdmin,
   isBotAdmin,

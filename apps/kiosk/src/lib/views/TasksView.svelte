@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   import { glide } from "$lib/glide";
   import { get } from "svelte/store";
   import { onMount } from "svelte";
@@ -12,17 +13,17 @@
     rawQuests,
     completionRequest,
     showNotice,
-    categoryColors,
     taskViewMode,
     taskSort,
-    scope,
   } from "$lib/stores";
+  import { requestSwitch } from "$lib/dock";
+  import { privacyOfHolon } from "@holons/core/privacy";
   import { setTaskSort } from "$lib/config";
   import { t, locale } from "$lib/i18n";
   import type { TaskSort } from "$lib/data";
-  import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
+  import { isLoggedIn, loginOpen, currentUser } from "$lib/auth";
   import { getHolosphere, getWriter } from "$lib/holosphere";
-  import { resolveImage } from "$lib/image";
+  import { pictureUrl } from "@holons/core/media";
   import { hideImg } from "$lib/components/Avatars.svelte";
   import { checkComplete, recordCompletion } from "$lib/complete";
   import {
@@ -38,20 +39,60 @@
     noteRiseDelay,
     noteRiseRot,
     sourceRef,
+    deleteRef,
     type BacklogTask,
     holoSeed,
   } from "$lib/data";
-  import { personalTasks, sameId } from "$lib/personal";
+  import { sameId } from "$lib/ids";
   import {
     createTask,
     deleteTaskWithCascade,
-    wouldCreateDependencyCycle,
+    moveDependency,
     type Quest,
   } from "@holons/core/tasks";
   import Modal from "$lib/components/Modal.svelte";
   import Avatars from "$lib/components/Avatars.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
   import TaskListView from "./TaskListView.svelte";
+
+  // ── Privacy ──────────────────────────────────────────────────────────
+  // Which cards are sealed on the relays: the whole board (every card), or
+  // single cards locked from their own view. Read from the vault records
+  // anyone can see — no key needed to show the lock. The board is locked
+  // from the lock beside the gear in the pills band.
+  let lockedIds = new Set<string>();
+  let boardLocked = false;
+  async function refreshLocks(hid: string | null, _n: number) {
+    if (!hid) {
+      lockedIds = new Set();
+      boardLocked = false;
+      return;
+    }
+    try {
+      const hs = await getHolosphere();
+      const flags = (await privacyOfHolon(hs, hid)).quests;
+      if (hid !== get(holonId)) return;
+      boardLocked = !!flags?.locked;
+      lockedIds = boardLocked
+        ? new Set(get(rawQuests).map((q) => String(q.id ?? "")))
+        : new Set(flags?.items ?? []);
+    } catch {
+      lockedIds = new Set();
+      boardLocked = false;
+    }
+  }
+  $: void refreshLocks($holonId, $rawQuests.length);
+
+  /** A provenance badge tap travels to the holon the card came from. */
+  function jumpToSource(id: string | undefined, name?: string): void {
+    if (id) requestSwitch(id, { name, from: $holonId });
+  }
+  const onPrivacyChanged = () => void refreshLocks(get(holonId), -1);
+  onMount(() => {
+    window.addEventListener("kiosk:privacy-changed", onPrivacyChanged);
+    return () =>
+      window.removeEventListener("kiosk:privacy-changed", onPrivacyChanged);
+  });
   import TaskSwipeView from "./TaskSwipeView.svelte";
   import TaskGraphView from "./TaskGraphView.svelte";
 
@@ -93,7 +134,7 @@
   }
 
   // Does the logged-in user currently appreciate this task?
-  $: appreciatorId = $telegramUser?.id;
+  $: appreciatorId = $currentUser?.id;
   function amAppreciating(task: BacklogTask): boolean {
     return task.appreciatedBy.some((id) => sameId(id, appreciatorId));
   }
@@ -129,7 +170,7 @@
   // would remove them as a participant, confirm first; otherwise just do it.
   async function toggleAppr(task: BacklogTask) {
     const hid = get(holonId);
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!hid || !user) {
       loginOpen.set(true);
       return;
@@ -143,7 +184,7 @@
 
   async function doAppreciate(task: BacklogTask) {
     const hid = get(holonId);
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!hid || !user) return;
     try {
       // A federated card's appreciation belongs to its owner holon (same
@@ -166,6 +207,9 @@
     if (task) void doAppreciate(task);
   }
 
+  // A recurring task's due date is the next occurrence (see toBacklog); its
+  // chip leads with a repeat icon (in the markup) to say there will be
+  // another after it.
   function dueLabel(task: BacklogTask): string | null {
     return dueLabelFor(task.due, $now, $t, $locale);
   }
@@ -177,22 +221,18 @@
   // each quest's `orderIndex` on drop.
   let order: string[] = [];
   $: byId = new Map($backlog.map((t) => [t.id, t] as const));
-  // Shared category→colour map (see stores) so a category looks the same here
-  // and in the calendar; blank categories fall back to the hash (`noteColor`).
-  const noteColorFor = (category: string | undefined): string =>
-    (category ? $categoryColors.get(category) : undefined) ??
-    noteColor(category);
+  // A note's fill is the hash of its category (see `noteColor`), so a category
+  // looks the same here and in the calendar, whatever else is on the board.
+  const noteColorFor = noteColor;
   // Depends only on $backlog (syncOrder reads `order`/`drag` but isn't tracked),
   // so reassigning `order` inside can't re-trigger this statement.
   $: syncOrder($backlog);
   $: orderedTasks = order
     .map((id) => byId.get(id))
     .filter((t): t is BacklogTask => t != null);
-  // The personal slice: same order as the wall/list, narrowed to the user.
-  $: mine = personalTasks(orderedTasks, $telegramUser?.id);
-  // What every layout renders, after the Show pill's scope. (all/networked
-  // differ upstream in the derived stores; here they're both "everything".)
-  $: shownTasks = $scope === "personal" ? mine : orderedTasks;
+  // What every layout renders. (Whether partners' tasks are in is decided
+  // upstream, in the derived stores; here it is everything that arrived.)
+  $: shownTasks = orderedTasks;
 
   // Until the user drags this session, follow the backlog's order (which
   // `toBacklog` sorts by the persisted `orderIndex`) — so a reload shows the
@@ -272,9 +312,6 @@
 
   function onPointerDown(e: PointerEvent, task: BacklogTask) {
     if (e.button != null && e.button !== 0) return;
-    // No drag-to-reorder under the Mine scope: it's a filtered subset, so a
-    // reorder there would scramble the full wall's persisted orderIndex.
-    if (get(scope) === "personal") return;
     const el = (e.currentTarget as HTMLElement).closest<HTMLElement>(
       "[data-task]",
     );
@@ -443,7 +480,7 @@
 
   function onComplete(task: BacklogTask) {
     if (completing[task.id]) return;
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!user) {
       loginOpen.set(true);
       return;
@@ -468,7 +505,11 @@
     });
   }
 
-  function startCompletion(id: string, adjusted: Quest, completerId: number) {
+  function startCompletion(
+    id: string,
+    adjusted: Quest,
+    completerId: number | string,
+  ) {
     // Burst + drop now; record REA after the animation. The card stays mounted
     // (still in the backlog) until the write lands and the quest drops out.
     completing = { ...completing, [id]: makeConfetti() };
@@ -493,7 +534,7 @@
   let deleting = false;
 
   function onDelete(task: BacklogTask) {
-    if (!get(telegramUser)) {
+    if (!get(currentUser)) {
       loginOpen.set(true);
       return;
     }
@@ -506,17 +547,13 @@
     if (!task || !hid) return;
     deleting = true;
     try {
-      // A federated/hologram card lives in its owner's graph — delete the
-      // source there (cascading over its forwards); deleting the local pointer
-      // would only orphan it. Own items delete in place.
+      // Core decides where a delete lands: a hologram loses only our local
+      // mirror (the source holon's task stays), a federation-aggregated card
+      // is deleted at its owner holon, our own task in place.
       const q = get(rawQuests).find((x) => String(x.id ?? x.title) === task.id);
-      const ref = q ? sourceRef(q, task.id) : undefined;
+      const ref = deleteRef(q, hid, task.id);
       const hs = await getHolosphere();
-      const result = await deleteTaskWithCascade(
-        hs as any,
-        ref?.holon ?? hid,
-        ref?.key ?? task.id,
-      );
+      const result = await deleteTaskWithCascade(hs as any, ref.holon, ref.key);
       if (!result.sourceDeleted) {
         showNotice($t("tasks.deleteDenied"));
       }
@@ -529,55 +566,77 @@
     }
   }
 
-  // ── Graph: wire a dependency by dropping one card on another ───────────────
-  // The dragged card comes to WAIT ON the card it lands on. Core owns the rule
-  // that decides whether an edge is legal (a plan must stay a DAG); this only
-  // asks it, and writes the accepted answer.
+  // ── Graph: move a branch by dropping one card on another ──────────────────
+  // The card underneath comes to WAIT ON the dragged card, and the dragged
+  // card stops feeding whatever it fed before — the branch above it moves
+  // along. Core owns that rule (`moveDependency`: what changes, and whether
+  // the plan would loop); this only asks it and writes the accepted answer.
   function questFor(id: string): Quest | undefined {
     return get(rawQuests).find((x) => String(x.id ?? x.title) === id);
   }
   function dependencyIds(q: Quest): string[] {
     return ((q.dependencies as string[] | undefined) ?? []).map(String);
   }
+  /**
+   * A record we may write into this holon's quests. Foreign/hologram copies
+   * are not: their real graph lives in the owner holon, and writing one here
+   * would fork a stray copy (same rule as reorder above).
+   */
+  const own = (q: Quest) => !(q as any)._federation && !(q as any)._hologram;
 
   /** Live during the drag: may `taskId` be made to wait on `depId`? */
   function canLink(taskId: string, depId: string): boolean {
-    if (taskId === depId) return false;
     const q = questFor(taskId);
-    if (!q) return false;
-    if (dependencyIds(q).includes(depId)) return false; // already wired
-    return !wouldCreateDependencyCycle(get(rawQuests), taskId, depId);
+    if (!q || !own(q)) return false;
+    const move = moveDependency(get(rawQuests), depId, taskId);
+    return move.ok && move.edits.length > 0;
+  }
+
+  /**
+   * Write a set of edited quests one by one, skipping foreign records (and
+   * saying so). Resolves true when every own record went through.
+   */
+  async function writeQuestEdits(edits: Quest[]): Promise<boolean> {
+    const hid = get(holonId)!;
+    if (edits.some((q) => !own(q))) {
+      showNotice($t("tasks.linkForeign"));
+      if (edits.every((q) => !own(q))) return false;
+    }
+    const writer = await getWriter(hid, (msg) =>
+      showNotice($t("tasks.linkFailed", { reason: msg })),
+    );
+    let all = true;
+    for (const q of edits.filter(own)) {
+      const clean: Record<string, unknown> = { ...q };
+      delete clean._holon;
+      if (!(await writer.put("quests", clean))) all = false;
+    }
+    return all;
   }
 
   async function linkDependency(task: BacklogTask, dep: BacklogTask) {
     const hid = get(holonId);
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!hid || !user) {
       loginOpen.set(true);
       return;
     }
     const q = questFor(task.id);
     if (!q) return;
-    // The edge is stored ON the dependent card, so that card has to be one we
-    // own: writing a foreign/hologram record into this holon's quests would
-    // fork a stray copy (same rule as reorder above), and its real graph lives
-    // in the owner holon anyway.
-    if ((q as any)._federation || (q as any)._hologram) {
+    // The new edge is stored ON the dependent card, so that one has to be
+    // ours — writing only the cuts would leave the dragged card loose.
+    if (!own(q)) {
       showNotice($t("tasks.linkForeign"));
       return;
     }
-    if (wouldCreateDependencyCycle(get(rawQuests), task.id, dep.id)) {
-      showNotice($t("tasks.linkCycle"));
+    const move = moveDependency(get(rawQuests), dep.id, task.id);
+    if (!move.ok) {
+      if (move.reason === "cycle") showNotice($t("tasks.linkCycle"));
       return;
     }
-    const dependencies = [...new Set([...dependencyIds(q), dep.id])];
+    if (!move.edits.length) return; // already exactly so
     try {
-      const writer = await getWriter(hid, (msg) =>
-        showNotice($t("tasks.linkFailed", { reason: msg })),
-      );
-      const clean: Record<string, unknown> = { ...q };
-      delete clean._holon;
-      if (await writer.put("quests", { ...clean, dependencies })) {
+      if (await writeQuestEdits(move.edits)) {
         showNotice($t("tasks.linked", { task: task.title, dep: dep.title }));
       }
     } catch (err) {
@@ -599,13 +658,12 @@
    */
   async function detachTask(task: BacklogTask) {
     const hid = get(holonId);
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!hid || !user) {
       loginOpen.set(true);
       return;
     }
     const quests = get(rawQuests);
-    const own = (q: Quest) => !(q as any)._federation && !(q as any)._hologram;
     const self = questFor(task.id);
     // Every edge to cut: the card's own dependencies, plus each dependent.
     const edits: Quest[] = [];
@@ -622,21 +680,10 @@
       showNotice($t("tasks.unlinkNothing", { title: task.title }));
       return;
     }
-    if (edits.some((q) => !own(q))) {
-      showNotice($t("tasks.linkForeign"));
-      if (edits.every((q) => !own(q))) return;
-    }
     try {
-      const writer = await getWriter(hid, (msg) =>
-        showNotice($t("tasks.linkFailed", { reason: msg })),
-      );
-      let all = true;
-      for (const q of edits.filter(own)) {
-        const clean: Record<string, unknown> = { ...q };
-        delete clean._holon;
-        if (!(await writer.put("quests", clean))) all = false;
+      if (await writeQuestEdits(edits)) {
+        showNotice($t("tasks.unlinked", { title: task.title }));
       }
-      if (all) showNotice($t("tasks.unlinked", { title: task.title }));
     } catch (err) {
       console.error("[kiosk] unlink failed", err);
       showNotice(
@@ -661,7 +708,7 @@
     task: BacklogTask,
   ): Promise<"joined" | "already" | "failed"> {
     const hid = get(holonId);
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!hid || !user) return "failed";
     return joinOnly(hid, task.id, user, swipeRef(task.id));
   }
@@ -670,7 +717,7 @@
     task: BacklogTask,
   ): Promise<"liked" | "already" | "failed"> {
     const hid = get(holonId);
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!hid || !user) return "failed";
     return appreciateOnly(hid, task.id, user, swipeRef(task.id));
   }
@@ -681,7 +728,7 @@
     kind: "join" | "like",
   ): Promise<void> {
     const hid = get(holonId);
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!hid || !user) return;
     try {
       if (kind === "join") {
@@ -704,7 +751,7 @@
   }
 
   function openAdd() {
-    if (!get(telegramUser)) {
+    if (!get(currentUser)) {
       loginOpen.set(true);
       return;
     }
@@ -714,7 +761,7 @@
 
   async function addTasks() {
     const hid = get(holonId);
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!hid || !user) {
       loginOpen.set(true);
       return;
@@ -767,15 +814,12 @@
 <!-- The graph drawer's live size (0 in every other layout), so the floating
      buttons can ride clear of it — same contract as the calendar. -->
 <div class="board" style="--tray-h: {graphTrayH}px; --tray-w: {graphTrayW}px;">
-  {#if $scope === "personal" && !$telegramUser}
-    <div class="tasks scroll">
-      <p class="empty">{$t("tasks.loginPersonal")}</p>
-    </div>
-  {:else if $taskViewMode === "swipe"}
+  {#if $taskViewMode === "swipe"}
     <div class="deckwrap">
       <TaskSwipeView
         tasks={shownTasks}
         colorFor={noteColorFor}
+        {lockedIds}
         {dueLabel}
         onOpen={openTask}
         onJoin={onSwipeJoin}
@@ -800,11 +844,10 @@
     />
   {:else}
     <div class="tasks scroll" bind:this={scrollEl}>
-      {#if $scope === "personal" && !shownTasks.length}
-        <p class="empty">{$t("tasks.emptyPersonal")}</p>
-      {:else if $taskViewMode === "list"}
+      {#if $taskViewMode === "list"}
         <TaskListView
           tasks={shownTasks}
+          {lockedIds}
           colorFor={noteColorFor}
           {dueLabel}
           {completing}
@@ -857,7 +900,7 @@
                       aria-label={$t("tasks.deleteTask")}
                       title={$t("tasks.deleteTask")}
                     >
-                      ✕
+                      <Icon name="close" />
                     </button>
                   </div>
                   <div class="tools">
@@ -868,7 +911,7 @@
                       aria-label={$t("tasks.markComplete")}
                       title={$t("tasks.markComplete")}
                     >
-                      ✓
+                      <Icon name="check" />
                     </button>
                   </div>
                   <h3>{task.title}</h3>
@@ -879,7 +922,9 @@
                         name: task.initiator.name,
                       })}
                     >
-                      <span class="bulb" aria-hidden="true">💡</span>
+                      <span class="bulb" aria-hidden="true"
+                        ><Icon name="bulb" /></span
+                      >
                       <Avatars people={[task.initiator]} size="1.3rem" />
                       <span class="iname">{task.initiator.name}</span>
                     </div>
@@ -887,23 +932,37 @@
                   {#if task.picture}
                     <img
                       class="thumb"
-                      src={resolveImage(task.picture)}
+                      src={pictureUrl(task.picture)}
                       alt=""
                       loading="lazy"
                       on:error={hideImg}
                     />
                   {/if}
                   <div class="meta">
+                    {#if lockedIds.has(String(task.id))}<span
+                        class="locked"
+                        title={$t("tasks.locked")}><Icon name="lock" /></span
+                      >{/if}
                     {#if task.category}<span class="tag">{task.category}</span
                       >{/if}
-                    {#if task.source}<span class="src">⇄ {task.source}</span
+                    {#if task.source}<button
+                        type="button"
+                        class="src"
+                        title={$t("source.open", { name: task.source })}
+                        on:pointerdown|stopPropagation
+                        on:click|stopPropagation={() =>
+                          jumpToSource(task.sourceId, task.source)}
+                        ><Icon name="swap" /> {task.source}</button
                       >{/if}
-                    {#if dueLabel(task)}<span class="due">{dueLabel(task)}</span
+                    {#if dueLabel(task)}<span class="due"
+                        >{#if task.frequency}<Icon name="repeat" />
+                        {/if}{dueLabel(task)}</span
                       >{/if}
                     {#if task.unmetDeps > 0}<span
                         class="waits"
                         title={$t("tasks.waitsTitle", { n: task.unmetDeps })}
-                        >⛓ {$t("tasks.waitsOn", { n: task.unmetDeps })}</span
+                        ><Icon name="link" />
+                        {$t("tasks.waitsOn", { n: task.unmetDeps })}</span
                       >{/if}
                   </div>
                   <div class="cardfoot">
@@ -916,7 +975,9 @@
                       aria-pressed={amAppreciating(task)}
                       title={$t("tasks.appreciate")}
                     >
-                      <span class="glyph" aria-hidden="true">♥</span>
+                      <span class="glyph" aria-hidden="true"
+                        ><Icon name="heart" /></span
+                      >
                       {#if task.appreciation}
                         <span class="count">{task.appreciation}</span>
                       {/if}
@@ -961,7 +1022,9 @@
 {#if confirmDrop}
   <Modal on:close={() => (confirmDrop = null)}>
     <div class="add">
-      <div class="glyph heart-glyph" aria-hidden="true">♥</div>
+      <div class="glyph heart-glyph" aria-hidden="true">
+        <Icon name="heart" />
+      </div>
       <h3>{$t("tasks.appreciateInstead")}</h3>
       <p class="lead">
         {$t("tasks.appreciateLead", { title: confirmDrop.title })}
@@ -981,7 +1044,9 @@
 {#if confirmDelete}
   <Modal on:close={() => (confirmDelete = null)}>
     <div class="add">
-      <div class="glyph del-glyph" aria-hidden="true">✕</div>
+      <div class="glyph del-glyph" aria-hidden="true">
+        <Icon name="close" />
+      </div>
       <h3>{$t("tasks.deleteTitle")}</h3>
       <p class="lead">
         {$t("tasks.deleteLead", { title: confirmDelete.title })}
@@ -1041,7 +1106,7 @@
         <span class="rowside">
           {#if drag.task.appreciation}
             <span class="rowheart" aria-hidden="true"
-              >♥ {drag.task.appreciation}</span
+              ><Icon name="heart" /> {drag.task.appreciation}</span
             >
           {/if}
           {#if drag.task.people.length}
@@ -1062,12 +1127,15 @@
         <div class="meta">
           {#if drag.task.category}<span class="tag">{drag.task.category}</span
             >{/if}
-          {#if drag.task.source}<span class="src">⇄ {drag.task.source}</span
+          {#if drag.task.source}<span class="src"
+              ><Icon name="swap" /> {drag.task.source}</span
             >{/if}
-          {#if dueLabel(drag.task)}<span class="due">{dueLabel(drag.task)}</span
+          {#if dueLabel(drag.task)}<span class="due"
+              >{#if drag.task.frequency}<Icon name="repeat" />
+              {/if}{dueLabel(drag.task)}</span
             >{/if}
           {#if drag.task.unmetDeps > 0}<span class="waits"
-              >⛓ waits on {drag.task.unmetDeps}</span
+              ><Icon name="link" /> waits on {drag.task.unmetDeps}</span
             >{/if}
         </div>
         <div class="cardfoot">
@@ -1076,7 +1144,7 @@
             class:on={amAppreciating(drag.task)}
             aria-hidden="true"
           >
-            <span class="glyph">♥</span>
+            <span class="glyph"><Icon name="heart" /></span>
             {#if drag.task.appreciation}
               <span class="count">{drag.task.appreciation}</span>
             {/if}
@@ -1091,6 +1159,15 @@
 {/if}
 
 <style>
+  .meta .locked {
+    display: inline-flex;
+    align-items: center;
+    color: var(--ink-soft);
+  }
+  .meta .locked :global(svg) {
+    width: 0.85em;
+    height: 0.85em;
+  }
   .board {
     position: relative;
     flex: 1;
@@ -1152,7 +1229,7 @@
     border-radius: 50%;
     font-size: 2rem;
     line-height: 1;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     box-shadow: 0 10px 24px rgba(14, 107, 102, 0.4);
     display: grid;
@@ -1299,7 +1376,7 @@
     font-size: 0.9rem;
     font-weight: 800;
     color: var(--ink-soft);
-    background: rgba(255, 255, 255, 0.65);
+    background: var(--glass);
     box-shadow: var(--shadow-soft);
     touch-action: manipulation;
     transition:
@@ -1312,19 +1389,19 @@
     left: 0.5rem;
   }
   .tool.check {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .tool:active {
     transform: scale(0.88);
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
   }
   .tool.del {
-    color: rgba(154, 59, 47, 0.75);
+    color: var(--danger);
   }
   .tool.del:active {
-    background: #d4493a;
-    color: #fff;
+    background: var(--danger);
+    color: var(--on-danger);
   }
 
   /* Completion: the post-it drops away while confetti bursts from it. */
@@ -1402,14 +1479,16 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: rgba(32, 48, 47, 0.55);
+    color: var(--ink-soft);
   }
   .src {
     font-size: 0.7rem;
     font-weight: 700;
-    /* Tinted with the source holon's own colour (same hue as its glow edge). */
-    color: var(--glow, var(--teal-deep));
-    background: rgba(255, 255, 255, 0.7);
+    /* The source holon's own hue, carried by the ink rather than replacing it:
+       a holon's colour is a ground (a pastel by day, a jewel by night), never
+       something to read on its own. */
+    color: color-mix(in srgb, var(--glow, var(--teal)) 30%, var(--ink));
+    background: var(--glass);
     border-radius: 999px;
     padding: 0.1rem 0.5rem;
     max-width: 9rem;
@@ -1421,7 +1500,7 @@
     font-size: 0.74rem;
     font-weight: 700;
     color: var(--ink);
-    background: rgba(255, 255, 255, 0.55);
+    background: var(--glass);
     border-radius: 999px;
     padding: 0.1rem 0.55rem;
   }
@@ -1429,8 +1508,8 @@
   .waits {
     font-size: 0.72rem;
     font-weight: 700;
-    color: rgba(32, 48, 47, 0.6);
-    background: rgba(255, 255, 255, 0.55);
+    color: var(--ink-soft);
+    background: var(--glass);
     border-radius: 999px;
     padding: 0.1rem 0.55rem;
     white-space: nowrap;
@@ -1455,7 +1534,7 @@
     height: 1.7rem;
     line-height: 1;
     /* Muted by default; brightens when you've appreciated (see .on). */
-    color: rgba(154, 59, 47, 0.55);
+    color: var(--heart-quiet);
     touch-action: manipulation;
     transition:
       transform 0.1s ease,
@@ -1471,11 +1550,10 @@
     transform: translateY(0.1em);
     font-size: 0.62rem;
     font-weight: 800;
-    color: #fff;
-    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+    color: var(--on-heart);
   }
   .note .heart.on {
-    color: #d4493a;
+    color: var(--heart);
   }
   .note .heart:active {
     transform: scale(0.88);
@@ -1540,7 +1618,7 @@
   .rowclone .rowheart {
     font-size: 0.85rem;
     font-weight: 800;
-    color: #d4493a;
+    color: var(--heart);
   }
 
   /* Add-task dialog */
@@ -1550,15 +1628,15 @@
   }
   .add .glyph {
     font-size: 1.8rem;
-    color: var(--teal);
+    color: var(--teal-ink);
     font-weight: 800;
   }
   .add .glyph.heart-glyph {
-    color: #d4493a;
+    color: var(--heart);
     font-size: 2.2rem;
   }
   .add .glyph.del-glyph {
-    color: #d4493a;
+    color: var(--heart);
   }
   .add h3 {
     margin: 0.2rem 0 0.3rem;
@@ -1602,14 +1680,15 @@
   }
   .add .primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .add .primary.danger {
-    background: #d4493a;
+    background: var(--danger);
+    color: var(--on-danger);
   }
   .add .ghost {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--ghost);
     color: var(--ink);
   }
   .add .primary:active,

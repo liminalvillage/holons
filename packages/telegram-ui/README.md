@@ -99,7 +99,6 @@ HolonsBot/
 │   ├── Settings.js         # Configuration
 │   ├── Users.js            # User management
 │   ├── Expenses.js         # Expense tracking
-│   ├── Holons.js           # Blockchain operations
 │   ├── Scheduler.js        # Task scheduling
 │   ├── Checklists.js       # List management
 │   ├── Shopping.js         # Shopping lists
@@ -166,7 +165,36 @@ DASHBOARD_ADDRESS=https://...     # Web dashboard URL
 SHOW_QUESTS_AS_IMAGES=true       # Enable image mode
 QUEST_IMAGE_FAST_MODE=false      # Use simplified images
 NODE_ENV=development             # Environment mode
+APPLICATIONS_TOKEN=...           # Bearer secret for POST /applications (unset = refuse all)
+APPLICATIONS_HOLON=-1003864542239 # Holon that keeps web applications (default: Liminal Village)
 ```
+
+### Community applications
+
+`/apply` runs the form in `data/booking.json` (a question with `showIf` is
+asked only when its condition holds — `{ "field": "visit", "in": [...] }`,
+`{ "field": …, "notIn": [...] }`, `{ "allEmpty": [...] }`, or a list of them
+— and a skipped question is not stored). Select answers are stored as option
+values (a list for `multi_select`, a string for `single_select`, with
+`other` among them when Other was chosen) and Other's text in
+`<storageKey>_other`.
+
+The web form (liminalvillage.com/apply) posts each application to the bot's
+HTTP server:
+
+```
+POST /applications
+Authorization: Bearer <APPLICATIONS_TOKEN>
+{ id, submittedAt, source: 'web', status: 'submitted', email, name, data }
+→ { ok: true, holon, lens: 'applications', id }
+```
+
+The record goes to `APPLICATIONS_HOLON`'s `applications` lens, item id =
+`id` (a repeated id keeps the stored record). The lens is private: before the
+first write the bot locks it with `@holons/core/privacy` (audience: the holon
+itself, so its members read it), and it answers 503 rather than write in the
+clear if it cannot. Shape and sealing rules live in
+`@holons/core/applications`.
 
 ## Commands Reference
 

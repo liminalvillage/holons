@@ -1,9 +1,10 @@
 # Signing (Phase 1) — sign-on-write + relay persistence
 
 Opt-in NIP-01 signing for HoloSphere. When enabled, every `put` also publishes a
-**signed Nostr event** to your relay(s), so your data is durable beyond GunDB and
-portable across relays. Non-breaking: the Gun store is unchanged; signed events are
-published alongside.
+**signed Nostr event** to your relay(s), so your data is durable beyond one device
+and portable across relays. Since 2.0 the constructor's `relays` do this for every
+write; `enableSigning` remains for the read-side modes (shadow / enforce) and for
+instances built without relays.
 
 Requires the optional `nostr-tools` dependency (loaded lazily, only when enabled).
 
@@ -16,7 +17,7 @@ import { generateSecretKey } from 'holosphere/nostr-events.js';
 const sphere = new HoloSphere({
   appName: 'my-app',
   privateKey: generateSecretKey(),            // your actor key
-  gunOptions: { /* peers, file, … */ },
+  store: { adapter: 'memory' },
 });
 
 await sphere.enableSigning({
@@ -52,11 +53,13 @@ config) and skip signing/resolution.
 
 ## Recover after data loss
 
-If GunDB loses its local data, pull it back from the relay (signatures are
-re-verified; forgeries dropped):
+If the local store is lost, every read of a lens rebuilds it from the relay
+(signatures are re-verified; forgeries dropped); a store can also be moved with
+`exportEvents()` / `importEvents()`:
 
 ```js
-const { found, restored } = await sphere.rehydrate('89283082803ffff', 'tasks');
+const events = await sphere.exportEvents({ holon: '89283082803ffff', lens: 'tasks' });
+await other.importEvents(events);
 ```
 
 ## Switching relays — taking your data with you
@@ -106,8 +109,7 @@ await sphere.migrateRelays({ to: ['wss://new'], filter: { '#h': ['<holon>'], '#l
 Before Phase 2 turns on *authorized read* (where only signed, authorized data is
 displayed), shadow mode lets you measure how much existing data would be affected —
 **without changing anything that's returned**. With `shadow: true`, each `put` also
-stores its signed event in a reserved `_events` sidecar in Gun (invisible to normal
-reads), and reads classify every item as **accounted** (backed by a valid signature)
+keeps its signed event in the store's events table (invisible to normal reads), and reads classify every item as **accounted** (backed by a valid signature)
 or **would-drop** (unsigned / mismatched / invalid signature).
 
 ```js
@@ -129,7 +131,7 @@ const report = sphere.getShadowReport();
 
 ## Authorized read — your federation read-list (default)
 
-With `enforce: true`, reads no longer return raw Gun items — they return the
+With `enforce: true`, reads no longer return raw store items — they return the
 **authorized view**: for each item, the latest claim from a key **you trust** wins;
 everything else (unsigned, invalid, or from a key you don't read) drops to a
 **pending** view. The raw store is untouched (open graph); enforcement happens
@@ -160,6 +162,75 @@ const dropped = await sphere.getPending(holon, 'tasks');// unsigned / untrusted 
 ```
 
 No genesis, no admins, no per-holon setup — each reader curates their own trust.
+
+### Holon-defined authority (`enforce: 'authority'`) — what the apps run
+
+Every Holons surface builds its instance through `@holons/core/holosphere`,
+which turns this mode ON by default (`enforce: false`, or
+`HOLOSPHERE_ENFORCE=off` / `VITE_HOLOSPHERE_ENFORCE=off`, reads the open
+graph). The signer asks a hook, per holon, who counts:
+
+```js
+new HoloSphere({ ..., signing: { enforce: 'authority', authority: async (holo, holon) => predicate | null } });
+```
+
+The hook returns `(pubkey, created_at) => boolean`, or **null when nothing
+signed says who speaks for the holon** — such a holon reads unenforced, every
+claim as before, so a legacy holon keeps its data while its bot founds it.
+Core's rule (`createReadAuthority`, `resolveHolonAuthority`):
+
+- a **pubkey holon** is its key, plus the keys that person linked in a `users`
+  record they signed themselves;
+- a **founded holon** is its signed `_members` log, folded as-of-time;
+- an **unfounded holon** is bootstrapped from its own records — only those its
+  *anchor* signed: the earliest `settings` envelope that declares a
+  `holonPubkey` **and is signed by that key** (the current settings record is
+  last-writer-wins and never decides), its `nostrTrustedPubkeys`, its members'
+  `linkedKeys`, plus the provider-signed identity directory (kind 31926);
+- an **h3 cell** (an aggregate of many holons) has nobody defined.
+
+The same rule answers the privacy layer's "may this key hand out keys of the
+holon" (`config.privacy.acceptGrantFrom`, see PRIVACY.md). Answers are cached
+ten seconds per holon and read straight from envelopes, never through `get`.
+A re-login (`login()`) keeps the configured mode.
+
+Consequences worth knowing: a write signed by a key the holon does not accept
+(a kiosk's device key, an MCP key that is not a member, a member whose derived
+key the bot has not yet attested or synced into `_members`) is visible to its
+author and waits in `getPending` for everyone else until the bot founds the
+holon and syncs the roster. Membership is as-of-time, so a record signed
+BEFORE its author was seated never counts — a person's profile in a
+key-founded holon is written after the admin's approval, and a link offer is
+judged by the author's role at the envelope's time (`@holons/core/holons`,
+`@holons/core/linking`, `docs/identity-linking.md`).
+
+### Who may do what — one table (`capabilities.js`)
+
+Nothing is refused at write time; what a write is *worth* is decided on
+read, by everyone, with one table (`capabilities.js`, re-exported by
+`@holons/core/holosphere`):
+
+| action | role whose signature counts |
+| --- | --- |
+| content, ordinary settings fields | member |
+| making a lens or card private (the locker owns its vault) | member |
+| seating keys (`_members`) | admin |
+| the guarded settings fields: `holonPubkey`, `admin`, `nostrTrustedPubkeys`, `identityProviders`, `valueEquation`/`equation`, `allocation`, `pot`, `payout`, `bundle`, `treasury` | admin |
+| a log's rule (`_policy`) | admin |
+| the federation record — partners, and which lenses flow each way | admin |
+| unlocking or taking over a scope another key locked | admin |
+
+The signer applies it twice. On `settings`, each guarded field is taken from
+the newest envelope an **admin** (as of its time) signed; a member's settings
+write still counts for every other field (`GUARDED_SETTINGS_FIELDS`). On the
+global `federation` table — keyed by the holon a record describes — the
+record is the newest an admin of *that holon* signed
+(`signer.resolveOwned`, `getFederation` / `getFederationStanding`); a holon
+nobody speaks for keeps the plain record, and a legacy record no admin ever
+signed is adopted by the first admin write. The privacy layer applies it to
+the vault (PRIVACY.md). Every surface asks the same question before a write
+— `may(await writeAcceptance(hs, holon), action)` — and greys the control out
+with the reason instead of saving into silence.
 
 ### Optional: holon-owned authority (`enforce: 'membership'`)
 
@@ -212,7 +283,7 @@ signer), not its self-reported fields.
 
 | Method | Purpose |
 |---|---|
-| `await sphere.enableSigning({ privateKey?, relays?, readKeys?, shadow?, enforce?, storeEnvelope?, verbose? })` | Turn on signing; `shadow` = measure, `enforce: true` = federation read-list, `enforce: 'membership'` = holon authority |
+| `await sphere.enableSigning({ privateKey?, relays?, readKeys?, shadow?, enforce?, authority?, storeEnvelope?, verbose? })` | Turn on signing; `shadow` = measure, `enforce: true` = federation read-list, `enforce: 'membership'` = holon log, `enforce: 'authority'` = the `authority` hook decides per holon (the apps' default; unset options fall back to the constructor's `signing`) |
 | `sphere.addReadKey(npubOrHex)` / `removeReadKey(...)` / `getReadKeys()` | Manage your federation read-list (default `enforce`) |
 | `await sphere.aggregate(holon, lens, subject?)` | Per-author records (latest per trusted actor; `_owner`/`_subject`) for signed collaborative state |
 | `sphere.setPerActorLens(lens)` (or `enableSigning({ perActorLenses })`) | Mark a lens per-author → enforce `getAll` aggregates it |
@@ -222,8 +293,7 @@ signer), not its self-reported fields.
 | `sphere.disableSigning()` | Stop signing, close relay connections |
 | `sphere.signingEnabled` | Boolean |
 | `sphere.getSigningRelays()` / `sphere.setSigningRelays(list)` | Read / replace relay set |
-| `await sphere.rehydrate(holon, lens)` | Restore a holon/lens from relays into Gun |
-| `await sphere.migrateRelays({ to, from?, filter?, switch? })` | Move/mirror signed data across relays |
+| `await sphere.exportEvents(filter?)` / `importEvents(events, { publish? })` | Move/mirror signed data across stores and relays |
 | `await sphere.auditLens(holon, lens)` | Shadow-audit a lens (accounted vs would-drop); output unchanged |
 | `sphere.getShadowReport()` / `sphere.resetShadowReport()` | Cumulative shadow stats |
 
@@ -234,10 +304,12 @@ by env (default **off** — no behavior change):
 
 ```bash
 # apps/web/.env
-VITE_HOLOSPHERE_SIGNING=shadow            # off (default) | shadow | enforce
 VITE_HOLOSPHERE_RELAYS=wss://relay.example.com,wss://relay2.example.com   # optional
-VITE_HOLOSPHERE_READ_KEYS=npub1abc…,npub1def…   # enforce: keys you trust to read (your own is implicit)
+VITE_HOLOSPHERE_ENFORCE=off               # default on: holon-defined authority (see above)
 ```
+
+(`VITE_HOLOSPHERE_SIGNING` / `VITE_HOLOSPHERE_READ_KEYS` belong to the earlier
+reader-curated mode and are no longer read by the apps.)
 
 - `shadow` — every write is signed + published to the relay(s) and a forgery-surface
   report is collected; **what's displayed is unchanged**. Inspect from the browser
@@ -256,7 +328,19 @@ no-op against a holosphere build without signing.
 - **Shadow measurement** of the forgery surface (`shadow: true`). ✅
 - **Authorized read** with a signed membership log + revocation-as-of-time
   (`enforce: true`). ✅
-- **Not yet** (see the plan): `content` encryption (NIP-44) — signing proves *who
-  wrote what* and now gates *what is displayed*, but does not yet hide content;
-  relay write-policy/NIP-42; lens-scoped roles; hard (retroactive) revocation
-  tombstones; cross-holon/federated authorization import.
+- **Content encryption** (NIP-44) lives beside signing: a private scope (a
+  lens or one item) seals `content` and hands its key to the readers of its
+  audience (`PRIVACY.md`). A sealed claim nobody here can open is neither
+  shown nor pending under enforce.
+- **Not yet** (see the plan): relay write-policy/NIP-42; lens-scoped roles;
+  hard (retroactive) revocation tombstones; cross-holon/federated
+  authorization import.
+
+Note: standard-kind projections (`projections.js`, see `NOSTR-BACKEND.md`)
+are published beside each envelope but NEVER stored in the `_events`
+sidecar — envelopes stay kind-30078 only, so `aggregate`/`authorizedView`
+always parse `content` as the JSON record.
+
+With relays configured the signer also runs the **reverse sync** (`reverse-sync.js`):
+external edits of projected kinds by trusted keys are merged and re-signed as your
+own 30078 write, so relay-backup mode gets mutual updates without switching wires.

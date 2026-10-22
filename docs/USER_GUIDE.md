@@ -300,8 +300,16 @@ Holon health monitoring and status indicators.
 ### Federation
 Connect with other holons and manage data sharing.
 
-### Flow
-Visualize resource distribution between interior and exterior zones.
+### Flows
+Where value moves and where the fund goes. The allocation split divides the
+fund between the contributors' share (by the value equation or by hand-set
+weights — a seat can be another holon) and reciprocity zones (partners and
+people on rings); a share that reaches a holon with a split of its own is
+divided again. The fund is what attesters have minted (a harvest in litres,
+a grant in euros) plus the collective's money plus what reaches it from
+upstream; members claim their right in that unit, attesters attest and
+record the payout. See [flows-harvest-collective.md](./flows-harvest-collective.md)
+for a worked multi-holon setup.
 
 ### Settings
 Configure holon properties, appearance, and blockchain integration.

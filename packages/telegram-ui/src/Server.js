@@ -8,10 +8,13 @@ import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
+import { Telegram } from 'telegraf';
 import https from 'https';
 import { toSvg as identiconSvg } from 'jdenticon';
 import { log } from '../utils/logger.js';
 import { i18next } from './utilities.js';
+import { notifyNostr } from './createHoloSphere.js';
+import { mountApplications } from './ApplicationsIntake.js';
 
 /**
  * Express server for serving static files, avatars, and images.
@@ -49,6 +52,35 @@ class Server {
     this.setupServer();
   }
 
+  /**
+   * Every bot whose file_ids may reach this server: this bot first, then the
+   * tokens in BOT_TOKENS (comma-separated). A file_id opens only with the
+   * token of the bot that received it, and other bots' groups store theirs.
+   */
+  fileBots() {
+    if (!this._fileBots) {
+      const own = String(process.env.BOT_TOKEN ?? '');
+      const others = String(process.env.BOT_TOKENS ?? '')
+        .split(',')
+        .map(t => t.replace(/[^A-Za-z0-9:_-]/g, ''))
+        .filter(t => t && t !== own);
+      this._fileBots = [
+        this.bot.telegram,
+        ...[...new Set(others)].map(t => new Telegram(t)),
+      ];
+    }
+    return this._fileBots;
+  }
+
+  /** The first bot that opens this file_id, with its getFile answer. */
+  async fileOwner(fileId) {
+    for (const telegram of this.fileBots()) {
+      const info = await telegram.getFile(fileId).catch(() => null);
+      if (info) return { telegram, info };
+    }
+    return null;
+  }
+
   setupServer() {
     if (this.serverInstance) {
       console.log('Server is already running');
@@ -82,6 +114,9 @@ class Server {
 
     // Setup refresh endpoints (holons → telegram message edits)
     this.setupRefreshEndpoints(app);
+
+    // Community applications from the web, kept sealed (ApplicationsIntake.js)
+    mountApplications(app, { getDb: () => this.services.database, log });
 
     // Global error handler
     this.setupGlobalErrorHandler(app);
@@ -702,6 +737,7 @@ class Server {
       } catch (err) {
         log.info(`notify: DM to ${userId} failed (${err?.message || err})`);
       }
+      notifyNostr(userId, text, 'Holons need').catch(() => {});
     };
 
     if (event === 'responded') {
@@ -985,7 +1021,7 @@ class Server {
         return null;
       }
 
-      const fileInfo = await this.bot.telegram.getFile(fileId);
+      const { telegram, info: fileInfo } = (await this.fileOwner(fileId)) ?? {};
       if (!fileInfo) {
         return null;
       }
@@ -1005,7 +1041,7 @@ class Server {
         return sanitizedPath;
       }
 
-      const fileUrl = await this.bot.telegram.getFileLink(fileId);
+      const fileUrl = await telegram.getFileLink(fileId);
       if (!fileUrl) {
         return null;
       }
@@ -1024,7 +1060,7 @@ class Server {
         return null;
       }
 
-      const fileInfo = await this.bot.telegram.getFile(fileId);
+      const { telegram, info: fileInfo } = (await this.fileOwner(fileId)) ?? {};
       if (!fileInfo) {
         return null;
       }
@@ -1044,7 +1080,7 @@ class Server {
         return sanitizedPath;
       }
 
-      const fileUrl = await this.bot.telegram.getFileLink(fileId);
+      const fileUrl = await telegram.getFileLink(fileId);
       if (!fileUrl) {
         return null;
       }
@@ -1063,7 +1099,7 @@ class Server {
         return null;
       }
 
-      const fileInfo = await this.bot.telegram.getFile(fileId);
+      const { telegram, info: fileInfo } = (await this.fileOwner(fileId)) ?? {};
       if (!fileInfo) {
         return null;
       }
@@ -1091,7 +1127,7 @@ class Server {
         return sanitizedPath;
       }
 
-      const fileUrl = await this.bot.telegram.getFileLink(fileId);
+      const fileUrl = await telegram.getFileLink(fileId);
       if (!fileUrl) {
         return null;
       }
@@ -1110,7 +1146,7 @@ class Server {
         return null;
       }
 
-      const fileInfo = await this.bot.telegram.getFile(fileId);
+      const { info: fileInfo } = (await this.fileOwner(fileId)) ?? {};
       if (!fileInfo) {
         return null;
       }
@@ -1142,7 +1178,7 @@ class Server {
         return null;
       }
 
-      const fileInfo = await this.bot.telegram.getFile(fileId);
+      const { info: fileInfo } = (await this.fileOwner(fileId)) ?? {};
       if (!fileInfo) {
         return null;
       }

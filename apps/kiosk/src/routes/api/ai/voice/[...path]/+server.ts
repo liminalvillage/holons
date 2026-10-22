@@ -2,10 +2,10 @@
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 //
 // /api/ai/voice/* — OpenAI proxy for the kiosk's direct voice mode, holding
-// the SAME server-side key the AI-breakdown route reads (OPENAI_API_KEY in
-// the deploy's env). A kiosk whose deploy is configured for breakdown gets
-// voice with no per-device key pasting; a key pasted in Settings still wins
-// (see $lib/voice/direct).
+// the deploy's server-side OPENAI_API_KEY, so a kiosk speaks with no
+// per-device key pasting; a key pasted on the device still wins (see
+// $lib/voice/direct). Speech stays with OpenAI; text AI (breakdown, drafting)
+// is Claude, through @holons/core/ai.
 //
 // Only the three endpoints the voice pipeline uses are forwarded — this is a
 // narrow relay, not a general OpenAI proxy:
@@ -37,15 +37,8 @@ const ALLOWED_PATHS = new Set([
   "audio/speech",
 ]);
 
-// Same env names the breakdown routes accept, so one deploy configuration
-// (or the shared root .env in dev) powers both features.
 function openaiKey(): string {
-  return (
-    env.OPENAI_API_KEY ||
-    env.OPENAI ||
-    env.VITE_OPENAI_API_KEY ||
-    ""
-  ).trim();
+  return (env.OPENAI_API_KEY ?? "").trim();
 }
 
 /** Whether this deploy can speak server-side. Public, leaks nothing. */

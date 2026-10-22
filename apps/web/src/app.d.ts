@@ -49,13 +49,6 @@ export {};
 
 interface ImportMetaEnv {
   readonly VITE_LOCAL_MODE: string;
-  readonly VITE_OPENAI_API_KEY: string;
-  readonly VITE_ANTHROPIC_API_KEY: string;
-  readonly VITE_GROQ_API_KEY: string;
-  readonly VITE_LLM_PROVIDER: string;
-  readonly VITE_LLM_MODEL: string;
-  readonly VITE_LLM_MAX_TOKENS: string;
-  readonly VITE_LLM_TEMPERATURE: string;
   readonly VITE_SERVICE_KEY: string; // Service key for QR code actions (hex format private key)
 }
 

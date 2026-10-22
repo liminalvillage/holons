@@ -26,7 +26,7 @@ async function exampleUsage() {
         await holosphere.put('storefront', 'display', { id: 'featured-product', soul: hologram1.soul });
         await holosphere.put('warehouse', 'inventory', { id: 'stock-item', soul: hologram2.soul });
         
-        // Wait for Gun to propagate
+        // Wait for the relay to propagate
         await new Promise(resolve => setTimeout(resolve, 500));
         
         // 3. Update the original data and get the list of updated holograms

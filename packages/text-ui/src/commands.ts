@@ -68,6 +68,56 @@ const fallbackCommands: CoreCommand[] = [
   },
 ];
 
+// Privacy: a lens or one card is locked (sealed on the relays) and shared
+// with holons — by id or name, never by key (see @holons/core/privacy).
+const PRIVACY_SCOPE: CoreCommandParam[] = [
+  { name: 'holonId', type: 'string', description: 'Holon ID', required: true },
+  { name: 'lens', type: 'string', description: 'Lens (quests, library, …)', required: true },
+  { name: 'item', type: 'string', description: 'One card id; omit for the whole lens' },
+];
+fallbackCommands.push(
+  {
+    name: 'lock',
+    description: 'Make a lens, or one card, private: only this holon and the holons it is shared with can read it.',
+    params: PRIVACY_SCOPE,
+    async execute(params) {
+      return { ok: true, message: `Locked ${params.lens}${params.item ? `/${params.item}` : ''} of ${params.holonId}`, data: params };
+    },
+  },
+  {
+    name: 'unlock',
+    description: 'Make a private lens or card public again.',
+    params: PRIVACY_SCOPE,
+    async execute(params) {
+      return { ok: true, message: `Unlocked ${params.lens}${params.item ? `/${params.item}` : ''} of ${params.holonId}`, data: params };
+    },
+  },
+  {
+    name: 'share',
+    description: 'Let another holon read a private lens or card.',
+    params: [...PRIVACY_SCOPE, { name: 'with', type: 'string', description: 'The holon that may read it', required: true }],
+    async execute(params) {
+      return { ok: true, message: `Shared ${params.lens} of ${params.holonId} with ${params.with}`, data: params };
+    },
+  },
+  {
+    name: 'unshare',
+    description: 'Stop a holon from reading a private lens or card.',
+    params: [...PRIVACY_SCOPE, { name: 'with', type: 'string', description: 'The holon to remove', required: true }],
+    async execute(params) {
+      return { ok: true, message: `Stopped sharing ${params.lens} of ${params.holonId} with ${params.with}`, data: params };
+    },
+  },
+  {
+    name: 'audience',
+    description: 'Who may read a private lens or card: the holons it is shared with.',
+    params: PRIVACY_SCOPE,
+    async execute(params) {
+      return { ok: true, message: `Audience of ${params.lens} of ${params.holonId}`, data: params };
+    },
+  },
+);
+
 const fallbackRegistry: CommandRegistry = {
   list: () => fallbackCommands,
   get: (name) => fallbackCommands.find((c) => c.name === name),

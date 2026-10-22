@@ -1,5 +1,6 @@
 import { Scenes, Markup } from 'telegraf';
 import { getholonId } from '../src/utilities.js';
+import { completeStep } from './flow.js';
 
 // Create a scene
 const h3Scene = new Scenes.BaseScene('h3');
@@ -35,20 +36,7 @@ h3Scene.on('message', async ctx => {
     return;
   }
   ctx.session.hex = ctx.message.web_app_data.data;
-  if (!ctx.session.wizard) {
-    // save the new data to the database
-    ctx.session.db.gun
-      .get(ctx.from.id.toString())
-      .get('hex')
-      .put(ctx.session.hex);
-    h3Scene.leave();
-    return;
-  }
-  if (!ctx.session.sequence) ctx.scene.leave();
-  ctx.session.stage += 1;
-  if (ctx.session.stage === ctx.session.sequence.length)
-    ctx.scene.enter('done');
-  else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
+  return completeStep(ctx, { hex: ctx.session.hex });
 });
 
 // Export the scene

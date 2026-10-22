@@ -1,11 +1,12 @@
 <script lang="ts">
+	import { shortId } from '@holons/core/identity';
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import { page } from "$app/stores";
     import type { HoloSphere, ResolvedHologramMeta, FederationMeta } from "holosphere";
     import { awaitName, resolveHologramSource, nameMap, resolveName, resolvedName, extractHolonIdFromSoul, buildHologramLink } from "$lib/stores/nameResolver";
     import { goto } from "$app/navigation";
-    import { showFederated, showHolograms, showUnverified, passesLensFilters } from "$lib/stores/lensFilters";
+    import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
     import SourceBadge from "./shared/SourceBadge.svelte";
     import PublishToFederationButton from "./shared/PublishToFederationButton.svelte";
     import TitleBar from "./shared/TitleBar.svelte";
@@ -75,7 +76,7 @@
     $: libraryItems = Object.entries(store);
     $: filteredItems = libraryItems.filter(([_, item]: [string, any]) => {
         if (item._deleted) return false;
-        if (!passesLensFilters(item, $showHolograms, $showFederated, $showUnverified)) return false;
+        if (!passesLensFilters(item, $showHolograms, $showFederated)) return false;
 
         const q = filters.searchQuery.trim().toLowerCase();
         if (q) {
@@ -226,7 +227,7 @@
             }
             return {
                 id: nostrPub,
-                display_name: holonName || `${nostrPub.slice(0, 8)}…`
+                display_name: holonName || shortId(nostrPub)
             };
         }
 

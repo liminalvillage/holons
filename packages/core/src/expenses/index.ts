@@ -11,6 +11,7 @@ export {
   computeBalances,
   computeCreditMatrix,
   computeUserCurrencyBalance,
+  expenseSharers,
   normalizeCurrency,
 } from './balance.js';
 export {
@@ -21,3 +22,22 @@ export {
   toggleParticipant,
 } from './operations.js';
 export type { CreateExpenseInput } from './operations.js';
+export {
+  computeMutualCredit,
+  createSettlement,
+  creditPairs,
+  debtCost,
+  expenseCurrencies,
+  expenseCurrency,
+  isSettlement,
+  participantIds,
+  settlementPlan,
+  summarizeMutualCredit,
+} from './credit.js';
+export type {
+  CreateSettlementInput,
+  CreditPair,
+  CreditSummary,
+  MutualCredit,
+  SettlementCost,
+} from './credit.js';

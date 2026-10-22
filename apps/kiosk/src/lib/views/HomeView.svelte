@@ -1,20 +1,22 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
-  // The front door. When this screen isn't pointed at a holon yet — a fresh
-  // visitor on the bare domain, a caretaker unboxing a display — this is what
-  // the kiosk shows instead of a board: what a hub is, the two ways to start
-  // one, and how hubs connect. Short on purpose; the long read lives at
-  // docs.holons.io. It wears the kiosk's own skin (paper, ink, a little teal,
+  // The reading page (routes/about). The front door is the map now — the
+  // dock with the earth showing, and this device's hubs on it — and the map
+  // links here: what a hub is, the two ways to start one, and how hubs
+  // connect. Short on purpose; the long read lives at docs.holons.io. It wears the kiosk's own skin (paper, ink, a little teal,
   // the same tokens as the board behind it) so the door and the room match.
   //
   // Both paths lead into Telegram, because the chat IS the hub:
   //   personal  a private chat with the bot (`?start=`) — the visitor's own hub
   //   group     the add-to-group chooser (`?startgroup=`) — the group is the hub
   // Either way the bot answers with a link straight back to this board. This
-  // page holds the two ends of that loop together — it marks the hand-off on
-  // the way out (config.markBotHandoff) and, when the visitor returns to the
-  // tab, opens the "your hub is ready" step without making them find it again.
+  // page holds the two ends of that loop together — it sends a claim token
+  // out in the deep link and notes the hand-off (lib/hubclaim.ts), and when
+  // the visitor returns to the tab it opens the "your hub is ready" step
+  // without making them find it again — or, once the bot has redeemed the
+  // token on the relay, opens the new hub itself with nothing to paste.
   //
   // The bot is never named in the copy: a fork running its own bot re-points
   // VITE_TELEGRAM_BOT_USERNAME and every deep link follows, with no string to
@@ -30,11 +32,20 @@
     COMMUNITY_URL,
     DASHBOARD_BASE,
     DOCS_URL,
-    markBotHandoff,
     returningFromBot,
     SOURCE_URL,
   } from "$lib/config";
   import { parseHolonPaste } from "$lib/holons";
+  import { newClaimToken } from "@holons/core/onboarding";
+  import { getHolosphere } from "$lib/holosphere";
+  import { labelFor, rememberBoard } from "$lib/dock";
+  import {
+    beginHubClaim,
+    clearHubClaim,
+    hubClaimUrls,
+    pendingClaim,
+    watchHubClaim,
+  } from "$lib/hubclaim";
 
   // ── The return leg ────────────────────────────────────────────────────────
   // Telegram can't hand anything back to this tab, so the hand-off note left
@@ -48,6 +59,7 @@
   function checkReturn() {
     if (!returningFromBot()) return;
     returning = true;
+    watchClaim();
     if (scrolledToOpen) return;
     scrolledToOpen = true;
     // Wait a frame so the panel has rendered its returning state.
@@ -62,20 +74,46 @@
   }
 
   onMount(() => {
+    token = pendingClaim()?.token ?? newClaimToken();
     returning = returningFromBot();
+    if (returning) watchClaim();
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("focus", checkReturn);
   });
 
   onDestroy(() => {
+    stopWatch?.();
     if (typeof document === "undefined") return;
     document.removeEventListener("visibilitychange", onVisibility);
     window.removeEventListener("focus", checkReturn);
   });
 
+  // ── The claim token ───────────────────────────────────────────────────────
+  // Both buttons carry one token out, so the bot can say which chat it was
+  // added to. Minted on mount so the anchors are real hrefs; persisted (with
+  // the hand-off note) only when a button is actually tapped. A token still
+  // pending on this device is reused, so the wait resumes on return.
+  let token = "";
+  $: urls = token ? hubClaimUrls(token) : null;
+  let stopWatch: (() => void) | null = null;
+
   /** Leaving for Telegram — leave the note that starts the return leg. */
   function handOff() {
-    markBotHandoff();
+    beginHubClaim(token);
+  }
+
+  /** Back in the tab with a token out: watch for the bot to redeem it. */
+  function watchClaim() {
+    if (stopWatch) return;
+    const pending = pendingClaim();
+    if (!pending) return;
+    stopWatch = watchHubClaim(getHolosphere(), pending.token, (claim) => {
+      // Unlike a pasted board, a hub they just STARTED from this screen is
+      // theirs: dock it here too, then open it.
+      rememberBoard(claim.holon, claim.name?.trim() || labelFor(claim.holon));
+      holonRef = claim.holon;
+      void openBoard();
+    });
   }
 
   // ── "Already have a hub?" ─────────────────────────────────────────────────
@@ -90,6 +128,7 @@
     }
     refError = false;
     clearBotHandoff();
+    clearHubClaim();
     // Deliberately NOT persisted: the URL is the shareable thing, and a phone
     // opening someone's board must not re-point this device forever (that is
     // what Settings is for). The store set makes the layout rebind now; the
@@ -266,6 +305,9 @@
 <div class="home">
   <!-- ── Hero + the two paths ───────────────────────────────────────────── -->
   <header class="hero" id="start">
+    <a class="back" href="/"
+      ><Icon name="arrow-left" /> {$t("home.backToMap")}</a
+    >
     <div class="wordmark">hubs network</div>
     <h1>{$t("home.heroTitle")}</h1>
     <p class="lead">{$t("home.heroLead")}</p>
@@ -280,7 +322,7 @@
         <p>{$t("home.personalBody")}</p>
         <a
           class="btn primary"
-          href={botChatUrl()}
+          href={urls?.personal ?? botChatUrl()}
           target="_blank"
           rel="noopener"
           on:click={handOff}
@@ -297,7 +339,7 @@
         <p>{$t("home.groupBody")}</p>
         <a
           class="btn primary"
-          href={addToGroupUrl()}
+          href={urls?.group ?? addToGroupUrl()}
           target="_blank"
           rel="noopener"
           on:click={handOff}
@@ -427,13 +469,26 @@
     padding: clamp(2.6rem, 10vh, 6rem) 0 clamp(2rem, 6vh, 4rem);
     text-align: center;
   }
+  .back {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.6rem;
+    margin-bottom: 1rem;
+    color: var(--ink-soft);
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .back:hover {
+    color: var(--teal-ink);
+  }
   .wordmark {
     font-family: var(--font-logo);
     font-size: 1.5rem;
     font-weight: 500;
     letter-spacing: 0.22em;
     text-transform: lowercase;
-    color: var(--teal);
+    color: var(--teal-ink);
     margin-bottom: 1.6rem;
   }
   .hero h1 {
@@ -481,7 +536,7 @@
     font-weight: 800;
     letter-spacing: 0.15em;
     text-transform: uppercase;
-    color: var(--teal);
+    color: var(--teal-ink);
     margin: 0;
   }
   .path h2 {
@@ -583,7 +638,7 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.95rem;
     font-weight: 700;
-    color: var(--teal);
+    color: var(--teal-ink);
     background: color-mix(in srgb, var(--teal) 10%, transparent);
     border: 1px solid color-mix(in srgb, var(--teal) 30%, transparent);
     border-radius: 8px;
@@ -611,7 +666,7 @@
   }
   .btn.primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-note);
   }
   .btn.compact {
@@ -643,7 +698,7 @@
     font-weight: 800;
     letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--teal);
+    color: var(--teal-ink);
     margin-bottom: 0.6rem;
   }
   .section > h2 {
@@ -709,7 +764,7 @@
   .tools li:last-child {
     border-style: solid;
     border-color: var(--teal);
-    color: var(--teal);
+    color: var(--teal-ink);
     font-weight: 700;
   }
 
@@ -771,7 +826,7 @@
     margin: 0.75rem 0 0;
     font-size: 0.94rem;
     line-height: 1.5;
-    color: #c0567a;
+    color: var(--danger);
   }
 
   /* ── Footer ────────────────────────────────────────────────────────────── */
@@ -801,7 +856,7 @@
   }
   .foot nav a:hover,
   .foot nav button:hover {
-    color: var(--teal);
+    color: var(--teal-ink);
   }
   .caretaker,
   .license {

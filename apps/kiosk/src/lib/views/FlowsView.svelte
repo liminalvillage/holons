@@ -6,9 +6,30 @@
   //
   // Two Sankeys over one core domain. MOVEMENT answers "what came in and went
   // out" from the expenses lens, the REA stream and (when a collective is
-  // configured) OpenCollective. ALLOCATION answers "where is it committed" —
-  // the interior/exterior split behind the dashboard's Flow Management, applied
-  // to the collective's real balance so it reads as money rather than knobs.
+  // configured) OpenCollective. FUND ALLOCATION RIGHTS answers "who may direct
+  // the fund, and by how much" — the interior/exterior split behind the
+  // dashboard's Flow Management, applied to the collective's real money so it
+  // reads as amounts rather than knobs — and, with a collective, "how much of
+  // each right is already gone": every party is one bar, whichever seats
+  // feed it, stacked into spent / claimed / available, read from the expenses
+  // lens as mutual credit with the holon and from the collective's own
+  // expense queue (core `flows/usage`).
+  //
+  // The View pill picks one of three things to look at, and nothing else
+  // changes the shape of the board:
+  //
+  //   MY BALANCE — the viewer's account, the way a banking app opens: their
+  //     fund allocation right as a balance (core `fundAccount`: right, spent,
+  //     claimed, available), then where they stand in the shared tab with a
+  //     way to settle each debt (BalancesView, mine).
+  //   ALL BALANCES — everyone's mutual credit: who is owed, who owes, the
+  //     fewest transfers that square it, the records (BalancesView).
+  //   GRAPH — the two Sankeys: movement, and the fund allocation rights.
+  //
+  // Balances and rights are computed over the whole tab and the whole fund —
+  // half a split is nobody's debt, and half a fund is nobody's right. Partner
+  // data, when the Show federated switch is on, is folded in by the
+  // subscription layer, not here.
   //
   // Units never mix. Kudos are not hours and hours are not euros, this repo has
   // no exchange rates, and inventing one would be a lie — so each unit gets its
@@ -16,14 +37,27 @@
   //
   // Data rules inherited from StatusView, both learned the hard way:
   //   - `rea_events` is read with a one-shot `getAll` and a retry backoff, never
-  //     a subscription: a `map().on()` on that lens sets off a Gun fire-storm.
+  //     a subscription: a live watch on that large lens re-renders on every event.
   //   - every `await` is followed by a holon-identity check, so a holon switch
   //     mid-load cannot paint the previous holon's numbers.
   // `expenses` is small enough to subscribe to normally.
 
-  import { onMount } from "svelte";
-  import { holonId, rotationHold } from "$lib/stores";
+  import { onDestroy, onMount } from "svelte";
+  import { nameOf as resolvedName, names } from "$lib/names";
+  import {
+    holonId,
+    rotationHold,
+    flowsViewMode,
+    now,
+    offerSettings,
+  } from "$lib/stores";
   import { t, locale, type MessageKey, type Translator } from "$lib/i18n";
+  import {
+    resolveFlowsUnit,
+    setFlowsUnit,
+    resolveFlowsWindow,
+    setFlowsWindow,
+  } from "$lib/config";
   import {
     getHolosphere,
     subscribeLens,
@@ -34,39 +68,137 @@
   import {
     REAAggregator,
     computeHolonUserScores,
-    loadEquation,
     extractReaUsers,
-    DEFAULT_EQUATION,
-    type ScoreEquation,
   } from "@holons/core/scoring";
   import {
+    PASSED_SEGMENT,
+    RETAINED_ID,
+    UNATTRIBUTED_ID,
     allocate,
     allocationToGraph,
+    buildWallet,
+    cascadeRights,
+    cascadeToGraph,
+    childResolver,
+    claimCeilings,
+    claimHeadroom,
+    fitsHeadroom,
+    partyShares,
+    hasAllocationConfig,
+    loadCascadeChildren,
+    resolveCascade,
+    partyIdOf,
+    segmentTotal,
+    buildFundUsage,
+    buildLedger,
+    fundAccount,
+    buildPeopleFlows,
     buildValueFlows,
+    windowFromChoice,
+    type FlowsWindow,
+    type FlowsWindowChoice,
+    chordBreakdown,
+    layoutChord,
+    filterLedger,
     layoutSankey,
+    nodeBreakdown,
+    sortLedger,
+    CHORD_OTHERS_ID,
+    combinePeopleTracks,
+    combineTracks,
     readAllocationConfig,
+    describeChain,
+    readPotRecord,
+    readInteriorShares,
+    resolveInteriorMembers,
     readCollectiveSlug,
     readZoneAssignments,
+    readZonePeople,
+    loadInboundRights,
+    mintedIn,
+    potTotal,
+    potUnits,
+    scoreAllocationMembers,
     toAllocationPartners,
+    usageOf,
+    usageTotals,
+    usageUnits,
+    type AllocationSlice,
+    type CascadeInputs,
+    type CascadeNode,
+    type FundUsage,
+    type FundUsageParty,
+    type InboundRight,
+    type BreakdownRow,
+    type ChordGroup,
+    type LedgerEntry,
     type OpenCollectiveSnapshot,
+    type PeopleFlowTrack,
+    type SankeyLayoutLink,
     type SankeyLayoutNode,
     type ValueFlowTrack,
   } from "@holons/core/flows";
   import { getFederationSnapshot } from "@holons/core/federation";
   import { loadSettings } from "@holons/core/settings";
   import { buildNameMap } from "@holons/core/identity";
-  import type { Expense } from "@holons/core/expenses";
+  import {
+    computeMutualCredit,
+    expenseCurrencies,
+    normalizeCurrency,
+    participantIds,
+    type Expense,
+  } from "@holons/core/expenses";
+  import { currentUser, displayName, loginOpen } from "$lib/auth";
+  import { get } from "svelte/store";
+  import AllocationSettings from "$lib/components/AllocationSettings.svelte";
+  import { bindEquation, equation as equationStore } from "$lib/equation";
+  import type { AllocationDraft } from "$lib/allocation";
+  import Icon from "$lib/components/Icon.svelte";
   import SankeyChart from "$lib/components/SankeyChart.svelte";
-  import PillSwitch from "$lib/components/PillSwitch.svelte";
+  import ChordChart from "$lib/components/ChordChart.svelte";
   import Modal from "$lib/components/Modal.svelte";
+  import BalancesView from "./BalancesView.svelte";
+  import PotPanel from "$lib/components/PotPanel.svelte";
+  import {
+    watchClaimsLogs,
+    claimSigner,
+    recordPolicy,
+    recordClaim,
+    recordTransfer,
+    recordVerdict,
+    recordPayout,
+    recordMint,
+    watchMintsLogs,
+    type ClaimsLogs,
+  } from "$lib/flowsClaims";
+  import {
+    FLOW_CLAIMS_LENS,
+    foldClaimsFromLenses,
+    foldMintsFromLenses,
+    type Claim,
+    type Transfer,
+  } from "@holons/core/flows";
+  import type { Policy } from "@holons/core/protocol";
 
-  // Window options. 90 days is the default: long enough that a quiet month
-  // still shows structure, short enough to describe the holon as it is now.
-  const WINDOWS = [
-    { id: "30", labelKey: "flows.window30" as MessageKey, days: 30 },
-    { id: "90", labelKey: "flows.window90" as MessageKey, days: 90 },
-    { id: "all", labelKey: "flows.windowAll" as MessageKey, days: null },
-  ] as const;
+  // The period, one choice for every chart and statement on the board,
+  // picked in the settings drawer and kept per device. 90 days is the
+  // default: long enough that a quiet month still shows structure, short
+  // enough to describe the holon as it is now. A relative preset ("this
+  // month", "30 days") resolves against the clock once an hour — not every
+  // minute, since a new window object redraws every chart — so a kiosk left
+  // alone rolls over on its own.
+  let windowChoice: FlowsWindowChoice = resolveFlowsWindow();
+  function pickWindow(choice: FlowsWindowChoice) {
+    windowChoice = choice;
+    setFlowsWindow(choice);
+  }
+  $: windowHour = Math.floor($now.getTime() / 3_600_000) * 3_600_000;
+  let flowsWindow: FlowsWindow = windowFromChoice(windowChoice);
+  $: {
+    const next = windowFromChoice(windowChoice, windowHour);
+    if (next.from !== flowsWindow.from || next.to !== flowsWindow.to)
+      flowsWindow = next;
+  }
 
   let hid: string | null = null;
   let loading = true;
@@ -81,14 +213,354 @@
   let usersById: Record<string, any> = {};
   let collective: OpenCollectiveSnapshot | null = null;
   let collectiveError = "";
-  let equation: ScoreEquation = DEFAULT_EQUATION;
-  let partners: { id: string; name: string; zone: number }[] = [];
+  // One shared store for the weights: editing them in the settings sheet
+  // redraws this board's allocation diagram on the tap.
+  $: equation = $equationStore;
+  // The federation record's partner ids; zones and names are derived below so
+  // a settings doc or a resolved name arriving later still lands on the board.
+  let federated: string[] = [];
 
-  let windowId: string = "90";
-  let trackId = "";
+  // ── The signed claims log ───────────────────────────────────────────────
+  // A claim is a signed, append-only entry in the holon's own log; who it
+  // counts for and whether it counts is the fold's call (core), from the
+  // membership log, the settings, the users and the identity directory —
+  // the same fold every other surface runs. The board watches the logs and
+  // re-folds on every entry; `usage` then takes `claimed` from the fold.
+  let claimsLogs: ClaimsLogs | null = null;
+  let claimsOff: (() => void) | null = null;
+  // The mints log — what the fund holds to divide — watched the same way.
+  let mintsLogs: ClaimsLogs | null = null;
+  let mintsOff: (() => void) | null = null;
+  let claimsBoundTo: string | null = null;
+  let logSigner: Awaited<ReturnType<typeof claimSigner>> = null;
+  let claimAmount = "";
+  let claimMemo = "";
+  let claimBusy = false;
+  let claimError = "";
+  // The give: part of your access handed to another party, a `transfer` in
+  // the same log, under the same ceiling. Opened on demand beside the claim.
+  let giveOpen = false;
+  let giveTo = "";
+  let giveToOther = "";
+  let giveAmount = "";
+  let giveMemo = "";
+  $: if (hsRef && hid && hid !== claimsBoundTo) bindClaims(hsRef, hid);
+  $: if (!hid && claimsBoundTo) unbindClaims();
+  function bindClaims(hs: HoloSphere, holon: string) {
+    unbindClaims();
+    claimsBoundTo = holon;
+    claimsOff = watchClaimsLogs(hs, holon, (logs) => {
+      if (claimsBoundTo === holon) claimsLogs = logs;
+    });
+    mintsOff = watchMintsLogs(hs, holon, (logs) => {
+      if (claimsBoundTo === holon) mintsLogs = logs;
+    });
+  }
+  function unbindClaims() {
+    claimsOff?.();
+    claimsOff = null;
+    mintsOff?.();
+    mintsOff = null;
+    claimsBoundTo = null;
+    claimsLogs = null;
+    mintsLogs = null;
+  }
+  onDestroy(unbindClaims);
+  // Who this session signs as (server-side derived key for Telegram logins,
+  // the adopted key for key logins) — re-resolved when the login changes.
+  $: void refreshLogSigner($currentUser);
+  async function refreshLogSigner(_user: unknown) {
+    logSigner = await claimSigner();
+  }
+  // The log folded twice, both by core. First for the SHAPE, with no ceiling:
+  // who claimed what decides who usage is attributed to, and usage sizes the
+  // pot. Then JUDGED, under the ceilings that shape, the pot and the usage
+  // give (`claimCeilings`): a claim past a right is held as `over`. The
+  // ceilings are the same whichever fold the usage came from, so there is
+  // no cycle — see core `ceiling.ts`.
+  $: claimsShape =
+    hid && claimsLogs
+      ? foldClaimsFromLenses({
+          holonId: hid,
+          entries: claimsLogs.entries,
+          policyEntries: claimsLogs.policy,
+          membersLog: claimsLogs.members,
+          settings,
+          users: Object.values(usersById),
+          attestations: claimsLogs.attestations,
+          imports: claimsLogs.imports,
+        })
+      : null;
+  $: claimsCtx =
+    hid && claimsLogs && claimsShape
+      ? foldClaimsFromLenses({
+          holonId: hid,
+          entries: claimsLogs.entries,
+          policyEntries: claimsLogs.policy,
+          membersLog: claimsLogs.members,
+          settings,
+          users: Object.values(usersById),
+          attestations: claimsLogs.attestations,
+          imports: claimsLogs.imports,
+          rights: ceilings,
+        })
+      : null;
+  $: mintsCtx =
+    hid && mintsLogs
+      ? foldMintsFromLenses({
+          holonId: hid,
+          entries: mintsLogs.entries,
+          policyEntries: mintsLogs.policy,
+          membersLog: mintsLogs.members,
+          settings,
+          users: Object.values(usersById),
+          attestations: mintsLogs.attestations,
+        })
+      : null;
+  $: canMint = !!(
+    mintsCtx &&
+    myLogRole &&
+    mintsCtx.policy.attesters.includes(myLogRole)
+  );
+  async function submitMint(input: {
+    amount: number;
+    unit: string;
+    memo?: string;
+    source?: string;
+  }) {
+    if (!hsRef || !hid) throw new Error("No holon");
+    await recordMint(hsRef, hid, input);
+  }
+
+  // ── What reaches this fund from upstream ────────────────────────────────
+  // A partner whose split seats this holon passes part of ITS pot here; the
+  // walk climbs the federation record a bounded number of hops (core).
+  let inbound: InboundRight[] = [];
+  async function loadInbound(hs: HoloSphere, holon: string) {
+    try {
+      const got = await loadInboundRights(hs, holon, {
+        scoreOf: (id) => scoreAllocationMembers(hs, id),
+      });
+      if (hid === holon) inbound = got.inbound;
+    } catch (err) {
+      console.warn("[kiosk] flows: inbound load failed", err);
+      if (hid === holon) inbound = [];
+    }
+  }
+
+  // ── The pot ─────────────────────────────────────────────────────────────
+  // What there is to divide, per unit: the collective's money, what was
+  // minted here, what reaches here. One unit is drawn at a time; a pill row
+  // offers the others when a holon holds more than one.
+  let potUnitPick = "";
+  // The holon's Pot, when it has one: what it received on chain is the pot
+  // in those units (a mint in the same unit is the same lot), and a right
+  // in them is collected from the Pot by its table, never claimed in the
+  // log (`held` below). The panel reads the chain and reports the receipts.
+  $: potRecord = readPotRecord(settings);
+  let potChain: Record<string, number> = {};
+  $: if (!potRecord && Object.keys(potChain).length) potChain = {};
+  $: potSources = {
+    collective: collective
+      ? { currency: collective.currency, balance: collective.balance }
+      : null,
+    mints: mintsCtx?.folded ?? null,
+    inbound,
+    chain: potChain,
+  };
+  $: potUnitList = potUnits(potSources);
+  $: potUnit =
+    potUnitPick && potUnitList.includes(potUnitPick)
+      ? potUnitPick
+      : (potUnitList[0] ?? "");
+  // The collective, when the unit drawn is its currency.
+  $: potCollective =
+    collective && potUnit && normalizeCurrency(collective.currency) === potUnit
+      ? collective
+      : null;
+  $: potMinted = potUnit ? mintedIn(potUnit, potSources) : 0;
+  $: potInbound = inbound
+    .filter((r) => normalizeCurrency(r.unit) === potUnit)
+    .reduce((sum, r) => sum + r.right, 0);
+  $: potLabel = potCollective
+    ? potCollective.name
+    : potMinted > 0
+      ? $t("flows.potMinted")
+      : potInbound > 0
+        ? $t("flows.potInbound")
+        : $t("flows.allocationPot");
+  $: myClaims =
+    claimsCtx && selfId
+      ? claimsCtx.folded.claims.filter((c) => c.party === selfId)
+      : [];
+  // Gives I made or that reached me, judged like my claims.
+  $: myTransfers =
+    claimsCtx && selfId
+      ? claimsCtx.folded.transfers.filter(
+          (t) => t.party === selfId || t.to === selfId,
+        )
+      : [];
+  // Who a give can name: every seat on the allocation and every member,
+  // never yourself; anyone else by id.
+  $: giveCandidates = [
+    ...new Set([...partyShares(rights).keys(), ...memberIds]),
+  ].filter((id) => id && id !== selfId);
+  $: giveReceiver = giveTo === "__other" ? giveToOther.trim() : giveTo;
+  $: giveTooBig = !fitsHeadroom(
+    claimMax,
+    Number(String(giveAmount).replace(",", ".")),
+  );
+  $: myLogRole =
+    claimsCtx && logSigner
+      ? claimsCtx.actors.roleAt(
+          logSigner.pubkey,
+          Math.floor($now.getTime() / 1000),
+        )
+      : null;
+  $: canAttest = !!(
+    claimsCtx &&
+    myLogRole &&
+    claimsCtx.policy.attesters.includes(myLogRole)
+  );
+  $: reviewClaims =
+    claimsCtx && canAttest
+      ? claimsCtx.folded.claims.filter(
+          (c) =>
+            c.party !== selfId &&
+            c.status !== "settled" &&
+            c.status !== "rejected",
+        )
+      : [];
+  $: claimsProvisional = claimsCtx?.folded.source === "bootstrap";
+  $: claimUnit = potUnit;
+  // What is left to claim in this unit: the ceiling less what is approved,
+  // paid or awaiting attestation (core `claimHeadroom`). Null = no ceiling
+  // known (no pot in this unit), and the form takes any amount.
+  $: claimMax =
+    selfId && claimUnit
+      ? claimHeadroom(ceilings, claimsCtx?.folded, selfId, claimUnit)
+      : null;
+  $: claimTooBig = !fitsHeadroom(
+    claimMax,
+    Number(String(claimAmount).replace(",", ".")),
+  );
+  const partyName = (id: string) => nameFor(id);
+  async function submitClaim() {
+    if (!hsRef || !hid || !selfId || claimBusy) return;
+    const amount = Number(String(claimAmount).replace(",", "."));
+    if (!(amount > 0) || !claimUnit) return;
+    if (!fitsHeadroom(claimMax, amount)) {
+      claimError = $t("flows.claimOverMax", {
+        max: formatAccount(claimMax ?? 0),
+      });
+      return;
+    }
+    claimBusy = true;
+    claimError = "";
+    try {
+      await recordClaim(hsRef, hid, {
+        party: selfId,
+        amount,
+        unit: claimUnit,
+        memo: claimMemo.trim() || undefined,
+        percentage: myAccount?.percentage,
+      });
+      claimAmount = "";
+      claimMemo = "";
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    } finally {
+      claimBusy = false;
+    }
+  }
+  async function submitGive() {
+    if (!hsRef || !hid || !selfId || claimBusy) return;
+    const amount = Number(String(giveAmount).replace(",", "."));
+    if (!(amount > 0) || !claimUnit || !giveReceiver) return;
+    if (giveReceiver === selfId) {
+      claimError = $t("flows.giveSelf");
+      return;
+    }
+    if (!fitsHeadroom(claimMax, amount)) {
+      claimError = $t("flows.giveOverMax", {
+        max: formatAccount(claimMax ?? 0),
+      });
+      return;
+    }
+    claimBusy = true;
+    claimError = "";
+    try {
+      await recordTransfer(hsRef, hid, {
+        party: selfId,
+        to: giveReceiver,
+        amount,
+        unit: claimUnit,
+        memo: giveMemo.trim() || undefined,
+      });
+      giveAmount = "";
+      giveMemo = "";
+      giveOpen = false;
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    } finally {
+      claimBusy = false;
+    }
+  }
+  async function judgeClaim(c: Claim, verdict: "attest" | "dispute") {
+    if (!hsRef || !hid || claimBusy) return;
+    claimBusy = true;
+    claimError = "";
+    try {
+      await recordVerdict(hsRef, hid, c.id, verdict);
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    } finally {
+      claimBusy = false;
+    }
+  }
+  async function markPaid(c: Claim) {
+    if (!hsRef || !hid || claimBusy) return;
+    claimBusy = true;
+    claimError = "";
+    try {
+      await recordPayout(hsRef, hid, {
+        claimId: c.id,
+        party: c.party,
+        amount: c.amount,
+        unit: c.unit,
+      });
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    } finally {
+      claimBusy = false;
+    }
+  }
+
+  /**
+   * The unit both the movement Sankey and the people chord are drawn in.
+   *
+   * One selector governs the two: they are the same records seen from two
+   * sides, and picking euro in one and hours in the other only ever produced
+   * two graphs nobody was comparing. `ALL_TRACKS` shows every unit at once,
+   * one chart each — never summed, because there are no exchange rates here.
+   */
+  const ALL_TRACKS = "all";
+  // Picked in the settings drawer; kept per device.
+  let trackId = resolveFlowsUnit();
+  function pickUnit(id: string) {
+    trackId = id;
+    setFlowsUnit(id);
+  }
   let selected: SankeyLayoutNode | null = null;
-
-  $: windowDays = WINDOWS.find((w) => w.id === windowId)?.days ?? 90;
+  /** The track a tapped movement bar belongs to; "all" draws several. */
+  let selectedTrackKey = "";
+  // Which chart the tap came from: node ids repeat across the two ("+n more"
+  // rollups above all), so the sheet must not look a movement bar up in the
+  // allocation graph.
+  let selectedChart: "movement" | "allocation" = "movement";
+  // The detail modal must format in the unit of the chart the tap came from —
+  // an allocation node shown with the movement track's currency would lie.
+  let selectedFormat: (value: number) => string = (v) => String(Math.round(v));
 
   // ── Derived: the movement graph ─────────────────────────────────────────
   // Recomputed from in-memory arrays, so a pill tap is instant and costs no
@@ -100,57 +572,550 @@
     profiles: Object.values(usersById),
   });
 
-  $: graph = buildValueFlows({
+  // ── Names for ids the name map cannot know ──────────────────────────────
+  // The users lens and the REA stream name people. Anything else on the
+  // board — a federation partner, a personal holon, a bare key — is named by
+  // the kiosk's one resolver (`$lib/names`): partner names, the holon's
+  // settings and HNS, the key directory, kind-0 profiles — folded in as they
+  // arrive, never a raw id.
+  let partnerNameMap: Record<string, string> = {};
+  let hsRef: HoloSphere | null = null;
+
+  /** The name for any id on the board — a learned name, else its short form. */
+  $: nameFor = (id: string): string => {
+    // `buildNameMap` stands in "#<id>" for a REA agent that carried no name;
+    // that is a placeholder, not an answer, so keep looking past it.
+    const mapped = nameMap.get(id);
+    if (mapped && mapped !== `#${id}`) return mapped;
+    if (partnerNameMap[id]) return partnerNameMap[id];
+    if ($currentUser && id === String($currentUser.id)) {
+      return displayName($currentUser);
+    }
+    return $resolvedName(id);
+  };
+
+  // Partners with their rings and best-known names. Derived, not loaded: the
+  // federation record and the settings doc arrive in either order, and a
+  // partner placed on a ring must not be drawn unplaced because its zones
+  // were read a moment too early.
+  //
+  // While the settings sheet is open these come from its live draft instead,
+  // so dragging a partner onto a ring redraws the diagram behind it.
+  $: savedZones = readZoneAssignments(settings);
+  $: savedPeople = readZonePeople(settings);
+  // A partner found in the sheet and not yet linked rides along in the
+  // draft, so the diagram shows the seat before Save writes the record.
+  $: partners = toAllocationPartners(
+    [...federated, ...(allocationDraft?.partners ?? []).map((p) => p.id)],
+    {
+      ...partnerNameMap,
+      ...Object.fromEntries(
+        (allocationDraft?.partners ?? []).map((p) => [p.id, p.name]),
+      ),
+    },
+    allocationDraft?.zones ?? savedZones,
+    allocationDraft?.people ?? savedPeople,
+  ).map((p) => ({ ...p, name: nameFor(p.id) ?? p.name }));
+
+  // The group an expense with no split is shared by: the users lens, less
+  // the holon itself, which older bot records could carry as a member.
+  $: memberIds = Object.keys(usersById).filter((id) => id && id !== hid);
+
+  $: flowsInput = {
     holonId: hid ?? "",
     events,
     expenses,
     collective,
     settings,
-    windowDays,
-    nameOf: (id) => nameMap.get(id),
-    hubLabel: $t("flows.hub"),
-  });
+    window: flowsWindow,
+    members: memberIds,
+    nameOf: nameFor,
+    hubLabel: (hid && $names.get(hid)) || $t("flows.hub"),
+  };
+  $: graph = buildValueFlows(flowsInput);
+  // The rows the diagram was drawn from — what a tapped bar lists when it has
+  // no group of its own to break down into.
+  $: ledger = buildLedger(flowsInput).entries;
 
   $: tracks = graph.tracks;
 
-  // Keep the selected track valid as data streams in and tracks appear.
-  $: if (tracks.length && !tracks.some((t) => trackKey(t) === trackId)) {
-    trackId = trackKey(tracks[0]);
-  }
-
-  $: activeTrack = tracks.find((t) => trackKey(t) === trackId) ?? null;
+  // Under "All" the units are merged into ONE diagram: each track is scaled to
+  // its own total first, so the widths are shares that can honestly be added,
+  // and every label still prints the real amount in its own unit.
+  // `$t` is read here, at the top level, not inside the closures below: a
+  // store cannot be subscribed to from a nested scope.
+  $: tr = $t;
+  $: combineOptions = {
+    labelOf: (t: { id: string; unit: string }) =>
+      t.id === "items"
+        ? t.unit === "lends"
+          ? tr("flows.trackLends")
+          : t.unit
+        : trackLabel(t as ValueFlowTrack, tr),
+    formatOf: (t: { id: string; unit: string }) =>
+      t.id === "items"
+        ? itemsFormatter(t.unit)
+        : formatter(t as ValueFlowTrack),
+  };
+  $: activeTrack =
+    trackId === ALL_TRACKS
+      ? combineTracks(tracks, combineOptions)
+      : (tracks.find((t) => trackKey(t) === trackId) ?? null);
   $: movementLayout = activeTrack ? layoutSankey(activeTrack) : null;
-
-  $: trackOptions = tracks.map((track) => ({
-    id: trackKey(track),
-    label: trackLabel(track, $t),
-  }));
+  // A combined bar's number is a share of each unit's own flow, so it reads as
+  // a percentage; the real amounts ride on each node's and link's `display`.
+  $: formatMovement =
+    activeTrack?.id === "combined" ? () => "" : formatter(activeTrack);
 
   // ── Derived: the allocation graph ───────────────────────────────────────
   // Scores come from the same pipeline the Status board ranks with, so the two
   // views cannot disagree about who contributed what.
   let memberShares: { id: string; name: string; percentage: number }[] = [];
 
-  $: allocationConfig = readAllocationConfig(settings);
-  $: allocationResult = allocate({
-    // The collective balance is the honest pot; without one, show the shape of
-    // the split as percentages rather than pretending to an amount.
-    total: collective?.balance ?? null,
-    unit: collective?.currency ?? "",
+  // The split as saved, and — while the settings sheet is open — as it is
+  // being edited: every knob in the sheet feeds the diagram live, and only
+  // Save writes any of it.
+  $: savedConfig = readAllocationConfig(settings);
+  $: savedShares = readInteriorShares(settings);
+  $: allocationConfig = allocationDraft?.config ?? savedConfig;
+  // Who the contributors' share goes to: the scored roster under the
+  // equation, the custom shares under a custom split — the same resolver the
+  // dashboard reads with and the contract is synced by.
+  $: interiorShares = allocationDraft?.shares ?? savedShares;
+  $: interiorMembers = resolveInteriorMembers({
     config: allocationConfig,
-    members: memberShares,
+    scored: memberShares,
+    shares: interiorShares,
+    nameOf: (id) => nameFor(id) ?? undefined,
+  });
+
+  // ── Derived: the cascade ────────────────────────────────────────────────
+  // A recipient can be a holon with a split of its own — a member's id is
+  // their personal holon's id. Core follows each share down through those
+  // splits; this board only reads the splits once per roster and draws what
+  // core resolves. Not re-read while the sheet is open: the draft changes the
+  // roster on every tap, and what is downstream of it does not.
+  let cascadeChildren: Record<string, CascadeInputs> = {};
+  let cascadeKey = "";
+  let cascadeNonce = 0;
+  $: rootPartyIds = [
+    ...new Set([
+      ...interiorMembers.map((m) => m.id),
+      ...partners.filter((p) => p.zone >= 1).map((p) => p.id),
+    ]),
+  ].sort();
+  $: if (!allocationDraft)
+    void loadCascade(hsRef, hid, rootPartyIds.join("|"), cascadeNonce);
+
+  async function loadCascade(
+    hs: HoloSphere | null,
+    holon: string | null,
+    ids: string,
+    nonce: number,
+  ) {
+    const want = hs && holon ? `${holon}#${nonce}#${ids}` : "";
+    if (want === cascadeKey) return;
+    cascadeKey = want;
+    if (!hs || !holon || !ids) {
+      cascadeChildren = {};
+      return;
+    }
+    try {
+      const loaded = await loadCascadeChildren(hs, ids.split("|"), {
+        rootId: holon,
+        scoreOf: (id) => scoreAllocationMembers(hs, id),
+      });
+      if (cascadeKey === want) cascadeChildren = loaded.children;
+    } catch (err) {
+      console.warn("[kiosk] flows: cascade load failed", err);
+      if (cascadeKey === want) cascadeChildren = {};
+    }
+  }
+
+  // Names arrive after the splits do, so they are laid over the snapshot
+  // here rather than frozen into it at load time.
+  $: namedChildren = Object.fromEntries(
+    Object.entries(cascadeChildren).map(([id, child]) => [
+      id,
+      {
+        ...child,
+        name: nameFor(id) ?? child.name,
+        members: child.members.map((m) => ({
+          ...m,
+          name: nameFor(m.id) ?? m.name,
+        })),
+        zoned: child.zoned.map((z) => ({
+          ...z,
+          name: nameFor(z.id) ?? z.name,
+        })),
+      },
+    ]),
+  ) as Record<string, CascadeInputs>;
+  $: cascadeRoot = {
+    config: allocationConfig,
+    members: interiorMembers,
+    zoned: partners,
+  };
+  // The shape first, without a pot: who ends up holding part of the fund
+  // decides who usage is attributed to, and usage sizes the pot.
+  $: cascadeShape = Object.keys(namedChildren).length
+    ? resolveCascade({
+        holonId: hid ?? "",
+        total: null,
+        root: cascadeRoot,
+        resolveChild: childResolver(namedChildren),
+      })
+    : null;
+
+  // ── Derived: fund usage ─────────────────────────────────────────────────
+  // Every rights-holder, with the names a collective payee might carry so
+  // OpenCollective's "Ada Lovelace" lands on the member the users lens calls
+  // Ada. Usage needs a real pot, so it only exists with a collective.
+  function aliasesFor(users: Record<string, any>, id: string): string[] {
+    const u = users[id];
+    if (!u) return [];
+    const first = String(u.first_name ?? "").trim();
+    const last = String(u.last_name ?? "").trim();
+    return [
+      String(u.username ?? "").trim(),
+      first,
+      [first, last].filter(Boolean).join(" "),
+    ].filter(Boolean);
+  }
+  // A member also seated on a ring is one party, listed once.
+  $: usageParties = [
+    ...new Map(
+      [
+        ...interiorMembers.map((m) => ({ id: m.id, name: m.name })),
+        ...partners
+          .filter((p) => p.zone >= 1)
+          .map((p) => ({ id: p.id, name: p.name })),
+        // Whoever holds part of the fund through someone else's giving.
+        ...Object.entries(cascadeShape?.leaves ?? {})
+          .filter(([id]) => id !== hid)
+          .map(([id, leaf]) => ({ id, name: leaf.label })),
+      ].map((p) => [
+        p.id,
+        { id: p.id, name: p.name, aliases: aliasesFor(usersById, p.id) },
+      ]),
+    ).values(),
+  ] as FundUsageParty[];
+  $: usage = potUnit
+    ? buildFundUsage({
+        holonId: hid ?? "",
+        unit: potUnit,
+        parties: usageParties,
+        members: memberIds,
+        expenses,
+        collective,
+        window: flowsWindow,
+        claims: claimsShape?.folded ?? null,
+      })
+    : null;
+  // The same usage read off the JUDGED fold: a claim held as `over` is not
+  // drawn as claimed. The pot stays on the shape (a verdict moves no pot).
+  $: usageJudged =
+    potUnit && claimsCtx
+      ? buildFundUsage({
+          holonId: hid ?? "",
+          unit: potUnit,
+          parties: usageParties,
+          members: memberIds,
+          expenses,
+          collective,
+          window: flowsWindow,
+          claims: claimsCtx.folded,
+        })
+      : usage;
+  $: usageTotal = usageTotals(usageJudged);
+
+  $: allocationResult = allocate({
+    // The pot is the honest total — what is held here (the bank, the mints)
+    // plus what reaches here, plus what rights-holders already drew, since a
+    // right that was spent still was one (`potTotal`, core). Without a pot
+    // in any unit, show the shape of the split as percentages rather than
+    // pretending to an amount.
+    total: potUnit ? potTotal(potUnit, potSources, usage) || null : null,
+    unit: potUnit,
+    config: allocationConfig,
+    members: interiorMembers,
     zoned: partners,
   });
-  $: allocationLayout = layoutSankey(
-    allocationToGraph(allocationResult, {
-      pot: collective ? collective.name : $t("flows.allocationPot"),
-      interior: $t("flows.interior"),
-      exterior: $t("flows.exterior"),
-    }),
+  $: cascade = cascadeShape
+    ? resolveCascade({
+        holonId: hid ?? "",
+        total: allocationResult.total,
+        unit: allocationResult.unit,
+        root: cascadeRoot,
+        resolveChild: childResolver(namedChildren),
+      })
+    : null;
+  // Who passes on to whom, for the tooltips and the account card.
+  $: cascadeFlows = (() => {
+    const to = new Map<string, Set<string>>();
+    const from = new Map<string, Set<string>>();
+    const walk = (parent: CascadeNode) => {
+      for (const child of parent.children) {
+        if (parent.depth >= 1 && child.id !== parent.id) {
+          if (!to.has(parent.id)) to.set(parent.id, new Set());
+          to.get(parent.id)!.add(child.id);
+          if (!from.has(child.id)) from.set(child.id, new Set());
+          from.get(child.id)!.add(parent.id);
+        }
+        walk(child);
+      }
+    };
+    if (cascade) walk(cascade.root);
+    return { to, from };
+  })();
+  $: namesOf = (ids: Iterable<string> | undefined): string =>
+    [...(ids ?? [])].map((id) => nameFor(id) ?? id).join(", ");
+
+  $: allocationLabels = {
+    pot: potLabel,
+    interior: $t("flows.interior"),
+    exterior: $t("flows.exterior"),
+    spent: $t("flows.spent"),
+    claimed: $t("flows.claimed"),
+    available: $t("flows.available"),
+    over: $t("flows.over"),
+    unattributed: $t("flows.unattributed"),
+    passed: $t("flows.passed"),
+    retained: $t("flows.retained"),
+  };
+  $: allocationTrack = cascade
+    ? cascadeToGraph(cascade, allocationLabels, usageJudged)
+    : allocationToGraph(allocationResult, allocationLabels, usageJudged);
+  $: allocationLayout = layoutSankey(allocationTrack);
+
+  // ── Derived: the viewer's account ───────────────────────────────────────
+  // The same allocation and usage the diagram is drawn from, read for one
+  // person. Null means "no right here", which the card says in words rather
+  // than printing zeros that look like an empty account.
+  $: selfId = $currentUser ? String($currentUser.id) : null;
+  // With a cascade a right is what the holder KEEPS: what their own split
+  // sends further is someone else's right, and core nets it out.
+  $: rights = cascade ? cascadeRights(cascade) : allocationResult;
+  // The ceiling every claim is judged against, per party and unit: a share
+  // of each unit's pot less the draws outside the log (core).
+  $: potByUnit = Object.fromEntries(
+    potUnitList.map((u) => [u, potTotal(u, potSources, usage)]),
+  ) as Record<string, number>;
+  $: ceilings = claimCeilings({
+    shares: rights,
+    pots: potByUnit,
+    usage,
+    claims: claimsShape?.folded ?? null,
+    held: Object.keys(potChain),
+  });
+  $: myShare =
+    selfId && cascade ? (cascade.leaves[selfId]?.percentage ?? 0) : 0;
+  $: myAccount = selfId ? fundAccount(rights, usageJudged, selfId) : null;
+
+  // ── The wallet: every unit at once ──────────────────────────────────────
+  // One line per unit the viewer holds anything in — a seat on the fund,
+  // access someone gave them, an open mutual-credit position — built by
+  // core from the same shapes the card and the diagram read. Tapping a line
+  // picks the unit the statement below is in; a fund unit also moves the
+  // board's unit pill.
+  let walletPick = "";
+  $: creditByUnit = currencies.map((c) =>
+    computeMutualCredit(expenses, people, c),
+  );
+  $: wallet = selfId
+    ? buildWallet({
+        partyId: selfId,
+        shares: rights,
+        sources: potSources,
+        usage: usageJudged,
+        credit: creditByUnit,
+        held: Object.keys(potChain),
+        ceilings,
+        claims: claimsCtx?.folded ?? null,
+      })
+    : [];
+  $: walletUnit =
+    walletPick && wallet.some((l) => l.unit === walletPick)
+      ? walletPick
+      : wallet.some((l) => l.unit === potUnit)
+        ? potUnit
+        : (wallet[0]?.unit ?? potUnit);
+  $: walletSelected = wallet.find((l) => l.unit === walletUnit) ?? null;
+  // The statement card reads the board's unit; a credit-only line (a
+  // currency the fund never held) gets its own card instead.
+  $: walletCreditOnly = !!(
+    walletSelected &&
+    !walletSelected.account &&
+    walletSelected.credit
+  );
+  function pickWalletUnit(unit: string) {
+    walletPick = unit;
+    if (potUnitList.includes(unit)) potUnitPick = unit;
+  }
+  function openBalances(unit: string) {
+    pickUnit(`money:${unit}`);
+    flowsViewMode.set("balances");
+  }
+  $: signed = (unit: string, v: number) =>
+    `${v < 0 ? "−" : v > 0 ? "+" : ""}${moneyFormatter(unit, 2)(Math.abs(v))}`;
+  $: myPassesTo = selfId ? namesOf(cascadeFlows.to.get(selfId)) : "";
+  // A statement shows cents; the diagram rounds to whole units.
+  $: formatAccount = potUnit
+    ? moneyFormatter(potUnit, 2)
+    : (v: number) => `${Math.round(v * 10) / 10}%`;
+  $: sharePct = (pct: number) => String(Math.round(pct * 10) / 10);
+
+  // What is left to the rights-holders, as the diagram draws it: the sum of
+  // every right less what it has already used, never below zero per right —
+  // and what was taken beyond any right, read off the same stacked bars.
+  $: availableTotal = segmentTotal(allocationTrack, "available");
+  $: overTotal = segmentTotal(allocationTrack, "over");
+  $: passedTotal = segmentTotal(allocationTrack, PASSED_SEGMENT);
+  // One loop is enough to say so; the root is where every path starts, so it
+  // is left off the front unless the loop closes on it.
+  $: cascadeLoop = cascade?.cycles.length
+    ? cascade.cycles[0]
+        .slice(1)
+        .map((id) => nameFor(id) ?? id)
+        .join(" → ")
+    : "";
+
+  // A stored split counts on its own: a personal holon has no scored member
+  // (its owner is not a member of themselves) and may have placed nobody yet.
+  $: hasAllocation =
+    interiorMembers.length > 0 ||
+    partners.some((p) => p.zone >= 1) ||
+    hasAllocationConfig(settings);
+
+  // The ⚙ on the Allocation section: edit the split, the rings and the
+  // collective in place. Login-gated like every kiosk write; after a save the
+  // settings and the federation record are re-read so the board shows what
+  // actually landed.
+  let allocationOpen = false;
+  // The sheet's live draft: what the diagram draws from while it is open, and
+  // null the rest of the time (then the saved settings are the truth).
+  let allocationDraft: AllocationDraft | null = null;
+  let allocationReloading = false;
+
+  function openAllocation() {
+    if (!get(currentUser)) {
+      loginOpen.set(true);
+      return;
+    }
+    allocationOpen = true;
+    void loadPartnerKeys();
+  }
+  // Each partner's published holon key, so the Rules tab can pin it. Read
+  // when the sheet opens: a partner's settings are its own holon's, not a
+  // lens this board otherwise watches.
+  let partnerKeys: Record<string, string | null> = {};
+  async function loadPartnerKeys() {
+    if (!hsRef) return;
+    const ids = partners.filter((p) => p.kind !== "person").map((p) => p.id);
+    const out: Record<string, string | null> = {};
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const doc = (await hsRef!.get(id, "settings", id)) as {
+            holonPubkey?: unknown;
+          } | null;
+          const key = String(doc?.holonPubkey ?? "");
+          out[id] = /^[0-9a-f]{64}$/i.test(key) ? key.toLowerCase() : null;
+        } catch {
+          out[id] = null;
+        }
+      }),
+    );
+    partnerKeys = out;
+  }
+  /** The Rules tab's word: append the policy record, signed as the logged-in person. */
+  async function savePolicy(rule: Partial<Policy>) {
+    if (!hsRef || !hid) return;
+    try {
+      await recordPolicy(hsRef, hid, FLOW_CLAIMS_LENS, rule);
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    }
+  }
+  // The allocation settings are reached from the gear in the pills band
+  // (offered while this board is mounted), not from a button in the board.
+  onDestroy(
+    offerSettings({ labelKey: "flows.settings", open: openAllocation }),
   );
 
-  $: hasAllocation =
-    memberShares.length > 0 || partners.some((p) => p.zone >= 1);
+  /**
+   * Closing drops the draft — unless a save is still landing, in which case
+   * the draft holds the picture steady until the written settings arrive.
+   * Without that the board would flick back to the old split for a moment.
+   */
+  function closeAllocation() {
+    allocationOpen = false;
+    if (!allocationReloading) allocationDraft = null;
+  }
+
+  async function afterAllocationSave() {
+    allocationReloading = true;
+    try {
+      if (!hsRef || !hid) return;
+      await loadHolonSettings(hsRef, hid);
+      await loadFederation(hsRef, hid);
+      // The roster may be the same; what is downstream of it may not be.
+      cascadeNonce += 1;
+    } finally {
+      allocationReloading = false;
+      allocationDraft = null;
+    }
+  }
+
+  // ── Derived: the balances roster ────────────────────────────────────────
+  // Everyone with any economic footprint — the users lens, the REA stream,
+  // every payer and sharer on an expense, the viewer. People only: older bot
+  // records could carry the holon id in a split, so it is dropped here.
+  $: people = (() => {
+    const ids = new Set<string>();
+    for (const id of Object.keys(usersById)) ids.add(id);
+    for (const u of extractReaUsers(events)) ids.add(String(u.id));
+    for (const id of participantIds(expenses)) ids.add(id);
+    if ($currentUser) ids.add(String($currentUser.id));
+    if (hid) ids.delete(hid);
+    const list = [...ids]
+      .filter(Boolean)
+      .map((id) => ({
+        id,
+        name:
+          nameFor(id) ??
+          usersById[id]?.first_name ??
+          (id === String($currentUser?.id) ? $currentUser?.first_name : "") ??
+          id,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return list;
+  })();
+
+  // Every currency anyone has used or configured, normalized and deduped.
+  $: currencies = [
+    ...new Set(
+      [
+        ...expenseCurrencies(expenses),
+        ...(
+          (Array.isArray(settings?.currencies)
+            ? settings.currencies
+            : []) as unknown[]
+        )
+          .filter((c): c is string => typeof c === "string")
+          .map(normalizeCurrency),
+      ].filter(Boolean),
+    ),
+  ];
+
+  // The balances' currency follows the drawer's unit when that is a money
+  // currency; the first in use otherwise, and USD only so a fresh holon can
+  // record its first expense.
+  let currencyId = "";
+  $: if (trackId.startsWith("money:")) currencyId = trackId.slice(6);
+  $: currency = currencies.includes(currencyId)
+    ? currencyId
+    : (currencies[0] ?? "usd");
 
   function trackKey(track: ValueFlowTrack): string {
     return `${track.id}:${track.unit}`;
@@ -196,10 +1161,548 @@
     return (v) => `${fmt.format(v)} ${unit}`;
   }
 
-  $: formatMovement = formatter(activeTrack);
-  $: formatAllocation = collective
-    ? formatter({ id: "money", unit: collective.currency } as ValueFlowTrack)
+  /**
+   * Money in one unit with a fixed number of decimals — the statement and
+   * the credit cards show cents where the diagram rounds. A real ISO code
+   * gets the locale's currency form; a holon's own scrip is a number plus
+   * its unit.
+   */
+  function moneyFormatter(unit: string, digits: number): (v: number) => string {
+    const code = unit.toUpperCase();
+    if (/^[A-Z]{3}$/.test(code)) {
+      try {
+        const nf = new Intl.NumberFormat($locale, {
+          style: "currency",
+          currency: code,
+          minimumFractionDigits: digits,
+          maximumFractionDigits: digits,
+        });
+        return (v) => nf.format(v);
+      } catch {
+        // Not a currency Intl knows — fall through.
+      }
+    }
+    const nf = new Intl.NumberFormat($locale, {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
+    return (v) => `${nf.format(v)} ${unit}`;
+  }
+
+  /**
+   * One pill row for both graphs: "All" first, then every unit either graph
+   * knows, in movement order with the people-only units appended.
+   */
+  $: trackOptions = (() => {
+    const seen = new Map<string, string>();
+    for (const track of tracks)
+      seen.set(trackKey(track), trackLabel(track, $t));
+    for (const p of peopleTracks) {
+      const key = peopleKey(p);
+      if (seen.has(key)) continue;
+      seen.set(
+        key,
+        p.id !== "items"
+          ? trackLabel({ id: p.id, unit: p.unit } as ValueFlowTrack, $t)
+          : p.unit === "lends"
+            ? $t("flows.trackLends")
+            : p.unit,
+      );
+    }
+    return [
+      { id: ALL_TRACKS, label: $t("flows.trackAll") },
+      ...[...seen.entries()].map(([id, label]) => ({ id, label })),
+    ];
+  })();
+
+  // Everything the drawer can pick: the units with movement, plus any
+  // currency in use or configured that has none yet (the balances may
+  // still need it). Money first, as the tracks lay it out.
+  $: unitOptions = (() => {
+    const opts = [...trackOptions];
+    for (const c of currencies) {
+      const id = `money:${c}`;
+      if (!opts.some((o) => o.id === id))
+        opts.push({ id, label: c.toUpperCase() });
+    }
+    return opts;
+  })();
+
+  // A unit that has gone (the window moved, the scope changed) falls back to
+  // showing everything rather than to an empty board.
+  $: if (
+    trackId !== ALL_TRACKS &&
+    unitOptions.length > 1 &&
+    !unitOptions.some((o) => o.id === trackId)
+  ) {
+    trackId = ALL_TRACKS;
+  }
+
+  // ── Derived: between people ─────────────────────────────────────────────
+  // The same records with both ends kept: who gave what to whom, one matrix
+  // per unit, drawn as a directed chord.
+  $: peopleTracks = buildPeopleFlows({ ...flowsInput, involving: null });
+  const peopleKey = (track: PeopleFlowTrack) => `${track.id}:${track.unit}`;
+  // Driven by the same pill as the movement Sankey, and merged the same way.
+  $: activePeople =
+    trackId === ALL_TRACKS
+      ? combinePeopleTracks(peopleTracks, combineOptions)
+      : (peopleTracks.find((p) => peopleKey(p) === trackId) ?? null);
+  $: itemsFormatter = (unit: string) => {
+    const nf = new Intl.NumberFormat($locale, { maximumFractionDigits: 1 });
+    const name = unit === "lends" ? $t("flows.unitLends") : unit;
+    return (v: number) => `${nf.format(v)} ${name}`;
+  };
+  /** Stock and lends carry their own unit; everything else formats as money. */
+  function peopleFormat(p: PeopleFlowTrack | null): (v: number) => string {
+    if (!p) return (v) => String(Math.round(v));
+    return p.id === "items"
+      ? itemsFormatter(p.unit)
+      : formatter({ id: p.id, unit: p.unit } as ValueFlowTrack);
+  }
+  // A combined chord's numbers are shares of everything that moved between
+  // people, each unit counted equally, so they read as percentages.
+  $: formatPeople =
+    activePeople?.id === "combined"
+      ? (v: number) => `${Math.round(v)}%`
+      : peopleFormat(activePeople);
+  $: chordLabels = {
+    given: $t("flows.given"),
+    received: $t("flows.received"),
+    others: $t("flows.others"),
+  };
+
+  let selectedParty: ChordGroup | null = null;
+  /**
+   * The party behind a tapped arc, for its per-unit make-up.
+   *
+   * A rollup arc ("+n more") stands for several parties and has no single
+   * breakdown, so it simply finds nothing and the popup keeps its shares.
+   */
+  /**
+   * The currencies behind one ribbon of the combined chord.
+   *
+   * A ribbon may end on the rolled-up arc, which stands for every party the
+   * layout did not keep — so each end is expanded to the set it represents and
+   * the per-pair slices core recorded are summed over that set. Amounts add
+   * because they are in one unit; shares add because each is a share of that
+   * same unit's own flow.
+   */
+  $: chordGroupIds = new Set(
+    activePeople
+      ? layoutChord(activePeople, {
+          innerRadius: 100,
+          othersLabel: chordLabels.others,
+        }).groups.map((g) => g.id)
+      : [],
+  );
+  $: peopleUnitFormat = new Map(
+    peopleTracks.map(
+      (p) => [combineOptions.labelOf(p), peopleFormat(p)] as const,
+    ),
+  );
+  $: ribbonDetails = (source: string, target: string) => {
+    const pairs = activePeople?.unitsByPair;
+    if (!pairs) return [];
+    const expand = (id: string): string[] =>
+      id === CHORD_OTHERS_ID
+        ? (activePeople?.parties ?? [])
+            .map((p) => p.id)
+            .filter((pid) => !chordGroupIds.has(pid))
+        : [id];
+    const totals = new Map<string, { amount: number; share: number }>();
+    for (const from of expand(source)) {
+      for (const to of expand(target)) {
+        for (const slice of pairs[`${from}>${to}`] ?? []) {
+          const seen = totals.get(slice.unit) ?? { amount: 0, share: 0 };
+          seen.amount += slice.amount;
+          seen.share += slice.share;
+          totals.set(slice.unit, seen);
+        }
+      }
+    }
+    return [...totals.entries()].map(([unit, t]) => ({
+      label: unit,
+      value: `${peopleUnitFormat.get(unit)?.(t.amount) ?? Math.round(t.amount)} · ${Math.round(t.share)}%`,
+    }));
+  };
+
+  $: selectedPartyUnits =
+    selectedParty && activePeople
+      ? (activePeople.parties.find((p) => p.id === selectedParty!.id) ?? null)
+      : null;
+  // Who is rolled into whom does not depend on the radius, so any will do.
+  $: partyBreakdown =
+    selectedParty && activePeople
+      ? chordBreakdown(
+          layoutChord(activePeople, {
+            innerRadius: 100,
+            othersLabel: chordLabels.others,
+          }),
+          selectedParty.id,
+        )
+      : null;
+  $: formatAllocation = potUnit
+    ? formatter({ id: "money", unit: potUnit } as ValueFlowTrack)
     : (v: number) => `${Math.round(v)}%`;
+
+  // ── Hover details ────────────────────────────────────────────────────────
+  // The tooltip's extra rows. Same semantics as the dashboard's Flows view, so
+  // both surfaces say the same thing about the same picture — and the shares
+  // quoted are the ACTUAL slice sums from `allocate()`, which since the
+  // contract-parity change are exactly what the Bundle contract pays.
+
+  const pctOf = (value: number) => `${Math.round(value * 10) / 10}%`;
+
+  function findZone(nodeId: string) {
+    if (!nodeId.startsWith("zone-")) return null;
+    const zone = Number(nodeId.slice("zone-".length));
+    return allocationResult.exterior.find((z) => z.zone === zone) ?? null;
+  }
+
+  /**
+   * The seats behind one party's bar: their contributor share, if any, and
+   * their place on a ring, if any. A person can hold both, and the bar sums
+   * them — so the tooltip names each.
+   */
+  function findSeats(nodeId: string) {
+    const id = partyIdOf(nodeId);
+    if (id == null) return null;
+    const member = allocationResult.interior.find((m) => m.id === id) ?? null;
+    let ring: { zone: number; slice: AllocationSlice } | null = null;
+    for (const zone of allocationResult.exterior) {
+      const hit = (zone.members ?? []).find((p) => p.id === id);
+      if (hit) {
+        ring = { zone: zone.zone ?? 0, slice: hit };
+        break;
+      }
+    }
+    if (!member && !ring) return null;
+    const percentage =
+      (member?.percentage ?? 0) + (ring?.slice.percentage ?? 0);
+    const amount =
+      member?.amount == null && ring?.slice.amount == null
+        ? null
+        : (member?.amount ?? 0) + (ring?.slice.amount ?? 0);
+    return { id, member, ring, percentage, amount };
+  }
+
+  function allocationDetails(
+    node: SankeyLayoutNode,
+  ): { label: string; value: string }[] {
+    const interiorPct = allocationResult.interior.reduce(
+      (sum, m) => sum + m.percentage,
+      0,
+    );
+    const exteriorPct = allocationResult.exterior.reduce(
+      (sum, z) => sum + z.percentage,
+      0,
+    );
+
+    if (node.kind === "pot") {
+      const rows = potCollective
+        ? [
+            { label: $t("flows.tipCollective"), value: potCollective.name },
+            {
+              label: $t("flows.balance"),
+              value: formatAllocation(potCollective.balance),
+            },
+          ]
+        : [];
+      if (potMinted > 0)
+        rows.push({
+          label: $t("flows.tipMinted"),
+          value: formatAllocation(potMinted),
+        });
+      for (const r of inbound) {
+        if (normalizeCurrency(r.unit) !== potUnit) continue;
+        rows.push({
+          label: $t("flows.tipInboundFrom", {
+            name: nameFor(r.from) ?? r.from,
+          }),
+          value: formatAllocation(r.right),
+        });
+      }
+      rows.push(
+        { label: $t("flows.interior"), value: pctOf(interiorPct) },
+        {
+          label: $t("alloc.split"),
+          value:
+            allocationConfig.interiorMode === "custom"
+              ? $t("alloc.splitCustom")
+              : $t("alloc.splitEquation"),
+        },
+        { label: $t("flows.exterior"), value: pctOf(exteriorPct) },
+      );
+      if (usage) {
+        rows.push(
+          {
+            label: $t("flows.spent"),
+            value: formatAllocation(usageTotal.spent),
+          },
+          {
+            label: $t("flows.claimed"),
+            value: formatAllocation(usageTotal.claimed),
+          },
+        );
+      }
+      return rows;
+    }
+
+    if (usage && node.id === UNATTRIBUTED_ID) {
+      const rows = [
+        { label: $t("flows.tipWhat"), value: $t("flows.tipUnattributedAbout") },
+      ];
+      const un = usageTotal.unattributed;
+      if (un.spent > 0)
+        rows.push({
+          label: $t("flows.spent"),
+          value: formatAllocation(un.spent),
+        });
+      if (un.claimed > 0)
+        rows.push({
+          label: $t("flows.claimed"),
+          value: formatAllocation(un.claimed),
+        });
+      if (usage.unattributedPayees.length) {
+        rows.push({
+          label: $t("flows.tipPayees"),
+          value: usage.unattributedPayees.join(", "),
+        });
+      }
+      return rows;
+    }
+
+    if (node.id === RETAINED_ID) {
+      return [
+        {
+          label: $t("flows.tipShareOfPot"),
+          value: pctOf(100 - interiorPct - exteriorPct),
+        },
+        { label: $t("flows.tipWhat"), value: $t("flows.tipRetainedAbout") },
+      ];
+    }
+
+    if (node.kind === "interior") {
+      return [
+        { label: $t("flows.tipShareOfPot"), value: pctOf(interiorPct) },
+        {
+          label: $t("flows.tipMembers"),
+          value: String(allocationResult.interior.length),
+        },
+        { label: $t("flows.tipSplitBy"), value: $t("flows.tipByContribution") },
+      ];
+    }
+
+    if (node.kind === "exterior") {
+      return [
+        { label: $t("flows.tipShareOfPot"), value: pctOf(exteriorPct) },
+        { label: $t("flows.zones"), value: String(allocationConfig.nzones) },
+        { label: $t("flows.tipSplitBy"), value: $t("flows.tipByZone") },
+      ];
+    }
+
+    const zone = findZone(node.id);
+    if (zone) {
+      const partnerNames = (zone.members ?? []).map((p) => p.label);
+      return [
+        { label: $t("flows.tipShareOfPot"), value: pctOf(zone.percentage) },
+        {
+          label: $t("flows.tipRing"),
+          value: $t("flows.tipZoneN", { n: String(zone.zone) }),
+        },
+        {
+          label: $t("flows.tipPartners"),
+          value: partnerNames.length
+            ? partnerNames.join(", ")
+            : $t("flows.tipNoPartners"),
+        },
+      ];
+    }
+
+    const seats = findSeats(node.id);
+    const partyId = partyIdOf(node.id);
+    const cascadeRows: { label: string; value: string }[] = [];
+    const kept = partyId ? (cascade?.leaves[partyId] ?? null) : null;
+    if (partyId && cascade) {
+      const from = cascadeFlows.from.get(partyId);
+      if (from?.size)
+        cascadeRows.push({
+          label: $t("flows.cascadeFrom"),
+          value: namesOf(from),
+        });
+      const to = cascadeFlows.to.get(partyId);
+      if (to?.size) {
+        cascadeRows.push(
+          {
+            label: $t("flows.cascadeKeeps"),
+            value: kept
+              ? kept.amount != null
+                ? formatAllocation(kept.amount)
+                : pctOf(kept.percentage)
+              : pctOf(0),
+          },
+          { label: $t("flows.cascadePassesTo"), value: namesOf(to) },
+        );
+      }
+    }
+    if (!seats) {
+      // Reached only through someone else's giving: no seat of the root's.
+      if (!kept) return cascadeRows;
+      return [
+        { label: $t("flows.tipShareOfPot"), value: pctOf(kept.percentage) },
+        ...cascadeRows,
+        ...(usage ? usageRows(partyId!, kept.amount) : []),
+      ];
+    }
+
+    // One bar, one total; then each seat that feeds it, when there is more
+    // than one to tell apart.
+    const rows = [
+      { label: $t("flows.tipShareOfPot"), value: pctOf(seats.percentage) },
+    ];
+    const both = !!seats.member && !!seats.ring;
+    if (seats.member) {
+      rows.push({
+        label: both ? $t("flows.interior") : $t("flows.tipSplitBy"),
+        value: both
+          ? formatAllocation(seats.member.amount ?? seats.member.percentage)
+          : $t("flows.tipByContribution"),
+      });
+    }
+    if (seats.ring) {
+      rows.push({
+        label: $t("flows.tipZoneN", { n: String(seats.ring.zone) }),
+        value: both
+          ? formatAllocation(
+              seats.ring.slice.amount ?? seats.ring.slice.percentage,
+            )
+          : $t("flows.tipByZone"),
+      });
+    }
+    rows.push(...cascadeRows);
+    // A right is what the party keeps, once their own split has passed on.
+    if (usage)
+      rows.push(
+        ...usageRows(seats.id, cascade ? (kept?.amount ?? 0) : seats.amount),
+      );
+    return rows;
+  }
+
+  /**
+   * A right's usage, in the pot's currency and then in every other unit the
+   * party touched the fund in. Other units are text only — hours are not euros
+   * and the diagram never sums across units, so neither do these rows.
+   */
+  function usageRows(
+    partyId: string,
+    right: number | null,
+  ): { label: string; value: string }[] {
+    if (!usage) return [];
+    const rows: { label: string; value: string }[] = [];
+    const use = usageOf(usage, partyId);
+    if (right != null) {
+      rows.push({
+        label: $t("flows.tipRight"),
+        value: formatAllocation(right),
+      });
+      const left = right - use.spent - use.claimed;
+      rows.push({
+        label: $t("flows.spent"),
+        value: formatAllocation(use.spent),
+      });
+      rows.push({
+        label: $t("flows.claimed"),
+        value: formatAllocation(use.claimed),
+      });
+      rows.push(
+        left >= 0
+          ? { label: $t("flows.available"), value: formatAllocation(left) }
+          : { label: $t("flows.over"), value: formatAllocation(-left) },
+      );
+    }
+    for (const unit of usageUnits(usage, partyId)) {
+      if (unit === usage.unit) continue;
+      const other = usageOf(usage, partyId, unit);
+      const fmt = formatter({ id: "money", unit } as ValueFlowTrack);
+      if (other.spent > 0) {
+        rows.push({
+          label: `${$t("flows.spent")} · ${unit.toUpperCase()}`,
+          value: fmt(other.spent),
+        });
+      }
+      if (other.claimed > 0) {
+        rows.push({
+          label: `${$t("flows.claimed")} · ${unit.toUpperCase()}`,
+          value: fmt(other.claimed),
+        });
+      }
+    }
+    return rows;
+  }
+
+  /** A ribbon says what its deeper end would say. */
+  function allocationLinkDetails(
+    link: SankeyLayoutLink,
+  ): { label: string; value: string }[] {
+    const node = allocationLayout?.nodes.find((n) => n.id === link.target);
+    return node ? allocationDetails(node) : [];
+  }
+
+  /** A combined ribbon is a share of its own unit, and must say so. */
+  $: unitShareLine = (pct: number, unit: string) =>
+    $t("flows.shareOfUnit", { pct: String(pct), unit });
+  $: shareLine = (pct: number) =>
+    $t("flows.tipShareShown", { pct: String(pct) });
+
+  // ── Tap sheet: who is behind a bar, and how much ────────────────────────
+  // A bar is a sum; the sheet lists what it sums. Core decides the rows
+  // (`nodeBreakdown`): out-links for a group, in-links for a sink, the
+  // swallowed bars for a "+n more" rollup. A movement bar with no group of its
+  // own lists the ledger rows it was drawn from instead.
+  $: breakdown = (() => {
+    if (!selected) return { side: "out" as const, rows: [] as BreakdownRow[] };
+    if (selectedChart === "allocation") {
+      const rows = nodeBreakdown(
+        allocationTrack,
+        allocationLayout,
+        selected.id,
+      );
+      if (selected.id === UNATTRIBUTED_ID && usage) {
+        // The payees the collective named, in the pot's currency.
+        const payees: BreakdownRow[] = usage.unattributedPayees
+          .filter((p) => p.unit === usage.unit)
+          .map((p) => ({
+            id: `payee-${p.name}`,
+            label:
+              p.spent > 0 && p.claimed > 0
+                ? p.name
+                : `${p.name} · ${p.spent > 0 ? $t("flows.spent") : $t("flows.claimed")}`,
+            value: p.spent + p.claimed,
+          }));
+        if (payees.length) return { side: "out" as const, rows: payees };
+      }
+      return rows;
+    }
+    if (!activeTrack || !movementLayout)
+      return { side: "out" as const, rows: [] };
+    return nodeBreakdown(activeTrack, movementLayout, selected.id);
+  })();
+
+  $: selectedEntries =
+    selected && selectedChart === "movement" && breakdown.rows.length === 0
+      ? sortLedger(
+          filterLedger(ledger, {
+            track: selectedTrackKey,
+            nodeId: selected.id,
+          }),
+        )
+      : ([] as LedgerEntry[]);
+
+  $: entryDate = (ts: number) =>
+    new Intl.DateTimeFormat($locale, { day: "numeric", month: "short" }).format(
+      new Date(ts),
+    );
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -229,12 +1732,18 @@
   async function bind(holon: string | null) {
     teardown();
     hid = holon;
+    bindEquation(holon);
     events = [];
     expenses = [];
     collective = null;
     collectiveError = "";
+    partnerNameMap = {};
+    hsRef = null;
+    cascadeChildren = {};
+    cascadeKey = "";
     memberShares = [];
-    partners = [];
+    federated = [];
+    inbound = [];
     loading = true;
 
     if (!holon) {
@@ -257,7 +1766,7 @@
       return;
     }
     if (hid !== holon) return; // holon changed while connecting
-
+    hsRef = hs;
     // Small lenses: safe to subscribe.
     expensesSub = subscribeLens(hs, holon, "expenses", (items) => {
       expenses = items as Expense[];
@@ -271,19 +1780,15 @@
       usersById = map;
     });
 
-    void loadEquation(hs, holon)
-      .then((eq) => {
-        if (hid !== holon) return;
-        equation = eq;
-        void rescoreMembers();
-      })
-      .catch((err) => console.warn("[kiosk] flows: equation load failed", err));
-
     void loadHolonSettings(hs, holon);
     void loadFederation(hs, holon);
+    void loadInbound(hs, holon);
 
     // Registered before the first load awaits so teardown always clears it.
-    refreshTimer = setInterval(() => void refreshEvents(hs, holon), 30_000);
+    refreshTimer = setInterval(() => {
+      void refreshEvents(hs, holon);
+      void loadInbound(hs, holon);
+    }, 30_000);
     await refreshEvents(hs, holon);
   }
 
@@ -293,24 +1798,29 @@
       const doc = await loadSettings(hs, holon);
       if (hid !== holon) return;
       settings = doc;
+      // A stored split is a board on its own: draw it now rather than sit on
+      // "reading the ledger" through the events read's retries — a holon
+      // with a split and no events yet would otherwise wait the whole
+      // ladder out. The movement half joins in when the events land.
+      if (hasAllocationConfig(doc)) loading = false;
       const slug = readCollectiveSlug(doc);
       if (slug) void loadCollective(slug, holon);
+      else {
+        collective = null;
+        collectiveError = "";
+      }
     } catch (err) {
       console.warn("[kiosk] flows: settings load failed", err);
     }
   }
 
-  /** Federated partners are the exterior; their zones come from settings. */
+  /** Federated partners are the reciprocity zones; their rings come from settings. */
   async function loadFederation(hs: HoloSphere, holon: string) {
     try {
       const snapshot = await getFederationSnapshot(hs, holon);
       if (hid !== holon) return;
-      const zones = readZoneAssignments(settings);
-      partners = toAllocationPartners(
-        snapshot.federated,
-        snapshot.partnerNames,
-        zones,
-      );
+      partnerNameMap = snapshot.partnerNames ?? {};
+      federated = snapshot.federated ?? [];
     } catch (err) {
       console.warn("[kiosk] flows: federation load failed", err);
     }
@@ -372,7 +1882,7 @@
    * Member shares for the interior, scored the same way the Status board ranks.
    *
    * Scoring runs against an IN-MEMORY view of the events, so each per-user
-   * aggregate query reads the cached array instead of hitting Gun.
+   * aggregate query reads the cached array instead of hitting the store.
    */
   async function rescoreMembers() {
     const holon = hid;
@@ -401,7 +1911,7 @@
         .filter((s) => s.percentage > 0)
         .map((s) => ({
           id: String(s.userId),
-          name: nameMap.get(String(s.userId)) ?? String(s.userId),
+          name: nameFor(String(s.userId)) ?? String(s.userId),
           percentage: s.percentage,
         }));
     } catch (err) {
@@ -410,18 +1920,603 @@
     }
   }
 
+  // Re-score the moment the weights move — the settings sheet edits the same
+  // store, so the diagram answers a tap on a weight.
+  $: if ($equationStore) void rescoreMembers();
+
   // Suspend auto-rotation while the detail sheet is open so the screen cannot
   // flip away mid-read.
-  $: rotationHold.set(selected != null);
+  $: rotationHold.set(
+    selected != null || selectedParty != null || allocationOpen,
+  );
 </script>
 
 <div class="board">
   <div class="scrollarea scroll">
     {#if loading}
       <p class="empty">{$t("flows.loading")}</p>
-    {:else if !tracks.length && !hasAllocation}
-      <p class="empty">{$t("flows.empty")}</p>
+    {:else if $flowsViewMode === "mine"}
+      <!-- ── My balance ─────────────────────────────────────────────────── -->
+      {#if !$currentUser}
+        <button class="account-line" on:click={() => loginOpen.set(true)}>
+          {$t("flows.accountSignIn")}
+        </button>
+      {:else}
+        <section class="hero">
+          <!-- Every unit at once: tokens, vouchers, mutual credit — each on
+               its own line, nothing converted. The tapped line is the unit
+               the statement below reads. -->
+          {#if wallet.length}
+            <div class="account wallet">
+              <div class="account-head">
+                <div>
+                  <div class="k">{$t("flows.walletTitle")}</div>
+                  <div class="account-sub">{$t("flows.walletAbout")}</div>
+                </div>
+              </div>
+              <ul
+                class="wallet-lines"
+                role="radiogroup"
+                aria-label={$t("flows.walletTitle")}
+              >
+                {#each wallet as l (l.unit)}
+                  <li>
+                    <button
+                      type="button"
+                      role="radio"
+                      class="wline"
+                      class:on={l.unit === walletUnit}
+                      class:over={(l.account?.over ?? 0) > 0}
+                      aria-checked={l.unit === walletUnit}
+                      on:click={() => pickWalletUnit(l.unit)}
+                    >
+                      <span class="wunit">{l.unit.toUpperCase()}</span>
+                      <span class="wmain">
+                        {#if l.account}
+                          <span class="v"
+                            >{moneyFormatter(
+                              l.unit,
+                              2,
+                            )(
+                              l.account.over > 0 ? l.account.over : l.available,
+                            )}</span
+                          >
+                          <span class="k"
+                            >{l.account.over > 0
+                              ? $t("flows.accountOverBy")
+                              : $t("flows.available")}</span
+                          >
+                        {:else if l.credit}
+                          <span
+                            class="v"
+                            class:debit={l.credit.net < 0}
+                            class:credit={l.credit.net > 0}
+                            >{signed(l.unit, l.credit.net)}</span
+                          >
+                          <span class="k">{$t("flows.walletCredit")}</span>
+                        {/if}
+                      </span>
+                      <span class="wsub">
+                        {#if l.held}{$t("flows.walletHeld")} ·
+                        {/if}
+                        {#if l.account && l.credit}
+                          {l.credit.net > 0
+                            ? $t("flows.walletOwedToYou", {
+                                amount: moneyFormatter(l.unit, 2)(l.credit.net),
+                              })
+                            : l.credit.net < 0
+                              ? $t("flows.walletYouOwe", {
+                                  amount: moneyFormatter(
+                                    l.unit,
+                                    2,
+                                  )(-l.credit.net),
+                                })
+                              : $t("flows.walletSquare")}
+                        {:else}
+                          {l.sources
+                            .map((src) => $t(`flows.walletSource.${src}`))
+                            .join(" · ")}
+                        {/if}
+                      </span>
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+          {#if inbound.length && selfId && hid === selfId}
+            <!-- A person's own board: what reaches them from every hub they
+                 keep — the same rights those hubs' boards show on their
+                 "Your balance" card, gathered here (core loadInboundRights). -->
+            <div class="account inbound">
+              <div class="k">{$t("flows.inboundTitle")}</div>
+              <ul class="claims">
+                {#each inbound as r (r.from + r.unit)}
+                  <li class="claim-row approved">
+                    <span class="amt">{moneyFormatter(r.unit, 2)(r.right)}</span
+                    >
+                    <span class="memo"
+                      >{$t("flows.tipInboundFrom", {
+                        name: nameFor(r.from) ?? r.from,
+                      })}</span
+                    >
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+          {#if walletCreditOnly && walletSelected?.credit}
+            <!-- A currency the fund never held, open between people: the
+                 viewer's position in it, and the way to settle it. -->
+            <div class="account">
+              <div class="account-head">
+                <div>
+                  <div class="k">
+                    {$t("flows.accountTitle")} · {walletSelected.unit.toUpperCase()}
+                  </div>
+                  <div class="account-sub">{$t("flows.walletNoFund")}</div>
+                </div>
+              </div>
+              <div class="account-main">
+                <span class="k">{$t("flows.walletCredit")}</span>
+                <span
+                  class="v"
+                  class:debit={walletSelected.credit.net < 0}
+                  class:credit={walletSelected.credit.net > 0}
+                  >{signed(
+                    walletSelected.unit,
+                    walletSelected.credit.net,
+                  )}</span
+                >
+              </div>
+              <dl class="statement">
+                <div>
+                  <dt>{$t("flows.walletOwedToYouLabel")}</dt>
+                  <dd class="credit">
+                    +{moneyFormatter(
+                      walletSelected.unit,
+                      2,
+                    )(walletSelected.credit.owedToYou)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{$t("flows.walletYouOweLabel")}</dt>
+                  <dd class="debit">
+                    −{moneyFormatter(
+                      walletSelected.unit,
+                      2,
+                    )(walletSelected.credit.youOwe)}
+                  </dd>
+                </div>
+              </dl>
+              <button
+                class="claim ghost"
+                type="button"
+                on:click={() => openBalances(walletSelected?.unit ?? "")}
+              >
+                {$t("flows.walletOpenBalances")}
+              </button>
+            </div>
+          {:else if myAccount}
+            <div class="account" class:over={myAccount.over > 0}>
+              <div class="account-head">
+                <div>
+                  <div class="k">
+                    {$t("flows.accountTitle")}{potUnit
+                      ? ` · ${potUnit.toUpperCase()}`
+                      : ""}
+                  </div>
+                  <div class="account-sub">
+                    {potCollective
+                      ? $t("flows.accountAbout", { name: potCollective.name })
+                      : potUnit
+                        ? $t("flows.accountAboutUnit", {
+                            unit: potUnit.toUpperCase(),
+                          })
+                        : $t("flows.accountAboutShares")}
+                  </div>
+                </div>
+                <span class="chip"
+                  >{$t("flows.accountShare", {
+                    pct: sharePct(myAccount.percentage),
+                  })}</span
+                >
+              </div>
+              {#if myAccount.right != null}
+                <div class="account-main">
+                  <span class="k"
+                    >{myAccount.over > 0
+                      ? $t("flows.accountOverBy")
+                      : $t("flows.available")}</span
+                  >
+                  <span class="v"
+                    >{formatAccount(
+                      myAccount.over > 0
+                        ? myAccount.over
+                        : (myAccount.available ?? 0),
+                    )}</span
+                  >
+                </div>
+                <!-- Claiming is offered only for money that is actually
+                     yours to take: a collective to claim from, and something
+                     left after everything already spent or claimed. Someone
+                     who has overrun their right sees no button at all. -->
+                {#if potCollective && (myAccount.available ?? 0) > 0}
+                  <a
+                    class="claim"
+                    href={`https://opencollective.com/${potCollective.slug}/expenses/new`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {$t("flows.claimAction")}
+                    <Icon name="external" />
+                  </a>
+                  <p class="claim-hint">{$t("flows.claimOpens")}</p>
+                {/if}
+                <!-- A claim as a signed record in the holon's own log: what
+                     you take from the fund, judged by its attesters, folded
+                     the same way on every screen. -->
+                {#if selfId}
+                  <form
+                    class="claim-form"
+                    on:submit|preventDefault={submitClaim}
+                  >
+                    <label class="claim-field">
+                      <span class="k">{$t("flows.claimAmount")}</span>
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        max={claimMax ?? undefined}
+                        inputmode="decimal"
+                        bind:value={claimAmount}
+                        required
+                      />
+                    </label>
+                    <label class="claim-field grow">
+                      <span class="k">{$t("flows.claimMemo")}</span>
+                      <input
+                        type="text"
+                        maxlength="140"
+                        bind:value={claimMemo}
+                      />
+                    </label>
+                    <button
+                      class="claim"
+                      type="submit"
+                      disabled={claimBusy ||
+                        !logSigner ||
+                        !claimUnit ||
+                        claimTooBig}
+                    >
+                      {$t("flows.claimRecord")}
+                    </button>
+                    <button
+                      class="claim ghost"
+                      type="button"
+                      aria-expanded={giveOpen}
+                      disabled={!logSigner || !claimUnit}
+                      on:click={() => (giveOpen = !giveOpen)}
+                    >
+                      {$t("flows.giveAction")}
+                    </button>
+                  </form>
+                  {#if giveOpen}
+                    <!-- A give: a `transfer` in the same log, judged like a
+                         claim, under the same access. It burns yours and
+                         opens the same amount for whoever it names. -->
+                    <form
+                      class="claim-form give-form"
+                      on:submit|preventDefault={submitGive}
+                    >
+                      <label class="claim-field grow">
+                        <span class="k">{$t("flows.giveTo")}</span>
+                        <select bind:value={giveTo} required>
+                          <option value="" disabled selected hidden></option>
+                          {#each giveCandidates as id (id)}
+                            <option value={id}>{partyName(id)}</option>
+                          {/each}
+                          <option value="__other"
+                            >{$t("flows.giveToOther")}</option
+                          >
+                        </select>
+                      </label>
+                      {#if giveTo === "__other"}
+                        <label class="claim-field grow">
+                          <span class="k">{$t("flows.giveToOther")}</span>
+                          <input
+                            type="text"
+                            maxlength="80"
+                            bind:value={giveToOther}
+                            required
+                          />
+                        </label>
+                      {/if}
+                      <label class="claim-field">
+                        <span class="k">{$t("flows.claimAmount")}</span>
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          max={claimMax ?? undefined}
+                          inputmode="decimal"
+                          bind:value={giveAmount}
+                          required
+                        />
+                      </label>
+                      <label class="claim-field grow">
+                        <span class="k">{$t("flows.claimMemo")}</span>
+                        <input
+                          type="text"
+                          maxlength="140"
+                          bind:value={giveMemo}
+                        />
+                      </label>
+                      <button
+                        class="claim"
+                        type="submit"
+                        disabled={claimBusy ||
+                          !logSigner ||
+                          !claimUnit ||
+                          !giveReceiver ||
+                          giveTooBig}
+                      >
+                        {$t("flows.giveRecord")}
+                      </button>
+                    </form>
+                    <p class="claim-hint" class:error={giveTooBig}>
+                      {claimMax != null
+                        ? `${$t("flows.giveMax", { amount: formatAccount(claimMax) })} · `
+                        : ""}{$t("flows.giveHint")}
+                    </p>
+                  {/if}
+                  {#if claimMax != null}
+                    <p class="claim-hint" class:error={claimTooBig}>
+                      {$t("flows.claimMax", {
+                        amount: formatAccount(claimMax),
+                      })}
+                    </p>
+                  {/if}
+                  {#if !logSigner}
+                    <p class="claim-hint">{$t("flows.claimNoSigner")}</p>
+                  {/if}
+                  {#if claimError}
+                    <p class="claim-hint error">{claimError}</p>
+                  {/if}
+                  {#if claimsProvisional && myClaims.length}
+                    <p class="claim-hint">{$t("flows.claimsProvisional")}</p>
+                  {/if}
+                  {#if myClaims.length || myTransfers.length}
+                    <ul class="claims">
+                      {#each myClaims.slice(-6).reverse() as c (c.id)}
+                        <li class={`claim-row ${c.status}`}>
+                          <span class="amt">{c.amount} {c.unit}</span>
+                          <span class="memo">{c.memo ?? ""}</span>
+                          <span class="badge"
+                            >{$t(`flows.claimStatus.${c.status}`)}</span
+                          >
+                        </li>
+                      {/each}
+                      {#each myTransfers.slice(-6).reverse() as g (g.id)}
+                        <li class={`claim-row give ${g.status}`}>
+                          <span class="amt"
+                            >{g.party === selfId ? "−" : "+"}{g.amount}
+                            {g.unit}</span
+                          >
+                          <span class="memo"
+                            >{g.party === selfId
+                              ? $t("flows.giveRow", {
+                                  name: partyName(g.to) ?? g.to,
+                                })
+                              : $t("flows.receiveRow", {
+                                  name: partyName(g.party) ?? g.party,
+                                })}{g.memo ? ` · ${g.memo}` : ""}</span
+                          >
+                          <span class="badge"
+                            >{$t(`flows.claimStatus.${g.status}`)}</span
+                          >
+                        </li>
+                      {/each}
+                    </ul>
+                  {/if}
+                {/if}
+                <dl class="statement">
+                  <div>
+                    <dt>{$t("flows.accountRight")}</dt>
+                    <dd>{formatAccount(myAccount.right)}</dd>
+                  </div>
+                  <!-- A statement is cumulative: this is everything drawn on
+                       the right, not just what moved in the period, so the
+                       four lines below actually add up to what is left. -->
+                  <div>
+                    <dt>{$t("flows.spent")}</dt>
+                    <dd class="debit">
+                      −{formatAccount(myAccount.lifetimeSpent)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{$t("flows.claimed")}</dt>
+                    <dd class="debit">−{formatAccount(myAccount.claimed)}</dd>
+                  </div>
+                  {#if myAccount.received > 0}
+                    <div>
+                      <dt>{$t("flows.accountReceived")}</dt>
+                      <dd class="credit">
+                        +{formatAccount(myAccount.received)}
+                      </dd>
+                    </div>
+                  {/if}
+                  {#if myAccount.given > 0}
+                    <div>
+                      <dt>{$t("flows.accountGiven")}</dt>
+                      <dd class="debit">−{formatAccount(myAccount.given)}</dd>
+                    </div>
+                  {/if}
+                  {#if walletSelected?.credit && walletSelected.unit === potUnit}
+                    <!-- Mutual credit is a ledger between people, not a draw
+                         on the fund: shown beside the statement, never summed
+                         into it. -->
+                    <div class="foot">
+                      <dt>{$t("flows.walletCredit")}</dt>
+                      <dd
+                        class:debit={walletSelected.credit.net < 0}
+                        class:credit={walletSelected.credit.net > 0}
+                      >
+                        {signed(potUnit, walletSelected.credit.net)}
+                        <button
+                          class="linkish"
+                          type="button"
+                          on:click={() => openBalances(potUnit)}
+                          >{$t("flows.walletOpenBalances")}</button
+                        >
+                      </dd>
+                    </div>
+                  {/if}
+                  {#each myAccount.otherUnits as other (other.unit)}
+                    {#if other.spent > 0}
+                      <div class="foot">
+                        <dt>
+                          {$t("flows.spent")} · {other.unit.toUpperCase()}
+                        </dt>
+                        <dd>{moneyFormatter(other.unit, 2)(other.spent)}</dd>
+                      </div>
+                    {/if}
+                    {#if other.claimed > 0}
+                      <div class="foot">
+                        <dt>
+                          {$t("flows.claimed")} · {other.unit.toUpperCase()}
+                        </dt>
+                        <dd>{moneyFormatter(other.unit, 2)(other.claimed)}</dd>
+                      </div>
+                    {/if}
+                  {/each}
+                  <div class="foot">
+                    <dt>{$t("flows.accountVia")}</dt>
+                    <dd>
+                      {myAccount.side === "interior"
+                        ? myAccount.zone != null
+                          ? `${$t("flows.interior")} · ${$t("flows.tipZoneN", { n: String(myAccount.zone) })}`
+                          : $t("flows.interior")
+                        : myAccount.zone != null
+                          ? $t("flows.tipZoneN", { n: String(myAccount.zone) })
+                          : $t("flows.accountViaPassed")}
+                    </dd>
+                  </div>
+                </dl>
+              {:else}
+                <div class="account-main">
+                  <span class="k">{$t("flows.accountRight")}</span>
+                  <span class="v">{sharePct(myAccount.percentage)}%</span>
+                </div>
+                <p class="account-sub">{$t("flows.accountNoPot")}</p>
+              {/if}
+              {#if myPassesTo}
+                <p class="account-sub">
+                  {$t("flows.cascadeMine", { names: myPassesTo })}
+                </p>
+              {/if}
+            </div>
+          {:else}
+            <div class="account none">
+              <div class="k">{$t("flows.accountTitle")}</div>
+              <p class="account-sub">{$t("flows.accountNone")}</p>
+            </div>
+          {/if}
+          {#if hsRef && hid}
+            <!-- The Pot: collect what the committed table owes you, see what
+                 accrues until the next new moon; an attester cuts and signs
+                 the lunation's table here. -->
+            <PotPanel
+              hs={hsRef}
+              holon={hid}
+              pot={potRecord}
+              {settings}
+              {usersById}
+              {selfId}
+              {myShare}
+              {canAttest}
+              nameFor={(id) => nameFor(id) ?? undefined}
+              on:receipts={(e) => (potChain = e.detail)}
+              on:changed={() =>
+                hsRef && hid && void loadHolonSettings(hsRef, hid)}
+            />
+          {/if}
+          {#if canAttest && reviewClaims.length}
+            <!-- An attester's desk: every open claim by someone else, with
+                 the three words the log takes from them. -->
+            <div class="account review">
+              <div class="k">{$t("flows.claimsReview")}</div>
+              <ul class="claims">
+                {#each reviewClaims.slice(-8).reverse() as c (c.id)}
+                  <li class={`claim-row ${c.status}`}>
+                    <span class="who">{partyName(c.party)}</span>
+                    <span class="amt">{c.amount} {c.unit}</span>
+                    <span class="memo">{c.memo ?? ""}</span>
+                    <span class="badge"
+                      >{$t(`flows.claimStatus.${c.status}`)}</span
+                    >
+                    <span class="acts">
+                      {#if c.status !== "approved"}
+                        <button
+                          type="button"
+                          class="mini"
+                          disabled={claimBusy}
+                          on:click={() => judgeClaim(c, "attest")}
+                          >{$t("flows.claimAttest")}</button
+                        >
+                      {/if}
+                      {#if c.status !== "disputed"}
+                        <button
+                          type="button"
+                          class="mini"
+                          disabled={claimBusy}
+                          on:click={() => judgeClaim(c, "dispute")}
+                          >{$t("flows.claimDispute")}</button
+                        >
+                      {/if}
+                      {#if c.status === "approved"}
+                        <button
+                          type="button"
+                          class="mini"
+                          disabled={claimBusy}
+                          on:click={() => markPaid(c)}
+                          >{$t("flows.claimPaid")}</button
+                        >
+                      {/if}
+                    </span>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+        </section>
+
+        <!-- The shared tab: what you owe and are owed, and a way to settle. -->
+        <BalancesView
+          holonId={hid ?? ""}
+          {expenses}
+          {people}
+          {currencies}
+          {currency}
+          mine
+          onCurrency={(c) => pickUnit(`money:${c}`)}
+        />
+      {/if}
+    {:else if $flowsViewMode === "balances"}
+      <!-- ── All balances ───────────────────────────────────────────────── -->
+      <BalancesView
+        holonId={hid ?? ""}
+        {expenses}
+        {people}
+        {currencies}
+        {currency}
+        onCurrency={(c) => pickUnit(`money:${c}`)}
+      />
     {:else}
+      <!-- ── Graph ──────────────────────────────────────────────────────── -->
+      {#if !tracks.length && !peopleTracks.length && !hasAllocation}
+        <p class="empty">{$t("flows.empty")}</p>
+      {/if}
       <!-- Movement -->
       {#if tracks.length}
         <section>
@@ -430,76 +2525,127 @@
               <h2>{$t("flows.movementTitle")}</h2>
               <p class="sub">{$t("flows.movementAbout")}</p>
             </div>
-            <div class="controls">
-              {#if trackOptions.length > 1}
-                <PillSwitch
-                  options={trackOptions}
-                  value={trackId}
-                  onChange={(id) => (trackId = id)}
-                  label={$t("flows.trackLabel")}
-                  showText
-                />
-              {/if}
-              <PillSwitch
-                options={WINDOWS.map((w) => ({
-                  id: w.id,
-                  label: $t(w.labelKey),
-                }))}
-                value={windowId}
-                onChange={(id) => (windowId = id)}
-                label={$t("flows.windowLabel")}
-                showText
-              />
-            </div>
           </header>
 
           {#if activeTrack}
-            <div class="stats">
-              <div class="stat">
-                <span class="k">{$t("flows.in")}</span>
-                <span class="v">{formatMovement(activeTrack.totalIn)}</span>
-              </div>
-              <div class="stat">
-                <span class="k">{$t("flows.out")}</span>
-                <span class="v">{formatMovement(activeTrack.totalOut)}</span>
-              </div>
-              {#if activeTrack.balance != null}
+            {#if activeTrack.id === "combined"}
+              <!-- Every unit in one diagram. Each was scaled to its own total
+                   first, so a ribbon's width is its share of its own unit and
+                   nothing is summed across units; the labels carry the real
+                   amounts. -->
+              <p class="unit-caption">{$t("flows.allAbout")}</p>
+            {/if}
+            {#if activeTrack.id !== "combined"}
+              <div class="stats">
                 <div class="stat">
-                  <span class="k">{$t("flows.balance")}</span>
-                  <span class="v">{formatMovement(activeTrack.balance)}</span>
+                  <span class="k">{$t("flows.in")}</span>
+                  <span class="v">{formatMovement(activeTrack.totalIn)}</span>
                 </div>
-              {/if}
-            </div>
+                <div class="stat">
+                  <span class="k">{$t("flows.out")}</span>
+                  <span class="v">{formatMovement(activeTrack.totalOut)}</span>
+                </div>
+                {#if activeTrack.balance != null}
+                  <div class="stat">
+                    <span class="k">{$t("flows.balance")}</span>
+                    <span class="v">{formatMovement(activeTrack.balance)}</span>
+                  </div>
+                {/if}
+              </div>
+            {/if}
 
             <SankeyChart
               layout={movementLayout}
               format={formatMovement}
-              onSelect={(n) => (selected = n)}
+              {shareLine}
+              {unitShareLine}
+              legendLabel={$t("flows.unitsLegend")}
+              onSelect={(n) => {
+                selectedFormat = formatMovement;
+                selectedChart = "movement";
+                selectedTrackKey = trackId;
+                selected = n;
+              }}
             >
               <p slot="empty" class="empty">{$t("flows.emptyTrack")}</p>
             </SankeyChart>
+          {:else}
+            <p class="empty">{$t("flows.emptyTrack")}</p>
           {/if}
         </section>
       {/if}
 
-      <!-- Allocation -->
-      {#if hasAllocation}
+      <!-- Between people: who gave what to whom. -->
+      {#if peopleTracks.length}
         <section>
           <header class="head">
             <div class="titles">
-              <h2>{$t("flows.allocationTitle")}</h2>
-              <p class="sub">
-                {collective
-                  ? $t("flows.allocationAboutFunds", { name: collective.name })
-                  : $t("flows.allocationAboutShares")}
-              </p>
+              <h2>{$t("flows.peopleTitle")}</h2>
+              <p class="sub">{$t("flows.peopleAbout")}</p>
             </div>
           </header>
 
+          {#if activePeople?.id === "combined"}
+            <p class="unit-caption">{$t("flows.allAbout")}</p>
+          {/if}
+          <ChordChart
+            {ribbonDetails}
+            track={activePeople}
+            format={formatPeople}
+            labels={chordLabels}
+            onSelect={(g) => (selectedParty = g)}
+          >
+            <p slot="empty" class="empty">{$t("flows.emptyPeople")}</p>
+          </ChordChart>
+        </section>
+      {/if}
+
+      <!-- Allocation. The header is always there, and its settings sit in
+           the pills band's gear: somebody has to be able to place the first
+           partner or name the collective. -->
+      <section>
+        <header class="head">
+          <div class="titles">
+            <h2>{$t("flows.allocationTitle")}</h2>
+            <p class="sub">
+              {potCollective
+                ? $t("flows.allocationAboutFunds", { name: potCollective.name })
+                : potUnit
+                  ? $t("flows.allocationAboutUnit", {
+                      unit: potUnit.toUpperCase(),
+                    })
+                  : $t("flows.allocationAboutShares")}
+            </p>
+            {#if potUnitList.length > 1}
+              <div
+                class="pot-units"
+                role="radiogroup"
+                aria-label={$t("flows.potUnit")}
+              >
+                {#each potUnitList as u (u)}
+                  <button
+                    type="button"
+                    role="radio"
+                    class="chip pick"
+                    class:on={u === potUnit}
+                    aria-checked={u === potUnit}
+                    on:click={() => (potUnitPick = u)}>{u.toUpperCase()}</button
+                  >
+                {/each}
+              </div>
+            {/if}
+          </div>
+        </header>
+        {#if hasAllocation}
           <div class="stats">
             <div class="stat">
               <span class="k">{$t("flows.interior")}</span>
               <span class="v">{allocationConfig.interiorPercent}%</span>
+              <span class="k"
+                >{allocationConfig.interiorMode === "custom"
+                  ? $t("alloc.splitCustom")
+                  : $t("alloc.splitEquation")}</span
+              >
             </div>
             <div class="stat">
               <span class="k">{$t("flows.exterior")}</span>
@@ -509,17 +2655,68 @@
               <span class="k">{$t("flows.zones")}</span>
               <span class="v">{allocationConfig.nzones}</span>
             </div>
+            {#if usage && collective}
+              <!-- These double as the legend for the stacked bars. -->
+              <div class="stat">
+                <span class="k"
+                  ><i class="swatch spent"></i>{$t("flows.spent")}</span
+                >
+                <span class="v">{formatAllocation(usageTotal.spent)}</span>
+              </div>
+              <div class="stat">
+                <span class="k"
+                  ><i class="swatch claimed"></i>{$t("flows.claimed")}</span
+                >
+                <span class="v">{formatAllocation(usageTotal.claimed)}</span>
+              </div>
+              <div class="stat">
+                <span class="k"
+                  ><i class="swatch available"></i>{$t("flows.available")}</span
+                >
+                <span class="v">{formatAllocation(availableTotal)}</span>
+              </div>
+              {#if overTotal > 0}
+                <div class="stat">
+                  <span class="k"
+                    ><i class="swatch over"></i>{$t("flows.over")}</span
+                  >
+                  <span class="v">{formatAllocation(overTotal)}</span>
+                </div>
+              {/if}
+              {#if passedTotal > 0}
+                <div class="stat">
+                  <span class="k"
+                    ><i class="swatch passed"></i>{$t("flows.passed")}</span
+                  >
+                  <span class="v">{formatAllocation(passedTotal)}</span>
+                </div>
+              {/if}
+            {/if}
           </div>
+          {#if cascadeLoop}
+            <p class="section-note">
+              {$t("flows.cascadeCycle", { names: cascadeLoop })}
+            </p>
+          {/if}
 
           <SankeyChart
             layout={allocationLayout}
             format={formatAllocation}
-            onSelect={(n) => (selected = n)}
+            {shareLine}
+            nodeDetails={allocationDetails}
+            linkDetails={allocationLinkDetails}
+            onSelect={(n) => {
+              selectedFormat = formatAllocation;
+              selectedChart = "allocation";
+              selected = n;
+            }}
           >
             <p slot="empty" class="empty">{$t("flows.emptyAllocation")}</p>
           </SankeyChart>
-        </section>
-      {/if}
+        {:else}
+          <p class="empty">{$t("flows.emptyAllocation")}</p>
+        {/if}
+      </section>
 
       {#if collectiveError}
         <p class="note">{collectiveError}</p>
@@ -528,11 +2725,181 @@
   </div>
 </div>
 
+{#if allocationOpen}
+  <AllocationSettings
+    holonId={hid ?? ""}
+    config={savedConfig}
+    zones={savedZones}
+    zonePeople={savedPeople}
+    partners={partners
+      .filter((p) => p.kind !== "person")
+      .map((p) => ({ id: p.id, name: p.name }))}
+    candidates={people.filter((p) => p.id !== hid)}
+    scored={memberShares}
+    shares={savedShares}
+    collectiveSlug={readCollectiveSlug(settings)}
+    units={unitOptions}
+    unit={trackId}
+    period={windowChoice}
+    policy={claimsCtx?.policy ?? null}
+    policyRole={myLogRole}
+    policySignable={!!logSigner}
+    {partnerKeys}
+    mints={mintsCtx?.folded.mints ?? []}
+    mintUnits={potUnitList}
+    {canMint}
+    {inbound}
+    nameOf={(id) => nameFor(id)}
+    onMint={submitMint}
+    on:policy={(e) => void savePolicy(e.detail)}
+    on:unit={(e) => pickUnit(e.detail)}
+    on:period={(e) => pickWindow(e.detail)}
+    on:draft={(e) => (allocationDraft = e.detail)}
+    on:close={closeAllocation}
+    on:saved={() => void afterAllocationSave()}
+  />
+{/if}
+
+{#if selectedParty}
+  <Modal on:close={() => (selectedParty = null)}>
+    <div class="detail">
+      <h3>{selectedParty.label}</h3>
+      <dl class="detail-rows">
+        <div class="detail-row">
+          <dt>{$t("flows.given")}</dt>
+          <dd>{formatPeople(selectedParty.given)}</dd>
+        </div>
+        <div class="detail-row">
+          <dt>{$t("flows.received")}</dt>
+          <dd>{formatPeople(selectedParty.received)}</dd>
+        </div>
+      </dl>
+
+      <!-- The currencies behind those numbers: what this party gave and took
+           in each unit, with its share of that unit's own flow. -->
+      {#each [{ caption: $t("flows.given"), units: selectedPartyUnits?.givenUnits ?? [] }, { caption: $t("flows.received"), units: selectedPartyUnits?.receivedUnits ?? [] }] as side (side.caption)}
+        {#if side.units.length}
+          <table class="who units">
+            <caption>{side.caption}</caption>
+            <tbody>
+              {#each side.units as u (u.unit)}
+                <tr>
+                  <th scope="row">{u.unit}</th>
+                  <td class="share">{Math.round(u.share)}%</td>
+                  <td class="amt">{u.display}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      {/each}
+      {#each [{ caption: $t("flows.whoGaveTo"), rows: partyBreakdown?.given ?? [], total: selectedParty.given }, { caption: $t("flows.whoReceivedFrom"), rows: partyBreakdown?.received ?? [], total: selectedParty.received }] as side (side.caption)}
+        {#if side.rows.length}
+          <table class="who">
+            <caption>{side.caption}</caption>
+            <tbody>
+              {#each side.rows as row (row.id)}
+                <tr>
+                  <th scope="row">{row.label}</th>
+                  <td class="share"
+                    >{side.total > 0
+                      ? `${Math.round((row.value / side.total) * 100)}%`
+                      : ""}</td
+                  >
+                  <td class="amt">{formatPeople(row.value)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      {/each}
+    </div>
+  </Modal>
+{/if}
+
 {#if selected}
   <Modal on:close={() => (selected = null)}>
     <div class="detail">
       <h3>{selected.label}</h3>
-      <p class="amount">{formatMovement(selected.value)}</p>
+      <p class="amount">
+        {selected.display ?? selectedFormat(selected.value)}
+      </p>
+      {#if selected.segments?.length && selected.segments[0].unit}
+        <!-- A bar on the combined chart: what it is made of, unit by unit,
+             with each unit's share of its OWN flow beside the amount. -->
+        <table class="who units">
+          <caption>{$t("flows.unitsLegend")}</caption>
+          <tbody>
+            {#each selected.segments as seg (seg.label)}
+              <tr>
+                <th scope="row">{seg.label}</th>
+                <td class="share">{Math.round(seg.value)}%</td>
+                <td class="amt">{seg.display ?? String(seg.value)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+      {#if selectedChart === "allocation"}
+        <dl class="detail-rows">
+          {#each allocationDetails(selected) as row (row.label)}
+            <div class="detail-row">
+              <dt>{row.label}</dt>
+              <dd>{row.value}</dd>
+            </div>
+          {/each}
+        </dl>
+      {/if}
+      {#if breakdown.rows.length}
+        <!-- Who, and how much: the bars this one is made of. -->
+        <table class="who">
+          <caption
+            >{breakdown.side === "in"
+              ? $t("flows.whoFrom")
+              : $t("flows.whoTo")}</caption
+          >
+          <tbody>
+            {#each breakdown.rows as row (row.id)}
+              <tr>
+                <th scope="row">{row.label}</th>
+                <td class="share"
+                  >{selected.value > 0
+                    ? `${Math.round((row.value / selected.value) * 100)}%`
+                    : ""}</td
+                >
+                <td class="amt">{selectedFormat(row.value)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {:else if selectedEntries.length}
+        <!-- The ledger rows behind a bar that is one party's alone. -->
+        <table class="who">
+          <caption>{$t("flows.whoEntries")}</caption>
+          <tbody>
+            {#each selectedEntries.slice(0, 12) as e (e.id)}
+              <tr>
+                <th scope="row">
+                  <span class="when">{entryDate(e.timestamp)}</span>
+                  {e.party}{#if e.description}<span class="what"
+                      >· {e.description}</span
+                    >{/if}
+                </th>
+                <td class="amt">{selectedFormat(e.amount)}</td>
+              </tr>
+            {/each}
+            {#if selectedEntries.length > 12}
+              <tr class="more">
+                <th scope="row" colspan="2"
+                  >{$t("balances.showMore", {
+                    n: String(selectedEntries.length - 12),
+                  })}</th
+                >
+              </tr>
+            {/if}
+          </tbody>
+        </table>
+      {/if}
     </div>
   </Modal>
 {/if}
@@ -578,12 +2945,6 @@
     color: var(--muted);
   }
 
-  .controls {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
   .stats {
     display: flex;
     flex-wrap: wrap;
@@ -606,6 +2967,39 @@
   .stat .v {
     font-size: 1.3rem;
     color: var(--ink);
+  }
+
+  /* Legend dots, the same hues the stacked bars use. */
+  .swatch {
+    display: inline-block;
+    width: 0.55em;
+    height: 0.55em;
+    border-radius: 999px;
+    margin-right: 0.35em;
+    vertical-align: 0.05em;
+  }
+  .swatch.spent {
+    background: #f43f5e;
+  }
+  .swatch.claimed {
+    background: #f59e0b;
+  }
+  .swatch.available {
+    background: #10b981;
+  }
+  .swatch.passed {
+    background: #94a3b8;
+  }
+  .swatch.over {
+    background: #dc2626;
+  }
+
+  /* Explains what the widths mean when every unit shares one diagram. */
+  .unit-caption {
+    margin: 0.5rem 0 0.2rem;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--muted);
   }
 
   .empty {
@@ -633,6 +3027,459 @@
   .amount {
     margin: 0;
     font-size: 1.6rem;
-    color: var(--teal);
+    color: var(--teal-ink);
+  }
+
+  .detail-rows {
+    margin: 0.7rem 0 0;
+    display: grid;
+    gap: 0.25rem;
+  }
+
+  .detail-row {
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    font-size: 0.9rem;
+  }
+
+  .detail-row dt {
+    color: var(--muted);
+  }
+
+  .detail-row dd {
+    margin: 0;
+    color: var(--ink);
+    text-align: right;
+  }
+
+  .who {
+    width: 100%;
+    margin: 0.9rem 0 0;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+  .who caption {
+    text-align: left;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    padding-bottom: 0.3rem;
+  }
+  .who th,
+  .who td {
+    padding: 0.35rem 0;
+    border-top: 1px solid var(--line);
+    vertical-align: baseline;
+  }
+  .who th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--ink);
+    min-width: 0;
+  }
+  .who .share {
+    color: var(--muted);
+    text-align: right;
+    padding-left: 0.6rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .who .amt {
+    text-align: right;
+    padding-left: 0.8rem;
+    color: var(--teal-ink);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .who .when {
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin-right: 0.4rem;
+  }
+  .who .what {
+    color: var(--muted);
+    margin-left: 0.3rem;
+  }
+  .who .more th {
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+
+  /* ── Your account ──────────────────────────────────────────────────── */
+  .account-line {
+    display: block;
+    width: 100%;
+    margin: 0.2rem 0 0.9rem;
+    padding: 0.7rem 1rem;
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: var(--shadow-soft);
+    color: var(--teal-ink);
+    font-size: 0.9rem;
+    text-align: left;
+    touch-action: manipulation;
+  }
+
+  /* The hero: the one card the personal scope opens with. */
+  .hero {
+    margin-bottom: 1.6rem;
+  }
+  .hero .account.wallet {
+    margin-bottom: 0.8rem;
+  }
+  .wallet-lines {
+    list-style: none;
+    margin: 0.6rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 0.4rem;
+  }
+  .wline {
+    width: 100%;
+    min-height: 56px;
+    display: grid;
+    grid-template-columns: 4.2rem minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 0.8rem;
+    align-items: center;
+    padding: 0.5rem 0.8rem;
+    text-align: left;
+    font: inherit;
+    color: var(--ink);
+    background: transparent;
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    touch-action: manipulation;
+    cursor: pointer;
+  }
+  .wline.on {
+    border-color: var(--teal);
+    box-shadow: inset 0 0 0 1px var(--teal);
+  }
+  .wline.over {
+    border-color: #c0392b;
+  }
+  .wline .wunit {
+    grid-row: 1 / span 2;
+    font-weight: 700;
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
+    color: var(--teal-ink);
+  }
+  .wline .wmain {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+  .wline .wmain .v {
+    font-size: 1.35rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .wline .wmain .k {
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+  }
+  .wline .wsub {
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+  }
+  .wline .v.credit {
+    color: var(--teal-ink);
+  }
+  .wline .v.debit,
+  .account-main .v.debit {
+    color: #c0392b;
+  }
+  .linkish {
+    margin-left: 0.5rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: 0.8rem;
+    color: var(--teal-ink);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .hero .account {
+    margin: 0;
+    padding: 1.2rem 1.4rem 1rem;
+  }
+  .hero .account-main .v {
+    font-size: 2.6rem;
+  }
+  .account.none {
+    border-left-color: var(--line);
+  }
+  .account.none .account-sub {
+    margin-top: 0.3rem;
+    font-size: 0.95rem;
+    color: var(--ink-soft);
+  }
+
+  .account {
+    margin: 0.2rem 0 1rem;
+    padding: 0.9rem 1.1rem 0.8rem;
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: var(--shadow-soft);
+    border-left: 4px solid var(--teal);
+  }
+  .account.over {
+    border-left-color: #c0392b;
+  }
+
+  .account-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+  }
+
+  .account .k {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+
+  .account-sub {
+    margin: 0.1rem 0 0;
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+
+  /* A loop in the cascade: said in words, above the diagram that cuts it. */
+  .section-note {
+    margin: 0.4rem 0 0.2rem;
+    font-size: 0.82rem;
+    color: var(--caution);
+  }
+
+  .pot-units {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0 0 0.6rem;
+  }
+  .chip.pick {
+    min-height: 44px;
+    padding: 0 0.9rem;
+    border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+    background: transparent;
+    color: var(--ink-soft);
+    font: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  .chip.pick.on {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+
+  .chip {
+    flex: none;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    background: var(--paper-deep);
+    color: var(--ink-soft);
+    font-size: 0.78rem;
+    white-space: nowrap;
+  }
+
+  .account-main {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin: 0.5rem 0 0.4rem;
+  }
+  .account-main .v {
+    font-size: 2rem;
+    line-height: 1.1;
+    color: var(--teal-ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .account.over .account-main .v {
+    color: var(--danger);
+  }
+
+  /* The one action on the card: take what the balance says is still yours.
+     Outlined rather than filled, so it borrows the card's own teal in both
+     themes without a second foreground token to keep legible. */
+  .claim {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 44px;
+    box-sizing: border-box;
+    margin: 0.1rem 0 0.45rem;
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--teal);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--teal-ink);
+    font-size: 0.95rem;
+    text-decoration: none;
+    touch-action: manipulation;
+  }
+  .claim-hint {
+    margin: 0 0 0.7rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .claim-hint.error {
+    color: var(--danger);
+  }
+  .claim-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.5rem;
+    margin: 0.2rem 0 0.5rem;
+  }
+  .claim-field {
+    display: grid;
+    gap: 0.15rem;
+    min-width: 6rem;
+  }
+  .claim-field.grow {
+    flex: 1 1 8rem;
+  }
+  .claim-field input {
+    min-height: 44px;
+    box-sizing: border-box;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--line, rgba(128, 128, 128, 0.35));
+    border-radius: 10px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    width: 100%;
+  }
+  .claims {
+    list-style: none;
+    margin: 0 0 0.6rem;
+    padding: 0;
+    display: grid;
+    gap: 0.3rem;
+    font-size: 0.85rem;
+  }
+  .claim-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .claim-row .amt {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+  .claim-row .who {
+    font-weight: 600;
+  }
+  .claim-row .memo {
+    flex: 1 1 6rem;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .claim-row .badge {
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    border: 1px solid var(--line, rgba(128, 128, 128, 0.35));
+    color: var(--muted);
+  }
+  .claim-row.approved .badge,
+  .claim-row.settled .badge {
+    border-color: var(--teal);
+    color: var(--teal-ink);
+  }
+  .claim-row.disputed .badge,
+  .claim-row.over .badge,
+  .claim-row.rejected .badge,
+  .claim-row.conflict .badge {
+    border-color: #ff8a7a;
+    color: var(--danger);
+  }
+  .claim-row .acts {
+    display: flex;
+    gap: 0.3rem;
+  }
+  .mini {
+    min-height: 44px;
+    padding: 0.3rem 0.7rem;
+    border: 1px solid var(--teal);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--teal-ink);
+    font: inherit;
+    font-size: 0.8rem;
+    touch-action: manipulation;
+  }
+  .mini:disabled {
+    opacity: 0.5;
+  }
+  .account.review {
+    margin-top: 0.6rem;
+  }
+
+  .statement {
+    margin: 0;
+    display: grid;
+    gap: 0.15rem;
+    font-size: 0.9rem;
+  }
+  .statement > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.3rem 0;
+    border-top: 1px solid var(--line);
+  }
+  .statement dt {
+    color: var(--muted);
+  }
+  .statement dd {
+    margin: 0;
+    color: var(--ink);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .statement .debit {
+    color: var(--danger);
+  }
+  .statement .credit {
+    color: var(--teal-ink);
+  }
+  .claim.ghost {
+    background: transparent;
+    color: inherit;
+    border: 1px solid var(--line, rgba(128, 128, 128, 0.35));
+  }
+  .claim-field select {
+    min-height: 44px;
+    box-sizing: border-box;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--line, rgba(128, 128, 128, 0.35));
+    border-radius: 10px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    width: 100%;
+  }
+  .give-form {
+    padding-top: 0.4rem;
+    border-top: 1px dashed var(--line, rgba(128, 128, 128, 0.35));
+  }
+  .statement .foot dt,
+  .statement .foot dd {
+    font-size: 0.8rem;
+    color: var(--muted);
   }
 </style>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   COLLECTIVE_OVERVIEW_QUERY,
+  OPEN_EXPENSE_STATUSES,
   isValidCollectiveSlug,
   normalizeCollectiveSlug,
   parseOpenCollectiveResponse,
@@ -36,6 +37,50 @@ const response = {
           description: 'Venue hire',
           amount: { value: -40, currency: 'EUR' },
           toAccount: { slug: 'hall', name: 'Hall' },
+        },
+      ],
+    },
+    openExpenses: {
+      nodes: [
+        {
+          id: 'ex_open',
+          status: 'PENDING',
+          type: 'RECEIPT',
+          createdAt: '2026-05-25T09:00:00.000Z',
+          description: 'Train tickets',
+          amountV2: { value: 60, currency: 'EUR' },
+          payee: { slug: 'ada', name: 'Ada' },
+        },
+        {
+          // Reached us through the open branch but was dropped since: never
+          // touched the fund, must not be counted.
+          id: 'ex_gone',
+          status: 'REJECTED',
+          createdAt: '2026-05-26T09:00:00.000Z',
+          description: 'Nope',
+          amountV2: { value: 999, currency: 'EUR' },
+          payee: { slug: 'ada', name: 'Ada' },
+        },
+      ],
+    },
+    paidExpenses: {
+      nodes: [
+        {
+          id: 'ex_paid',
+          status: 'PAID',
+          type: 'INVOICE',
+          createdAt: '2026-05-22T09:00:00.000Z',
+          description: 'Venue hire',
+          amountV2: { value: 40, currency: 'EUR' },
+          payee: { slug: 'hall', name: 'Hall' },
+        },
+        {
+          id: 'ex_usd',
+          status: 'PAID',
+          createdAt: '2026-05-23T09:00:00.000Z',
+          description: 'Dollars',
+          amountV2: { value: 12.5, currency: 'USD' },
+          payee: { slug: 'bob' },
         },
       ],
     },
@@ -80,6 +125,16 @@ describe('COLLECTIVE_OVERVIEW_QUERY', () => {
   it('parameterizes the slug rather than interpolating it', () => {
     expect(COLLECTIVE_OVERVIEW_QUERY).toContain('$slug: String!');
     expect(COLLECTIVE_OVERVIEW_QUERY).not.toContain('${');
+  });
+
+  it('asks for the open and the paid expense queues by status', () => {
+    expect(COLLECTIVE_OVERVIEW_QUERY).toContain('openExpenses: expenses(');
+    expect(COLLECTIVE_OVERVIEW_QUERY).toContain('paidExpenses: expenses(');
+    expect(COLLECTIVE_OVERVIEW_QUERY).toContain('status: [PAID]');
+    for (const status of OPEN_EXPENSE_STATUSES) {
+      expect(COLLECTIVE_OVERVIEW_QUERY).toContain(status);
+    }
+    expect(COLLECTIVE_OVERVIEW_QUERY).toContain('payee {');
   });
 });
 
@@ -133,12 +188,39 @@ describe('parseOpenCollectiveResponse', () => {
     expect(cents.balance).toBe(50);
   });
 
+  it('reads open and paid expenses with their payee', () => {
+    const open = snapshot.expenses.find((e) => e.id === 'ex_open')!;
+    expect(open.status).toBe('open');
+    expect(open.rawStatus).toBe('PENDING');
+    expect(open.amount).toBe(60);
+    expect(open.currency).toBe('EUR');
+    expect(open.payee).toBe('Ada');
+    expect(open.payeeSlug).toBe('ada');
+    expect(open.createdAt).toBe(Date.parse('2026-05-25T09:00:00.000Z'));
+
+    const paid = snapshot.expenses.find((e) => e.id === 'ex_paid')!;
+    expect(paid.status).toBe('paid');
+    expect(paid.type).toBe('INVOICE');
+  });
+
+  it('keeps an expense in its own currency and names a payee by slug alone', () => {
+    const usd = snapshot.expenses.find((e) => e.id === 'ex_usd')!;
+    expect(usd.currency).toBe('USD');
+    expect(usd.amount).toBe(12.5);
+    expect(usd.payee).toBe('bob');
+  });
+
+  it('drops an expense that was rejected or cancelled, whatever branch it came in', () => {
+    expect(snapshot.expenses.some((e) => e.id === 'ex_gone')).toBe(false);
+  });
+
   it('survives a response missing everything optional', () => {
     const empty = parseOpenCollectiveResponse({}, 'fallback', NOW);
     expect(empty.slug).toBe('fallback');
     expect(empty.name).toBe('fallback');
     expect(empty.balance).toBe(0);
     expect(empty.transactions).toEqual([]);
+    expect(empty.expenses).toEqual([]);
   });
 
   it('does not throw on garbage', () => {

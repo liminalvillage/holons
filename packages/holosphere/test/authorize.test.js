@@ -2,6 +2,7 @@
  * Phase 2: authorized read-collapse with an as-of-time membership log.
  *
  * Timeline (TS = base seconds), holon founded by admin A:
+ *   TS-5  A writes t0            -> authorized (the anchor counts at every instant)
  *   TS    A: genesis (admin)
  *   TS+1  A writes t1            -> authorized
  *   TS    (raw) t-unsigned       -> pending (no signature)
@@ -11,9 +12,6 @@
  *   TS+7  A removes B
  *   TS+9  B writes t5            -> pending (B removed as of TS+9)
  */
-import os from 'node:os';
-import path from 'node:path';
-import fs from 'node:fs';
 import HoloSphere from '../holosphere.js';
 import { generateSecretKey, getPublicKey, buildEvent } from '../nostr-events.js';
 
@@ -24,32 +22,26 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const ids = (arr) => arr.map((i) => i.id).sort();
 
 describe('authorized read — membership mode (holon authority)', () => {
-  let sphere, dir, Ask, Bsk, Bpub;
+  let sphere, Ask, Bsk, Bpub;
 
   // simulate any key writing into the open graph: signed envelope + raw item
   async function writeAs(sk, item, at) {
     const evt = buildEvent({ holon: HOLON, lens: LENS, item, sk, created_at: at });
-    await new Promise((r) => {
-      let s = false; const d = () => { if (!s) { s = true; r(); } };
-      setTimeout(d, 2000);
-      sphere.gun.get(sphere.appname).get(HOLON).get('_events').get(LENS).get(item.id).get(evt.pubkey)
-        .put(JSON.stringify(evt), () => d());
-    });
-    await sphere.put(HOLON, LENS, item, null, { _skipSign: true, autoPropagate: false });
+    sphere.store.apply(evt, { origin: 'remote' });
   }
 
   beforeAll(async () => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-authz-'));
     Ask = generateSecretKey();
     Bsk = generateSecretKey();
     Bpub = getPublicKey(Bsk);
     sphere = new HoloSphere({
       appName: 'authz-test',
       privateKey: Ask,
-      gunOptions: { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false },
+      store: { adapter: 'memory' },
     });
     await sphere.enableSigning({ relays: [], enforce: 'membership' });
 
+    await writeAs(Ask, { id: 't0', title: 'A before founding' }, TS - 5);
     await sphere.foundHolon(HOLON, { at: TS });           // A = genesis admin
     await writeAs(Ask, { id: 't1', title: 'A task' }, TS + 1);
     await sphere.put(HOLON, LENS, { id: 't-unsigned', title: 'forged' }, null, { _skipSign: true });
@@ -65,18 +57,18 @@ describe('authorized read — membership mode (holon authority)', () => {
   afterAll(async () => {
     try { sphere?.disableSigning(); } catch {}
     try { await sphere?.close?.(); } catch {}
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   }, 15000);
 
   test('enforce read returns only authorized items (as-of-time)', async () => {
     const view = await sphere.getAll(HOLON, LENS);
-    // t1 (admin), t4 (B while member). NOT t3 (pre-join), t5 (post-removal), t-unsigned.
-    expect(ids(view)).toEqual(['t1', 't4']);
+    // t0 (the founder, before founding), t1 (admin), t4 (B while member).
+    // NOT t3 (pre-join), t5 (post-removal), t-unsigned.
+    expect(ids(view)).toEqual(['t0', 't1', 't4']);
   });
 
   test('the raw store still holds everything (open graph, non-destructive)', async () => {
     const raw = await sphere.getAll(HOLON, LENS, null, { _skipAuthorize: true });
-    expect(ids(raw)).toEqual(['t-unsigned', 't1', 't3', 't4', 't5']);
+    expect(ids(raw)).toEqual(['t-unsigned', 't0', 't1', 't3', 't4', 't5']);
   });
 
   test('pending view surfaces the dropped items', async () => {
@@ -88,8 +80,8 @@ describe('authorized read — membership mode (holon authority)', () => {
     sphere.resetShadowReport();
     await sphere.getAll(HOLON, LENS);
     const r = sphere.getShadowReport();
-    expect(r.items).toBe(5);
-    expect(r.accounted).toBe(2);
+    expect(r.items).toBe(6);
+    expect(r.accounted).toBe(3);
     expect(r.wouldDrop).toBe(3);
     expect(r.unauthorized).toBe(2); // t3, t5 — valid B signature, not authorized at signing time
     expect(r.unsigned).toBe(1);     // t-unsigned — no envelope

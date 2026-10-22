@@ -9,11 +9,8 @@
 
 import { HoloSphere } from 'holosphere';
 import { generateSecretKey, getPublicKey } from 'nostr-tools';
-import {
-  publishToFederation,
-  removeFederationPartner,
-  setFederationPartner,
-} from '@holons/core/federation';
+import { publishToFederation } from '@holons/core/federation';
+import { linkHolons, unlinkHolons } from './federationLinks.js';
 import { getOrCreateHolonKey, listHolonKeys } from '../utils/key-storage.js';
 
 /**
@@ -97,12 +94,14 @@ class KeyManager {
       generatePrivateKey
     );
 
-    // Create HoloSphere instance with holon's key
+    // Create HoloSphere instance with holon's key. Per-holon signers share
+    // the master's relays; their store stays in memory (the master holds
+    // the warm file store — this one only needs to sign and publish).
     const holosphere = new HoloSphere({
-      backend: 'nostr',
       appName: this.appName,
       privateKey: privateKey,
       relays: this.options.relays || ['wss://relay.holons.io/'],
+      store: { adapter: 'memory' },
       logLevel: this.options.logLevel || 'INFO',
     });
 
@@ -376,7 +375,9 @@ class KeyManager {
    * @param {Object} options - Federation options
    * @param {Object} [options.lensConfig] - Lens configuration {inbound: [], outbound: []}
    * @param {string} [options.partnerName] - Human-readable name for the partner
-   * @returns {Promise<Object>} Federation result
+   * @param {boolean} [options.askPartner=true] - Ask the partner's admins even if the bot could write its half
+   * @param {string} [options.holonName] - This holon's name, as the partner sees it
+   * @returns {Promise<{success: boolean, outcome: object, federationData: object}>} Federation result
    */
   async setupFederation(sourceHolonId, targetHolonId, options = {}) {
     const { lensConfig = { inbound: [], outbound: [] }, partnerName = null } =
@@ -394,16 +395,17 @@ class KeyManager {
     // PUBKEY-ONLY: store target pubkey, not telegram ID.
     const target = targetPubKey;
 
-    // Delegate to the unified core write path (validation + federateHolon,
-    // which records the link bidirectionally and stores the partner name).
-    const success = await setFederationPartner(
+    // The unified core write path: this holon's half, and the partner's half
+    // directly or by request (federationLinks.js says when to ask).
+    const { success, outcome } = await linkHolons(
       this.masterHolosphere,
       source,
       target,
       {
-        inbound: Array.isArray(lensConfig.inbound) ? lensConfig.inbound : [],
-        outbound: Array.isArray(lensConfig.outbound) ? lensConfig.outbound : [],
-        ...(partnerName ? { partnerName } : {}),
+        lensConfig,
+        partnerName,
+        askPartner: options.askPartner,
+        holonName: options.holonName,
       }
     );
 
@@ -413,7 +415,7 @@ class KeyManager {
       'federation',
       source
     );
-    return { success, federationData };
+    return { success, outcome, federationData };
   }
 
   /**
@@ -422,29 +424,27 @@ class KeyManager {
    *
    * @param {string} sourceHolonId - Source holon ID
    * @param {string} targetHolonId - Target holon ID
-   * @returns {Promise<boolean>} Success indicator
+   * @param {{askPartner?: boolean, holonName?: string}} [options]
+   * @returns {Promise<{success: boolean, outcome: object|null}>}
    */
-  async teardownFederation(sourceHolonId, targetHolonId) {
+  async teardownFederation(sourceHolonId, targetHolonId, options = {}) {
     const sourcePubKey = await this.getPublicKey(sourceHolonId);
     const targetPubKey = await this.getPublicKey(targetHolonId);
 
     if (sourcePubKey === targetPubKey) {
-      return true;
+      return { success: true, outcome: null };
     }
 
-    const source = String(sourceHolonId);
-    const target = targetPubKey;
-
-    // Delegate to the unified core write path — handles federated/inbound/
-    // outbound + lensConfig cleanup, and mirrors the removal onto the partner.
-    const success = await removeFederationPartner(
+    // This holon's half; the partner's directly or by request.
+    return unlinkHolons(
       this.masterHolosphere,
-      source,
-      target
+      String(sourceHolonId),
+      targetPubKey,
+      {
+        askPartner: options.askPartner,
+        holonName: options.holonName,
+      }
     );
-    this.masterHolosphere.clearCache?.('federation');
-
-    return success;
   }
 
   /**

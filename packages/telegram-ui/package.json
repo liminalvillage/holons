@@ -37,11 +37,9 @@
     "express": "^4.22.1",
     "express-rate-limit": "^8.1.0",
     "express-validator": "^7.2.1",
-    "gun": "^0.2020.1239",
     "h3-js": "^4.1.0",
     "helmet": "^8.1.0",
     "holosphere": "workspace:*",
-    "http-proxy": "^1.18.1",
     "i18next": "^22.5.1",
     "i18next-fs-backend": "^2.6.0",
     "jdenticon": "^3.3.0",
@@ -51,11 +49,11 @@
     "moment": "^2.29.4",
     "node-schedule": "^2.1.1",
     "nostr-tools": "^2.17.2",
-    "openai": "^4.104.0",
     "puppeteer": "^24.42.0",
     "qrcode": "^1.5.4",
     "sharp": "^0.34.5",
     "telegraf": "^4.16.3",
+    "tsx": "^4.21.0",
     "winston": "^3.17.0"
   },
   "devDependencies": {
@@ -67,7 +65,6 @@
     "jsdoc": "^4.0.5",
     "nodemon": "^3.1.7",
     "prettier": "^3.6.2",
-    "tsx": "^4.21.0",
     "typescript": "^5.7.3",
     "vitest": "^3.2.4"
   }

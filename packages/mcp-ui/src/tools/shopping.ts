@@ -247,7 +247,7 @@ export function registerShoppingTools(server: McpServer, deps: ToolDeps): void {
     'shopping_normalize_checklist',
     {
       description:
-        'Coerce a raw shopping document (e.g. from gun/HoloSphere) into a normalized ShoppingChecklist, or null if the doc is deleted/absent. Pure wrapper around @holons/core/shopping normalizeChecklist.',
+        'Coerce a raw shopping document (e.g. from HoloSphere) into a normalized ShoppingChecklist, or null if the doc is deleted/absent. Pure wrapper around @holons/core/shopping normalizeChecklist.',
       inputSchema: {
         raw: z
           .string()

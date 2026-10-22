@@ -9,10 +9,10 @@
 // can't call it from the browser. This server route is same-origin for the
 // kiosk, verifies the caller's session, and forwards server→server to the bot.
 //
-// It is used after a join/leave to refresh the member's personal-holon DM: the
-// kiosk writes a {id,soul} hologram into (memberId,'quests',questId) via core
-// reflectJoin/reflectLeave, then POSTs here with chatId == the member's id so
-// the bot sends/edits the linked DM.
+// It is used after a join/leave to refresh the member's personal-holon DM:
+// core's roster write leaves a {id,soul} hologram in (memberId,'quests',
+// questId), then the kiosk POSTs here with chatId == the member's id so the
+// bot sends/edits the linked DM.
 
 import { json, error } from "@sveltejs/kit";
 import { env } from "$env/dynamic/private";

@@ -1,0 +1,78 @@
+<script lang="ts">
+  // SPDX-License-Identifier: AGPL-3.0-or-later
+  import { activeTab, boardReady } from "$lib/stores";
+  import GlobalPills from "$lib/components/GlobalPills.svelte";
+  import CalendarView from "$lib/views/CalendarView.svelte";
+  import ShiftsView from "$lib/views/ShiftsView.svelte";
+  import TasksView from "$lib/views/TasksView.svelte";
+  import LibraryView from "$lib/views/LibraryView.svelte";
+  import ChecklistsView from "$lib/views/ChecklistsView.svelte";
+  import RolesView from "$lib/views/RolesView.svelte";
+  import StatusView from "$lib/views/StatusView.svelte";
+  import FlowsView from "$lib/views/FlowsView.svelte";
+  import StockView from "$lib/views/StockView.svelte";
+  import OffersView from "$lib/views/OffersView.svelte";
+</script>
+
+<div class="surface">
+  <!-- Mount the view only once the holon's initial data has settled (see
+       boardReady): a fresh mount on the full set plays the entrance animation
+       cleanly, the same way switching tabs does. Keyed on the tab so each
+       switch remounts and re-animates. -->
+  {#if $boardReady}
+    <!-- The pills band sits OUTSIDE the tab key: switching tabs swaps its
+         segments in place instead of remounting/re-animating the bar. -->
+    <GlobalPills />
+    {#key $activeTab}
+      <div class="view">
+        {#if $activeTab === "tasks"}
+          <TasksView />
+        {:else if $activeTab === "calendar"}
+          <CalendarView />
+        {:else if $activeTab === "shifts"}
+          <ShiftsView />
+        {:else if $activeTab === "library"}
+          <LibraryView />
+        {:else if $activeTab === "checklists"}
+          <ChecklistsView />
+        {:else if $activeTab === "roles"}
+          <RolesView />
+        {:else if $activeTab === "status"}
+          <StatusView />
+        {:else if $activeTab === "flows"}
+          <FlowsView />
+        {:else if $activeTab === "stock"}
+          <StockView />
+        {:else if $activeTab === "offers"}
+          <OffersView />
+        {/if}
+      </div>
+    {/key}
+  {/if}
+</div>
+
+<style>
+  .surface {
+    flex: 1;
+    min-height: 0;
+    background: var(--card);
+    /* The frame (`--frame`, set on .kiosk in the layout) is thin and, on a
+       phone, all but gone: the board is the thing. */
+    margin: 0 var(--frame) var(--frame);
+    border-radius: 0 0 min(var(--radius), 1.2vw) min(var(--radius), 1.2vw);
+    box-shadow: var(--shadow-soft);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .view {
+    flex: 1;
+    min-height: 0;
+    /* Never let a view's min-content width push the surface wider than the
+       screen — wide content must scroll inside the view instead. */
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    animation: kiosk-fade 0.4s ease both;
+  }
+</style>

@@ -492,6 +492,14 @@ body {
     line-height: 1.4;
 }
 
+/* What is left of an offer, its mode and price (@holons/core/offers). */
+.offer-qty {
+    display: block;
+    margin-top: 2px;
+    font-size: 10px;
+    color: var(--color-text-muted);
+}
+
 .request-row:hover,
 .offer-row:hover {
     background: var(--color-accent-subtle);

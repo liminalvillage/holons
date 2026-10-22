@@ -1,5 +1,5 @@
 /**
- * Process-level error handlers so an unhandled rejection in a Gun/holosphere
+ * Process-level error handlers so an unhandled rejection in a holosphere
  * callback or a Discord interaction handler doesn't crash the whole bot.
  */
 import { log } from './logger.js';

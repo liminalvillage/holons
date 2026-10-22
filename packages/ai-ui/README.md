@@ -20,7 +20,7 @@ Dev (watch rebuild): `pnpm -F @holons/ai-ui dev`.
 | Env var | Required | Purpose |
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | yes | Authenticates the Claude API client. |
-| `HOLONS_AI_MODEL` | no | Override the default Claude model. |
+| `HOLONS_AI_MODEL` | no | Override the default Claude model (`claude-opus-5-5`, from `@holons/core/ai`). |
 
 ## Layout
 

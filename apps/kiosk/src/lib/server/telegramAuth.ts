@@ -23,6 +23,7 @@
 import { env } from "$env/dynamic/private";
 import { createHash, randomBytes } from "node:crypto";
 import { SignJWT, jwtVerify, createRemoteJWKSet } from "jose";
+import { deriveTelegramNostrKey } from "@holons/core/auth";
 
 export interface TelegramProfile {
   id: string;
@@ -62,6 +63,8 @@ export interface AuthConfig {
    * Empty in local dev → falls back to the request origin (single host).
    */
   callbackOrigin: string;
+  /** NOSTR_DERIVATION_SECRET — the member-key secret shared with the bot and the web; '' = none. */
+  derivationSecret: string;
 }
 
 /** Read auth config from private env (server-only, sourced from root .env). */
@@ -75,7 +78,32 @@ export function authConfig(): AuthConfig {
     callbackOrigin: (env.TELEGRAM_OIDC_CALLBACK_ORIGIN || "")
       .trim()
       .replace(/\/$/, ""),
+    derivationSecret: (env.NOSTR_DERIVATION_SECRET || "").trim(),
   };
+}
+
+/**
+ * The key a Telegram login signs with: derived from the Telegram id and
+ * `NOSTR_DERIVATION_SECRET` — the same key the bot links to every hub the
+ * person's chat is in, and the web hands out on login. Delivered to the
+ * browser over HTTPS, held in memory there, re-derived from the session
+ * cookie on every load. Null without the secret: then the login is a
+ * profile only, and the kiosk writes with its device key.
+ */
+export function derivedKeyFor(
+  profile: Pick<TelegramProfile, "id">,
+  derivationSecret: string,
+): { nostrPublicKey: string; nostrPrivateKey: string } | null {
+  if (!derivationSecret) return null;
+  try {
+    const { publicKey, privateKey } = deriveTelegramNostrKey(
+      profile.id,
+      derivationSecret,
+    );
+    return { nostrPublicKey: publicKey, nostrPrivateKey: privateKey };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -95,6 +123,21 @@ export function isAllowedReturnOrigin(
     return (u.protocol === "https:" && isHub) || isLocal;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Where the callback sends the user after login: the full URL the login
+ * endpoint remembered (origin + path + query, so a deep link into a card
+ * survives the round-trip) when its origin is allowed, else this host's root.
+ * A bare origin normalises to `origin/`.
+ */
+export function returnDestination(returnTo: string | undefined | null): string {
+  if (!isAllowedReturnOrigin(returnTo)) return "/";
+  try {
+    return new URL(returnTo as string).href;
+  } catch {
+    return "/";
   }
 }
 
@@ -263,29 +306,87 @@ export async function mintSession(
     .sign(enc.encode(jwtSecret));
 }
 
-export async function verifySession(
+/**
+ * Mint a session for a key-based identity (own Nostr key / Ethereum wallet).
+ * The browser proved key ownership with a NIP-98 event (see /api/auth/key);
+ * the session carries only the pubkey and the provider — there is no
+ * server-held secret or profile for these users.
+ */
+export async function mintKeySession(
+  identity: { pubkey: string; provider: KeyProvider },
+  jwtSecret: string,
+): Promise<string> {
+  if (!jwtSecret) throw new Error("AUTH_JWT_SECRET is not configured");
+  if (!/^[0-9a-f]{64}$/.test(identity.pubkey))
+    throw new Error("mintKeySession: pubkey must be 64-char hex");
+  return new SignJWT({ provider: identity.provider })
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setIssuer(SESSION_ISSUER)
+    .setAudience(SESSION_AUDIENCE)
+    .setSubject(`nostr:${identity.pubkey}`)
+    .setIssuedAt()
+    .setExpirationTime(`${SESSION_TTL_S}s`)
+    .sign(enc.encode(jwtSecret));
+}
+
+/** The key-based providers the kiosk offers (the web app also has passkey). */
+export type KeyProvider = "nostr" | "ethereum";
+
+/** Who a session cookie belongs to: a Telegram profile or a bare Nostr key. */
+export type SessionIdentity =
+  | { kind: "telegram"; profile: TelegramProfile }
+  | { kind: "key"; pubkey: string; provider: KeyProvider };
+
+/** Verify our session JWT and return whoever it belongs to, or null. */
+export async function verifySessionIdentity(
   token: string | undefined | null,
   jwtSecret: string,
-): Promise<TelegramProfile | null> {
+): Promise<SessionIdentity | null> {
   if (!token || !jwtSecret) return null;
   try {
     const { payload } = await jwtVerify(token, enc.encode(jwtSecret), {
       issuer: SESSION_ISSUER,
       audience: SESSION_AUDIENCE,
     });
+    const sub = String(payload.sub ?? "");
+    if (sub.startsWith("nostr:")) {
+      const pubkey = sub.slice("nostr:".length);
+      if (!/^[0-9a-f]{64}$/.test(pubkey)) return null;
+      return {
+        kind: "key",
+        pubkey,
+        provider: payload.provider === "ethereum" ? "ethereum" : "nostr",
+      };
+    }
     const id =
       typeof payload.id === "string"
         ? payload.id
-        : String(payload.sub).replace(/^telegram:/, "");
+        : sub.replace(/^telegram:/, "");
     if (!id) return null;
     return {
-      id,
-      first_name: payload.first_name as string | undefined,
-      last_name: payload.last_name as string | undefined,
-      username: payload.username as string | undefined,
-      photo_url: payload.photo_url as string | undefined,
+      kind: "telegram",
+      profile: {
+        id,
+        first_name: payload.first_name as string | undefined,
+        last_name: payload.last_name as string | undefined,
+        username: payload.username as string | undefined,
+        photo_url: payload.photo_url as string | undefined,
+      },
     };
   } catch {
     return null;
   }
+}
+
+/**
+ * Verify our session JWT and return the trusted Telegram profile, or null.
+ * Key-based sessions yield null here — use {@link verifySessionIdentity} when
+ * any signed-in identity will do.
+ */
+export async function verifySession(
+  token: string | undefined | null,
+  jwtSecret: string,
+): Promise<TelegramProfile | null> {
+  const identity = await verifySessionIdentity(token, jwtSecret);
+  return identity?.kind === "telegram" ? identity.profile : null;
 }

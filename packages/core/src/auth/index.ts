@@ -33,9 +33,14 @@ export function holonIdForIdentity(identity: AuthIdentity): string {
 
 export {
   IDENTITY_DERIVATION_PREFIX,
+  IDENTITY_PROVIDER_CONTEXT,
+  SHIFT_COORDINATOR_CONTEXT,
   ETH_IDENTITY_MESSAGE,
   PASSKEY_PRF_SALT,
+  deriveIdentityProviderKey,
   deriveNostrKeyFromEntropy,
+  deriveShiftCoordinatorKey,
+  deriveTelegramNostrKey,
   entropyFromBytes,
   type DerivedNostrKey,
 } from './derive.js';
@@ -49,3 +54,5 @@ export {
   type AuthEventTarget,
   type AuthEventVerdict,
 } from './nip98.js';
+
+export { PIN_MAX_LENGTH, PIN_MIN_LENGTH, isPin, openSecretKey, sealSecretKey } from './pin.js';

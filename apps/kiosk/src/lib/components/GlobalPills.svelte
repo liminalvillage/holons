@@ -1,31 +1,53 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
-  // The single pills band for the whole kiosk: one Show pill (scope) plus the
-  // active tab's own Layout/Sort segments. Rendered once by the page shell —
-  // outside the tab-keyed view mount, so switching tabs swaps the segments
-  // without replaying the entrance animation — and collapsed together with
-  // the header chrome when the screen goes idle (same recipe as TabBar).
+  // The single pills band for the whole kiosk: one Show federated switch, the
+  // active tab's own Layout/Sort segments, and — at the right edge — the
+  // active tab's settings gear. Rendered once by the page shell — outside the
+  // tab-keyed view mount, so switching tabs swaps the segments without
+  // replaying the entrance animation.
+  //
+  // Settings live here, not in the boards: a view that has something to set
+  // (the calendar's feeds, the allocation split, the shift plan, the value
+  // equation) registers its opener in `viewSettings` while it is mounted,
+  // and the band shows one gear for it. The view keeps the sheet itself and
+  // any gate in front of it (a login prompt, say) — the band only offers
+  // the tap. A view with nothing of its own to set still gets the gear: it
+  // opens the kiosk's caretaker settings (the same sheet as the user menu),
+  // so the band reads the same on every tab — Show on the left, the tab's
+  // pills and one gear on the right — and never comes and goes between
+  // tabs or while a board opens one of its own items.
   //
   // Layout adapts to the width available, one pill at a time: every pill
   // starts unpacked — full segments, each carrying its option name — and as
   // the row runs out of room they collapse into the small cycling toggle
   // RIGHT to LEFT (Sort first, the Show pill last), so the leftmost pills
   // keep their names as long as they fit. The row stays in the same spread
-  // arrangement throughout — Show pinned left, the tab's pills pinned
-  // right — so nothing jumps sideways as tabs switch. Only when even the
-  // all-compact row can't fit does the band fall back to the full segmented
-  // pills, centred and wrapping. One hidden copy of the row per packing
-  // level is measured against the band to decide.
+  // arrangement throughout — Show pinned left, the tab's pills and the gear
+  // pinned right — so nothing jumps sideways as tabs switch. Only when even
+  // the all-compact row can't fit does the band fall back to the full
+  // segmented pills, centred and wrapping. One hidden copy of the row per
+  // packing level is measured against the band to decide.
+  import { onMount } from "svelte";
+  import { privacyOfHolon } from "@holons/core/privacy";
+  import { getHolosphere } from "$lib/holosphere";
+  import { isLoggedIn, loginOpen } from "$lib/auth";
+  import LensPrivacy from "$lib/components/LensPrivacy.svelte";
   import {
     activeTab,
-    idle,
-    pillsSuppressed,
+    holonId,
+    settingsOpen,
+    viewSettings,
+    TABS,
+    type TabId,
     taskViewMode,
     taskSort,
     libraryViewMode,
     libraryCalendarMode,
     rolesViewMode,
+    flowsViewMode,
+    stockViewMode,
+    offersViewMode,
     calendarMode,
   } from "$lib/stores";
   import {
@@ -33,29 +55,36 @@
     setTaskSort,
     setLibraryView,
     setRolesView,
+    setFlowsView,
+    setStockView,
+    setOffersView,
     setCalendarView,
     setLibraryCalendarView,
     type TaskViewMode,
     type LibraryViewMode,
     type RolesViewMode,
+    type FlowsViewMode,
+    type StockViewMode,
+    type OffersViewMode,
     type CalendarMode,
   } from "$lib/config";
   import type { TaskSort } from "$lib/data";
   import { LAYOUT_SEGMENTS, SORT_SEGMENTS } from "$lib/pills";
+  import type { IconName } from "$lib/icons";
   import { t, type MessageKey, type Translator } from "$lib/i18n";
   import PillSwitch from "./PillSwitch.svelte";
   import ScopePill from "./ScopePill.svelte";
+  import Icon from "./Icon.svelte";
+  import { fedRequests } from "$lib/fedrequests";
 
   // Module consts carry catalog keys only; `ownPillsFor` resolves them with
   // the reactive translator so a language switch re-labels every pill live.
 
-  // ── Tasks: swipe deck / compact list / post-it wall. Whose tasks show is
-  // the orthogonal Show pill (scope) — see ScopePill.
-  const TASK_MODES: {
-    id: TaskViewMode;
-    glyph: string;
-    labelKey: MessageKey;
-  }[] = [
+  type Segment = { id: string; icon: IconName; labelKey: MessageKey };
+
+  // ── Tasks: swipe deck / compact list / post-it wall. Whether partners'
+  // tasks come along is the orthogonal Show federated switch — see ScopePill.
+  const TASK_MODES: (Segment & { id: TaskViewMode })[] = [
     { id: "swipe", ...LAYOUT_SEGMENTS.card },
     { id: "list", ...LAYOUT_SEGMENTS.list },
     { id: "cards", ...LAYOUT_SEGMENTS.wall },
@@ -64,11 +93,7 @@
 
   // ── Library: one card at a time / compact list / icon card grid (wall) /
   // the booking calendar (when each thing is out).
-  const LIBRARY_MODES: {
-    id: LibraryViewMode;
-    glyph: string;
-    labelKey: MessageKey;
-  }[] = [
+  const LIBRARY_MODES: (Segment & { id: LibraryViewMode })[] = [
     { id: "swipe", ...LAYOUT_SEGMENTS.card },
     { id: "list", ...LAYOUT_SEGMENTS.list },
     { id: "cards", ...LAYOUT_SEGMENTS.wall },
@@ -76,33 +101,52 @@
   ];
 
   // ── Roles: compact rows / today cards (wall) / week grid.
-  const ROLES_MODES: {
-    id: RolesViewMode;
-    glyph: string;
-    labelKey: MessageKey;
-  }[] = [
+  const ROLES_MODES: (Segment & { id: RolesViewMode })[] = [
     { id: "list", ...LAYOUT_SEGMENTS.list },
     { id: "cards", ...LAYOUT_SEGMENTS.wall },
     { id: "week", ...LAYOUT_SEGMENTS.week },
   ];
 
-  // ── Calendar: day / week / month window. Glyphs keep the compact cycling
-  // toggle legible once names drop.
-  const CAL_MODES: { id: CalendarMode; glyph: string; labelKey: MessageKey }[] =
-    [
-      { id: "day", glyph: "▣", labelKey: "pills.day" },
-      { id: "week", glyph: "▤", labelKey: "pills.week" },
-      { id: "month", glyph: "▦", labelKey: "pills.month" },
-    ];
+  // ── Flows: my balance (the viewer's account), everyone's balances, or
+  // the Sankey graph. Whether partner items show is the switch's business.
+  const FLOWS_MODES: (Segment & { id: FlowsViewMode })[] = [
+    { id: "mine", ...LAYOUT_SEGMENTS.mine },
+    { id: "balances", ...LAYOUT_SEGMENTS.balances },
+    { id: "graph", ...LAYOUT_SEGMENTS.graph },
+  ];
+
+  // ── Stock: the shelf (what is on hand) / the reorder (what to buy) / the
+  // moves (what the federation could shift). The Show federated switch
+  // decides whether partner shelves come along.
+  const STOCK_MODES: (Segment & { id: StockViewMode })[] = [
+    { id: "shelf", icon: "shelf", labelKey: "pills.shelf" },
+    { id: "reorder", icon: "cart", labelKey: "pills.reorder" },
+    { id: "moves", icon: "swap", labelKey: "pills.moves" },
+  ];
+
+  // ── Needs & Offers: demand (the needs, first — the board is demand-driven)
+  // / matches (who could serve whom) / supply (what is on the table). The
+  // scale sits inside the board.
+  const OFFERS_MODES: (Segment & { id: OffersViewMode })[] = [
+    { id: "demand", icon: "target", labelKey: "pills.demand" },
+    { id: "matches", icon: "swap", labelKey: "pills.matches" },
+    { id: "supply", icon: "tray", labelKey: "pills.supply" },
+  ];
+
+  // ── Calendar: day / week / month / year window. Icons keep the compact
+  // cycling toggle legible once names drop.
+  const CAL_MODES: (Segment & { id: CalendarMode })[] = [
+    { id: "day", icon: "day", labelKey: "pills.day" },
+    { id: "week", icon: "rows", labelKey: "pills.week" },
+    { id: "month", icon: "grid", labelKey: "pills.month" },
+    { id: "year", icon: "moon", labelKey: "pills.year" },
+  ];
 
   /** Resolve a keyed segment list into PillSwitch options. */
-  function resolve(
-    tr: Translator,
-    segs: readonly { id: string; glyph: string; labelKey: MessageKey }[],
-  ) {
-    return segs.map(({ id, glyph, labelKey }) => ({
+  function resolve(tr: Translator, segs: readonly Segment[]) {
+    return segs.map(({ id, icon, labelKey }) => ({
       id,
-      glyph,
+      icon,
       label: tr(labelKey),
     }));
   }
@@ -123,6 +167,18 @@
     rolesViewMode.set(m as RolesViewMode);
     setRolesView(m as RolesViewMode);
   }
+  function pickStockMode(m: string) {
+    stockViewMode.set(m as StockViewMode);
+    setStockView(m as StockViewMode);
+  }
+  function pickOffersMode(m: string) {
+    offersViewMode.set(m as OffersViewMode);
+    setOffersView(m as OffersViewMode);
+  }
+  function pickFlowsMode(m: string) {
+    flowsViewMode.set(m as FlowsViewMode);
+    setFlowsView(m as FlowsViewMode);
+  }
   // Only the choice itself lives here; CalendarView reacts to the store for
   // its offset-reset / focus side effects.
   function pickCalendarMode(m: string) {
@@ -140,7 +196,7 @@
   // measuring row render from the same list.
   interface OwnPill {
     key: string;
-    options: { id: string; label: string; glyph?: string }[];
+    options: { id: string; label: string; icon?: IconName }[];
     value: string;
     onChange: (id: string) => void;
     icon: "eye" | "sort";
@@ -156,6 +212,9 @@
     libMode: string,
     libCalMode: string,
     rolesMode: string,
+    flowsMode: string,
+    stockMode: string,
+    offersMode: string,
     calMode: string,
   ): OwnPill[] {
     if (tab === "tasks")
@@ -218,6 +277,42 @@
           label: tr("pills.rolesLayout"),
         },
       ];
+    if (tab === "flows")
+      return [
+        {
+          key: "layout",
+          options: resolve(tr, FLOWS_MODES),
+          value: flowsMode,
+          onChange: pickFlowsMode,
+          icon: "eye",
+          title: tr("pills.view"),
+          label: tr("pills.flowsLayout"),
+        },
+      ];
+    if (tab === "stock")
+      return [
+        {
+          key: "layout",
+          options: resolve(tr, STOCK_MODES),
+          value: stockMode,
+          onChange: pickStockMode,
+          icon: "eye",
+          title: tr("pills.view"),
+          label: tr("pills.stockLayout"),
+        },
+      ];
+    if (tab === "offers")
+      return [
+        {
+          key: "layout",
+          options: resolve(tr, OFFERS_MODES),
+          value: offersMode,
+          onChange: pickOffersMode,
+          icon: "eye",
+          title: tr("pills.view"),
+          label: tr("pills.offersLayout"),
+        },
+      ];
     if (tab === "calendar")
       return [
         {
@@ -241,8 +336,72 @@
     $libraryViewMode,
     $libraryCalendarMode,
     $rolesViewMode,
+    $flowsViewMode,
+    $stockViewMode,
+    $offersViewMode,
     $calendarMode,
   );
+
+  // Status and Shifts have no layout pill of their own.
+  // The gear: the view's own settings while it offers them, else the kiosk's
+  // caretaker settings, so every tab has one.
+  const kioskGear = {
+    labelKey: "menu.settings" as MessageKey,
+    open: () => settingsOpen.set(true),
+  };
+  $: gear = $viewSettings ?? kioskGear;
+  // The kiosk gear carries a dot while a federation request waits there.
+  $: gearDot = gear === kioskGear && $fedRequests.length > 0;
+  $: gearLabel =
+    $t(gear.labelKey) +
+    (gearDot
+      ? ` — ${$t("fed.requestsBadge", { n: $fedRequests.length })}`
+      : "");
+
+  // The lock beside the gear: who can read the board on screen. Shown on
+  // every tab whose board is one lens that can be sealed (quests, library,
+  // checklists, roles, stock); its state is the vault flag anyone can see
+  // (@holons/core/privacy), refreshed when any surface changes a lock.
+  const LENS_OF_TAB: Partial<Record<TabId, string>> = {
+    tasks: "quests",
+    calendar: "quests",
+    library: "library",
+    checklists: "checklists",
+    roles: "roles",
+    stock: "stock",
+  };
+  $: lens = LENS_OF_TAB[$activeTab] ?? null;
+  // Named after the tab on screen (Calendar and Tasks share the quests lens).
+  $: lensLabel = $t(
+    TABS.find((x) => x.id === $activeTab)?.labelKey ?? "tabs.tasks",
+  );
+  let locked = false;
+  let privacyOpen = false;
+  $: void readLock($holonId, lens);
+  async function readLock(holon: string | null, l: string | null) {
+    if (!holon || !l) {
+      locked = false;
+      return;
+    }
+    try {
+      const flags = await privacyOfHolon(await getHolosphere(), holon);
+      if (holon === $holonId && l === lens) locked = !!flags[l]?.locked;
+    } catch {
+      locked = false;
+    }
+  }
+  function openPrivacy() {
+    if (!$isLoggedIn) {
+      loginOpen.set(true);
+      return;
+    }
+    privacyOpen = true;
+  }
+  onMount(() => {
+    const onChange = () => void readLock($holonId, lens);
+    window.addEventListener("kiosk:privacy-changed", onChange);
+    return () => window.removeEventListener("kiosk:privacy-changed", onChange);
+  });
 
   // How many pills, counting from the RIGHT, collapse into the cycling
   // toggle. Level 0 is everything unpacked, level `total` everything
@@ -250,7 +409,8 @@
   // give up their names right-to-left and the Show pill packs last. -1
   // means even all-compact overflows → the wrapped fallback. Before the
   // widths are known, assume all-compact (the common case — no flash of a
-  // row that's about to collapse).
+  // row that's about to collapse). The gear never packs: it is already as
+  // small as it gets, and it is measured with every level.
   let bandWidth = 0;
   let levelWidths: number[] = [];
   $: total = ownPills.length + 1; // the tab's own pills + the Show pill
@@ -267,67 +427,15 @@
   // [Show, ...ownPills], so own pill i packs once i >= ownPills.length - k,
   // and Show (leftmost) only at k === total.
   const ownPacked = (i: number, k: number, count: number) => i >= count - k;
-
-  $: hidden = $idle || $pillsSuppressed;
 </script>
 
-<!-- Status deliberately has no pills: the leaderboard is holon-only. -->
-{#if $activeTab !== "status"}
-  <div
-    class="gpills"
-    class:hidden
-    aria-hidden={hidden}
-    bind:clientWidth={bandWidth}
-  >
-    {#if oneRow}
-      <div class="row spread">
-        <ScopePill compact={packCount >= total} expanded={packCount < total} />
-        <div class="own">
-          {#each ownPills as p, i (p.key)}
-            {@const packed = ownPacked(i, packCount, ownPills.length)}
-            <PillSwitch
-              compact={packed}
-              expanded={!packed}
-              options={p.options}
-              value={p.value}
-              onChange={p.onChange}
-              icon={p.icon}
-              title={p.title}
-              label={p.label}
-              showText={packed ? (p.showText ?? false) : true}
-            />
-          {/each}
-        </div>
-      </div>
-    {:else}
-      <div class="row centered">
-        <ScopePill />
-        {#each ownPills as p (p.key)}
-          <PillSwitch
-            options={p.options}
-            value={p.value}
-            onChange={p.onChange}
-            icon={p.icon}
-            title={p.title}
-            label={p.label}
-            showText={p.showText ?? false}
-          />
-        {/each}
-      </div>
-    {/if}
-
-    <!-- Invisible copies, one per packing level (level k = the k rightmost
-         pills compact), measured to pick the level above. -->
-    {#each levels as k (k)}
-      <div
-        class="measure"
-        aria-hidden="true"
-        inert
-        bind:clientWidth={levelWidths[k]}
-      >
-        <ScopePill compact={k >= total} expanded={k < total} />
+<div class="gpills" bind:clientWidth={bandWidth}>
+  {#if oneRow}
+    <div class="row spread">
+      <ScopePill compact={packCount >= total} expanded={packCount < total} />
+      <div class="own">
         {#each ownPills as p, i (p.key)}
-          {@const packed = ownPacked(i, k, ownPills.length)}
+          {@const packed = ownPacked(i, packCount, ownPills.length)}
           <PillSwitch
             compact={packed}
             expanded={!packed}
@@ -340,28 +448,117 @@
             showText={packed ? (p.showText ?? false) : true}
           />
         {/each}
+        {#if lens && $holonId}
+          <button
+            type="button"
+            class="gear lock"
+            class:on={locked}
+            aria-pressed={locked}
+            on:click={openPrivacy}
+            aria-label={$t("privacy.who", { lens: lensLabel })}
+            title={$t(locked ? "audience.locked" : "audience.open")}
+          >
+            <Icon name={locked ? "lock" : "unlock"} />
+          </button>
+        {/if}
+        <button
+          type="button"
+          class="gear"
+          on:click={gear.open}
+          aria-label={gearLabel}
+          title={gearLabel}
+        >
+          <Icon name="gear" />
+          {#if gearDot}<span class="dot" aria-hidden="true"></span>{/if}
+        </button>
       </div>
-    {/each}
-  </div>
+    </div>
+  {:else}
+    <div class="row centered">
+      <ScopePill />
+      {#each ownPills as p (p.key)}
+        <PillSwitch
+          options={p.options}
+          value={p.value}
+          onChange={p.onChange}
+          icon={p.icon}
+          title={p.title}
+          label={p.label}
+          showText={p.showText ?? false}
+        />
+      {/each}
+      {#if lens && $holonId}
+        <button
+          type="button"
+          class="gear lock"
+          class:on={locked}
+          aria-pressed={locked}
+          on:click={openPrivacy}
+          aria-label={$t("privacy.who", { lens: lensLabel })}
+          title={$t(locked ? "audience.locked" : "audience.open")}
+        >
+          <Icon name={locked ? "lock" : "unlock"} />
+        </button>
+      {/if}
+      <button
+        type="button"
+        class="gear"
+        on:click={gear.open}
+        aria-label={gearLabel}
+        title={gearLabel}
+      >
+        <Icon name="gear" />
+        {#if gearDot}<span class="dot" aria-hidden="true"></span>{/if}
+      </button>
+    </div>
+  {/if}
+
+  <!-- Invisible copies, one per packing level (level k = the k rightmost
+       pills compact), measured to pick the level above. -->
+  {#each levels as k (k)}
+    <div
+      class="measure"
+      aria-hidden="true"
+      inert
+      bind:clientWidth={levelWidths[k]}
+    >
+      <ScopePill compact={k >= total} expanded={k < total} />
+      {#each ownPills as p, i (p.key)}
+        {@const packed = ownPacked(i, k, ownPills.length)}
+        <PillSwitch
+          compact={packed}
+          expanded={!packed}
+          options={p.options}
+          value={p.value}
+          onChange={p.onChange}
+          icon={p.icon}
+          title={p.title}
+          label={p.label}
+          showText={packed ? (p.showText ?? false) : true}
+        />
+      {/each}
+      {#if lens && $holonId}<span class="gear"><Icon name="lock" /></span>{/if}
+      <span class="gear"><Icon name="gear" /></span>
+    </div>
+  {/each}
+</div>
+
+{#if privacyOpen && lens && $holonId}
+  <LensPrivacy
+    holonId={$holonId}
+    {lens}
+    label={lensLabel}
+    on:close={() => (privacyOpen = false)}
+  />
 {/if}
 
 <style>
-  /* Collapse with the header chrome: zero height when hidden so the view
-     below reclaims the band (mirrors TabBar's .bar.idle recipe). The inner
-     row owns the padding; overflow clips it during the transition. */
+  /* The inner row owns the padding; overflow clips the invisible measuring
+     copies. */
   .gpills {
     position: relative;
     flex: 0 0 auto;
-    max-height: 12rem; /* headroom for the wrapped centred fallback */
     overflow: hidden;
-    transition:
-      opacity 0.5s ease,
-      max-height 0.5s ease;
-  }
-  .gpills.hidden {
-    opacity: 0;
-    max-height: 0;
-    pointer-events: none;
   }
   .row {
     display: flex;
@@ -370,8 +567,9 @@
     gap: 0.6rem;
     padding: 0.9rem 1.4rem 0.2rem;
   }
-  /* One compact row: Show pinned left, the tab's own pills pinned right, so
-     neither jumps sideways as tab switches change how many segments render. */
+  /* One compact row: Show pinned left, the tab's own pills and the gear
+     pinned right, so neither jumps sideways as tab switches change how
+     many segments render. */
   .row.spread {
     justify-content: space-between;
   }
@@ -385,6 +583,43 @@
      wrapping to as many rows as they need. */
   .row.centered {
     justify-content: center;
+  }
+  /* The active tab's settings: a round paper disc the height of a pill,
+     the same quiet look as the cycling toggle. */
+  .gear {
+    display: inline-grid;
+    place-items: center;
+    width: calc(2.5rem + 8px);
+    height: calc(2.5rem + 8px);
+    border-radius: 50%;
+    background: var(--paper);
+    color: var(--ink-soft);
+    font-size: 1.2rem;
+    touch-action: manipulation;
+    transition:
+      background 0.2s ease,
+      transform 0.1s ease;
+  }
+  .gear {
+    position: relative;
+  }
+  .gear .dot {
+    position: absolute;
+    top: 0.3rem;
+    right: 0.3rem;
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 50%;
+    background: var(--caution);
+    border: 2px solid var(--paper);
+  }
+  .gear:active {
+    transform: scale(0.92);
+    background: var(--paper-deep);
+  }
+  .gear.lock.on {
+    background: var(--teal-deep);
+    color: var(--on-teal);
   }
   /* The measuring copy: laid out at natural single-row width (same gap and
      side padding as the real row — clientWidth includes the padding), but

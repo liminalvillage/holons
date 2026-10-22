@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nameMap, resolvedName } from '$lib/stores/nameResolver';
 	import { createEventDispatcher } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { Key, ChevronDown, Copy, Check, LogOut } from 'svelte-feathers';
@@ -18,7 +19,8 @@
 	let keyCopied: boolean = false;
 	let showPrivateKey: boolean = false;
 
-	$: shortenedPubKey = $nostrPublicKey ? `${$nostrPublicKey.slice(0, 8)}...${$nostrPublicKey.slice(-6)}` : 'Not set';
+	// Who this key is — the name the relays and the holon know it by — else its short npub.
+	$: shortenedPubKey = $nostrPublicKey ? resolvedName($nostrPublicKey, $nameMap) : 'Not set';
 	$: displayNsec = $nostrPrivateKey ? hexToNsec($nostrPrivateKey) : '';
 
 	// Load collapse state from localStorage

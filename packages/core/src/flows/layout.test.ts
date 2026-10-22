@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layoutSankey } from './layout.js';
+import { layoutSankey, nodeBreakdown, rolledUpNodes } from './layout.js';
 import { allocate } from './allocation.js';
 import { allocationToGraph } from './allocation-graph.js';
 import type { ValueFlowTrack } from './types.js';
@@ -217,5 +217,207 @@ describe('layoutSankey', () => {
     const total = out.links.reduce((s, l) => s + l.value, 0);
     expect(total).toBeCloseTo(101, 6);
     expect(out.links.some((l) => l.source === '__other_0')).toBe(true);
+  });
+});
+
+describe('layoutSankey with a column-skipping link', () => {
+  it('draws a ribbon from depth 2 straight to depth 4', () => {
+    // A ribbon may skip columns — the allocation graph runs a contributor's
+    // ribbon from the interior branch past the zone column to the party
+    // column. Exercised here with an explicit depth-2 → depth-4 link.
+    const track = {
+      id: 'allocation' as const,
+      unit: 'eur',
+      nodes: [
+        { id: 'pot', label: 'Pot', depth: 0, value: 100 },
+        { id: 'int', label: 'Interior', depth: 1, value: 50 },
+        { id: 'ext', label: 'Exterior', depth: 1, value: 50 },
+        { id: 'm', label: 'Member', depth: 2, value: 50 },
+        { id: 'z', label: 'Zone', depth: 2, value: 50 },
+        { id: 'p', label: 'Partner', depth: 3, value: 50 },
+        { id: 'avail', label: 'Available', depth: 4, value: 100 },
+      ],
+      links: [
+        { id: 'a', source: 'pot', target: 'int', value: 50 },
+        { id: 'b', source: 'pot', target: 'ext', value: 50 },
+        { id: 'c', source: 'int', target: 'm', value: 50 },
+        { id: 'd', source: 'ext', target: 'z', value: 50 },
+        { id: 'e', source: 'z', target: 'p', value: 50 },
+        { id: 'f', source: 'm', target: 'avail', value: 50 },
+        { id: 'g', source: 'p', target: 'avail', value: 50 },
+      ],
+      totalIn: 100,
+      totalOut: 100,
+      balance: null,
+    };
+    const layout = layoutSankey(track);
+    expect(layout.columns).toBe(5);
+    const skip = layout.links.find((l) => l.id === 'f')!;
+    const m = layout.nodes.find((n) => n.id === 'm')!;
+    const avail = layout.nodes.find((n) => n.id === 'avail')!;
+    // Starts at the member's right edge, ends at the sink's left edge.
+    expect(skip.path.startsWith(`M${m.x + m.w},`)).toBe(true);
+    expect(skip.path).toContain(`${avail.x},`);
+    // The sink is as tall as the whole flow.
+    expect(avail.h).toBeGreaterThan(0.99);
+  });
+});
+
+describe('layoutSankey with stacked bars', () => {
+  const stacked = (id: string, value: number, spent: number) => ({
+    id,
+    label: id,
+    depth: 1,
+    value,
+    kind: 'member',
+    segments: [
+      { kind: 'spent', label: 'Spent', value: spent },
+      { kind: 'available', label: 'Available', value: value - spent },
+    ].filter((s) => s.value > 0),
+  });
+  const track = {
+    id: 'allocation' as const,
+    unit: 'eur',
+    nodes: [
+      { id: 'pot', label: 'Pot', depth: 0, value: 60 },
+      stacked('a', 30, 10),
+      stacked('b', 20, 20),
+      stacked('c', 10, 0),
+    ],
+    links: [
+      { id: 'la', source: 'pot', target: 'a', value: 30 },
+      { id: 'lb', source: 'pot', target: 'b', value: 20 },
+      { id: 'lc', source: 'pot', target: 'c', value: 10 },
+    ],
+    totalIn: 60,
+    totalOut: 60,
+    balance: null,
+  };
+
+  it('carries a bar\'s stack through to the layout', () => {
+    const out = layoutSankey(track);
+    const a = out.nodes.find((n) => n.id === 'a')!;
+    expect(a.segments!.map((s) => [s.kind, s.value])).toEqual([
+      ['spent', 10],
+      ['available', 20],
+    ]);
+    expect(out.nodes.find((n) => n.id === 'pot')!.segments).toBeUndefined();
+  });
+
+  it('stacks a rollup from what it rolled up', () => {
+    const out = layoutSankey(track, { topN: 1 });
+    const other = out.nodes.find((n) => n.id === '__other_1')!;
+    expect(other.value).toBe(30);
+    expect(other.segments!.map((s) => [s.kind, s.value])).toEqual([
+      ['spent', 20],
+      ['available', 10],
+    ]);
+  });
+});
+
+describe('nodeBreakdown on a twice-fed party', () => {
+  it('lists where the bar came from', () => {
+    const track = allocationToGraph(
+      allocate({
+        total: 1000,
+        unit: 'eur',
+        config: { interiorPercent: 50, steepness: 100, nzones: 1 },
+        members: [{ id: 'a', name: 'Ana', percentage: 100 }],
+        zoned: [
+          { id: 'p1', name: 'One', zone: 1 },
+          { id: 'a', name: 'Ana', zone: 1, kind: 'person' },
+        ],
+      }),
+      { interior: 'Contributors share' },
+    );
+    const b = nodeBreakdown(track, layoutSankey(track), 'party-a');
+    expect(b.side).toBe('in');
+    expect(b.rows.map((r) => [r.label, r.value])).toEqual([
+      ['Contributors share', 500],
+      ['Zone 1', 250],
+    ]);
+  });
+});
+
+describe('nodeBreakdown', () => {
+  const track = {
+    id: 'money' as const,
+    unit: 'eur',
+    nodes: [
+      { id: 'a', label: 'Ada', depth: 0, value: 30 },
+      { id: 'b', label: 'Ben', depth: 0, value: 20 },
+      { id: 'c', label: 'Cyd', depth: 0, value: 5 },
+      { id: 'hub', label: 'Holon', depth: 1, value: 55, kind: 'hub' },
+      { id: 'x', label: 'Rent', depth: 2, value: 40 },
+      { id: 'y', label: 'Food', depth: 2, value: 15 },
+    ],
+    links: [
+      { id: 'la', source: 'a', target: 'hub', value: 30 },
+      { id: 'lb', source: 'b', target: 'hub', value: 20 },
+      { id: 'lc', source: 'c', target: 'hub', value: 5 },
+      { id: 'lx', source: 'hub', target: 'x', value: 40 },
+      { id: 'ly', source: 'hub', target: 'y', value: 15 },
+    ],
+    totalIn: 55,
+    totalOut: 55,
+    balance: null,
+  };
+  const layout = layoutSankey(track);
+
+  it('lists what a hub paid out, largest first', () => {
+    const b = nodeBreakdown(track, layout, 'hub');
+    expect(b.side).toBe('out');
+    expect(b.rows.map((r) => [r.label, r.value])).toEqual([['Rent', 40], ['Food', 15]]);
+  });
+
+  it('yields nothing for a leaf whose only link is the hub', () => {
+    expect(nodeBreakdown(track, layout, 'a').rows).toEqual([]);
+    expect(nodeBreakdown(track, layout, 'x').rows).toEqual([]);
+  });
+
+  it('lists who fed a terminal bar', () => {
+    const t = {
+      ...track,
+      nodes: [
+        { id: 'm1', label: 'Ana', depth: 0, value: 10 },
+        { id: 'm2', label: 'Bo', depth: 0, value: 6 },
+        { id: 'spent', label: 'Spent', depth: 1, value: 16, kind: 'spent' },
+      ],
+      links: [
+        { id: '1', source: 'm1', target: 'spent', value: 10 },
+        { id: '2', source: 'm2', target: 'spent', value: 6 },
+      ],
+    };
+    const b = nodeBreakdown(t, layoutSankey(t), 'spent');
+    expect(b.side).toBe('in');
+    expect(b.rows.map((r) => r.label)).toEqual(['Ana', 'Bo']);
+  });
+
+  it('names the single partner behind a zone', () => {
+    const t = {
+      ...track,
+      nodes: [
+        { id: 'z', label: 'Zone 1', depth: 0, value: 10, kind: 'zone' },
+        { id: 'p', label: 'Kitchen', depth: 1, value: 10, kind: 'partner' },
+      ],
+      links: [{ id: '1', source: 'z', target: 'p', value: 10 }],
+    };
+    expect(nodeBreakdown(t, layoutSankey(t), 'z').rows.map((r) => r.label)).toEqual(['Kitchen']);
+  });
+
+  it('lists what a rollup swallowed', () => {
+    const many = {
+      ...track,
+      nodes: [
+        ...Array.from({ length: 10 }, (_, i) => ({ id: `s${i}`, label: `S${i}`, depth: 0, value: 10 - i })),
+        { id: 'hub', label: 'Holon', depth: 1, value: 55, kind: 'hub' },
+      ],
+      links: Array.from({ length: 10 }, (_, i) => ({ id: `l${i}`, source: `s${i}`, target: 'hub', value: 10 - i })),
+    };
+    const l = layoutSankey(many);
+    const rows = rolledUpNodes(many, l, '__other_0');
+    expect(rows.map((r) => r.label)).toEqual(['S8', 'S9']);
+    expect(nodeBreakdown(many, l, '__other_0').rows).toEqual(rows);
+    expect(rolledUpNodes(many, l, 'hub')).toEqual([]);
   });
 });

@@ -16,21 +16,15 @@
  *     fulfilled quest. Without the mirror a provider who answered a
  *     federated need earns hours and karma only on someone else's holon —
  *     invisible in their own wallet, score, and record,
- *   - and MINT the flywheel offer (docs/needs-offers-network.md §6): a
- *     fulfilled need is proof of capability, so a standing `type:'offer'`
- *     attributed to the provider lands on THEIR holon's board. Providers
- *     accrue a discoverable catalog by fulfilling, not by listing. Consent
- *     stays theirs: the minted offer never leaves their holon unless they
- *     later share it.
+ *   - and settle the offer the winning response drew on: every response
+ *     carries one (`@holons/core/offers` answerNeed raises it when nothing
+ *     stood), so its reservation closes and the movement lands on both
+ *     ledgers. The fulfilled offer on the provider's holon IS the proof of
+ *     capability (docs/needs-offers-network.md §6); nothing extra is minted.
  */
 
 import type { HoloSphere } from 'holosphere';
-import {
-  planTaskCompletion,
-  executeCompletionPlan,
-  createMarketItem,
-  type ExecuteOutcome,
-} from '../tasks/index.js';
+import { planTaskCompletion, executeCompletionPlan, type ExecuteOutcome } from '../tasks/index.js';
 import { DEFAULT_EQUATION, type ScoreEquation } from '../scoring/index.js';
 import { REAEventStore, REAEventFactory } from '../rea/index.js';
 import { createExpense } from '../expenses/index.js';
@@ -45,6 +39,8 @@ import { TREASURY_ID, splitHours } from '../governance/treasury.js';
 import { acceptedResponse, closeNeed } from './responses.js';
 import { refreshPublishedNeed } from './publish.js';
 import { NEED_RECORD_LENS, type PublishedNeed } from './types.js';
+import { normalizeOffer } from '../offers/transform.js';
+import { settleOfferReservation } from '../offers/settle.js';
 
 /** Stable id of the requester → provider hour transfer for a need. */
 export function handoffExpenseId(needId: string | number): string {
@@ -54,11 +50,6 @@ export function handoffExpenseId(needId: string | number): string {
 /** Stable id of the treasury's withheld share of a settlement. */
 export function handoffFeeExpenseId(needId: string | number): string {
   return `wq-${needId}-handoff-fee`;
-}
-
-/** Stable id of the flywheel offer minted from a fulfilled need. */
-export function mintedOfferId(needId: string | number): string {
-  return `offer-from-${needId}`;
 }
 
 /** Identity-attributed store surface (holosphere, or a putAs wrapper). */
@@ -86,10 +77,11 @@ export interface SettleNeedOptions {
   /** Check the originating shopping-list item off. Default true. */
   checkOffShoppingItem?: boolean;
   /**
-   * Mint the flywheel offer — a standing `type:'offer'` attributed to the
-   * provider on their own holon (see module doc). Default true.
+   * Settle the standing offer the winning response drew on (its reservation
+   * closes and the movement is recorded as an REA event on both holons —
+   * `@holons/core/offers`). Default true.
    */
-  mintProviderOffer?: boolean;
+  settleOffer?: boolean;
   /**
    * Fraction of the moved hours withheld into the coop's treasury (the
    * `treasury` account on the OWNER holon's expenses lens) — the
@@ -109,8 +101,8 @@ export interface SettleNeedOutcome {
   requesterId: string | null;
   /** Hours withheld into the owner coop's treasury (0 without a voted rate). */
   treasuryFee: number;
-  /** Id of the flywheel offer minted for the provider, when one was. */
-  mintedOfferId: string | null;
+  /** The standing offer settled against, when the response drew on one. */
+  offerSettled: { offerId: string; offerHolonId: string; eventId: string | null; wroteBoth: boolean } | null;
   completion: ExecuteOutcome;
   errors: string[];
 }
@@ -178,10 +170,10 @@ export async function settleNeedHandoff(
   // (governance/treasury) and the provider is credited the rest.
   const { toProvider, toTreasury } = splitHours(hours, opts.treasuryRate ?? 0);
 
-  const expenseFor = (holonId: string) =>
+  // The same record lands in both holons (owner, and the provider's mirror).
+  const expenseFor = () =>
     createExpense({
       id: handoffExpenseId(String(final.id)),
-      holonId,
       amount: toProvider,
       currency: 'hour',
       description: String(final.title ?? 'handoff'),
@@ -190,7 +182,7 @@ export async function settleNeedHandoff(
       now,
     });
 
-  const ownerExpense = expenseFor(ownerHolonId);
+  const ownerExpense = expenseFor();
   if (ownerExpense) {
     try {
       await db.put(ownerHolonId, 'expenses', ownerExpense);
@@ -203,7 +195,6 @@ export async function settleNeedHandoff(
   if (toTreasury > 0) {
     const feeExpense = createExpense({
       id: handoffFeeExpenseId(String(final.id)),
-      holonId: ownerHolonId,
       amount: toTreasury,
       currency: 'hour',
       description: `coop share — ${String(final.title ?? 'handoff')}`,
@@ -239,13 +230,13 @@ export async function settleNeedHandoff(
   // THEIR holon; a settlement recorded only on the owner's is invisible to
   // them. Expense + events are copies (settlement facts, stable ids); the
   // quest itself mirrors as a hologram, the same intentional opt-in as
-  // reflectJoin's personal-holon mirror.
+  // the roster mirror into a participant's own holon.
   if (
     opts.mirrorToProvider !== false &&
     providerHolonId != null &&
     providerHolonId !== ownerHolonId
   ) {
-    const mirrorExpense = expenseFor(providerHolonId);
+    const mirrorExpense = expenseFor();
     if (mirrorExpense) {
       try {
         await db.put(providerHolonId, 'expenses', mirrorExpense);
@@ -285,40 +276,34 @@ export async function settleNeedHandoff(
     }
   }
 
-  // The flywheel (§6): mint a standing offer attributed to the provider on
-  // THEIR holon's board — proof of capability, earned by delivering. Stable
-  // id per need, so a double settle upserts. Never pushed to hex or
-  // partners here: sharing further stays the provider's explicit act.
-  let minted: string | null = null;
-  if (opts.mintProviderOffer !== false && providerId != null) {
-    const offerHolon = providerHolonId ?? ownerHolonId;
-    const base = createMarketItem({
-      holonId: offerHolon,
-      initiator: { id: providerId, username: accepted?.responder?.name } as never,
-      kind: 'offer',
-      title: String(final.title ?? ''),
-      ...(final.category ? { category: String(final.category) } : {}),
-      itemType: (final as { item_type?: string }).item_type === 'service' ? 'service' : 'good',
-      ...(Array.isArray((final as { transaction_type?: string[] }).transaction_type)
-        ? { transactionTypes: (final as { transaction_type?: string[] }).transaction_type }
-        : {}),
-      now,
-    });
-    const offer = {
-      ...base,
-      id: mintedOfferId(String(final.id)),
-      // Provenance: which fulfilled need earned this offer, and where.
-      mintedFrom: {
-        needId: String(final.id),
-        holonId: ownerHolonId,
-        at: new Date(now).toISOString(),
-      },
-    };
+  // A response that drew on a standing offer settles that offer's
+  // reservation: the offer shrinks (or closes) and the movement is recorded
+  // on both ledgers — a stock-sourced offer as `stock:transferred`, so the
+  // provider's shelf drops by what was delivered.
+  let offerSettled: SettleNeedOutcome['offerSettled'] = null;
+  const drewOnOffer = !!accepted?.offerId;
+  if (drewOnOffer && opts.settleOffer !== false) {
+    const offerHolon = String(accepted!.offerHolonId ?? providerHolonId ?? ownerHolonId);
+    const offerId = String(accepted!.offerId);
     try {
-      await db.put(offerHolon, NEED_RECORD_LENS, offer);
-      minted = offer.id;
+      const raw = await db.get(offerHolon, NEED_RECORD_LENS, offerId);
+      const offer = normalizeOffer(raw, now);
+      const reservationId =
+        accepted!.reservationId ??
+        offer?.reservations.find((r) => r.responseId === accepted!.id && !r.releasedAt)?.id;
+      if (!offer || !reservationId) {
+        errors.push(`settle offer ${offerId}: ${offer ? 'no reservation for this response' : 'offer not found'}`);
+      } else {
+        const out = await settleOfferReservation({ holosphere, db: db as never }, offerHolon, offer, reservationId, {
+          needHolonId: ownerHolonId,
+          actor: { id: providerId ?? requesterId ?? ownerHolonId, name: accepted?.responder?.name },
+          now,
+        });
+        errors.push(...out.errors.map((e) => `settle offer: ${e}`));
+        offerSettled = { offerId, offerHolonId: offerHolon, eventId: out.event?.id ?? null, wroteBoth: out.wroteBoth };
+      }
     } catch (err) {
-      errors.push(`mint offer: ${(err as Error).message ?? String(err)}`);
+      errors.push(`settle offer ${offerId}: ${(err as Error).message ?? String(err)}`);
     }
   }
 
@@ -329,7 +314,7 @@ export async function settleNeedHandoff(
     providerHolonId,
     requesterId,
     treasuryFee: toTreasury,
-    mintedOfferId: minted,
+    offerSettled,
     completion,
     errors,
   };

@@ -3,7 +3,9 @@ import {
   DEFAULT_ALLOCATION_CONFIG,
   readAllocationConfig,
   readCollectiveSlug,
+  readInteriorShares,
   readZoneAssignments,
+  readZonePeople,
   saveAllocationConfig,
   saveCollectiveSlug,
   toAllocationPartners,
@@ -109,7 +111,7 @@ describe('readAllocationConfig', () => {
   it('reads a stored split', () => {
     expect(
       readAllocationConfig({ allocation: { interiorPercent: 70, steepness: 30, nzones: 4 } }),
-    ).toEqual({ interiorPercent: 70, steepness: 30, nzones: 4 });
+    ).toEqual({ interiorPercent: 70, steepness: 30, nzones: 4, interiorMode: 'equation' });
   });
 
   it('repairs nonsense rather than propagating it', () => {
@@ -151,11 +153,42 @@ describe('toAllocationPartners', () => {
   it('pairs partners with their zone and name', () => {
     const partners = toAllocationPartners(['p1', 'p2'], { p1: 'One' }, { p1: 2 });
     expect(partners).toEqual([
-      { id: 'p1', name: 'One', zone: 2 },
+      { id: 'p1', name: 'One', zone: 2, kind: 'holon' },
       // Unnamed falls back to the id; unassigned lands at zone 0, which
       // `allocate` treats as outside every ring.
-      { id: 'p2', name: 'p2', zone: 0 },
+      { id: 'p2', name: 'p2', zone: 0, kind: 'holon' },
     ]);
+  });
+
+  it('seats placed people after the partners, named from the people map', () => {
+    const partners = toAllocationPartners(
+      ['p1'],
+      { p1: 'One' },
+      { p1: 1 },
+      { u1: 2, u2: 0, p1: 3 },
+      { u1: 'Ada' },
+    );
+    expect(partners).toEqual([
+      { id: 'p1', name: 'One', zone: 1, kind: 'holon' },
+      // u2 is unplaced and so absent; p1 keeps its partner seat, not a second one.
+      { id: 'u1', name: 'Ada', zone: 2, kind: 'person' },
+    ]);
+  });
+
+  it('keeps the ring set on a person whose personal holon is also a partner', () => {
+    // Liminal lists Roberto's personal holon as a partner (a joined hologram)
+    // and places him on ring 5 as a person; the partner map says nothing.
+    const partners = toAllocationPartners(['235114395'], {}, {}, { '235114395': 5 });
+    expect(partners).toEqual([{ id: '235114395', name: '235114395', zone: 5, kind: 'holon' }]);
+  });
+});
+
+describe('readZonePeople', () => {
+  it('reads placed people and drops the unplaced', () => {
+    const doc = { allocation: { zones: { p1: 1 }, people: { u1: 2, u2: 0, u3: 'x' } } };
+    expect(readZonePeople(doc)).toEqual({ u1: 2 });
+    // People never leak into the partner map, nor the other way round.
+    expect(readZoneAssignments(doc)).toEqual({ p1: 1 });
   });
 });
 
@@ -176,9 +209,86 @@ describe('saveAllocationConfig', () => {
     expect(hs.current.allocation.zones).toEqual({ p2: 1 });
   });
 
+  it('keeps people placements through a partner-zone sync, and replaces them when given', async () => {
+    const hs = fakeHolosphere({ allocation: { zones: { p1: 2 }, people: { u1: 1 } } });
+    await saveAllocationConfig(hs as any, 'h1', {}, { p2: 1 });
+    expect(hs.current.allocation.people).toEqual({ u1: 1 });
+    await saveAllocationConfig(hs as any, 'h1', {}, undefined, { u2: 3, u1: 0 });
+    expect(hs.current.allocation.people).toEqual({ u2: 3 });
+    expect(hs.current.allocation.zones).toEqual({ p2: 1 });
+  });
+
   it('carries unspecified knobs over from what was stored', async () => {
     const hs = fakeHolosphere({ allocation: { interiorPercent: 80, steepness: 20, nzones: 3 } });
     const saved = await saveAllocationConfig(hs as any, 'h1', { nzones: 5 });
-    expect(saved).toEqual({ interiorPercent: 80, steepness: 20, nzones: 5 });
+    expect(saved).toEqual({
+      interiorPercent: 80,
+      steepness: 20,
+      nzones: 5,
+      interiorMode: 'equation',
+    });
+  });
+
+  it('stores the interior mode and the custom shares, and keeps the shares through a mode flip', async () => {
+    const hs = fakeHolosphere(existingDoc);
+    await saveAllocationConfig(
+      hs as any,
+      'h1',
+      { interiorMode: 'custom' },
+      undefined,
+      undefined,
+      { u1: 70, u2: 30, u3: 0 },
+    );
+    expect(hs.current.allocation.interiorMode).toBe('custom');
+    expect(hs.current.allocation.shares).toEqual({ u1: 70, u2: 30 });
+    expect(readInteriorShares(hs.current)).toEqual({ u1: 70, u2: 30 });
+
+    // Back to the equation: the numbers stay, ready to be switched on again.
+    await saveAllocationConfig(hs as any, 'h1', { interiorMode: 'equation' });
+    expect(readAllocationConfig(hs.current).interiorMode).toBe('equation');
+    expect(readInteriorShares(hs.current)).toEqual({ u1: 70, u2: 30 });
+
+    // A partner-zone sync leaves the split alone.
+    await saveAllocationConfig(hs as any, 'h1', {}, { p1: 1 });
+    expect(readInteriorShares(hs.current)).toEqual({ u1: 70, u2: 30 });
+  });
+});
+
+describe('readInteriorShares', () => {
+  it('is empty when unset and drops unusable entries', () => {
+    expect(readInteriorShares(null)).toEqual({});
+    expect(readInteriorShares({ allocation: {} })).toEqual({});
+    expect(readInteriorShares({ allocation: { shares: { a: 10, b: 'x', c: -2 } } })).toEqual({
+      a: 10,
+    });
+  });
+});
+
+describe('split parties', () => {
+  it('splitPartyKind: people by key or positive id, holons otherwise', async () => {
+    const { splitPartyKind, linkSplitPartner } = await import('./settings.js');
+    expect(splitPartyKind('235114395')).toBe('person');
+    expect(splitPartyKind('a'.repeat(64))).toBe('person');
+    expect(splitPartyKind('-1003864542239')).toBe('holon');
+    expect(splitPartyKind('holon_fig33pftaepw96i4')).toBe('holon');
+    expect(splitPartyKind('x', 'personal')).toBe('person');
+    expect(splitPartyKind('-5', 'community')).toBe('holon');
+
+    // linkSplitPartner: links a new partner with no lens flow, leaves a linked one alone.
+    const calls: unknown[] = [];
+    const hs = {
+      store: { listEventIds: () => [], getEvents: () => [] },
+      getFederation: async () => ({ federated: ['-2'] }),
+      putGlobal: async () => true,
+      federate: async (...args: unknown[]) => {
+        calls.push(args);
+        return true;
+      },
+    };
+    expect(await linkSplitPartner(hs, '-1', '-2')).toBe(true);
+    expect(calls).toEqual([]);
+    expect(await linkSplitPartner(hs, '-1', '-3', 'Three')).toBe(true);
+    expect(calls[0]).toEqual(['-1', '-3', null, null, false, { inbound: [], outbound: [], hops: undefined }]);
+    expect(await linkSplitPartner(hs, '-1', '-1')).toBe(false);
   });
 });

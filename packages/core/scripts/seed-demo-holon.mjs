@@ -24,13 +24,14 @@
  *   node scripts/seed-demo-holon.mjs [--holon-id=demo123] [--app-name=HolonsDebug] [--timeout-ms=20000]
  *
  *   Env:
- *     HOLOSPHERE_PRIVATE_KEY  attribution key (optional; without it puts are
+ *     HOLOSPHERE_NSEC  attribution key (optional; without it puts are
  *                             anonymous which is fine for the public demo)
  *     HOLONS_APP              fallback for --app-name (defaults to HolonsDebug)
  */
 
 import { argv, exit, env } from 'node:process';
 import { HoloSphere } from 'holosphere';
+import { resolveRelays } from '../dist/holosphere/relays.js';
 import { getAllDefaultChromosomes } from '../dist/dna/index.js';
 
 const DEFAULT_HOLON = 'demo123';
@@ -61,7 +62,7 @@ function parseArgs(args) {
 	return flags;
 }
 
-// Wrap a put in a timeout — Gun gossip can occasionally stall waiting for an
+// Wrap a put in a timeout — parent-propagation writes can occasionally stall waiting for a relay
 // ack on the parent-cell propagation. Local data is already written; the
 // timeout lets the batch move on rather than wedge mid-seed.
 function withTimeout(promise, ms, label) {
@@ -1506,16 +1507,20 @@ async function main() {
 	const flags = parseArgs(argv.slice(2));
 	const holonId = flags.holonId;
 	const appName = flags.appName || env.HOLONS_APP || 'HolonsDebug';
-	const privateKey = env.HOLOSPHERE_PRIVATE_KEY || null;
+	const privateKey = env.HOLOSPHERE_NSEC || null;
 
 	console.log(
 		`Seeding holon "${holonId}" via appName="${appName}"` +
 			(privateKey ? ' with provided privateKey' : ' anonymously')
 	);
 
+	// The relays are the wire (HOLOSPHERE_RELAYS, default: production);
+	// the store is in memory for this one-shot process.
 	const holosphere = new HoloSphere({
 		appName,
 		...(privateKey ? { privateKey } : {}),
+		relays: resolveRelays(env.HOLOSPHERE_RELAYS),
+		store: { adapter: 'memory' },
 		logLevel: 'WARN'
 	});
 	await holosphere.ready();
@@ -1616,8 +1621,9 @@ async function main() {
 	const reaEvents = buildREAEvents(holonId, tasks, events, expenses, library_items);
 	await putAll(holosphere, holonId, 'rea_events', reaEvents, flags.timeoutMs, flags.concurrency);
 
-	console.log('\nAllowing 5s for Gun gossip to settle before exit …');
+	console.log('\nAllowing 5s for the relay publishes to drain before exit …');
 	await new Promise((r) => setTimeout(r, 5000));
+	await holosphere.close();
 }
 
 main().then(

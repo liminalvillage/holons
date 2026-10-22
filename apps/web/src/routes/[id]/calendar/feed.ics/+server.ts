@@ -3,28 +3,67 @@
 
 import { error } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
+import { env } from "$env/dynamic/private";
 import { generateICalFeed } from "$lib/services/icalGenerator";
-import { HoloSphere } from "holosphere";
+import type { HoloSphere } from "holosphere";
+import {
+  createHoloSphere,
+  resolveEnforce,
+  resolveRelays,
+} from "@holons/core/holosphere";
+import { loadSettings } from "@holons/core/settings";
+import { resolveFeedAppName } from "$lib/server/feedEnv";
 
 // Lazy-initialized HoloSphere instance to avoid running during SvelteKit build analysis
-let holosphere: InstanceType<typeof HoloSphere>;
+let holosphere: HoloSphere;
 
 function getHolosphere() {
   if (!holosphere) {
-    // Single source of truth: HOLONS_APP from the monorepo root .env.
-    const appName = process.env.HOLONS_APP || "HolonsDebug";
-    holosphere = new HoloSphere({
-      appName,
-      // Holosphere 1.3: uses Gun server (gun.holons.io/gun) by default
-      // Holosphere 2: uncomment below to use Nostr relay instead
-      // backend: 'nostr',
-      // nostr: {
-      //     relays: ['wss://relay.holons.io'],
-      //     persistence: true
-      // }
+    // Single source of truth: HOLONS_APP / HOLOSPHERE_RELAYS from the monorepo
+    // root .env, defaulting the way the web client does (production → Holons)
+    // so a deployed function never reads an empty debug namespace. Read through
+    // `$env/dynamic/private`: bare `process.env` never sees the root .env under
+    // `vite dev`, which left the dev feed on a different namespace than the
+    // dev client. A
+    // serverless function has no durable disk, so the store is in memory and
+    // each cold start catches the holon's lenses up from the relays (bounded
+    // by the sync timeout).
+    holosphere = createHoloSphere({
+      appName: resolveFeedAppName(env),
+      relays: resolveRelays(env.HOLOSPHERE_RELAYS),
+      store: { adapter: "memory" },
+      enforce: resolveEnforce(env.HOLOSPHERE_ENFORCE),
     });
   }
   return holosphere;
+}
+
+/** Upper bound on the per-request relay catch-up (see `catchUp`). */
+const RESYNC_TIMEOUT_MS = 4000;
+
+/**
+ * Re-read every lens this instance already follows before answering. A lens
+ * is caught up from the relays only the first time it is read; afterwards the
+ * in-memory store is fed by a live subscription that a frozen serverless
+ * function may have lost. Without this, the request that thaws the instance
+ * answers from the store as it stood at freeze time — and a calendar app that
+ * only re-reads every several hours keeps a moved date stale for another
+ * whole cycle. Bounded so an unreachable relay never blocks the feed.
+ */
+async function catchUp(holo: HoloSphere): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      holo.resyncSubscriptions(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, RESYNC_TIMEOUT_MS);
+      }),
+    ]);
+  } catch {
+    /* relay unreachable — read local */
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export const GET: RequestHandler = async ({ params }) => {
@@ -36,10 +75,19 @@ export const GET: RequestHandler = async ({ params }) => {
 
   try {
     const holo = getHolosphere();
+    await catchUp(holo);
 
-    // Fetch holon data to get the name
-    const holonData = await holo.get(holonId, "profile", holonId);
-    const holonName = holonData?.name || holonData?.title || "Holon Calendar";
+    // The holon's own settings record is where every surface reads its name
+    // (see `nameResolver`); it may come back as an array of entries on older
+    // writes. The generator appends "Calendar", so the fallback is bare.
+    const settings = await loadSettings(holo, holonId);
+    const named = Array.isArray(settings)
+      ? settings.find((e: { name?: unknown }) => e?.name)
+      : settings;
+    const holonName =
+      typeof named?.name === "string" && named.name.trim()
+        ? named.name.trim()
+        : "Holon";
 
     // Fetch all quests/events from the holon
     const quests = await holo.getAll(holonId, "quests");

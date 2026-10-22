@@ -13,7 +13,7 @@
     import { ShoppingCart, Trash2, RefreshCw, MapPin } from 'svelte-feathers';
     import { notifyWriteDenied } from "../lib/stores/writeNotifications";
     import { loadFilters, saveFilters } from "$lib/util/persistedFilters";
-    import { showFederated, showHolograms, showUnverified, passesLensFilters } from "$lib/stores/lensFilters";
+    import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
     import SourceBadge from "./shared/SourceBadge.svelte";
     import { nostrPublicKey } from "../lib/stores/nostr";
     import { getSelfInitiator } from "$lib/util/usersWithSelf";
@@ -123,7 +123,7 @@
         : localItems;
 
     $: visibleItems = shoppingItems.filter((item) => {
-        if (!passesLensFilters(item as any, $showHolograms, $showFederated, $showUnverified)) return false;
+        if (!passesLensFilters(item as any, $showHolograms, $showFederated)) return false;
         const q = filters.searchQuery.trim().toLowerCase();
         if (q && !(item.text ?? '').toLowerCase().includes(q)) return false;
         return true;

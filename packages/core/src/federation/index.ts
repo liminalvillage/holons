@@ -22,14 +22,52 @@ export {
 export { readSettingsHex } from './settings-hex.js';
 
 export {
+	HOME_HEX_DEFAULT_HOPS,
+	HOME_HEX_MAX_HOPS,
+	mirrorItemToHomeHex,
+	normalizeHops,
+	readHomeHexLink,
+	retractItemFromHomeHex,
+	setHomeHexLink,
+	unlinkHomeHex,
+	type HomeHexLink,
+	type SetHomeHexLinkOptions
+} from './home-hex.js';
+
+export {
 	applyLensMode,
 	lensMode,
 	removeFederationPartner,
 	sanitizeLenses,
 	setFederationPartner,
 	type FederationLensMode,
+	type FederationLinkOutcome,
+	type LinkSideOptions,
 	type SetFederationPartnerOptions
 } from './partners.js';
+
+export {
+	FEDERATION_REQUESTS_LENS,
+	answerFederationRequest,
+	askFederation,
+	cancelFederationRequest,
+	counterpartConfig,
+	federationLinkState,
+	federationRequestRecords,
+	laneState,
+	markFederationRequestAnnounced,
+	mirrorDirections,
+	normalizeDirections,
+	pendingFederationRequests,
+	sameDirections,
+	watchAllFederationRequests,
+	type AnswerFederationOptions,
+	type AskFederationInput,
+	type FederationLinkState,
+	type FederationRequest,
+	type FederationRequestSighting,
+	type FederationRequestStatus
+} from './requests.js';
 
 export {
 	migrateLegacyFederationLinks,

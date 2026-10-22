@@ -15,8 +15,9 @@
 ## Needs & Offers
 - `/request [description]` - Something you would like to have
   - Example: `/request foot massage`
-- `/offer [description]` - Something you would like to give
-  - Example: `/offer yoga sessions`
+- `/offer [qty] [what] [#category] [for price]` - A resource on the table, matched to needs: a leading quantity and unit set how much (`5kg flour`, `2 hours plumbing`), a leading verb sets the mode (`lend`, `sell`), `#category` keys the matcher, `for 4 EUR` sets a price per unit. Shared with partners and lit on the map at the chat's hex.
+  - Examples: `/offer 5kg flour #food`, `/offer lend ladder`, `/offer sell 12 eggs for 4 EUR`
+  - Your shelf's surplus (see `/stock`) is offered automatically.
 - `/board` - Lists all users' requests and offers
 
 ## Community & Facilitation
@@ -24,6 +25,20 @@
 - `/facilitate [issue]` - Gives advice on community issues
   - Example: `/facilitate i don't feel recognized`
 - `/bigtalk` - Get to know each other better by collectively answering the prompt
+
+## Shifts (Elinor-compatible)
+Shifts are read from a Nostr relay in the [Elinor](https://elinor.commonshub.dev/docs) format (kind 31923 occurrences, kind 31925 signups); any Elinor client sees the same signups.
+- `/shifts [today|tomorrow|week|YYYY-MM-DD]` - Lists this chat's shifts with ✋ Take / ❌ Drop buttons
+  - Example: `/shifts tomorrow`
+- `/myshifts` - Lists the shifts you are signed up for in the next two weeks
+
+## Your key (private chat only)
+Every member has a Nostr key the service derives for them; whoever holds the
+service secret can sign as it. `/key` is the way to hold a key of your own.
+- `/key` - Shows your public key (npub) and the keys linked to you, with buttons to export the secret key and to link one you hold
+- `/key link <npub|hex>` - Links a key after you prove you hold it: post the one-time code the bot gives you as a note from that key, then tap ✅ Verify
+- `/key unlink <npub|hex>` - Unlinks a key
+Linked keys are published in the kind-31926 attestation for `telegram:<your id>`, so a signup from any of them counts as you on every board (bot, kiosk, Elinor).
 
 ## Role Management
 - `/assignroles` - Assigns roles to members of the community based on their actions
@@ -51,6 +66,7 @@
 
 ## Content Management
 - `/tag [tag]` - Saves content under the specified tag
+- `/card` - Reads the writing on a photographed card and saves it, with the picture, under the `cards` tag. Send it as a photo caption, as a reply to a photo, or on its own and then send the photo
 - `/publish` - Saves the content in the holosphere
 - `/cast` - Saves the content on every scale in the holosphere
 - `/summarize` - Listens to the conversation and summarises it when `/done` is entered

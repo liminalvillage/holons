@@ -1,17 +1,34 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // View-model normalisation. The kiosk reads two lenses:
-//   - `quests`  → calendar events (dated) + the task backlog (open, undated)
+//   - `quests`  → the task backlog and the calendar. The lens is shared with
+//     other domains (offers, needs, …), so core's `questKind` decides which
+//     records reach which board — see `@holons/core/tasks/kind`.
 //   - `library` → the library of things
 // Core owns the meaning of these records; here we only shape them for display.
 
+import { userName } from "@holons/core/identity";
+import { nameFor } from "$lib/names";
 import {
+  isQuestCompleted,
   isQuestSettled,
+  isRecurring,
+  questFrequency,
+  questOccurrences,
   questSchedule,
+  showsOnCalendar,
+  taskWallPlacement,
   unmetDependencies,
 } from "@holons/core/tasks";
-import type { Quest } from "@holons/core/tasks";
-import { dayKey, getDisplayBookings } from "@holons/core/library";
+import type { Quest, QuestFrequency } from "@holons/core/tasks";
+import type { IconName } from "./icons";
+import {
+  bookingStatus,
+  dayKey,
+  getDisplayBookings,
+  isTimedBooking,
+  ymd,
+} from "@holons/core/library";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
 import {
@@ -22,47 +39,33 @@ import {
 } from "@holons/core/checklists";
 import type { Checklist } from "@holons/core/checklists";
 import { parseInstant } from "@holons/core/datetime";
-import { recordKey, sourceHolonId, sourceRef } from "@holons/core/holosphere";
+import { importedCalendarColor, occurrenceSpan } from "@holons/core/calendar";
+import type {
+  ExternalCalendarEvent,
+  ImportedCalendar,
+} from "@holons/core/calendar";
+import {
+  recordKey,
+  sourceHolonId,
+  sourceRef,
+  deleteRef,
+} from "@holons/core/holosphere";
 import type { Translator } from "./i18n";
+import {
+  holonColor,
+  NOTE_COLORS,
+  noteColor,
+  type HolonColors,
+} from "./palette";
 
-/** Warm post-it palette, indexed deterministically by category. */
-export const NOTE_COLORS = [
-  "var(--note-sun)",
-  "var(--note-mint)",
-  "var(--note-sky)",
-  "var(--note-coral)",
-  "var(--note-lav)",
-  "var(--note-lime)",
-] as const;
-
-/** Stable colour for a label so the same category always gets the same note. */
-export function noteColor(seed: string | undefined): string {
-  const s = seed && seed.length ? seed : "•";
-  let hash = 0;
-  for (let i = 0; i < s.length; i++)
-    hash = (hash << 5) - hash + s.charCodeAt(i);
-  return NOTE_COLORS[Math.abs(hash) % NOTE_COLORS.length];
-}
-
-/**
- * Build a stable category → post-it colour map for a set of cards. The distinct
- * categories present are sorted (for determinism) and handed successive palette
- * entries, so every category on the wall gets a *different* colour until the
- * six-colour palette is exhausted (then it wraps). This beats hashing each
- * category independently — independent hashes can collide, landing two large
- * categories on the same hue and making the whole wall look monochrome. Blank
- * categories aren't assigned here; callers fall back to {@link noteColor}.
- */
-export function categoryColorMap(
-  categories: Iterable<string | undefined>,
-): Map<string, string> {
-  const distinct = [
-    ...new Set([...categories].filter((c): c is string => !!c && c.length > 0)),
-  ].sort();
-  const map = new Map<string, string>();
-  distinct.forEach((c, i) => map.set(c, NOTE_COLORS[i % NOTE_COLORS.length]));
-  return map;
-}
+// The post-it palette and the hash that picks from it live in lib/palette —
+// the same algorithm colours a holon (board wash, dock orb, map hexagon), so
+// it sits beside the holon overrides. Re-exported for the views. A card's
+// fill is `noteColor(category)` — the same hash-into-the-palette step that
+// colours a holon from its id (`holonColor`) and so the glow edge of every
+// card mirrored from it (`sourceGlow` below): one algorithm, two seeds, and a
+// colour that never shifts as records arrive or leave.
+export { NOTE_COLORS, noteColor };
 
 /**
  * Very slight, repeatable tilt (deg) for a note, keyed by id — stable, never
@@ -121,7 +124,7 @@ type Names = Record<string, string>;
 // actually lives in, and where a write on it must land). The rule moved to
 // `@holons/core/holosphere` so every surface shares it; these re-exports keep
 // the kiosk's existing call sites stable.
-export { sourceHolonId, sourceRef, recordKey };
+export { sourceHolonId, sourceRef, deleteRef, recordKey };
 
 /**
  * Resolve a foreign item's source holon to a friendly label — the partner's
@@ -140,25 +143,26 @@ export function sourceLabel(rec: unknown, names?: Names): string | undefined {
     names?.[id] ??
     r._hologram?.sourceHolonName ??
     r._federation?.originName ??
-    id
+    nameFor(id)
   );
 }
 
 /**
- * A stable glow-edge colour for a foreign item (one mirrored from another holon
- * via federation or a hologram), hashed from its origin holon id so every item
- * from the same holon shares one hue. `undefined` for the kiosk's own items —
- * they get no glow. Returned ready to drop into a `--glow` custom property.
+ * The glow-edge colour for a foreign item (one mirrored from another holon via
+ * federation or a hologram): its origin holon's colour — the SAME colour that
+ * holon's board is washed with and its dock orb and map hexagon are painted in
+ * (`holonColor` in lib/palette: the card hash of the id unless the holon's
+ * settings choose one; `colors` carries the overrides learned so far).
+ * `undefined` for the kiosk's own items — they get no glow. Returned ready to
+ * drop into a `--glow` custom property.
  */
-export function sourceGlow(rec: unknown): string | undefined {
+export function sourceGlow(
+  rec: unknown,
+  colors?: HolonColors,
+): string | undefined {
   const id = sourceHolonId(rec);
   if (!id) return undefined;
-  let hash = 0;
-  for (let i = 0; i < id.length; i++)
-    hash = (hash << 5) - hash + id.charCodeAt(i);
-  // Fixed saturation/lightness so every partner hue reads as a vivid edge
-  // against the warm post-it palette.
-  return `hsl(${Math.abs(hash) % 360} 75% 52%)`;
+  return holonColor(id, colors);
 }
 
 /**
@@ -210,6 +214,8 @@ export interface CalendarEvent {
   appreciation: number;
   /** Federation partner this came from, when aggregating; own items omit it. */
   source?: string;
+  /** The source holon's id — what a tap on the source badge travels to. */
+  sourceId?: string;
   /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
   sourceColor?: string;
   /** True for a hologram — a by-reference mirror of the source holon's card. */
@@ -220,6 +226,36 @@ export interface CalendarEvent {
    * than looking for a quest that doesn't exist.
    */
   libraryItemId?: string;
+  /**
+   * Set only on an entry read out of a subscribed external calendar (see
+   * `$lib/calendars`). There is no quest behind it, so the board must not
+   * drag, resize or open it — it is something the holon watches, not owns.
+   */
+  external?: { calendarName: string; url: string };
+  /**
+   * The note colour to draw this event in, when it isn't the category's: an
+   * external calendar's colour (see {@link externalEventColor}), so every
+   * entry of one feed reads as one colour on the board.
+   */
+  color?: string;
+  /**
+   * Done: a completed quest, or a ticked-off occurrence of a series. It stays
+   * on the calendar as a record, drawn struck through.
+   */
+  completed?: boolean;
+  /**
+   * Set on one occurrence of a recurring series (see `questOccurrences` in
+   * @holons/core/tasks). `id` is then unique to the occurrence; the quest a
+   * tap opens and a gesture writes is `seriesId`, and `when` is this
+   * occurrence's stored start — what ticking it off records. The series'
+   * own record is never drawn as a card of its own.
+   */
+  occurrence?: {
+    seriesId: string;
+    when: string;
+    completed: boolean;
+    frequency: QuestFrequency;
+  };
 }
 
 export interface TaskPerson {
@@ -244,6 +280,8 @@ export interface BacklogTask {
   /** Ids of the appreciators, so a card can show whether *you* appreciate it. */
   appreciatedBy: (string | number)[];
   source?: string;
+  /** The source holon's id — what a tap on the source badge travels to. */
+  sourceId?: string;
   /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
   sourceColor?: string;
   /** True for a hologram — a by-reference mirror of the source holon's card. */
@@ -254,6 +292,11 @@ export interface BacklogTask {
   orderIndex?: number;
   /** Creation instant (epoch ms; 0 unknown), for the newest-first default. */
   created: number;
+  /**
+   * The cadence of a recurring task, or null for a one-off. When set, `due`
+   * is the NEXT occurrence still to do, not the day the series began.
+   */
+  frequency: QuestFrequency | null;
   /**
    * How many of this task's dependencies are still open. 0 ⇒ a current leaf
    * of the graph (self-standing, or every predecessor completed): actionable
@@ -270,16 +313,24 @@ export interface BacklogTask {
 }
 
 /**
- * Friendly display name for a person record. Tolerates both the Telegram
- * snake_case participants (`first_name`) and the quest initiator's camelCase
- * (`firstName`), so either shape resolves to a real name.
+ * Friendly display name for a person record: the first name and a dotted
+ * surname ("Roberto V."), the way people are named on every kiosk surface.
+ * Tolerates both the Telegram snake_case participants (`first_name`) and the
+ * quest initiator's camelCase (`firstName`). A record with no name at all
+ * falls back to its bare username, then its id — never a handle when a name
+ * exists.
  */
-function personName(p: any): string {
-  const full = [p?.first_name ?? p?.firstName, p?.last_name ?? p?.lastName]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-  return full || (p?.username ? `@${p.username}` : `#${p?.id ?? "?"}`);
+export function personName(p: any): string {
+  // Core's one rule ("Roberto V."); an unnamed record is named by the
+  // resolver (its users record elsewhere, the key directory, its kind 0),
+  // else shown in the short form — never a bare id.
+  const own = userName(p, {
+    lastName: "initial",
+    idFallback: false,
+    unknown: "",
+  });
+  if (own) return own;
+  return p?.id != null ? nameFor(p.id) : "";
 }
 
 /** The quest's initiator as an avatar-stack person, or null when unset. */
@@ -335,40 +386,114 @@ export function dueLabelFor(
   return due.toLocaleDateString(locale, { day: "numeric", month: "short" });
 }
 
-/** Dated, still-open quests → calendar events, soonest first. */
+/**
+ * The span recurring series are drawn across: a season back, so a ticked-off
+ * occurrence stays visible for a while, and a year and a half ahead — as far
+ * as anyone pages the year view. The web dashboard uses the same reach.
+ */
+export function occurrenceWindow(now: Date): { start: Date; end: Date } {
+  const start = new Date(now);
+  start.setMonth(start.getMonth() - 3);
+  const end = new Date(now);
+  end.setMonth(end.getMonth() + 18);
+  return { start, end };
+}
+
+/**
+ * Dated quests → calendar events, soonest first. The calendar is also a
+ * record: a past event stays, and a completed one is drawn as done (core's
+ * `showsOnCalendar` — only cancelled and deleted quests leave). A recurring
+ * series contributes one event per occurrence inside {@link occurrenceWindow}
+ * around `now` (core expands the cadence), each tagged with `occurrence` so a
+ * tap or a drag reaches the series behind it.
+ */
 export function toEvents(
   quests: Quest[],
   names?: Names,
   t?: Translator,
+  colors?: HolonColors,
+  now: Date = new Date(),
 ): CalendarEvent[] {
   const out: CalendarEvent[] = [];
   const seen = new Set<string>();
+  const window = occurrenceWindow(now);
   for (const q of quests) {
-    if (isDone(q)) continue;
-    // Core owns what a schedule means: all-day vs timed, and the inclusive
-    // span of days a multi-day card covers.
-    const { start: date, end, allDay, days, multiDay } = questSchedule(q);
-    if (!date) continue;
+    // Dated tasks and events only, completed ones included. Offers, needs and
+    // whatever else a domain parks on the `quests` lens have their own boards
+    // — core draws that line (`showsOnCalendar`), so an offer's expiry never
+    // lands on the calendar.
+    if (!showsOnCalendar(q)) continue;
+    const completed = isQuestCompleted(q);
     const id = String(q.id ?? q.title);
     // Federation shares quests, so the same id can arrive from several holons —
     // keep the first (the kiosk's own copy) so view keys stay unique.
     if (seen.has(id)) continue;
     seen.add(id);
-    out.push({
-      id,
+    const common = {
       title: q.title || (t ? t("common.untitled") : "Untitled"),
+      category: q.category,
+      location: q.location,
+      people: toPeople(q.participants),
+      appreciation: countOf(q.appreciation),
+      source: sourceLabel(q, names),
+      sourceId: sourceHolonId(q),
+      sourceColor: sourceGlow(q, colors),
+      hologram: isHologram(q),
+    };
+    const frequency = questFrequency(q);
+    // A series whose every occurrence lies beyond the window (it starts more
+    // than a season ahead) falls through and draws as its own start instead.
+    const occurrences =
+      frequency && isRecurring(q)
+        ? questOccurrences(
+            q,
+            // A completed series has run its course: what happened stays on
+            // the board, nothing more is drawn ahead of today.
+            completed ? { start: window.start, end: now } : window,
+          )
+        : [];
+    if (frequency && occurrences.length) {
+      for (const occ of occurrences) {
+        const {
+          start: date,
+          end,
+          allDay,
+          days,
+          multiDay,
+        } = questSchedule(occ.schedule);
+        if (!date) continue;
+        out.push({
+          ...common,
+          // `::` matches the dashboard's instance keys; nothing parses it —
+          // the series id rides along explicitly.
+          id: `${id}::${occ.when}`,
+          date,
+          end: end ?? undefined,
+          days,
+          multiDay,
+          allDay,
+          completed: completed || occ.completed,
+          occurrence: {
+            seriesId: id,
+            when: occ.when,
+            completed: completed || occ.completed,
+            frequency,
+          },
+        });
+      }
+      continue;
+    }
+    const { start: date, end, allDay, days, multiDay } = questSchedule(q);
+    if (!date) continue;
+    out.push({
+      ...common,
+      id,
       date,
       end: end ?? undefined,
       days,
       multiDay,
-      category: q.category,
-      location: q.location,
       allDay,
-      people: toPeople(q.participants),
-      appreciation: countOf(q.appreciation),
-      source: sourceLabel(q, names),
-      sourceColor: sourceGlow(q),
-      hologram: isHologram(q),
+      completed,
     });
   }
   return out.sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -381,12 +506,20 @@ export function toEvents(
  */
 export type TaskSort = "loved" | "new" | "manual";
 
-/** Open quests → the backlog wall. Excludes pure calendar events. */
+/**
+ * What is still ahead → the backlog wall. The `quests` lens is shared, so
+ * core's `taskWallPlacement` decides: open tasks, plus events that are still
+ * to come — never a past one, and a recurring series as ONE card, its next
+ * open occurrence. Marketplace offers/requests/needs and any other domain's
+ * records stay off the wall.
+ */
 export function toBacklog(
   quests: Quest[],
   names?: Names,
   sort: TaskSort = "loved",
   t?: Translator,
+  colors?: HolonColors,
+  now: Date = new Date(),
 ): BacklogTask[] {
   const out: BacklogTask[] = [];
   const seen = new Set<string>();
@@ -396,28 +529,39 @@ export function toBacklog(
   for (const q of quests) {
     if (isDone(q)) continue;
     // A hard `put(null)` delete (vs the `_deleted` tombstone) leaves a husk node
-    // that Gun re-emits with every field nulled; the live subscription forwards
+    // that older writers emitted with every field nulled; the live subscription forwards
     // it (it only swallows a clean null). Skip these — otherwise the board shows
     // a phantom "Untitled" card that flips with the real one and re-triggers the
     // FLIP reshuffle endlessly.
     if (q.id == null && !q.title) continue;
-    if (String(q.type ?? "").toLowerCase() === "event") continue;
+    // Tasks and upcoming events. A past event belongs to the calendar alone,
+    // offers/needs to their own board, and an unknown type to whichever
+    // domain wrote it — core's `taskWallPlacement` is the single rule (see
+    // `@holons/core/tasks/placement`), so nothing new leaks onto the wall.
+    const placement = taskWallPlacement(q, now);
+    if (!placement) continue;
     const id = String(q.id ?? q.title);
     if (seen.has(id)) continue; // dedupe federated copies of the same quest
     seen.add(id);
+    // A recurring card is due when its next open occurrence is, not on the
+    // day the series began (core walks the cadence past the ticked-off ones).
+    const frequency = isRecurring(q) ? questFrequency(q) : null;
+    const due = placement.due;
     out.push({
       id,
       title: q.title || (t ? t("common.untitled") : "Untitled"),
       category: q.category,
       description: q.description || undefined,
       picture: q.picture ?? null,
-      due: parseWhen(q.when),
+      due,
+      frequency,
       participants: countOf(q.participants),
       people: toPeople(q.participants),
       appreciation: countOf(q.appreciation),
       appreciatedBy: idsOf(q.appreciation),
       source: sourceLabel(q, names),
-      sourceColor: sourceGlow(q),
+      sourceId: sourceHolonId(q),
+      sourceColor: sourceGlow(q, colors),
       hologram: isHologram(q),
       initiator: toInitiator(q),
       // Tolerate a string round-trip from the store (e.g. "3") so manual order
@@ -475,12 +619,16 @@ export interface LibraryThing {
    */
   picture?: string | null;
   available: boolean;
+  /** Out past its time: the booking ended and the thing was never returned. */
+  overdue?: boolean;
   borrower?: string | null;
   /** Who has it out (Telegram id), for the "my things" filter. */
   borrowerId?: number | string | null;
   /** When the current borrow is due back, when known. */
   returnBy?: Date | null;
   source?: string;
+  /** The source holon's id — what a tap on the source badge travels to. */
+  sourceId?: string;
   /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
   sourceColor?: string;
   /** True for a hologram — a by-reference mirror of the source holon's card. */
@@ -496,6 +644,8 @@ export interface RoleCard {
   /** Number of members. */
   count: number;
   source?: string;
+  /** The source holon's id — what a tap on the source badge travels to. */
+  sourceId?: string;
   /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
   sourceColor?: string;
   /** True for a hologram — a by-reference mirror of the source holon's card. */
@@ -507,6 +657,7 @@ export function toRoles(
   roles: Role[],
   names?: Names,
   t?: Translator,
+  colors?: HolonColors,
 ): RoleCard[] {
   const seen = new Set<string>();
   return roles
@@ -517,7 +668,8 @@ export function toRoles(
       people: toPeople(r.participants),
       count: countOf(r.participants),
       source: sourceLabel(r, names),
-      sourceColor: sourceGlow(r),
+      sourceId: sourceHolonId(r),
+      sourceColor: sourceGlow(r, colors),
       hologram: isHologram(r),
     }))
     .filter((r) => {
@@ -543,16 +695,19 @@ export interface ChecklistCard {
    */
   key: string;
   title: string;
-  /** Core's emoji for the list kind (📅 agenda, 🛒 shopping, 📋 …). */
-  icon: string;
+  /** The list kind's icon: the calendar for the agenda, the cart for
+   *  shopping, a ticked list for everything else. */
+  icon: IconName;
   /** Items done / total, for the progress chip. */
   done: number;
   total: number;
   /** Agenda/shopping — undeletable, pinned ahead of the ad-hoc lists. */
   special: boolean;
-  /** Who created the list (raw id), for the personal scope. */
+  /** Who created the list (raw id). */
   creator?: string | number | null;
   source?: string;
+  /** The source holon's id — what a tap on the source badge travels to. */
+  sourceId?: string;
   /** Glow-edge colour for a federated/hologram item, keyed by its source holon. */
   sourceColor?: string;
   /** True for a hologram — a by-reference mirror of the source holon's card. */
@@ -564,9 +719,22 @@ export interface ChecklistCard {
  * then alphabetical. Legacy records are run through core's type migration so
  * the icon/special rules see a typed list.
  */
+/** The list kind's icon — core's emoji for the kind, mapped to the catalog. */
+function checklistIcon(list: Checklist): IconName {
+  switch (getChecklistIcon(list)) {
+    case "📅":
+      return "calendar";
+    case "🛒":
+      return "cart";
+    default:
+      return "check-square";
+  }
+}
+
 export function toChecklists(
   lists: Checklist[],
   names?: Names,
+  colors?: HolonColors,
 ): ChecklistCard[] {
   const seen = new Set<string>();
   return lists
@@ -578,13 +746,14 @@ export function toChecklists(
         id: String(typed.id),
         key: recordKey(c, String(typed.id)),
         title: getChecklistDisplayTitle(typed),
-        icon: getChecklistIcon(typed),
+        icon: checklistIcon(typed),
         done: items.filter((i) => i?.checked).length,
         total: items.length,
         special: isSpecialChecklist(typed),
         creator: typed.creator ?? null,
         source: sourceLabel(c, names),
-        sourceColor: sourceGlow(c),
+        sourceId: sourceHolonId(c),
+        sourceColor: sourceGlow(c, colors),
         hologram: isHologram(c),
       };
     })
@@ -612,22 +781,31 @@ export function toThings(
   items: LibraryItem[],
   names?: Names,
   t?: Translator,
+  colors?: HolonColors,
+  now: Date = new Date(),
 ): LibraryThing[] {
   const seen = new Set<string>();
   return items
-    .map((it) => ({
-      id: String(it.id ?? ""),
-      title: String(it.id ?? (t ? t("common.untitled") : "Untitled")),
-      type: String(it.type ?? "other"),
-      picture: (it.picture as string | undefined) ?? null,
-      available: !it.borrowed,
-      borrower: it.borrower ?? null,
-      borrowerId: it.borrowerId ?? null,
-      returnBy: parseWhen(it.returnBy),
-      source: sourceLabel(it, names),
-      sourceColor: sourceGlow(it),
-      hologram: isHologram(it),
-    }))
+    .map((it) => {
+      // Core reads the state from the bookings at `now` — the stored
+      // `borrowed` flag is only as fresh as the item's last write.
+      const { state, booking } = bookingStatus(it, now);
+      return {
+        id: String(it.id ?? ""),
+        title: String(it.id ?? (t ? t("common.untitled") : "Untitled")),
+        type: String(it.type ?? "other"),
+        picture: (it.picture as string | undefined) ?? null,
+        available: state === "available",
+        overdue: state === "overdue",
+        borrower: booking?.borrower ?? null,
+        borrowerId: booking?.borrowerId ?? null,
+        returnBy: booking ? bookingEdge(booking.end) : null,
+        source: sourceLabel(it, names),
+        sourceId: sourceHolonId(it),
+        sourceColor: sourceGlow(it, colors),
+        hologram: isHologram(it),
+      };
+    })
     .filter((t) => {
       // Drop blanks and federated duplicates so view keys stay unique.
       if (!t.id || seen.has(t.id)) return false;
@@ -644,6 +822,57 @@ export function toThings(
 function dayStart(day: string): Date | null {
   const d = new Date(`${dayKey(day)}T00:00:00`);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** A booking bound as a local Date: its clock time when timed, else midnight. */
+function bookingEdge(bound: string): Date | null {
+  const d = new Date(bound.length === 16 ? bound : `${dayKey(bound)}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Occurrences read out of a calendar the holon FOLLOWS → board events.
+ *
+ * There is no quest behind these, so they carry `external` and the board
+ * refuses to drag, resize or open them (see CalendarView). Core owns the
+ * iCal semantics — including that an all-day DTEND is exclusive, which
+ * `occurrenceSpan` turns into the inclusive span a board draws.
+ */
+export function toExternalEvents(
+  occurrences: ExternalCalendarEvent[],
+  calendar: ImportedCalendar,
+): CalendarEvent[] {
+  const color = externalEventColor(calendar);
+  return occurrences.map((ev) => {
+    const { end, days, multiDay } = occurrenceSpan(ev);
+    return {
+      // Namespaced by feed: two calendars can carry the same UID (an
+      // invitation that reached both), and view keys must stay unique.
+      id: `ext:${calendar.id}:${ev.id}`,
+      title: ev.title,
+      date: ev.start,
+      end,
+      days,
+      multiDay,
+      location: ev.location,
+      allDay: ev.allDay,
+      people: [],
+      appreciation: 0,
+      external: { calendarName: calendar.name, url: calendar.url },
+      color,
+    };
+  });
+}
+
+/**
+ * The colour a followed calendar's events are drawn in: the colour a
+ * caretaker chose for the feed, else the post-it note its id hashes to (core
+ * owns the rule — `importedCalendarColor` — this supplies the kiosk palette).
+ */
+export function externalEventColor(
+  calendar: Pick<ImportedCalendar, "id" | "color">,
+): string {
+  return importedCalendarColor(calendar, NOTE_COLORS);
 }
 
 /**
@@ -665,6 +894,7 @@ function dayStart(day: string): Date | null {
 export function toBookingEvents(
   items: LibraryItem[],
   names?: Names,
+  colors?: HolonColors,
 ): CalendarEvent[] {
   const out: CalendarEvent[] = [];
   const seen = new Set<string>();
@@ -675,19 +905,30 @@ export function toBookingEvents(
     if (!itemId || item._deleted || seen.has(itemId)) continue;
     seen.add(itemId);
     const source = sourceLabel(item, names);
-    const sourceColor = sourceGlow(item);
+    const sourceId = sourceHolonId(item);
+    const sourceColor = sourceGlow(item, colors);
     const hologram = isHologram(item);
     for (const b of getDisplayBookings(item)) {
-      const date = dayStart(b.start);
-      const end = dayStart(b.end);
+      // A booking by the clock sits on the day grid at its own hours; one for
+      // whole days is an all-day span.
+      const timed = isTimedBooking(b);
+      const date = timed ? bookingEdge(b.start) : dayStart(b.start);
+      const end = timed ? bookingEdge(b.end) : dayStart(b.end);
       if (!date || !end) continue;
+      // Days touched. A timed end is exclusive (until midnight does not reach
+      // into the next day), so the last day is the one of its final minute.
+      const first = dayStart(b.start);
+      const last = timed
+        ? dayStart(ymd(new Date(end.getTime() - 60_000)))
+        : end;
+      if (!first || !last) continue;
       // Inclusive day count; rounded because a DST boundary inside the range
       // makes the millisecond span 23h or 25h, not a whole number of days.
       const days = Math.max(
         1,
-        Math.round((end.getTime() - date.getTime()) / 86_400_000) + 1,
+        Math.round((last.getTime() - first.getTime()) / 86_400_000) + 1,
       );
-      const who = b.borrower || (b.borrowerId ? String(b.borrowerId) : "");
+      const who = b.borrower || (b.borrowerId ? nameFor(b.borrowerId) : "");
       out.push({
         id: `booking-${itemId}-${b.id}`,
         libraryItemId: itemId,
@@ -697,10 +938,11 @@ export function toBookingEvents(
         days,
         multiDay: days > 1,
         category: itemId,
-        allDay: true,
+        allDay: !timed,
         people: who ? [{ id: b.borrowerId || who, name: who }] : [],
         appreciation: 0,
         source,
+        sourceId,
         sourceColor,
         hologram,
       });

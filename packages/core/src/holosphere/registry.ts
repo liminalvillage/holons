@@ -4,7 +4,7 @@
 /**
  * Global holon registry — the maintained index of every holon.
  *
- * GUN has no server-side "enumerate all holons" operation: a fresh peer can
+ * The relay has no "enumerate all holons" operation: a fresh peer can
  * only see the nodes it happens to have synced. So the global view relies on
  * a single enumerable table (`holons_registry`) that every holon writes
  * itself into at creation time. `registerHolon` is that write.
@@ -21,6 +21,7 @@
  */
 
 import type { HoloSphere } from 'holosphere';
+import { normalizePubkey } from '../users/keys.js';
 
 /** Global table holding the holon index. */
 export const HOLONS_REGISTRY_TABLE = 'holons_registry';
@@ -98,4 +99,62 @@ export async function registerHolon(
     );
     return false;
   }
+}
+
+/** A registry hit, as a picker shows it. */
+export interface HolonSearchHit {
+  id: string;
+  name: string;
+  type: string;
+}
+
+const str = (v: unknown): string => (typeof v === 'string' ? v : v == null ? '' : String(v));
+
+/**
+ * Pure search over registry entries: an exact id (or an npub, which is a
+ * personal holon's id) wins outright; otherwise a case-insensitive substring
+ * match on the name, then on the id. Deduplicated by id, name order.
+ */
+export function searchRegistry(entries: readonly unknown[], query: string, limit = 20): HolonSearchHit[] {
+  const q = String(query ?? '').trim();
+  if (!q) return [];
+  const exactId = normalizePubkey(q) ?? q;
+  const seen = new Set<string>();
+  const hits: HolonSearchHit[] = [];
+  const push = (e: HolonRegistryEntry) => {
+    if (seen.has(e.id)) return;
+    seen.add(e.id);
+    hits.push({ id: e.id, name: e.name, type: e.type });
+  };
+  const rows = entries
+    .map((e) => buildRegistryEntry((e ?? {}) as RegisterHolonInput))
+    .filter((e): e is HolonRegistryEntry => !!e);
+  for (const e of rows) if (e.id === exactId) push(e);
+  const needle = q.toLowerCase();
+  const byName = rows.filter((e) => e.name.toLowerCase().includes(needle)).sort((a, b) => a.name.localeCompare(b.name));
+  for (const e of byName) push(e);
+  for (const e of rows) if (str(e.id).toLowerCase().includes(needle)) push(e);
+  // An id typed in full that the registry does not know yet is still a holon
+  // someone can share with: a personal holon (npub or hex) or a group id.
+  const looksLikeId = /^(-?\d{4,}|[0-9a-f]{64}|(holon|hub)_[a-z0-9]{12,32})$/i.test(exactId);
+  if (!seen.has(exactId) && looksLikeId) {
+    hits.unshift({ id: exactId, name: exactId, type: /^[0-9a-f]{64}$/i.test(exactId) ? 'personal' : 'community' });
+  }
+  return hits.slice(0, limit);
+}
+
+/** Search the global registry by name or id (never a key field: an npub is a personal holon's id). */
+export async function searchHolons(
+  holosphere: Pick<HoloSphere, 'getAllGlobal'>,
+  query: string,
+  limit = 20,
+): Promise<HolonSearchHit[]> {
+  let entries: unknown[] = [];
+  try {
+    const raw = await holosphere.getAllGlobal(HOLONS_REGISTRY_TABLE);
+    entries = Array.isArray(raw) ? raw : Object.values(raw ?? {});
+  } catch {
+    entries = [];
+  }
+  return searchRegistry(entries, query, limit);
 }

@@ -6,19 +6,24 @@ import {
   calculateScoreFromUserData,
   calculateTaskCompletionScores,
   calculateUserScore,
+  computeHolonUserScores,
   extractReaUsers,
   getActionScore,
   getCachedEquation,
   getScoreBreakdown,
+  loadHolonUserData,
   migrateEquation,
   normalizeShares,
   parseCurrencyCodes,
   saveEquation,
   scoreHolonUsers,
   toAggregates,
+  ZERO_USER_AGGREGATES,
   type REAEventStoreLike,
+  type ScoreEquation,
   type UserAggregates,
 } from './index.js';
+import { REAEventFactory } from '../rea/index.js';
 
 /**
  * A deliberately weighted equation for the arithmetic tests below. The
@@ -261,14 +266,15 @@ describe('calculateUserScore', () => {
     expect(calculateUserScore(aggregates, equation)).toBe(8);
   });
 
-  it('does not double-count hours when both currencies.hour and equation.hours are set', () => {
+  it('adds mutual-credit hours to task hours, weighting them once', () => {
     const aggregates: UserAggregates = {
       initiated: 0, completed: 0, sent: 0, received: 0,
       hours: 4, collaboration: 0,
     };
     const equation = { ...WEIGHTED, hours: 2, currencies: { hour: 2 } };
-    // Explicit hour balance wins; aggregates.hours fallback is suppressed.
-    expect(calculateUserScore(aggregates, equation, { hour: 4 })).toBe(8);
+    // 4 task hours + 3 hours given in mutual credit, at currencies.hour = 2;
+    // the legacy equation.hours weight is not applied on top.
+    expect(calculateUserScore(aggregates, equation, { hour: 3 })).toBe(14);
   });
 });
 
@@ -543,6 +549,55 @@ describe('REAAggregator', () => {
     expect(score).toBe(3);
   });
 
+  describe('hours and money given into the holon', () => {
+    // The Collector's guild equation: only time and money carry value.
+    const TIME_AND_MONEY: ScoreEquation = {
+      ...DEFAULT_EQUATION,
+      currencies: { hour: 10, euro: 1 },
+    };
+    const HOLON = 'guild';
+    const intoHolon = (id: string, paidBy: string, amount: number, currency: string, extra = {}) =>
+      REAEventFactory.expenseEvents(HOLON, {
+        id, amount, currency, description: id, paidBy, splitWith: [HOLON], ...extra,
+      });
+    const events = [
+      // picker logged 3 h on a task, and completing it wrote the hour expense
+      // (tagged, and an older untagged one recognised by its id)
+      { eventType: 'quest:time_logged', provider: { id: 'picker', type: 'user' }, resource: { type: 'time', quantity: 3, unit: 'hours' }, context: { questId: 'q1' } },
+      ...intoHolon('q1_time_picker', 'picker', 3, 'hour', { fromTimeTracking: true }),
+      { eventType: 'quest:time_logged', provider: { id: 'picker', type: 'user' }, resource: { type: 'time', quantity: 1, unit: 'hours' }, context: { questId: 'q0' } },
+      ...intoHolon('q0_time_picker', 'picker', 1, 'hour'),
+      // picker declared 8 h of olive picking in mutual credit
+      ...intoHolon('picking', 'picker', 8, 'hour'),
+      // funder put 100 euro into the guild
+      ...intoHolon('press', 'funder', 100, 'euro'),
+    ];
+    const roster = [{ id: 'picker' }, { id: 'funder' }, { id: 'idle' }];
+
+    it('counts declared hours and money in full, completion hours once', async () => {
+      const aggregator = new REAAggregator(buildStore(events));
+      const scored = await computeHolonUserScores(aggregator, HOLON, roster, TIME_AND_MONEY);
+      const score = Object.fromEntries(scored.map((s) => [s.userId, s.score]));
+      // (3 + 1 task hours + 8 declared) × 10 = 120; 100 euro × 1 = 100.
+      expect(score).toEqual({ picker: 120, funder: 100, idle: 0 });
+      expect(scored.find((s) => s.userId === 'picker')?.breakdown.hours).toBe(120);
+    });
+
+    it('scores the same through REAAggregator.calculateUserScore', async () => {
+      const aggregator = new REAAggregator(buildStore(events));
+      expect(await aggregator.calculateUserScore(HOLON, 'picker', TIME_AND_MONEY)).toBe(120);
+      expect(await aggregator.calculateUserScore(HOLON, 'funder', TIME_AND_MONEY)).toBe(100);
+    });
+
+    it('keeps completion hours in the plain hour balance', async () => {
+      const aggregator = new REAAggregator(buildStore(events));
+      expect(await aggregator.getCurrencyBalance(HOLON, 'picker', 'hour')).toBe(12);
+      expect(
+        await aggregator.getCurrencyBalance(HOLON, 'picker', 'hour', { excludeTimeTracking: true }),
+      ).toBe(8);
+    });
+  });
+
   it('derives the active-user roster from the event stream', async () => {
     const aggregator = new REAAggregator(
       buildStore([
@@ -730,5 +785,84 @@ describe('parseCurrencyCodes', () => {
   it('returns nothing for an empty or absent entry', () => {
     expect(parseCurrencyCodes('   ')).toEqual([]);
     expect(parseCurrencyCodes(undefined as any)).toEqual([]);
+  });
+});
+
+describe('the holon is not a member of itself', () => {
+  const HOLON = '-1003864542239';
+
+  /** An aggregator with a per-id aggregate/balance table. */
+  function fakeAggregator(
+    table: Record<string, { agg?: Partial<UserAggregates>; euro?: number }>,
+  ) {
+    return {
+      async getUserAggregates(_h: string, userId: string) {
+        return { ...ZERO_USER_AGGREGATES, ...(table[userId]?.agg ?? {}) };
+      },
+      async getCurrencyBalance(_h: string, userId: string, code: string) {
+        return code === 'euro' ? (table[userId]?.euro ?? 0) : 0;
+      },
+    };
+  }
+
+  it('drops the holon when it only carries a balance and a group footprint', async () => {
+    const loaded = await loadHolonUserData(
+      fakeAggregator({
+        [HOLON]: { agg: { activity: 199 }, euro: -241.33 },
+        alice: { agg: { completed: 4 } },
+        bob: { agg: { completed: 1 } },
+      }),
+      HOLON,
+      [{ id: HOLON }, { id: 'alice' }, { id: 'bob' }],
+      ['euro'],
+    );
+    expect(loaded.map((d) => d.userId)).toEqual(['alice', 'bob']);
+  });
+
+  it('keeps a personal holon, whose id is its owner and who does the work', async () => {
+    // A personal holon's id IS the member's id; dropping it would rank nobody.
+    const loaded = await loadHolonUserData(
+      fakeAggregator({ '235114395': { agg: { completed: 7 }, euro: -900 } }),
+      '235114395',
+      [{ id: '235114395' }],
+      ['euro'],
+    );
+    expect(loaded.map((d) => d.userId)).toEqual(['235114395']);
+  });
+
+  it('leaves every other party alone, in debt or not', async () => {
+    const loaded = await loadHolonUserData(
+      fakeAggregator({
+        debtor: { agg: { completed: 1 }, euro: -500 },
+        idle: {},
+      }),
+      HOLON,
+      [{ id: 'debtor' }, { id: 'idle' }],
+      ['euro'],
+    );
+    expect(loaded.map((d) => d.userId)).toEqual(['debtor', 'idle']);
+  });
+
+  it("restores shares that track the members' points", async () => {
+    // Liminal's shape: the holon's -241 euro at a weight of 10 scored -2413 and
+    // became the minimum every member was lifted by, so 0 points and 67 points
+    // came out within 0.2% of each other.
+    const equation: ScoreEquation = {
+      ...DEFAULT_EQUATION,
+      completed: 1,
+      currencies: { euro: 10 },
+    };
+    const roster = [{ id: HOLON }, { id: 'a' }, { id: 'b' }, { id: 'c' }];
+    const aggregator = fakeAggregator({
+      [HOLON]: { agg: { activity: 199 }, euro: -241.33 },
+      a: { agg: { completed: 60 } },
+      b: { agg: { completed: 30 } },
+      c: { agg: { completed: 10 } },
+    });
+
+    const scored = await computeHolonUserScores(aggregator, HOLON, roster, equation);
+    expect(scored.map((s) => s.userId)).toEqual(['a', 'b', 'c']);
+    // No negative score left, so shares are exactly proportional to points.
+    expect(scored.map((s) => Math.round(s.percentage * 10) / 10)).toEqual([60, 30, 10]);
   });
 });

@@ -1,7 +1,7 @@
 // Thin facade over @holons/core/expenses.
 //
 // We keep this module so existing call sites (`Status.svelte`, `Expenses.svelte`)
-// don't need to change shape: web stores expenses as a Gun-style
+// don't need to change shape: web stores expenses as a record-map-style
 // Record<id, Expense> rather than the Expense[] core works with, and the
 // legacy `unit` field needs to be folded into `currency` before delegating.
 import {
@@ -64,7 +64,13 @@ export function calculateCurrencyBalance(
 ): number {
   if (!currency || !userId || users.length === 0) return 0;
   if (!users.some((u) => String(u.id) === String(userId))) return 0;
-  return computeUserCurrencyBalance(toCoreExpenses(expenses), userId, currency);
+  // An expense with no split is shared by every user.
+  return computeUserCurrencyBalance(
+    toCoreExpenses(expenses),
+    userId,
+    currency,
+    users.map((u) => u.id),
+  );
 }
 
 export function calculateCreditMatrix(

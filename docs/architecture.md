@@ -1,7 +1,7 @@
 # Architecture
 
 Holons is a pnpm monorepo with one shared domain layer and several UIs that
-all read from and write to the same peer-to-peer data namespace. The guiding
+all read from and write to the same relay-synced data namespace. The guiding
 principle: "compute a score", "create a task", "publish to federation" mean
 the exact same thing in every UI because they all call the same
 `@holons/core` functions.
@@ -18,9 +18,9 @@ UIs            web · telegram · text · ai · mcp
                           │  (reads/writes through)
 Holosphere     identity-aware HoloSphere instance
                           │
-Data layer     GunDB peer-to-peer sync (default peer
-               https://gun.holons.io/gun; Nostr relay URLs are
-               mapped to Gun peers by holosphere)
+Data layer     signed Nostr events (kind 30078) on relays
+               (wss://relay.holons.io, wss://relay.commonshub.dev)
+               mirrored into a local event-sourced store
 ```
 
 Each layer only depends downward. `@holons/core` never imports `svelte`,
@@ -69,7 +69,20 @@ import { createHoloSphere } from '@holons/core/holosphere';
 Each domain lives at `packages/core/src/<domain>/index.ts`. Current domains:
 `scoring`, `tasks`, `federation`, `holosphere`, `users`, `expenses`,
 `calendar`, `shopping`, `settings`, `dna`, `library`, `checklists`,
-`categories`, `commands`, `rea`. The `package.json` wildcard
+`categories`, `commands`, `rea`, `protocol` (the reduce over append-only
+logs — see [`protocol.md`](./protocol.md)), `holons` (founding a holon from
+a screen, members by key — NIP-29 shaped), `linking` (tying a holon to a
+Telegram chat by challenge–response) and `onboarding` (claim tokens and
+Telegram deep links); the three are described in
+[`identity-linking.md`](./identity-linking.md). `applications` is the
+community application record (the web form's shape) and the rule that a
+holon keeps it only in its sealed `applications` lens. `ai` is the one Claude client
+every text-AI surface uses, server-side only: `ANTHROPIC_API_KEY`,
+`HOLONS_AI_MODEL` (default `claude-opus-5-5`), effort per route, the refusal
+fallback, structured JSON output and one `AIError` a route maps to a status;
+`tasks` (breakdown) and `drafting` own the schemas and prompts it fills.
+Speech (STT/TTS, the kiosk voice relay) stays on OpenAI (`OPENAI_API_KEY`).
+The `package.json` wildcard
 export (`"./*"`) makes a new domain folder importable immediately — no edit
 to the barrel needed.
 
@@ -81,8 +94,12 @@ constructed and the single gate for identity-aware writes. Files:
 - `factory.ts` — `createHoloSphere(options)`. UI-agnostic: it never touches
   `process.env`, `localStorage`, or the filesystem. The caller resolves its
   own private key and passes it in. Returns a `HoloSphere` synchronously, or
-  a `Promise<HoloSphere>` when `awaitReady: true`. Extra config (including
-  Nostr-style `nostr: { relays, peers }`) passes through `extra`.
+  a `Promise<HoloSphere>` when `awaitReady: true`. Takes `relays`, `store`
+  (`memory` | `indexeddb` | `file`), `signing` and `nostr` (projections);
+  anything else passes through `extra`.
+- `relays.ts` — `DEFAULT_RELAYS` and `resolveRelays(env)`: the one place the
+  production relay set lives. Every write is signed by the instance key and
+  published; there is no signing mode to configure.
 - `identity.ts` — `canWriteToHolon()` / `resolveActingAs()`. Asks the
   holosphere `canWrite` mixin "may `actingAs` write to `holonId/lens`?",
   falling back to an owner check. Used for UI gating, not security
@@ -92,26 +109,47 @@ constructed and the single gate for identity-aware writes. Files:
   authorization errors into a `false` return (with an optional `onDenied`
   callback) while letting non-auth errors bubble.
 
-### Backend reality (holosphere 1.3.0-alpha5)
+### Data layer reality (holosphere 2.x)
 
-The pinned `holosphere` is consumed straight from npm (the soft-tombstone,
-hologram-resolve-resilience, and bounded-read fixes that used to live in
-`patches/holosphere@1.3.0-alpha4.patch` are now upstream as of alpha5).
-Under the hood it runs on **GunDB**, not raw Nostr:
+The workspace `holosphere` package has no network library of its own: the
+**Nostr relays are the wire** and a **local event-sourced store** is the
+cache (`packages/holosphere/STORE.md`).
 
-- Default Gun peer: `https://gun.holons.io/gun`. In the browser, `radisk`
-  persistence is on and `localStorage` is disabled.
-- On the default gun backend, any `nostr: { relays | peers }` URLs are
-  rewritten to Gun HTTP peers: `wss://host` → `https://host/gun` (and
-  `ws://` → `http://`).
-- **Nostr backend** (`backend: 'nostr'` + `nostr.relays`): the relay IS the
-  wire. Gun runs peerless as the local-first cache; every non-private write
-  is published as a signed NIP-01 event and every read/subscription
-  live-syncs its `(holon, lens)` from the relay. See
-  `packages/holosphere/NOSTR-BACKEND.md`. Opt in per surface:
-  web `VITE_HOLOSPHERE_BACKEND=nostr` + `VITE_HOLOSPHERE_RELAYS=…`,
-  bot `HOLOSPHERE_RELAYS=…`, mcp `HOLOSPHERE_BACKEND=nostr` +
-  `HOLOSPHERE_RELAYS=…`. Without relays the flag falls back to gun.
+- Every non-private `put`/`delete` is a signed kind-30078 event (NIP-33
+  replaceable per `holon/lens/id`, tagged with the app namespace) published
+  to the configured relays. Deletes are signed tombstones.
+- Every `get`/`getAll` pulls its `(holon, lens)` from the relays (paginated
+  backfill the first time, then from a cursor; a pair pulled seconds ago is
+  served from the store) and leaves nothing open. A `subscribe` holds its pair
+  live until `unsubscribe`, on one multiplexed REQ per relay shared by all the
+  instance watches — relays cap concurrent REQs per connection. One
+  last-writer-wins rule: newer `created_at` wins, ties go to the larger event id.
+- The store persists in IndexedDB in browsers, a JSONL log + snapshot on
+  long-lived Node hosts (`store: { adapter: 'file', dir }`), and memory in
+  serverless functions and scripts. Reloads paint from the store and catch
+  up from the cursor.
+- Every record is ALSO published as its standard Nostr kind (NIP-52 events,
+  NIP-99 classifieds, kind-0 profiles, NIP-51 sets, NIP-58 badges, NIP-29
+  group metadata) by default — `projectionOptionsFor` in `@holons/core/nostr`
+  — and external edits of those kinds fold back into the record.
+- Private (password) lenses are NIP-44 encrypted with a scrypt-derived key
+  and never leave the device.
+- A **private scope** (`packages/holosphere/PRIVACY.md`, `@holons/core/privacy`)
+  is a lens or one item of it that travels sealed: the envelope's tags stay
+  public, `content` is NIP-44 ciphertext under the scope's key. The scope is
+  private exactly when its self-sealed `_vault` record exists. Who may read
+  is an audience of *holons* (the owner holon always included) that core
+  resolves to reader keys through NIP-29 state; keys reach readers as NIP-17
+  grants. Revocation rotates and rewrites (forward-only). Never private:
+  settings, membership, users, logs, standard-kind lenses.
+- An **append-only lens** (`appendLenses`: `flow_claims`, `flow_mints`,
+  `governance_votes`, `_policy`, `_checkpoints`) rides the
+  regular kind 1808 instead: every signed entry is its own record, never
+  replaced; readers fold the log themselves (`@holons/core/protocol`,
+  [`protocol.md`](./protocol.md)).
+- Configure per surface: web `VITE_HOLOSPHERE_RELAYS`,
+  kiosk `VITE_KIOSK_RELAYS`, bot/mcp `HOLOSPHERE_RELAYS` +
+  `HOLOSPHERE_STORE_DIR`. Unset relays mean the production relay set.
 
 ### Namespacing and identity
 
@@ -122,6 +160,11 @@ Under the hood it runs on **GunDB**, not raw Nostr:
 - A user's private key (Nostr-style hex) derives their public key, which is
   their personal holon id. Telegram sessions are namespaced by Telegram user
   id instead (they sign with a per-user key derived server-side).
+- A holon founded from a screen is `holon_…` (the first ones `hub_…`): its
+  founder's key signs the genesis of its `_members` log and admins seat keys;
+  a Telegram chat's holon is its chat id, founded by the bot key. The kiosk
+  and web accept a holon id, a pubkey hex or an `npub` (normalised to hex) in
+  the URL. See [`identity-linking.md`](./identity-linking.md).
 - Sign-in (web, `@holons/core/auth`): every provider ends in a Nostr keypair
   the HoloSphere signing layer can use — Telegram (suggested; OIDC + a
   server-derived key), a **passkey** (WebAuthn PRF output → key, no server
@@ -151,15 +194,53 @@ legacy `federation[]`/`lensConfig` settings fields were removed):
 - `publishToFederation()` — routes an item to `all` federated partners, one
   `partner`, or one `hex` (H3 cell). By default it writes a standalone copy;
   hologram (soul-pointer) publication is opt-in via `useHolograms`.
+- The roster mirror (`attachRosterMirror`, `@holons/core/tasks`) — the one
+  standing hologram: `createHoloSphere` wraps `put` so that everyone a task
+  or event names (participants, and an event's hosts) holds a `{ id, soul }`
+  pointer to it in their own holon, written when they are added and dropped
+  when they are taken off. Adding a person is therefore only a roster edit
+  on any UI; no interface mirrors anything itself. `rosterMirror: false`
+  opts a tooling instance out.
 - `migrateLegacyFederationLinks()` — one-shot, merge-only fold of
   pre-unification settings-lens links into the native record; federation UIs
   call it best-effort before reading the snapshot.
+
+Federation needs no Telegram: two holons founded from screens link the same
+way, and a Telegram chat linked to a holon (`@holons/core/linking`) is
+federated on every board lens as part of the link. The federation record is
+an admin's word: under enforced reads it resolves to the newest record an
+admin of the holon signed (`getFederationStanding` says whether one did), and
+a partner's items still show only when its own authority signed them.
 
 UI-side concerns (Svelte stores, identity resolution, toast notifications)
 stay in the UI: callers pass `federationSourceId` and an optional
 `onWriteDenied` callback. The web app additionally runs a global federation
 DM subscription in its root layout to receive cross-holon
 request/response/update messages (see [realtime-sync.md](./realtime-sync.md)).
+
+## Who may do what
+
+Nothing is refused at write time — relays take every signed event — and
+every reader applies the same rule, so two honest clients see the same
+holon. The rule has two parts, both in `@holons/core/holosphere`:
+
+1. **Who counts**: a holon's admins and members come from its signed
+   `_members` log (else its anchored records); a holon nobody speaks for is
+   open. `writeAcceptance(hs, holon)` says where a key stands and which role
+   it holds.
+2. **Which role an action needs** — one table, `CAPABILITIES`:
+   *members* make content, ordinary settings and private scopes (the locker
+   owns the lock); *admins* make the trust decisions — who is seated, the
+   guarded settings fields (the value equation, the split, the pot, the
+   payout, the treasury), the rules of a log, the federation record, and
+   overriding a member's lock.
+
+The data layer enforces the table (the signer on `settings` and the
+`federation` table, the privacy layer on `_vault`); every surface asks
+`may(standing, action)` first and greys the control out with the reason,
+the bot asks the chat's admin list (its key signs for the chat), MCP refuses
+with the same sentence. See `packages/holosphere/SIGNING.md` "Who may do
+what".
 
 ## Conventions
 

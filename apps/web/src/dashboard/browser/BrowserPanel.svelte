@@ -7,13 +7,25 @@
 	import { Search, Plus, X, Upload, ArrowDown, ArrowUp } from 'svelte-feathers';
 	import { nostrPublicKey, nostrPrivateKey, nostrStore } from '../../lib/stores/nostr';
 	import { homeHolonId } from '$lib/stores/homeHolonId';
-	import { incomingRequests, outgoingRequests, pendingFederationRequests, federationNotifications, type PendingRequest, createIncomingRequest, createOutgoingRequest, incomingUpdates, pendingUpdates } from '../../lib/stores/federationRequests';
-	import { handshake } from 'holosphere';
+	import {
+		FEDERATION_REQUESTS_LENS,
+		answerFederationRequest,
+		federationLinkState,
+		pendingFederationRequests,
+		removeFederationPartner,
+		setFederationPartner,
+		type FederationRequest
+	} from '@holons/core/federation';
+	import { foundHolon, isHolonId, newHolonId as mintHolonId } from '@holons/core/protocol';
+	import { createHolon, myHolons, rememberHolon } from '@holons/core/holons';
+	import { signerFromSecretKey } from '@holons/core/holosphere';
+	import { get } from 'svelte/store';
 	import HolonList from './HolonList.svelte';
 	import QRScanner from '../../components/QRScanner.svelte';
 
 	import { ID, sidebarExpanded } from '../store';
-	import { nameMap, resolveName, awaitName, forceRefreshHolonName } from '$lib/stores/nameResolver';
+	import { nameMap, resolveName, resolvedName, awaitName, forceRefreshHolonName } from '$lib/stores/nameResolver';
+	import { shortId } from '@holons/core/identity';
 	import { activeHolonIdentity, userHolons, activeHolonIdentityStore } from '../../lib/stores/activeHolonIdentity';
 	import { getEffectiveAppName, setAppNameOverride } from '$lib/stores/appName';
 
@@ -60,7 +72,6 @@
 		federationStatus: FederationStatus;
 		// lenses = union of inbound/outbound, kept for "any lens shared?" checks.
 		lensConfig?: { lenses: string[]; inbound: string[]; outbound: string[] };
-		pendingRequestId?: string;
 	}
 
 	// State
@@ -126,11 +137,6 @@
 				}
 			}
 
-			// Initialize federation requests store
-			if ($homeHolonId) {
-				pendingFederationRequests.init($homeHolonId);
-			}
-
 			// Update user holons for the identity selector
 			updateUserHolons();
 		}
@@ -139,9 +145,6 @@
 		window.addEventListener('holonCreated', handleHolonCreated as EventListener);
 		window.addEventListener('holonNavigated', handleHolonNavigated as EventListener);
 		window.addEventListener('holonNameUpdated', handleHolonNameUpdated as EventListener);
-		window.addEventListener('federationResponse', handleFederationResponseEvent as unknown as EventListener);
-		window.addEventListener('federationRequest', handleFederationRequestEvent as EventListener);
-		window.addEventListener('federationUpdate', handleFederationUpdateEvent as EventListener);
 		window.addEventListener('federationChanged', handleFederationChanged as EventListener);
 	});
 
@@ -150,84 +153,59 @@
 			window.removeEventListener('holonCreated', handleHolonCreated as EventListener);
 			window.removeEventListener('holonNavigated', handleHolonNavigated as EventListener);
 			window.removeEventListener('holonNameUpdated', handleHolonNameUpdated as EventListener);
-			window.removeEventListener('federationResponse', handleFederationResponseEvent as unknown as EventListener);
-			window.removeEventListener('federationRequest', handleFederationRequestEvent as EventListener);
-			window.removeEventListener('federationUpdate', handleFederationUpdateEvent as EventListener);
 			window.removeEventListener('federationChanged', handleFederationChanged as EventListener);
 		}
+		requestsSub?.unsubscribe();
 	});
 
 	// State for processing requests
 	let processingRequestId: string | null = null;
 
-	// Handle federation response from global DM subscription
-	async function handleFederationResponseEvent(event: CustomEvent) {
-		const { response, senderPubKey } = event.detail;
-		console.log('[BrowserPanel] Federation response event:', response?.status, 'responderHolonId:', response?.responderHolonId?.slice(0, 12));
+	// Partners asking the home holon to link (core federation requests): a
+	// link has one half per holon, each its own admins' word, so a partner
+	// that linked from its side waits here for ours.
+	let incoming: FederationRequest[] = [];
+	let requestsSub: { unsubscribe: () => void } | null = null;
+	let requestsHolon: string | null = null;
 
-		// Update the status of our outgoing request
-		if (response?.requestId) {
-			if (response?.status === 'accepted') {
-				pendingFederationRequests.updateStatus(response.requestId, 'accepted');
-			} else if (response?.status === 'rejected') {
-				pendingFederationRequests.updateStatus(response.requestId, 'rejected');
-			}
+	async function loadRequests() {
+		const holon = $homeHolonId || currentHolonId;
+		if (!holosphere || !holon) {
+			incoming = [];
+			return;
 		}
-
-		if (response?.status === 'accepted') {
-			// Small delay to allow federation storage to complete (race condition workaround)
-			console.log('[BrowserPanel] Waiting 500ms for federation storage to complete...');
-			await new Promise(resolve => setTimeout(resolve, 500));
-			// Refresh holons list to show the newly federated partner
-			loadHolons();
+		try {
+			const pending = await pendingFederationRequests(holosphere, holon);
+			if (holon === ($homeHolonId || currentHolonId)) incoming = pending;
+		} catch {
+			/* offline: keep what we have */
 		}
 	}
 
-	// Handle incoming federation request from global DM subscription
-	function handleFederationRequestEvent(event: CustomEvent) {
-		const { request, senderPubKey } = event.detail;
-		console.log('[BrowserPanel] Federation request event from:', senderPubKey?.slice(0, 8));
-		// Add to pending requests store for UI display
-		if (request && senderPubKey) {
-			const pendingRequest = createIncomingRequest(
-				request.requestId || `req-${Date.now()}`,
-				senderPubKey,
-				'', // npub - will be resolved if needed
-				request.senderHolonId || senderPubKey,
-				request.senderHolonName || 'Unknown Holon',
-				request.lensConfig || { lenses: [] },
-				request.capabilities || [],
-				request.message
-			);
-			pendingFederationRequests.add(pendingRequest);
-		}
+	// Follow the home holon's request lens live.
+	$: watchRequests($homeHolonId || currentHolonId || null);
+	function watchRequests(holon: string | null) {
+		if (!browser || !holosphere || holon === requestsHolon) return;
+		requestsSub?.unsubscribe();
+		requestsSub = null;
+		requestsHolon = holon;
+		incoming = [];
+		if (!holon) return;
+		requestsSub = holosphere.subscribe(holon, FEDERATION_REQUESTS_LENS, () => {
+			void loadRequests();
+		});
+		void loadRequests();
 	}
 
-	// Handle lens update request from global DM subscription
-	function handleFederationUpdateEvent(event: CustomEvent) {
-		const { update, senderPubKey } = event.detail;
-		console.log('[BrowserPanel] Lens update event from:', senderPubKey?.slice(0, 8), update);
-
-		// Add to pending requests store for UI display (as a lens_update type)
-		if (update && senderPubKey) {
-			const newLensConfig = update.newLensConfig || { lenses: [] };
-
-			const pendingRequest = createIncomingRequest(
-				update.updateId || `update-${Date.now()}`,
-				senderPubKey,
-				'', // npub
-				update.senderHolonId || senderPubKey,
-				update.senderHolonName || 'Unknown Holon',
-				newLensConfig,
-				newLensConfig.capabilities || [],
-				update.message
-			);
-			// Add requestKind to distinguish from federation requests (keep type as 'incoming' for store filtering)
-			(pendingRequest as any).requestKind = 'lens_update';
-			(pendingRequest as any).updateData = update; // Store full update data for processing
-			pendingFederationRequests.add(pendingRequest);
-		}
-	}
+	/** The request cards' view of a core request. */
+	$: requestCards = incoming.map((r) => ({
+		id: r.from,
+		senderPubKey: r.from,
+		senderHolonName: $nameMap[r.from] || r.fromName || resolvedName(r.from, $nameMap),
+		kind: r.kind,
+		theySend: r.inbound,
+		theyAsk: r.outbound
+	}));
 
 	async function loadHolons() {
 		isLoading = true;
@@ -243,9 +221,8 @@
 			const holonList: SidebarHolon[] = [];
 
 			// Load federated holons from holosphere using the HOME holon ID.
-			// Pending outgoing requests are NOT in holosphere's FederationInfo —
-			// they live in the local `pendingFederationRequests` store and are
-			// merged into the list below.
+			// A partner whose admins have not accepted our half yet is shown as
+			// pending (core `federationLinkState`, resolved after the list renders).
 			if (holosphere && federationSourceId) {
 				try {
 					const federationInfo = await holosphere.getFederation(federationSourceId);
@@ -271,7 +248,7 @@
 							const outbound = Array.isArray(storedLensConfig?.outbound) ? storedLensConfig.outbound : [];
 							holonList.push({
 								id: holonId,
-								name: name || `Holon ${holonId.slice(0, 8)}...`,
+								name: name || resolvedName(holonId, $nameMap),
 								federationStatus: 'accepted',
 								lensConfig: {
 									lenses: [...new Set([...inbound, ...outbound])],
@@ -287,19 +264,18 @@
 				}
 			}
 
-			// Also load pending outgoing requests from localStorage store
-			// (these are requests we initiated that may not be in holosphere yet)
-			const pendingOutgoing = pendingFederationRequests.getOutgoingPending();
-			for (const request of pendingOutgoing) {
-				// Skip if already added from holosphere
-				if (holonList.some(h => h.id === request.recipientPubKey)) continue;
-
-				holonList.push({
-					id: request.recipientPubKey || request.senderHolonId,
-					name: request.recipientHolonName || `Holon ${(request.recipientPubKey || '').slice(0, 8)}...`,
-					federationStatus: 'pending_outgoing',
-					pendingRequestId: request.id
-				});
+			// The holons this member keeps in their own holon (founded from a
+			// screen, or docked elsewhere) — the same list on every device.
+			const me = get(nostrPublicKey);
+			if (holosphere && me) {
+				try {
+					for (const h of await myHolons(holosphere, me)) {
+						if (h.id === federationSourceId || holonList.some((x) => x.id === h.id)) continue;
+						holonList.push({ id: h.id, name: h.name || resolvedName(h.id, $nameMap), federationStatus: 'accepted' });
+					}
+				} catch (err) {
+					console.warn('[BrowserPanel] could not read your holons:', err);
+				}
 			}
 
 			console.log('[BrowserPanel] Final holonList:', holonList.length, 'items:', holonList.map(h => ({ id: h.id?.slice(0, 12), status: h.federationStatus })));
@@ -312,11 +288,27 @@
 			}
 
 			holons = holonList;
+			if (holosphere && federationSourceId) void markPending(federationSourceId, holonList);
 		} catch (error) {
 			console.error('Failed to load holons:', error);
 		} finally {
 			isLoading = false;
 		}
+	}
+
+	/** Partners still waiting to accept this holon's half show as pending. */
+	async function markPending(source: string, list: SidebarHolon[]) {
+		const waiting = new Set<string>();
+		await Promise.all(
+			list
+				.filter((h) => h.federationStatus === 'accepted' && h.lensConfig)
+				.map(async (h) => {
+					const st = await federationLinkState(holosphere, source, h.id).catch(() => null);
+					if (st?.outgoing) waiting.add(h.id);
+				})
+		);
+		if (!waiting.size || source !== ($homeHolonId || currentHolonId)) return;
+		holons = holons.map((h) => (waiting.has(h.id) ? { ...h, federationStatus: 'pending_outgoing' } : h));
 	}
 
 	// Update the user holons store with the current user's holons
@@ -421,12 +413,16 @@
 		// Use home holon for federation operations
 		const myHolonId = $homeHolonId || currentHolonId;
 
-		// Revoke federation
-		if (holon?.federationStatus === 'accepted' && holosphere && myHolonId) {
+		// Revoke federation: our half goes; the partner's admins are asked to
+		// drop theirs unless this key speaks for them too.
+		if ((holon?.federationStatus === 'accepted' || holon?.federationStatus === 'pending_outgoing') && holosphere && myHolonId) {
 			try {
-				if (holosphere.unfederateHolon) {
-					await holosphere.unfederateHolon(myHolonId, holonId);
-					console.log('[BrowserPanel] Federation revoked for:', holonId.slice(0, 12) + '...');
+				const outcome = await removeFederationPartner(holosphere, myHolonId, holonId, {
+					holonName: homeHolonName || undefined
+				});
+				if (outcome.self === 'held') {
+					console.warn('[BrowserPanel] Not an admin of', myHolonId.slice(0, 12), '— federation unchanged');
+					return;
 				}
 			} catch (err) {
 				console.warn('[BrowserPanel] Failed to revoke federation:', err);
@@ -466,47 +462,17 @@
 		// Update federation lens config in holosphere
 		if (holosphere && myHolonId) {
 			try {
-				const fedLensConfig = { lenses: lensConfig.lenses, inbound: newInbound, outbound: newOutbound };
-				// Cast: the library's options type is narrower than what the
-				// runtime accepts (no `skipPropagation` in the public type).
-				await holosphere.federateHolon(myHolonId, holonId, {
-					lensConfig: fedLensConfig,
-					skipPropagation: true // Don't re-propagate existing data
-				} as any);
-				console.log('[BrowserPanel] Lens config saved for:', holonId.slice(0, 12) + '...', lensConfig);
-
-				// Send lens update notification to partner via NIP-44 DM
-				if ($nostrPrivateKey) {
-					const diff = (label: string, before: string[], after: string[]) => {
-						const added = after.filter(l => !before.includes(l));
-						const removed = before.filter(l => !after.includes(l));
-						const out: string[] = [];
-						if (added.length) out.push(`${label} added: ${added.join(', ')}`);
-						if (removed.length) out.push(`${label} removed: ${removed.join(', ')}`);
-						return out;
-					};
-					const parts = [
-						...diff('Inbound', oldInbound, newInbound),
-						...diff('Outbound', oldOutbound, newOutbound)
-					];
-					const message = parts.length > 0 ? parts.join('. ') : 'Updated lens configuration';
-
-					try {
-						const result = (await handshake.requestFederationUpdate(holosphere, $nostrPrivateKey, {
-							partnerPubKey: holonId,
-							holonId: myHolonId,
-							holonName: homeHolonName || 'My Holon',
-							newLensConfig: fedLensConfig,
-							message
-						})) as { success: boolean; error?: string };
-						if (result.success) {
-							console.log('[BrowserPanel] Sent lens update notification to partner:', message);
-						} else {
-							console.warn('[BrowserPanel] Failed to notify partner of lens update:', result.error);
-						}
-					} catch (err) {
-						console.warn('[BrowserPanel] Failed to send lens update notification:', err);
-					}
+				// Our half; the partner's admins are asked for theirs (core).
+				const outcome = await setFederationPartner(holosphere, myHolonId, holonId, {
+					inbound: newInbound,
+					outbound: newOutbound,
+					partnerName: index >= 0 ? holons[index].name : undefined,
+					holonName: homeHolonName || undefined
+				});
+				if (outcome.self === 'held') throw new Error('Only an admin of this holon can change its federation');
+				if (outcome.partner === 'requested' && index >= 0) {
+					holons[index] = { ...holons[index], federationStatus: 'pending_outgoing' };
+					holons = [...holons];
 				}
 			} catch (err) {
 				console.warn('[BrowserPanel] Failed to update lens config:', err);
@@ -540,6 +506,45 @@
 	}
 
 
+	// Start a hub that is not a Telegram chat: mint its id and found it with
+	// this member's own key (@holons/core/protocol) — the key signs the genesis
+	// of the hub's member log and becomes its first admin; the settings page
+	// then seats others by public key.
+	let isFoundingHub = false;
+	async function startNewHub() {
+		if (!holosphere || isFoundingHub) return;
+		if (!holosphere.currentPubkey) {
+			addError = 'Sign in with a key to start a hub';
+			return;
+		}
+		isFoundingHub = true;
+		addError = '';
+		try {
+			const name = newHolonName.trim();
+			// With the member's key in hand, found it the full way (NIP-29 state,
+			// founder profile); otherwise the bare founding.
+			const sk = get(nostrPrivateKey);
+			const signer = sk ? signerFromSecretKey(sk) : null;
+			let id: string;
+			if (signer) {
+				({ holon: id } = await createHolon(holosphere, signer, { appName: holosphere.appname, name: name || undefined }));
+			} else {
+				id = mintHolonId();
+				await foundHolon(holosphere, id, { name: name || undefined });
+			}
+			// Remembered in the member's own holon, so it follows them to every device.
+			const me = get(nostrPublicKey);
+			if (me) await rememberHolon(holosphere, me, { id, name }).catch(() => {});
+			window.dispatchEvent(new CustomEvent('holonCreated'));
+			closeAddModal();
+			goto(`/${id}/settings`);
+		} catch (err) {
+			addError = err instanceof Error ? err.message : String(err);
+		} finally {
+			isFoundingHub = false;
+		}
+	}
+
 	function closeAddModal() {
 		showAddModal = false;
 		showQRScanner = false;
@@ -562,115 +567,26 @@
 		selectedOutboundLenses = new Set(selectedOutboundLenses);
 	}
 
-	// Federation request handlers
-	async function handleAcceptRequest(request: PendingRequest) {
-		// Use home holon for federation operations
+	// Federation request handlers: answering writes the home holon's own half.
+	async function answerRequest(from: string, decision: 'accept' | 'decline') {
 		const myHolonId = $homeHolonId || currentHolonId;
-		if (!$nostrPrivateKey || !holosphere || !myHolonId) return;
-
-		processingRequestId = request.id;
-
+		if (!holosphere || !myHolonId || processingRequestId) return;
+		processingRequestId = from;
 		try {
-			// Check if this is a lens update request or a federation request
-			const isLensUpdate = (request as any).requestKind === 'lens_update';
-
-			if (isLensUpdate) {
-				// Handle lens update request
-				await handleAcceptLensUpdate(request);
-			} else {
-				// Handle federation request
-				await handleAcceptFederationRequest(request);
-			}
+			await answerFederationRequest(holosphere, myHolonId, from, decision);
+			await Promise.all([loadRequests(), loadHolons()]);
+			window.dispatchEvent(new CustomEvent('federationChanged'));
 		} catch (err) {
-			console.error('[BrowserPanel] Failed to accept request:', err);
+			console.error('[BrowserPanel] Failed to answer federation request:', err);
 		} finally {
 			processingRequestId = null;
-		}
-	}
-
-	// Handle accepting a federation request
-	async function handleAcceptFederationRequest(request: PendingRequest) {
-		const myHolonId = $homeHolonId || currentHolonId;
-		if (!$nostrPrivateKey || !holosphere || !myHolonId) {
-			console.error('[BrowserPanel] Cannot accept: missing privateKey, holosphere, or home holon id');
-			return;
-		}
-
-		const sharedLenses = request.lensConfig?.lenses || [];
-
-		// Use the library's acceptFederationRequest which handles all steps:
-		// partner registration, federateHolon, capability issuance,
-		// response DM, dismissRequest, and hologram reception.
-		// Cast options: the runtime accepts more than the public type declares.
-		const result = (await handshake.acceptFederationRequest(holosphere, $nostrPrivateKey, {
-			request: {
-				requestId: request.id,
-				senderHolonId: request.senderHolonId,
-				senderHolonName: request.senderHolonName,
-				capabilities: request.capabilities || [],
-				lensConfig: { lenses: sharedLenses, inbound: sharedLenses, outbound: sharedLenses }
-			},
-			senderPubKey: request.senderPubKey,
-			holonId: myHolonId,
-			holonName: homeHolonName || 'My Holon',
-			lensConfig: { lenses: sharedLenses, inbound: sharedLenses, outbound: sharedLenses }
-		} as any)) as { success: boolean; error?: string };
-
-		if (result.success) {
-			pendingFederationRequests.updateStatus(request.id, 'accepted');
-			await loadHolons();
-			console.log('[BrowserPanel] Federation request accepted:', request.id);
-		} else {
-			console.error('[BrowserPanel] Failed to accept federation:', result.error);
-		}
-	}
-
-	// Handle accepting a lens update request
-	async function handleAcceptLensUpdate(request: PendingRequest) {
-		const myHolonId = $homeHolonId || currentHolonId;
-		if (!$nostrPrivateKey || !holosphere || !myHolonId) return;
-
-		const update = (request as any).updateData;
-		const senderPubKey = request.senderPubKey;
-
-		const sharedUpdateLenses = request.lensConfig?.lenses || [];
-
-		// acceptFederationUpdate handles both federateHolon and sending the response DM
-		await handshake.acceptFederationUpdate(holosphere, $nostrPrivateKey, {
-			updateId: update?.updateId || request.id,
-			senderPubKey,
-			holonId: myHolonId,
-			newLensConfig: { lenses: sharedUpdateLenses, inbound: sharedUpdateLenses, outbound: sharedUpdateLenses }
-		});
-
-		pendingFederationRequests.updateStatus(request.id, 'accepted');
-		await loadHolons();
-		console.log('[BrowserPanel] Lens update accepted:', request.id);
-	}
-
-	async function handleDeclineRequest(request: PendingRequest) {
-		if (!$nostrPrivateKey || !holosphere) return;
-
-		try {
-			// Cast: runtime accepts `senderPubKey`; public type omits it.
-			await handshake.rejectFederationRequest(holosphere, $nostrPrivateKey, {
-				requestId: request.id,
-				senderPubKey: request.senderPubKey
-			} as any);
-
-			// Remove from requests store
-			pendingFederationRequests.remove(request.id);
-
-			console.log('[BrowserPanel] Federation request declined:', request.id);
-		} catch (err) {
-			console.error('[BrowserPanel] Failed to decline federation request:', err);
 		}
 	}
 
 	// Recognize the holon-ID shapes this app uses, in order of confidence:
 	// 64-char Nostr pubkey hex, npub bech32, or a numeric Telegram chat id.
 	function looksLikeHolonId(s: string): boolean {
-		return /^[0-9a-f]{64}$/i.test(s) || /^npub1[a-z0-9]+$/i.test(s) || /^-?\d+$/.test(s);
+		return /^[0-9a-f]{64}$/i.test(s) || /^npub1[a-z0-9]+$/i.test(s) || /^-?\d+$/.test(s) || isHolonId(s);
 	}
 
 	function extractHolonId(input: string): string {
@@ -733,112 +649,51 @@
 			let name = newHolonName.trim();
 			if (!name && holosphere) {
 				try {
-					const fetchedName = await awaitName(holonId);
-					name = fetchedName || `Holon ${holonId.slice(0, 8)}...`;
+					name = await awaitName(holonId);
 				} catch {
-					name = `Holon ${holonId.slice(0, 8)}...`;
+					name = shortId(holonId);
 				}
 			} else if (!name) {
-				name = `Holon ${holonId.slice(0, 8)}...`;
+				name = shortId(holonId);
 			}
-
-			// Initiate federation handshake if we have private key
-			let federationStatus: FederationStatus = 'none';
-			let pendingRequestId: string | undefined;
 
 			// Use home holon for federation operations
 			const myHolonId = $homeHolonId || currentHolonId;
+			if (!holosphere || !myHolonId) {
+				addError = 'Sign in to federate';
+				return;
+			}
 
 			const inbound = Array.from(selectedInboundLenses);
 			const outbound = Array.from(selectedOutboundLenses);
 			const lensConfig = { lenses: [...new Set([...inbound, ...outbound])], inbound, outbound };
-			const myHolonName = homeHolonName || 'My Holon';
 
-			// Path A: full Nostr session — initiate a signed handshake DM so
-			// the partner can accept/decline. Holon shows up as `pending_outgoing`
-			// until they respond.
-			if ($nostrPrivateKey && holosphere && myHolonId) {
-				try {
-					const result = (await handshake.initiateFederationHandshake(holosphere, $nostrPrivateKey, {
-						partnerPubKey: holonId,
-						holonId: myHolonId,
-						holonName: myHolonName,
-						lensConfig
-					})) as { success: boolean; requestId?: string; error?: string };
-
-					if (result.success && result.requestId) {
-						federationStatus = 'pending_outgoing';
-						pendingRequestId = result.requestId;
-
-						const outgoing = createOutgoingRequest(
-							result.requestId,
-							myHolonId,
-							'', // npub - not used for outgoing
-							myHolonId,
-							myHolonName,
-							holonId,
-							'', // recipientNpub - not used
-							lensConfig,
-							[],
-							undefined,
-							name // recipientHolonName
-						);
-						pendingFederationRequests.add(outgoing);
-
-						console.log('[BrowserPanel] Federation handshake initiated:', result.requestId);
-					} else {
-						console.warn('[BrowserPanel] Federation handshake failed, will fall back to direct federate:', result.error);
-					}
-				} catch (err) {
-					console.warn('[BrowserPanel] Federation handshake error, will fall back to direct federate:', err);
-				}
-			}
-
-			// Path B: no local private key (telegram-mapped session) OR
-			// handshake didn't produce a pending request — fall back to
-			// `holosphere.federate(...)`, the same direct path Federation.svelte
-			// uses. This writes the federation graph locally without needing
-			// the partner to acknowledge a DM.
-			if (federationStatus === 'none' && holosphere && myHolonId) {
-				try {
-					const ok = await holosphere.federate(
-						myHolonId,
-						holonId,
-						null,
-						null,
-						true,
-						{ inbound, outbound }
-					);
-					if (ok) {
-						federationStatus = 'accepted';
-						console.log('[BrowserPanel] Direct federation created with', holonId.slice(0, 12) + '...');
-					} else {
-						console.warn('[BrowserPanel] holosphere.federate returned false');
-					}
-				} catch (err) {
-					console.error('[BrowserPanel] Direct federate failed:', err);
-				}
-			}
-
-			// Add to holons list as pending or accepted.
-			if (federationStatus === 'pending_outgoing' || federationStatus === 'accepted') {
-				const exists = holons.some(h => h.id === holonId);
-				if (!exists) {
-					holons = [{
-						id: holonId,
-						name,
-						federationStatus,
-						pendingRequestId,
-						lensConfig: { lenses: lensConfig.lenses, inbound, outbound }
-					}, ...holons];
-				}
-				addSuccess = federationStatus === 'pending_outgoing'
-					? 'Federation request sent! Waiting for response...'
-					: 'Federation created.';
-			} else {
-				addError = 'Could not federate. Please check the Holon ID and try again.';
+			// Our half is written; the partner's admins are asked for theirs
+			// unless this key speaks for the partner too (core federation).
+			const outcome = await setFederationPartner(holosphere, myHolonId, holonId, {
+				inbound,
+				outbound,
+				partnerName: name,
+				holonName: homeHolonName || undefined
+			});
+			if (outcome.self === 'held') {
+				addError = 'Only an admin of your holon can federate it.';
 				return;
 			}
+			const federationStatus: FederationStatus = outcome.partner === 'requested' ? 'pending_outgoing' : 'accepted';
+
+			// Add to holons list as pending (their admins asked) or accepted.
+			if (!holons.some(h => h.id === holonId)) {
+				holons = [{
+					id: holonId,
+					name,
+					federationStatus,
+					lensConfig: { lenses: lensConfig.lenses, inbound, outbound }
+				}, ...holons];
+			}
+			addSuccess = federationStatus === 'pending_outgoing'
+				? `Linked — asked ${name}'s admins to accept.`
+				: 'Federation created.';
 
 			// Navigate to the holon
 			setTimeout(() => {
@@ -909,14 +764,14 @@
 		homeHolonId={$homeHolonId || currentHolonId}
 		{homeHolonName}
 		showHomeSection={true}
-		incomingRequests={$incomingRequests}
+		incomingRequests={requestCards}
 		{processingRequestId}
 		on:select={(e) => selectHolon(e.detail.holonId)}
 		on:star={(e) => toggleStar(e.detail.holonId)}
 		on:remove={(e) => removeHolon(e.detail.holonId)}
 		on:lensConfigUpdate={(e) => handleLensConfigUpdate(e)}
-		on:acceptRequest={(e) => handleAcceptRequest(e.detail)}
-		on:declineRequest={(e) => handleDeclineRequest(e.detail)}
+		on:acceptRequest={(e) => answerRequest(e.detail.id, 'accept')}
+		on:declineRequest={(e) => answerRequest(e.detail.id, 'decline')}
 	/>
 
 	<!-- Version footer -->
@@ -999,6 +854,18 @@
 						placeholder="Custom name for display"
 						onkeydown={(e) => e.key === 'Enter' && addNewHolon()}
 					/>
+				</div>
+
+				<div class="add-modal__found">
+					<span>No hub yet? Start one here, founded by your key — no Telegram needed.</span>
+					<button
+						type="button"
+						class="add-modal__found-btn"
+						disabled={isFoundingHub}
+						onclick={startNewHub}
+					>
+						{isFoundingHub ? 'Founding…' : 'Start a new hub'}
+					</button>
 				</div>
 
 				<!-- Lens Configuration: per-direction (mirrors Federation.svelte). -->
@@ -1502,4 +1369,31 @@
 		opacity: 1;
 	}
 
+
+	.add-modal__found {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		margin: 0.25rem 0 1rem;
+		padding: 0.6rem 0.75rem;
+		border: 1px dashed var(--border-color, #d1d5db);
+		border-radius: 0.5rem;
+		font-size: 0.8rem;
+		color: var(--text-secondary, #6b7280);
+	}
+	.add-modal__found-btn {
+		padding: 0.35rem 0.75rem;
+		border-radius: 999px;
+		background: var(--accent, #0f766e);
+		color: #fff;
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.add-modal__found-btn:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
 </style>

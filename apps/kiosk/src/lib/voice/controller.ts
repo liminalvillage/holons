@@ -11,8 +11,8 @@
 //
 // Selection (the pure matrix lives in transport.ts): VITE_VOICE_MODE=ws|direct
 // wins; otherwise a Settings-pasted device key, an explicit VITE_VOICE_WS_URL,
-// a baked-in VITE_OPENAI_API_KEY, then the deploy's /api/ai/voice relay (the
-// same server-side key AI breakdown uses), else ws probes localhost. When
+// then the deploy's /api/ai/voice relay (OPENAI_API_KEY server-side), else ws
+// probes localhost. When
 // nothing is reachable/configured the buttons render nothing.
 
 import { get, writable } from "svelte/store";
@@ -38,6 +38,7 @@ import {
   serverVoiceConfigured,
 } from "$lib/voice/direct";
 import { pickVoiceMode } from "$lib/voice/transport";
+import { drawerOpen } from "$lib/voice/plan";
 import { deviceVoiceKey } from "$lib/config";
 
 const WS_URL_ENV = import.meta.env.VITE_VOICE_WS_URL as string | undefined;
@@ -85,6 +86,7 @@ export const holonsSaid = writable("");
 export const activeTool = writable<string | null>(null);
 export const bubbleOpen = writable(false);
 export const typeOpen = writable(false);
+export { drawerOpen };
 
 let backend: VoiceBackend | null = null;
 let player: PcmPlayer | null = null;
@@ -237,9 +239,14 @@ function onBackendEvent(ev: BackendEvent) {
       if (tab) selectTab(tab.id);
       break;
     }
+    case "plan":
+      // Proposed changes wait in the drawer; the bubble stays for the reply.
+      if (ev.size > 0) drawerOpen.set(true);
+      showBubble();
+      break;
     case "error":
       activeTool.set(null);
-      holonsSaid.set(`⚠ ${ev.message}`);
+      holonsSaid.set(ev.message);
       status.set("ready");
       showBubble();
       armBubbleFade();
@@ -259,7 +266,7 @@ export async function startRecording(): Promise<void> {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
-      holonsSaid.set("⚠ Microphone unavailable");
+      holonsSaid.set("Microphone unavailable");
       showBubble();
       armBubbleFade();
       return;

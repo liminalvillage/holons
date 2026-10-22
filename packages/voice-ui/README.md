@@ -10,7 +10,7 @@ Browser (apps/web /voice)                     voice-ui (this package)
   mic → @ricky0123/vad-web ─ WAV ─┐           ┌─ STT  (api: OpenAI Whisper | local: whisper.cpp)
   speaker ← Web Audio  ←──────────┤ WebSocket ├─ LLM  (api: Claude via @holons/ai-ui | local: mlx_lm)
   barge-in on speech-start ───────┘           ├─ TTS  (api: OpenAI tts-1 | local: kokoro-js)
-                                              └─ MCP client → @holons/mcp-ui (121 tools) → Gun graph
+                                              └─ MCP client → @holons/mcp-ui (121 tools) → relays
 ```
 
 ## Provider switch

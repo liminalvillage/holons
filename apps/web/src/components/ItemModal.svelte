@@ -6,7 +6,7 @@
     import { nameMap, resolvedName, resolvedInitials } from '$lib/stores/nameResolver';
     import DisplayName from './shared/DisplayName.svelte';
     import { removeParticipant as coreRemoveParticipant, toggleParticipant as coreToggleParticipant } from '@holons/core/tasks';
-    import { reflectMembership } from '../utils/reflectMembership';
+    import { refreshMemberDm } from '../utils/refreshMemberDm';
     // Allow either quest or role to be passed
     export let quest: any = undefined;
     export let role: any = undefined;
@@ -33,9 +33,9 @@
     const holosphere = getContext("holosphere") as HoloSphere;
     
     let userStore: UserStore = {};
-    // Gun-listener handle for the users subscription. This modal mounts/unmounts
+    // Store-listener handle for the users subscription. This modal mounts/unmounts
     // repeatedly; without tearing this down on unmount, every open leaks a
-    // `.map().on()` callback that Gun keeps forever.
+    // watch callback that the store keeps forever.
     let usersSub: { unsubscribe: () => void } | undefined;
     let userSearchQuery = '';
     $: filteredUserEntries = (() => {
@@ -193,19 +193,13 @@
         item.participants = updated.participants;
         await updateItem({ participants: updated.participants });
 
-        // Mirror into the member's personal holon + (re)send the linked DM —
-        // quests only (roles don't federate as personal holograms).
-        if (itemType === 'quests' && holosphere) {
+        // Core mirrored the change into the member's personal holon with the
+        // write; refresh their linked DM when they left — quests only.
+        if (itemType === 'quests') {
             const joined = (updated.participants || []).some(
                 (p: any) => String(p?.id) === String(userId)
             );
-            void reflectMembership({
-                holosphere,
-                holonId,
-                questId: String(item.id ?? itemId),
-                userId,
-                joined,
-            });
+            refreshMemberDm({ questId: String(item.id ?? itemId), userId, joined });
         }
         showDropdown = false;
     }

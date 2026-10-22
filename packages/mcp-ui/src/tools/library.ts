@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   addItem,
-  borrowItem,
+  bookItem,
   detectItemType,
   getItem,
   getLibraryStats,
@@ -140,11 +140,11 @@ export function registerLibraryTools(server: McpServer, deps: ToolDeps): void {
     }
   );
 
-  // The core helper requires a return date; default to 7 days when omitted
-  // (matches the existing bot flow).
+  // Whole days by default (until `returnBy`, +7 days when omitted — the bot's
+  // flow); `start`/`end` book any stretch, by the clock when they carry a time.
   server.tool(
     'library_borrow',
-    'Borrow a library item. Optional borrower JSON overrides the configured actor. Optional `returnBy` ISO date inside borrower JSON defaults to +7 days.',
+    'Borrow or book a library item. Without `start`/`end` it is borrowed from today until `returnBy` (inside borrower JSON, default +7 days). `start`/`end` book a chosen stretch: `YYYY-MM-DD` for whole days (inclusive), or `YYYY-MM-DDTHH:mm` in the holon\'s local time to book by the clock (e.g. a car for one hour; end exclusive). Both bounds must be the same kind. Fails with `overlaps` when the stretch collides with an existing booking.',
     {
       holon: z.string(),
       itemId: z.string(),
@@ -154,24 +154,30 @@ export function registerLibraryTools(server: McpServer, deps: ToolDeps): void {
         .describe(
           'JSON-encoded BorrowActor + optional returnBy ISO string: { id, username?, first_name?, last_name?, returnBy? }'
         ),
+      start: z.string().optional().describe('Start: YYYY-MM-DD or YYYY-MM-DDTHH:mm. Defaults to now.'),
+      end: z.string().optional().describe('End: YYYY-MM-DD (inclusive) or YYYY-MM-DDTHH:mm (exclusive).'),
     },
-    async ({ holon, itemId, borrower }) => {
+    async ({ holon, itemId, borrower, start, end }) => {
       const override = parseJson<ActorOverride & { returnBy?: string }>(borrower, {});
       const actor = buildBorrowActor(deps, override);
-      const returnBy = override.returnBy
-        ? new Date(override.returnBy)
-        : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const until =
+        end ??
+        (override.returnBy
+          ? new Date(override.returnBy)
+          : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
 
       const db = (await deps.getHoloSphere()) as LibraryDB;
-      const result = await borrowItem(db, holon, itemId, actor, returnBy);
-      if (!result.ok) return fail(result.reason ?? 'borrow_failed', { itemId });
-      return ok({ item: result.item, isOwner: result.isOwner });
+      const result = await bookItem(db, holon, itemId, actor, { start, end: until });
+      if (!result.ok) {
+        return fail(result.reason ?? 'borrow_failed', { itemId, conflict: result.conflict });
+      }
+      return ok({ item: result.item, booking: result.booking, isOwner: result.isOwner });
     }
   );
 
   server.tool(
     'library_return',
-    'Return a borrowed library item. Defaults the returner to the configured actor.',
+    'Return a borrowed library item: ends the returner\'s booking that is running now, or their last one whose time is already up (a late return). Defaults the returner to the configured actor.',
     {
       holon: z.string(),
       itemId: z.string(),

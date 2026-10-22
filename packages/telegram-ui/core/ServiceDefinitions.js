@@ -5,10 +5,9 @@ import i18next from 'i18next';
 
 // Import all modules
 import Server from '../src/Server.js';
-// createHoloSphere removed — using HoloSphere 1.3 directly in service factory
+// HoloSphere comes from src/createHoloSphere.js (env-driven: backend/relays/projections)
 import UI from '../src/UI.js';
 import H3 from '../src/H3.js';
-import Holons from '../src/Holons.js';
 import Quests from '../src/Quests.js';
 import Shopping from '../src/Shopping.js';
 import Lunation from '../src/Lunation.js';
@@ -18,9 +17,16 @@ import Expenses from '../src/Expenses.js';
 import Settings from '../src/Settings.js';
 import Bigtalk from '../src/Bigtalk.js';
 import Library from '../src/Library.js';
+import Stock from '../src/Stock.js';
 import Users from '../src/Users.js';
 import Tags from '../src/Tags.js';
 import Participation from '../src/RSVP.js';
+import Shifts from '../src/Shifts.js';
+import Keys from '../src/Keys.js';
+import JoinRequests from '../src/JoinRequests.js';
+import FederationRequests from '../src/FederationRequests.js';
+import { linkHolons, unlinkHolons } from '../src/federationLinks.js';
+import { invalidateLinkedKeys } from '../src/createHoloSphere.js';
 import Roles from '../src/Roles.js';
 import OneOnOne from '../src/OneOnOne.js';
 import Announcements from '../src/Announcements.js';
@@ -145,48 +151,39 @@ export const serviceDefinitions = {
       const appname =
         process.env.HOLONS_APP ||
         (config.isDevelopment ? 'HolonsDebug' : 'Holons');
-      const peers = [process.env.HOLONS_PEER || 'https://gun.holons.io/gun'];
-      const { HoloSphere } = await import('holosphere');
-      const holosphere = new HoloSphere(appname, false, null, { peers });
-      // Inspect the local radisk file at startup so we can see what survived
+      // Env-driven factory (src/createHoloSphere.js): HOLOSPHERE_RELAYS is
+      // the wire, HOLOSPHERE_STORE_DIR the warm local store,
+      // HOLOSPHERE_PROJECTIONS(+_SYNC) standard-kind projections + reverse
+      // sync (both on by default).
+      const { default: createHoloSphere } =
+        await import('../src/createHoloSphere.js');
+      const holosphere = createHoloSphere(appname);
+      // Inspect the local store at startup so we can see what survived.
+      const storeDir = process.env.HOLOSPHERE_STORE_DIR || './holosphere-store';
+      let storeFiles = [];
       try {
         const fs = await import('fs');
         const path = await import('path');
-        const radDir = path.resolve(process.cwd(), 'holosphere');
-        let stat = null,
-          files = [];
-        try {
-          stat = fs.statSync(radDir);
-          files = fs.readdirSync(radDir).map(name => {
-            try {
-              const s = fs.statSync(path.join(radDir, name));
-              return { name, size: s.size, mtime: s.mtime.toISOString() };
-            } catch {
-              return { name, error: 'stat-failed' };
-            }
-          });
-        } catch (e) {
-          stat = { missing: true, error: e.message };
-        }
-        console.log('[QUEST_PERSIST_DEBUG] BOOT', {
-          appname,
-          isDevelopment: config.isDevelopment,
-          cwd: process.cwd(),
-          radiskFile: './holosphere',
-          radiskExists: !!stat && !stat.missing,
-          radiskFiles: files,
-          pid: process.pid,
+        const dir = path.resolve(process.cwd(), storeDir);
+        storeFiles = fs.readdirSync(dir).map(name => {
+          try {
+            const st = fs.statSync(path.join(dir, name));
+            return { name, size: st.size, mtime: st.mtime.toISOString() };
+          } catch {
+            return { name, error: 'stat-failed' };
+          }
         });
-      } catch (e) {
-        console.log('[QUEST_PERSIST_DEBUG] BOOT', {
-          appname,
-          isDevelopment: config.isDevelopment,
-          cwd: process.cwd(),
-          radiskFile: './holosphere',
-          inspectError: e.message,
-          pid: process.pid,
-        });
+      } catch {
+        storeFiles = [{ missing: true }];
       }
+      console.log('[QUEST_PERSIST_DEBUG] BOOT', {
+        appname,
+        isDevelopment: config.isDevelopment,
+        cwd: process.cwd(),
+        storeDir,
+        storeFiles,
+        pid: process.pid,
+      });
 
       const keyManager = {
         masterHolosphere: holosphere,
@@ -199,67 +196,32 @@ export const serviceDefinitions = {
         getPublicKey: async holonId => String(holonId),
         getTelegramId: async pubkey => String(pubkey),
 
+        // Federation edits go through the one core write path: this
+        // holon's half, the partner's directly or by request (see
+        // src/federationLinks.js for when the partner's admins are asked).
         async setupFederation(sourceHolonId, targetHolonId, options = {}) {
-          const {
-            lensConfig = { inbound: [], outbound: [] },
-            partnerName = null,
-          } = options;
           const source = String(sourceHolonId);
           const target = String(targetHolonId);
           if (source === target)
             throw new Error('Cannot federate a holon with itself');
-
-          const success = await holosphere.federate(
+          const { success, outcome } = await linkHolons(
+            holosphere,
             source,
             target,
-            null,
-            null,
-            true,
-            {
-              inbound: Array.isArray(lensConfig.inbound)
-                ? lensConfig.inbound
-                : [],
-              outbound: Array.isArray(lensConfig.outbound)
-                ? lensConfig.outbound
-                : [],
-            }
+            options
           );
-
-          if (success && partnerName) {
-            try {
-              const fedInfo = await holosphere.getGlobal('federation', source);
-              if (fedInfo) {
-                if (!fedInfo.partnerNames) fedInfo.partnerNames = {};
-                fedInfo.partnerNames[target] = partnerName;
-                await holosphere.putGlobal('federation', fedInfo);
-              }
-            } catch (e) {
-              log.warn('[setupFederation] Failed to store partner name', {
-                error: e.message,
-              });
-            }
-          }
-
-          holosphere.clearCache?.('federation');
           const federationData = await holosphere.getGlobal(
             'federation',
             source
           );
-          return { success, federationData };
+          return { success, outcome, federationData };
         },
 
-        async teardownFederation(sourceHolonId, targetHolonId) {
+        async teardownFederation(sourceHolonId, targetHolonId, options = {}) {
           const source = String(sourceHolonId);
           const target = String(targetHolonId);
-          if (source === target) return true;
-          const success = await holosphere.unfederate(
-            source,
-            target,
-            null,
-            null
-          );
-          holosphere.clearCache?.('federation');
-          return success;
+          if (source === target) return { success: true, outcome: null };
+          return unlinkHolons(holosphere, source, target, options);
         },
 
         // Older API kept for compatibility — sets up a single-lens federation.
@@ -281,14 +243,14 @@ export const serviceDefinitions = {
         },
       };
 
-      log.debug('Database initialized (GunDB via HoloSphere 1.3)', { appname });
+      log.debug('Database initialized (HoloSphere over relays)', { appname });
       return keyManager;
     },
     singleton: true,
     dependencies: ['config', 'logger'],
   },
 
-  // Database (HoloSphere instance for GunDB access)
+  // Database (the HoloSphere instance: relays + local store)
   database: {
     factory: async ({ keyManager }) => {
       const holosphere = keyManager.masterHolosphere;
@@ -298,7 +260,7 @@ export const serviceDefinitions = {
       // forHolon just returns the same instance (no per-holon keys)
       holosphere.forHolon = async () => holosphere;
 
-      log.debug('Database service initialized (HoloSphere 1.3 + GunDB)');
+      log.debug('Database service initialized (HoloSphere over relays)');
       return holosphere;
     },
     singleton: true,
@@ -381,24 +343,6 @@ export const serviceDefinitions = {
     },
     singleton: true,
     dependencies: ['telebot', 'database', 'ui', 'settings'],
-  },
-
-  // Holons
-  holons: {
-    factory: ({ telebot, database, settings, expenses, ui }) => {
-      const holons = new Holons(telebot, database, settings);
-
-      // Set cross-references
-      holons.setExpensesInstance(expenses);
-      if (typeof holons.setUIInstance === 'function') {
-        holons.setUIInstance(ui);
-        log.debug('UI instance passed to Holons');
-      }
-
-      return holons;
-    },
-    singleton: true,
-    dependencies: ['telebot', 'database', 'settings', 'expenses', 'ui'],
   },
 
   // Checklists
@@ -525,6 +469,14 @@ export const serviceDefinitions = {
     dependencies: ['telebot', 'database'],
   },
 
+  // Stock: fungible inventory folded from REA events (@holons/core/inventory)
+  stock: {
+    factory: ({ telebot, database, settings }) =>
+      new Stock(telebot, database, settings),
+    singleton: true,
+    dependencies: ['telebot', 'database', 'settings'],
+  },
+
   h3: {
     factory: ({ telebot, database, settings }) =>
       new H3(telebot, database, settings),
@@ -542,6 +494,43 @@ export const serviceDefinitions = {
     factory: ({ telebot, database }) => new Participation(telebot, database),
     singleton: true,
     dependencies: ['telebot', 'database'],
+  },
+
+  shifts: {
+    factory: ({ telebot, database }) => new Shifts(telebot, database),
+    singleton: true,
+    dependencies: ['telebot', 'database'],
+  },
+
+  // /key: the member's Nostr identity — export the derived nsec, link/unlink
+  // their own keys (kind-31926), private chat only.
+  keys: {
+    factory: ({ telebot, database }) =>
+      new Keys(telebot, database, {
+        onLinkedKeysChanged: invalidateLinkedKeys,
+      }),
+    singleton: true,
+    dependencies: ['telebot', 'database'],
+  },
+
+  // A join request from the kiosk or the dashboard (NIP-29 kind 9021) for a
+  // holon that is a Telegram group: a proven group member is linked at
+  // once, anyone else is announced in the group for its admins to decide.
+  joinRequests: {
+    factory: ({ telebot, database, settings }) =>
+      new JoinRequests(telebot, database, settings),
+    singleton: true,
+    dependencies: ['telebot', 'database', 'settings'],
+  },
+
+  // Federation requests reach the Telegram group: a partner that linked to
+  // a chat (and could not speak for it) is announced once, with Accept /
+  // Decline for the chat's admins.
+  federationRequests: {
+    factory: ({ telebot, database, settings }) =>
+      new FederationRequests(telebot, database, settings),
+    singleton: true,
+    dependencies: ['telebot', 'database', 'settings'],
   },
 
   rounds: {
@@ -641,9 +630,10 @@ export const postInitHooks = {
   // Setup Settings cross-references
   settings: async (settings, container) => {
     if (typeof settings.setHolonsInstance === 'function') {
-      const holons = await container.get('holons');
-      settings.setHolonsInstance(holons);
       log.debug('Holons instance passed to Settings');
+    }
+    if (typeof settings.setKeysInstance === 'function') {
+      settings.setKeysInstance(await container.get('keys'));
     }
   },
 };

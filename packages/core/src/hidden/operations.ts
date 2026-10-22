@@ -10,7 +10,7 @@ export const HIDDEN_LENS = 'hidden';
 
 /**
  * Canonical id for a hide-entry. Colon-joined, NOT slash-joined: the id
- * becomes the entry's Gun key and therefore part of a soul path, where an
+ * becomes the entry's record key and therefore part of a soul path, where an
  * embedded `/` would corrupt soul parsing.
  */
 export function hiddenId(ref: HiddenRef): string {

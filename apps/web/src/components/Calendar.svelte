@@ -1,8 +1,10 @@
 <script lang="ts">
     import { createEventDispatcher,getContext, onMount, onDestroy } from 'svelte';
+    import { createEdgeScroll } from '$lib/util/edgeScroll';
     import type { HoloSphere } from "holosphere";
     import { ID } from "../dashboard/store";
     import Timeline from './Timeline.svelte';
+    import { lunationAt } from '@holons/core/flows';
     import CalendarSettings from './CalendarSettings.svelte';
     import { formatDate } from "../utils/date";
     import * as d3 from "d3";
@@ -20,6 +22,7 @@
     import { buildBookingSpans, type BookableItem } from '$lib/util/libraryBookings';
     import { questColor } from '$lib/util/questColors';
     import { subscribeHolonUsers } from '$lib/util/usersWithSelf';
+    import { advanceOccurrence, questFrequency } from '@holons/core/tasks';
 
     interface CalendarEvents {
         dateSelect: { date: Date; events: any[] };
@@ -167,18 +170,11 @@
     }
 
     // --- Recurring task expansion ---
+    // Core owns the cadence vocabulary and the step (@holons/core/tasks
+    // recurrence) so the kiosk and this calendar draw the same occurrences.
     function advanceDate(date: Date, frequency: string): Date | null {
-        const d = new Date(date);
-        switch (String(frequency).toLowerCase()) {
-            case 'daily':     d.setDate(d.getDate() + 1); return d;
-            case 'weekly':    d.setDate(d.getDate() + 7); return d;
-            case 'biweekly':  d.setDate(d.getDate() + 14); return d;
-            case 'monthly':   d.setMonth(d.getMonth() + 1); return d;
-            case 'quarterly': d.setMonth(d.getMonth() + 3); return d;
-            case 'sixmonths': d.setMonth(d.getMonth() + 6); return d;
-            case 'yearly':    d.setFullYear(d.getFullYear() + 1); return d;
-        }
-        return null;
+        const f = questFrequency({ frequency });
+        return f ? advanceOccurrence(date, f) : null;
     }
 
     type TaskEntry = { key: string; originalKey: string; task: any; isInstance: boolean };
@@ -262,6 +258,15 @@
         : allExpandedTaskEntries;
     $: expandedTasksRecord = Object.fromEntries(expandedTaskEntries.map(e => [e.key, e.task]));
 
+    // The lunation running now, for the close-up under the year timeline
+    // (`to` is the cycle's last ms; the line's span ends at the next new moon).
+    const lunation = lunationAt();
+    const lunationRange = { from: lunation.from, to: lunation.to + 1 };
+    const lunationTitle = (() => {
+        const fmt = (ms: number) => new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+        return `Lunation ${lunation.index} · ${fmt(lunationRange.from)} – ${fmt(lunationRange.to)}`;
+    })();
+
     function resolveOriginalKey(keyOrInstance: string, task?: any): string {
         if (task?._originalKey) return task._originalKey;
         if (typeof keyOrInstance === 'string' && keyOrInstance.includes('::')) return keyOrInstance.split('::')[0];
@@ -281,7 +286,7 @@
 
     // Imported calendar state
     let showCalendarSettings = false;
-    let importedCalendars: Array<{ id: string; url: string; name: string; enabled: boolean }> = [];
+    let importedCalendars: Array<{ id: string; url: string; name: string; enabled: boolean; color?: string }> = [];
     let externalEvents: ExternalCalendarEvent[] = [];
     // Hidden imported calendars (persisted across sessions)
     const HIDDEN_CALENDARS_KEY = 'calendar_hidden_imports';
@@ -471,6 +476,7 @@
 
         // Tear down any in-flight touch drag (ghost element + body styles).
         if (touchDrag) cancelTouchDrag();
+        stopDragScroll();
         document.removeEventListener('click', suppressClickIfRecentDrop, true);
     });
 
@@ -536,7 +542,7 @@
 
     // Local-first + progressive load via queryManager.subscribe: cached
     // snapshot fires synchronously even when the lens is empty, so the
-    // calendar never waits on a cold Gun `.once()` to render.
+    // calendar never waits on a cold relay read to render.
     function loadProfiles() {
         if (!holosphere || !$ID) return;
 
@@ -845,7 +851,7 @@
     }
 
     // Local-first + progressive: queryManager.subscribe emits the cached
-    // snapshot synchronously (next microtask) and streams items as Gun's
+    // snapshot synchronously (next microtask) and streams items as the store's
     // map().on() delivers them. No blocking `await holosphere.getAll` on
     // the render path — calendar paints with empty tasks instantly even
     // when the lens is cold.
@@ -919,7 +925,11 @@
     }
 
     // Deterministic per-calendar color (HSL, keyed by calendar id)
+    // A colour chosen for the feed (on any surface — the record is shared)
+    // wins; otherwise a stable hue hashed from the feed id.
     function getCalendarColor(id: string): string {
+        const chosen = importedCalendars.find((c) => c.id === id)?.color;
+        if (chosen) return chosen;
         let hash = 0;
         for (let i = 0; i < id.length; i++) {
             hash = id.charCodeAt(i) + ((hash << 5) - hash);
@@ -1103,6 +1113,24 @@
         selectedTask = { id: newTask.id, task: newTask };
     }
 
+    // Holding a dragged task at the top/bottom edge scrolls the calendar that
+    // way. HTML5 drag re-fires dragover on whatever slides under the pointer;
+    // the touch drag hit-tests by hand, so re-aim it as the grid glides.
+    const edgeScroll = createEdgeScroll({
+        onScroll: () => {
+            if (touchDrag?.started) updateTouchDropTarget(touchDrag.lastX, touchDrag.lastY);
+        },
+    });
+
+    function onDocDragOver(e: DragEvent) {
+        if (draggedTask) edgeScroll.move(e.clientX, e.clientY);
+    }
+
+    function stopDragScroll() {
+        document.removeEventListener('dragover', onDocDragOver);
+        edgeScroll.stop();
+    }
+
     // Drag and drop handlers
     function handleDragStart(event: DragEvent, key: string, task: any) {
         if (readOnly) {
@@ -1110,6 +1138,7 @@
             return;
         }
         if (!event.dataTransfer) return;
+        document.addEventListener('dragover', onDocDragOver);
 
         // For recurring-instance rows, drag moves the underlying base series.
         const originalKey = resolveOriginalKey(key, task);
@@ -1125,6 +1154,7 @@
     }
 
     function handleDragEnd(event: DragEvent) {
+        stopDragScroll();
         // Reset visual state
         if (event.target instanceof HTMLElement) {
             event.target.style.opacity = '1';
@@ -1256,6 +1286,8 @@
     }
 
     async function performDrop(date: Date, hour?: number) {
+        // The source tile may re-render before dragend reaches it.
+        stopDragScroll();
         if (!draggedTask || !$ID) {
             draggedTask = null;
             dragOverDate = null;
@@ -1334,6 +1366,7 @@
     // back to the unassigned list. `when: null` + status 'ongoing' matches
     // the TaskModal unschedule convention.
     async function performUnschedule() {
+        stopDragScroll();
         if (!draggedTask || !$ID) {
             draggedTask = null;
             dragOverDate = null;
@@ -1479,7 +1512,12 @@
             touchDrag.ghostEl.style.left = e.clientX + 'px';
             touchDrag.ghostEl.style.top = e.clientY + 'px';
         }
-        const target = elementUnderPoint(e.clientX, e.clientY);
+        updateTouchDropTarget(e.clientX, e.clientY);
+        edgeScroll.move(e.clientX, e.clientY);
+    }
+
+    function updateTouchDropTarget(x: number, y: number) {
+        const target = elementUnderPoint(x, y);
         if (target?.hasAttribute('data-drop-unschedule')) {
             dragOverDrawer = true;
             dragOverDate = null;
@@ -1567,6 +1605,7 @@
 
     function cleanupTouchDragVisual(td: NonNullable<typeof touchDrag>) {
         if (td.timerId != null) clearTimeout(td.timerId);
+        edgeScroll.stop();
         if (td.ghostEl) td.ghostEl.remove();
         document.body.style.userSelect = '';
         document.body.style.touchAction = '';
@@ -2443,6 +2482,20 @@
 
     <Timeline
         currentDate={currentDate}
+        profiles={profiles}
+        users={users}
+        tasks={expandedTasksRecord}
+        externalEvents={visibleExternalEvents}
+        spans={allSpans}
+        on:dateSelect={handleTimelineDateSelect}
+        on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.task)}
+    />
+
+    <!-- The lunation we're in, close up: the same line, new moon to new moon -->
+    <Timeline
+        currentDate={currentDate}
+        range={lunationRange}
+        title={lunationTitle}
         profiles={profiles}
         users={users}
         tasks={expandedTasksRecord}

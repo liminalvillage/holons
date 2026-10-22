@@ -1,16 +1,18 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
+	import { membersTrustedAuthors } from '@holons/core/holons';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
-	import { handshake } from "holosphere"
-	import { createHoloSphere } from '@holons/core/holosphere';
+	import { createHoloSphere, resolveEnforce, resolveRelays } from '@holons/core/holosphere';
 	import { hexToBytes } from '@noble/hashes/utils';
 	import Layout from '../dashboard/Layout.svelte';
 	import Splash from '../components/Splash.svelte';
 	import HolosphereProvider from '../components/HolosphereProvider.svelte';
 	import AssistantWidget from '../components/AssistantWidget.svelte';
 	import { nostrStore } from '$lib/stores/nostr';
+	import { buildProjections, parseProjectionList } from '@holons/core/nostr';
+	import { cellToLatLng } from 'h3-js';
 	import { homeHolonIdOverride } from '$lib/stores/homeHolonId';
 	import { holosphereStore } from '$lib/stores/holosphere';
 	import { ID } from '../dashboard/store';
@@ -54,7 +56,6 @@
 	let gcInterval: ReturnType<typeof setInterval>;
 
 	// Federation DM subscription
-	let dmUnsubscribe: (() => void) | null = null;
 
 	// Store holon name from onboarding (if provided)
 	// These are set by handleAuthenticated or read from localStorage in initializeUserHolon
@@ -65,7 +66,7 @@
 	// and 8s (reads) — fine for general code paths but too long for the splash,
 	// which must feel responsive. Use this to race calls that don't accept a
 	// per-call `{ timeout }` option yet (notably hnsLookup / hnsRegister, which
-	// go through holosphere.getGlobal / writeGlobal). Local radisk hits
+	// go through holosphere.getGlobal / writeGlobal). Local store hits
 	// resolve in <100ms so 1s here is generous.
 	const SPLASH_OP_TIMEOUT_MS = 1000;
 	function withSplashTimeout<T>(promise: Promise<T>, label: string): Promise<T | undefined> {
@@ -95,7 +96,7 @@
 		console.log('Initializing user holon with ID:', userPublicKey, 'telegramUserId:', pendingTelegramUserId);
 
 		try {
-			// Check if holon settings already exist with a short retry — Gun may
+			// Check if holon settings already exist with a short retry — the relay sync may
 			// not have synced the user's namespace yet on first connection. Kept
 			// tight (2 attempts × 300ms = ~600ms worst case) so the splash hides
 			// quickly; if the real name shows up later the reactive nameResolver
@@ -108,7 +109,7 @@
 			for (let attempt = 0; attempt < maxRetries; attempt++) {
 				// holosphere.get is bounded by READ_TIMEOUT_MS in the library
 				// (8s default), but the splash needs to feel fast: a local
-				// radisk hit returns in <100ms, so cap each attempt at 1s
+				// local-store hit returns in <100ms, so cap each attempt at 1s
 				// and let the retry/HNS/fallback chain take over from there.
 				existingSettings = await holosphere.get(userPublicKey, 'settings', userPublicKey, null, { timeout: 1000 });
 				if (existingSettings && existingSettings.name) {
@@ -209,24 +210,30 @@
 			const isFreshUser = !existingSettings;
 			if (isGenuinelyNewUser || isFreshUser) {
 				console.log('New user - creating personal holon:', holonName);
-				// Library default is 5s; splash needs faster. Local radisk
+				// Library default is 5s; splash needs faster. Local store
 				// ack returns in <100ms.
+				// A personal holon with no chosen name has NONE: "My Holon" is not
+				// a name, and a person's key is named by their profile wherever it
+				// shows. Only a name the person gave is written and registered.
+				const chosenName = nameSource === 'fallback' ? null : holonName;
 				await holosphere.put(userPublicKey, 'settings', {
 					id: userPublicKey,
-					name: holonName,
+					...(chosenName ? { name: chosenName } : {}),
 					purpose: 'Personal holon',
 					createdAt: Date.now(),
 					createdBy: userPublicKey
 				}, { timeout: SPLASH_OP_TIMEOUT_MS });
 
-				try {
-					await withSplashTimeout(
-						hnsRegister(holosphere, userPublicKey, holonName, privateKey),
-						'hnsRegister'
-					);
-					console.log('Registered holon name in HNS:', holonName);
-				} catch (error) {
-					console.warn('Failed to register holon name in HNS:', error);
+				if (chosenName) {
+					try {
+						await withSplashTimeout(
+							hnsRegister(holosphere, userPublicKey, chosenName, privateKey),
+							'hnsRegister'
+						);
+						console.log('Registered holon name in HNS:', chosenName);
+					} catch (error) {
+						console.warn('Failed to register holon name in HNS:', error);
+					}
 				}
 			} else if (nameSource === 'fallback') {
 				// Returning user with slow relay AND no HNS — do NOT overwrite with "My Holon"
@@ -328,109 +335,6 @@
 		}
 	}
 
-	// Set up global federation DM subscription for receiving requests/responses
-	function setupFederationDMSubscription(privateKey: string) {
-		if (!holosphere || dmUnsubscribe) return;
-
-		const publicKey = holosphere.client?.publicKey;
-		if (!publicKey) {
-			console.warn('Cannot set up federation DM subscription: no public key');
-			return;
-		}
-
-		console.log('Setting up global federation DM subscription...');
-
-		dmUnsubscribe = handshake.subscribeToFederationDMs(
-			holosphere,
-			privateKey,
-			publicKey,
-			{
-				onRequest: async (request: any, senderPubKey: string) => {
-					console.log('[Global DM] Federation request received from:', senderPubKey?.slice(0, 8));
-					// Dispatch event for UI components to handle
-					if (browser) {
-						window.dispatchEvent(new CustomEvent('federationRequest', {
-							detail: { request, senderPubKey }
-						}));
-					}
-				},
-				onResponse: async (response: any, senderPubKey: string) => {
-					console.log('[Global DM] Federation response received:', response?.status, 'from:', senderPubKey?.slice(0, 8));
-
-					// Process the response (creates federation on our side)
-					if (response.status === 'accepted') {
-						try {
-							const currentHolonId = holosphere.client?.publicKey;
-							if (currentHolonId) {
-								// Process the response to complete federation on our side
-								const result = await handshake.processFederationResponse(
-									holosphere,
-									response,
-									senderPubKey,
-									{
-										holonId: currentHolonId,
-										inboundLenses: response.lensConfig?.lenses || response.lensConfig?.outbound || []
-									}
-								);
-								console.log('[Global DM] processFederationResponse result:', result);
-
-								// Store federation relationship with lens config
-								// In the new share protocol, lenses are symmetric - no swapping needed
-								if (response.responderHolonId) {
-									const sharedLenses = response.lensConfig?.lenses || [...new Set([
-										...(response.lensConfig?.inbound || []),
-										...(response.lensConfig?.outbound || [])
-									])];
-									const initiatorLensConfig = {
-										lenses: sharedLenses,
-										inbound: sharedLenses,
-										outbound: sharedLenses
-									};
-									await holosphere.federateHolon(currentHolonId, response.responderHolonId, {
-										lensConfig: initiatorLensConfig,
-										partnerName: response.responderHolonName,
-										skipPropagation: true // Data already propagated by processFederationResponse
-									});
-									console.log('[Global DM] Federation stored with:', response.responderHolonId, 'lensConfig:', initiatorLensConfig);
-								}
-							}
-						} catch (error) {
-							console.error('[Global DM] Failed to process federation response:', error);
-						}
-					}
-
-					// Dispatch event for UI refresh
-					if (browser) {
-						window.dispatchEvent(new CustomEvent('federationResponse', {
-							detail: { response, senderPubKey }
-						}));
-					}
-				},
-				onUpdate: async (update: any, senderPubKey: string) => {
-					console.log('[Global DM] Federation update received from:', senderPubKey?.slice(0, 8), update);
-
-					// DON'T auto-accept - dispatch event for UI to show approval dialog
-					// The update contains: newLensConfig (with capabilities), senderHolonId, senderHolonName, message
-					if (browser) {
-						window.dispatchEvent(new CustomEvent('federationUpdate', {
-							detail: { update, senderPubKey }
-						}));
-					}
-				},
-				onUpdateResponse: (response: any, senderPubKey: string) => {
-					console.log('[Global DM] Federation update response received from:', senderPubKey?.slice(0, 8));
-					if (browser) {
-						window.dispatchEvent(new CustomEvent('federationUpdateResponse', {
-							detail: { response, senderPubKey }
-						}));
-					}
-				}
-			}
-		);
-
-		console.log('Global federation DM subscription active');
-	}
-
 	// Synchronous routing used to render the dashboard immediately, before the
 	// background reconciliation in initializeUserHolon resolves names/settings.
 	// The holon namespace is fully determined by the telegram id (or pubkey) and
@@ -477,154 +381,78 @@
 		console.log('Initializing HoloSphere with user key...');
 		// Build the instance through @holons/core/holosphere — the single
 		// factory every UI uses (CLAUDE.md: core owns meaning, UIs only
-		// render). `awaitReady: true` returns the instance after ready()
-		// has resolved, which is a no-op in alpha7 but keeps the contract.
-		// Backend selection:
-		//   VITE_HOLOSPHERE_BACKEND = gun (default) | nostr
-		//   VITE_HOLOSPHERE_RELAYS  = comma-separated wss:// relay URLs
-		// With `nostr`, the relay(s) are the wire: Gun runs peerless as the
-		// local-first cache and every read/write/subscription syncs over the
-		// Nostr relay (holosphere relay-transport). Requires relays; holosphere
-		// falls back to the gun backend (with a console warning) without them.
-		const backendEnv = (import.meta.env.VITE_HOLOSPHERE_BACKEND || 'gun').toLowerCase();
-		const backendRelays = (import.meta.env.VITE_HOLOSPHERE_RELAYS || '')
-			.split(',').map((r: string) => r.trim()).filter(Boolean);
-		// On the nostr backend, shadow/enforce flow through the constructor
-		// (the backend init owns the signer, envelope-only); the manual
-		// enableSigning call below stays gun-backend-only.
-		const signingModeEnv = (import.meta.env.VITE_HOLOSPHERE_SIGNING || 'off').toLowerCase();
+		// render). The relays are the wire: every read/write/subscription
+		// travels as a signed kind-30078 event and is mirrored into the local
+		// IndexedDB store, so a reload paints instantly and then catches up
+		// from its cursor. Env:
+		//   VITE_HOLOSPHERE_RELAYS      = comma-separated wss:// relay URLs
+		//                                 (default: the production relays)
+		//   VITE_HOLOSPHERE_PROJECTIONS = all (default) | off | quests,…
+		// Every write is signed by the user's key and published; there is no
+		// signing mode to pick.
+		const relays = resolveRelays(import.meta.env.VITE_HOLOSPHERE_RELAYS);
+		// Standard-kind projections (on for every lens by default): writes are
+		// ALSO published as their standard Nostr kind next to the 30078 record. The logged-in user's own
+		// key signs their kind-0 profile / RSVPs; nobody else's. See
+		// packages/holosphere/NOSTR-BACKEND.md.
+		const projectionLenses = parseProjectionList(import.meta.env.VITE_HOLOSPHERE_PROJECTIONS);
+		const ownPubkey = nostrStore.getState().publicKey || '';
+		// Reverse sync (VITE_HOLOSPHERE_PROJECTIONS_SYNC=on|off, default on):
+		// external edits of those kinds are folded back into the records. In
+		// the browser only our own key and the read-list are trusted; the bot
+		// (which knows every member's derived key) is the authority for RSVPs.
+		const reverseSync = !['off', 'false', '0', 'no'].includes(
+			String(import.meta.env.VITE_HOLOSPHERE_PROJECTIONS_SYNC || 'on').trim().toLowerCase()
+		);
+		const projectionOptions = projectionLenses.length && ownPubkey
+			? {
+				projections: buildProjections(projectionLenses, {
+					appName: environmentName,
+					holonPubkey: ownPubkey,
+					cellToLatLng,
+					pubkeyFor: (id: string | number) =>
+						pendingTelegramUserId && String(id) === String(pendingTelegramUserId)
+							? ownPubkey
+							: undefined,
+					userIdFor: (pubkey: string) =>
+						pendingTelegramUserId && pubkey === ownPubkey ? pendingTelegramUserId : undefined,
+				}),
+				signerFor: (id: string | number) =>
+					pendingTelegramUserId && String(id) === String(pendingTelegramUserId) ? privateKey : null,
+				reverseSync,
+				// Our own key, plus the holon's seated keys: a member's kind-0 edit on
+				// any Nostr client folds back into their `users` record here too.
+				trustedAuthors: async (holon: string) => [
+					ownPubkey,
+					...(holosphere ? await membersTrustedAuthors(holosphere)(holon) : []),
+				],
+			}
+			: {};
 		holosphere = await createHoloSphere({
 			appName: environmentName,
 			privateKey: hexToBytes(privateKey),
+			relays,
+			store: { adapter: 'indexeddb' },
+			// Core registers its append-only logs (fund claims, mints, rights,
+			// votes — kind 1808) itself; entries are signed here with the member's
+			// own derived key (see components/flows/Flows.svelte,
+			// components/governance/ProposalVote.svelte).
+			nostr: projectionOptions,
+			// Authorized reads (VITE_HOLOSPHERE_ENFORCE=off reads the open graph).
+			enforce: resolveEnforce(import.meta.env.VITE_HOLOSPHERE_ENFORCE),
 			awaitReady: true,
-			...(backendEnv === 'nostr'
-				? {
-					backend: 'nostr',
-					extra: {
-						nostr: { relays: backendRelays },
-						signing: {
-							shadow: signingModeEnv === 'shadow',
-							enforce: signingModeEnv === 'enforce',
-						},
-					},
-				}
-				: {}),
 		});
 
 		// Log the public key for verification
 		if (holosphere.client) {
 			console.log("HoloSphere Public Key:", holosphere.client.publicKey);
 		}
+		console.log(`[holosphere] ${relays.length} relay(s)`);
 
-		// Opt-in NIP-01 signing (holosphere). Controlled by env:
-		//   VITE_HOLOSPHERE_SIGNING   = off (default) | shadow | enforce
-		//   VITE_HOLOSPHERE_RELAYS    = comma-separated wss:// relay URLs (optional)
-		//   VITE_HOLOSPHERE_READ_KEYS = comma-separated npub/hex keys to trust
-		// - off:     no change (default — safe for production).
-		// - shadow:  sign-on-write + publish to relay(s) + measure; reads are
-		//            UNCHANGED. Inspect via window.__signingReport().
-		// - enforce: reads return only your own writes + writes from keys in your
-		//            federation read-list (VITE_HOLOSPHERE_READ_KEYS / addReadKey).
-		//            Your own key is always trusted.
-		// Guarded so it's a no-op on holosphere builds without signing.
-		const signingMode = signingModeEnv;
-		// Install console debug/repair helpers (__del / __nuke / __repairCircular /
-		// __signingReport) regardless of signing mode, then enable signing only when
-		// it's actually on. The repair helpers operate at the raw Gun layer and must
-		// stay available with signing off — that's how circular-hologram husks get
-		// cleaned up. (Previously these were nested inside the signing branch, so
-		// VITE_HOLOSPHERE_SIGNING=off silently removed them.)
 		if (typeof window !== 'undefined') {
-			try {
-				const relays = (import.meta.env.VITE_HOLOSPHERE_RELAYS || '')
-					.split(',').map((r: string) => r.trim()).filter(Boolean);
-				const readKeys = (import.meta.env.VITE_HOLOSPHERE_READ_KEYS || '')
-					.split(',').map((r: string) => r.trim()).filter(Boolean);
-				// Gun backend only: the nostr backend already enabled its own
-				// envelope-only signer during init (re-enabling here would
-				// bolt on a second publisher next to the relay transport).
-				if (backendEnv !== 'nostr' && signingMode !== 'off' && typeof (holosphere as any).enableSigning === 'function') {
-					await (holosphere as any).enableSigning({
-						relays,
-						readKeys,
-						shadow: signingMode === 'shadow',
-						enforce: signingMode === 'enforce',
-					});
-					console.log(`[signing] enabled (${signingMode})`, relays.length ? `→ ${relays.length} relay(s)` : '(local envelopes only)');
-				}
-				// Nostr backend: signer is already up (envelope-only) — just
-				// seed the read-list from env for enforce mode.
-				if (backendEnv === 'nostr' && readKeys.length && typeof (holosphere as any).addReadKey === 'function') {
-					for (const k of readKeys) {
-						try { await (holosphere as any).addReadKey(k); } catch { /* bad key format */ }
-					}
-				}
-				if (typeof window !== 'undefined') {
-					(window as any).__signingReport = () => (holosphere as any).getShadowReport?.();
-					// Direct delete escape hatch for known-bad/storming keys, e.g.
-					// await __del('123','quests','moufplh7i0t').
-					(window as any).__del = (h: string, l: string, k: string) => (holosphere as any).delete(h, l, k);
-					// Raw-overwrite to null (in case a signed delete is itself blocked
-					// under enforce): nukes the node so Gun stops re-emitting it.
-					(window as any).__nuke = (h: string, l: string, k: string) => new Promise((res) => {
-						(holosphere as any).gun.get((holosphere as any).appname).get(h).get(l).get(k).put(null, (a: any) => res(a));
-					});
-					// Circular-hologram repair. Mutual federation can leave A/x <-> B/x
-					// hologram cycles that make Gun re-emit map().on() forever (heap
-					// blowup on the next write to that lens). Scans a lens, follows each
-					// hologram's soul chain, and deletes the LOCAL pointer of any that
-					// loops back on itself — breaking the ping-pong. Run from the
-					// console, e.g. await __repairCircular('123','quests').
-					(window as any).__repairCircular = async (holon: string, lens = 'quests') => {
-						const hs: any = holosphere;
-						const app = hs.appname;
-						const readRaw = (h: string, l: string, k: string) => new Promise<any>((resolve) => {
-							let done = false; const fin = (v: any) => { if (!done) { done = true; resolve(v); } };
-							hs.gun.get(app).get(h).get(l).get(k).once((d: any) => {
-								if (d == null) return fin(null);
-								try { fin(typeof d === 'string' ? JSON.parse(d) : d); } catch { fin(d); }
-							});
-							setTimeout(() => fin(null), 1500);
-						});
-						const keys: string[] = await new Promise((resolve) => {
-							const set = new Set<string>();
-							hs.gun.get(app).get(holon).get(lens).map().once((d: any, k: string) => { if (d != null && k !== '_') set.add(k); });
-							setTimeout(() => resolve([...set]), 2500);
-						});
-						const removed: string[] = [];
-						for (const key of keys) {
-							const item = await readRaw(holon, lens, key);
-							if (!item || !hs.isHologram(item)) continue;
-							const visited = new Set([`${holon}/${lens}/${key}`]);
-							let cur = item, hops = 0, circular = false;
-							while (cur && hs.isHologram(cur) && hops < 16) {
-								const sp = hs.parseSoulPath(cur.soul);
-								if (!sp || !sp.holon) break;
-								const id = `${sp.holon}/${sp.lens}/${sp.key}`;
-								if (visited.has(id)) { circular = true; break; }
-								visited.add(id);
-								cur = await readRaw(sp.holon, sp.lens, sp.key);
-								hops++;
-							}
-							if (circular) {
-								// Raw-nuke (.put(null)) — forceful; bypasses the slow signed
-								// delete that routes through the enforce layer during a storm.
-								await new Promise<void>((res) => {
-									let d = false; const f = () => { if (!d) { d = true; res(); } };
-									try { hs.gun.get(app).get(holon).get(lens).get(key).put(null, () => f()); } catch { f(); }
-									setTimeout(f, 2000);
-								});
-								removed.push(key);
-								console.warn('[repair] nuked circular', `${holon}/${lens}/${key}`);
-							}
-						}
-						console.log(`[repair] ${holon}/${lens}: scanned ${keys.length}, nuked ${removed.length} circular holograms:`, removed, '— RELOAD to resume.');
-						return removed;
-					};
-				}
-			} catch (e) {
-				console.warn('[holosphere] signing/helper setup failed:', (e as any)?.message);
-			}
+			// Direct delete escape hatch for known-bad keys, e.g.
+			// await __del('123','quests','moufplh7i0t').
+			(window as any).__del = (h: string, l: string, k: string) => (holosphere as any).delete(h, l, k);
 		}
 
 		// Notify holonsbot on every put so the bot can bootstrap (or refresh)
@@ -669,9 +497,6 @@
 		// Update the global store (this can be called from async callbacks)
 		holosphereStore.set(holosphere);
 
-		// Set up global federation DM subscription
-		setupFederationDMSubscription(privateKey);
-
 		// Initialize the user's personal holon with their telegram-id (or pubkey)
 		// as the namespace. Skipped only on protected/standalone routes.
 		if (browser) {
@@ -685,7 +510,7 @@
 				// holon namespace is fully determined by the telegram id (or
 				// pubkey) and the URL — none of it needs the relay. Doing the
 				// ID/route now lets the splash hide and the dashboard render as
-				// soon as Gun is constructed; the slow part of
+				// soon as the instance is constructed; the slow part of
 				// initializeUserHolon (settings read retries, HNS lookup +
 				// register, settings/mappings writes) used to be awaited here
 				// and, on a cold device with an empty cache, stalled toward each
@@ -719,10 +544,6 @@
 	onDestroy(() => {
 		if (gcInterval) {
 			clearInterval(gcInterval);
-		}
-		if (dmUnsubscribe) {
-			dmUnsubscribe();
-			dmUnsubscribe = null;
 		}
 	});
 
@@ -775,7 +596,7 @@
 				}
 			}
 		} catch (err) {
-			// initHoloSphere can throw on invalid keys or Nostr/Gun init failures.
+			// initHoloSphere can throw on invalid keys or relay/store init failures.
 			// Without this catch the splash would stay visible forever — surface
 			// the failure to the user instead of hanging on the loading view.
 			console.error('HoloSphere initialization failed:', err);

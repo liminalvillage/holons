@@ -24,9 +24,11 @@ import {
     executeCompletionPlan,
     toggleParticipant,
     toggleAppreciation,
+    hostsOf,
     type Quest as CoreQuest,
 } from '@holons/core/tasks';
 import { DEFAULT_EQUATION } from '@holons/core/scoring';
+import { hostTelegramPicture } from './Pictures.js';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
@@ -246,7 +248,8 @@ export default class Events {
             message_thread_id: ctx.message?.is_topic_message ? ctx.message.message_thread_id : null,
             initiator: sender,
             title,
-            picture,
+            // A hosted URL every bot and surface can open (file_id on failure).
+            picture: await hostTelegramPicture(ctx.telegram, picture),
             type: 'event',
             status: 'ongoing',
             date: Date.now(),
@@ -287,12 +290,8 @@ export default class Events {
         }
 
         // Persist via @holons/core/tasks so the bot/web/text UIs share one
-        // persistence path. Events live in the `events` lens, not `quests`,
-        // so route through a thin lens-rewriting adapter.
-        const eventsLensAdapter = {
-            put: (h: string, _lens: string, v: unknown) => this.db.put(h, 'events', v),
-        };
-        await saveTasksToHolon(eventsLensAdapter, holonId.toString(), [event as CoreQuest]);
+        // persistence path. The bot's events live in the `events` lens.
+        await saveTasksToHolon(this.db, holonId.toString(), [event as CoreQuest], 'events');
 
         // Update buttons and pin message
         const eventHolon = Events.getEventHolon(event);
@@ -413,7 +412,9 @@ export default class Events {
         const equation =
             (await this.settings?.getValueEquation(holonId).catch(() => null)) || DEFAULT_EQUATION;
         const plan = planTaskCompletion(event, equation, { holonId });
-        await executeCompletionPlan(this.db, this.users.getEventStore(), holonId, plan);
+        // Name the lens: the executor saves the completed record, and without
+        // it every completed event left a second copy in `quests`.
+        await executeCompletionPlan(this.db, this.users.getEventStore(), holonId, plan, { lens: 'events' });
 
         ctx.reply(`Event "${event.title}" completed! 🎊`, { reply_to_message_id: eventID }).catch(() => {});
     }
@@ -669,6 +670,9 @@ export default class Events {
 
         if (event.description) lines.push(`| ... ${event.description}`);
         if (event.frequency) lines.push(`| ... ${i18next.t('repeat', { lng: language })}: ${i18next.t(event.frequency, { lng: language })}`);
+
+        const hosts = hostsOf(event);
+        if (hosts.length) lines.push(`| 👑: ${hosts.map(u => getDisplayName(u)).join(', ')}`);
 
         if (event.participants?.length) {
             const names = event.participants.map(u => getDisplayName(u));

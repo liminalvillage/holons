@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toggleAppreciation, toggleParticipant } from './participants.js';
+import { rosterDiff, setParticipants, toggleAppreciation, toggleParticipant } from './participants.js';
 import type { Quest } from './types.js';
 
 function quest(over: Partial<Quest> = {}): Quest {
@@ -69,5 +69,52 @@ describe('wire-format tolerance (quests straight off the graph)', () => {
     });
     const out = toggleParticipant(raw, { id: 7 });
     expect(ID(out, 'participants')).toEqual(['9', '7']);
+  });
+});
+
+describe('setParticipants (edit-form roster)', () => {
+  it('replaces the roster: absent members are dropped, new ones added', () => {
+    const start = quest({ participants: [{ id: 1 }, { id: 2 }] });
+    const out = setParticipants(start, [{ id: 2 }, { id: 3, username: 'ada' }]);
+    expect(ID(out, 'participants')).toEqual(['2', '3']);
+    expect(start.participants).toHaveLength(2); // input untouched
+  });
+
+  it('folds duplicate ids and skips entries without an id', () => {
+    const out = setParticipants(quest(), [
+      { id: 1, username: 'a' },
+      { id: '1', username: 'b' },
+      { username: 'ghost' } as { id?: never; username: string },
+    ]);
+    expect(out.participants).toEqual([{ id: 1, username: 'a' }]);
+  });
+
+  it('every member placed on the roster leaves the appreciation list', () => {
+    const start = quest({ appreciation: [{ id: 7 }, { id: 8 }] });
+    const out = setParticipants(start, [{ id: 7 }]);
+    expect(ID(out, 'participants')).toEqual(['7']);
+    expect(ID(out, 'appreciation')).toEqual(['8']);
+  });
+
+  it('tolerates a stringified wire roster', () => {
+    const start = quest({ appreciation: '[{"id":5}]' as unknown as never });
+    const out = setParticipants(start, [{ id: 5 }]);
+    expect(ID(out, 'appreciation')).toEqual([]);
+  });
+});
+
+describe('rosterDiff', () => {
+  it('names who joined and who left, by id', () => {
+    const { joined, left } = rosterDiff(
+      [{ id: 1 }, { id: 2, username: 'bo' }],
+      [{ id: '2' }, { id: 3 }]
+    );
+    expect(joined.map((p) => String(p.id))).toEqual(['3']);
+    expect(left.map((p) => String(p.id))).toEqual(['1']);
+  });
+
+  it('treats a missing roster as empty', () => {
+    expect(rosterDiff(undefined, [{ id: 1 }]).joined).toHaveLength(1);
+    expect(rosterDiff([{ id: 1 }], undefined).left).toHaveLength(1);
   });
 });

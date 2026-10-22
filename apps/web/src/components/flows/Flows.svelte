@@ -1,29 +1,34 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
-  // Value Flows — the dashboard twin of the kiosk's Flows board.
+  // Value Flows — the dashboard twin of the kiosk's Flows board, built the way
+  // the kiosk builds a board: one column, one pill to switch panels, cards a
+  // thumb can tap, and sheets that slide up instead of tables that scroll
+  // sideways. Every panel is a different reading of the same core domain, so
+  // none of them can disagree.
   //
-  // MOVEMENT: what came in and went out, from the expenses lens, the REA stream
-  // and (when a collective is configured) OpenCollective.
-  // ALLOCATION: where the holon's resources are committed — the same
-  // interior/exterior split Flow Management pushes on-chain, read off-chain from
-  // the settings lens and applied to the collective's real balance.
+  //   MOVEMENT   what came in and went out — expenses lens, REA stream and
+  //              (when a collective is configured) OpenCollective, as a Sankey.
+  //   BALANCES   the mutual credit behind the expenses lens: who is owed, who
+  //              owes, the fewest transfers that square everyone, and the way
+  //              to add an expense or record a repayment.
+  //   ALLOCATION where the holon's resources are committed — the interior /
+  //              exterior split Flow Management pushes on-chain, editable here
+  //              off-chain.
+  //   LEDGER     every entry the diagrams are drawn from, one row each.
   //
-  // Both are Sankeys over one core domain, so this view and the kiosk's cannot
-  // disagree. Distinct from /[id]/flow, the concentric editor: reading here
-  // needs no wallet, and the allocation panel only asks for one at the moment
-  // somebody pushes the split on-chain — a save off-chain works without.
+  // Distinct from /[id]/flow, the concentric editor: reading here needs no
+  // wallet, and only pushing the split on-chain asks for one.
   //
-  // LEDGER: the entries both halves are drawn from, listed in full — same core
-  // walk, so a row and the bar above it are the same number. Search narrows it,
-  // and clicking a bar in Movement filters the list to what is inside it.
-  //
-  // Units never mix: no exchange rates exist in this repo, so each unit gets its
-  // own track rather than being summed into a fictional total.
+  // Units never mix: no exchange rates exist in this repo, so each unit gets
+  // its own track and each currency its own balance sheet.
 
-  import { onDestroy, onMount, getContext } from "svelte";
+  import { onDestroy, onMount, getContext, tick } from "svelte";
   import type { HoloSphere } from "holosphere";
   import { ID } from "../../dashboard/store";
+  import { telegramUser } from "$lib/stores/telegram";
+  import { nostrPublicKey } from "$lib/stores/nostr";
+  import { loadFilters, saveFilters } from "$lib/util/persistedFilters";
   import { REAEventStore, type REAEvent } from "@holons/core/rea";
   import {
     REAAggregator,
@@ -34,35 +39,112 @@
     type ScoreEquation,
   } from "@holons/core/scoring";
   import {
+    UNATTRIBUTED_ID,
     allocate,
+    buildWallet,
     allocationToGraph,
+    cascadeToGraph,
+    childResolver,
+    hasAllocationConfig,
+    loadCascadeChildren,
+    resolveCascade,
+    type CascadeInputs,
+    partyIdOf,
+    segmentTotal,
+    buildFundUsage,
     buildLedger,
+    buildPeopleFlows,
     buildValueFlows,
+    chordBreakdown,
+    layoutChord,
     DEFAULT_ALLOCATION_CONFIG,
-    filterLedger,
     HUB_ID,
     layoutSankey,
     ledgerTrackKey,
+    nodeBreakdown,
+    normalizeInteriorShares,
     readAllocationConfig,
+    readInteriorShares,
     readCollectiveSlug,
     readZoneAssignments,
-    sortLedger,
-    summarizeLedger,
+    readZonePeople,
+    resolveInteriorMembers,
+    rightsTotal,
     toAllocationPartners,
-    type LedgerDirection,
+    usageOf,
+    usageTotals,
+    usageUnits,
+    FLOW_CLAIMS_LENS,
+    FLOW_MINTS_LENS,
+    readPotRecord,
+    buildClaim,
+    buildTransfer,
+    buildClaimVerdict,
+    buildMint,
+    buildPayout,
+    cascadeRights,
+    claimCeilings,
+    claimHeadroom,
+    fitsHeadroom,
+    foldClaimsFromLenses,
+    foldMintsFromLenses,
+    loadInboundRights,
+    mintedIn,
+    potTotal,
+    potUnits,
+    scoreAllocationMembers,
+    type InboundRight,
+    type Claim,
+    type Transfer,
+    type AllocationSlice,
+    type BreakdownRow,
+    type ChordGroup,
+    type FundUsageParty,
+    type PeopleFlowTrack,
+    type InteriorShares,
     type LedgerEntry,
     type LedgerSource,
-    type LedgerTotals,
     type OpenCollectiveSnapshot,
     type SankeyLayoutLink,
     type SankeyLayoutNode,
     type ValueFlowTrack,
   } from "@holons/core/flows";
   import { getFederationSnapshot } from "@holons/core/federation";
+  import {
+    MEMBERS_LENS,
+    POLICY_LENS,
+    POLICY_ROLES,
+    importPartnerLogs,
+    normalizePolicy,
+    policyRecord,
+    samePolicy,
+    type PartnerImport,
+    type Policy,
+    type Role,
+    readMembersLog,
+    type LogEvent,
+    type MembershipEnvelope,
+  } from "@holons/core/protocol";
+  import { attestationsFrom, SHIFT_IDENTITY_LENS, type IdentityAttestation } from "@holons/core/shifts";
   import { buildNameMap } from "@holons/core/identity";
-  import type { Expense } from "@holons/core/expenses";
+  import { nameMap as knownNames, resolvedName } from "$lib/stores/nameResolver";
+  import {
+    computeMutualCredit,
+    expenseCurrencies,
+    normalizeCurrency,
+    participantIds,
+    type Expense,
+  } from "@holons/core/expenses";
   import SankeyChart from "./SankeyChart.svelte";
+  import ChordChart from "./ChordChart.svelte";
   import AllocationEditor from "./AllocationEditor.svelte";
+  import { may } from "@holons/core/holosphere";
+  import PillSwitch from "./PillSwitch.svelte";
+  import Sheet from "./Sheet.svelte";
+  import BalancesPanel from "./BalancesPanel.svelte";
+  import PotPanel from "./PotPanel.svelte";
+  import LedgerPanel from "./LedgerPanel.svelte";
+  import { dateFmt, formatter, trackKey, trackLabel, type Formatter } from "./format";
 
   const holosphere = getContext("holosphere") as HoloSphere;
 
@@ -71,6 +153,19 @@
     { id: "90", label: "90 days", days: 90 },
     { id: "all", label: "All time", days: null },
   ] as const;
+
+  type Panel = "movement" | "people" | "balances" | "allocation" | "ledger";
+  const PANELS: { id: Panel; label: string; glyph: string }[] = [
+    { id: "movement", label: "Movement", glyph: "⇄" },
+    { id: "people", label: "Between people", glyph: "◎" },
+    { id: "balances", label: "Balances", glyph: "⚖" },
+    { id: "allocation", label: "Fund allocation rights", glyph: "◔" },
+    { id: "ledger", label: "Ledger", glyph: "☰" },
+  ];
+
+  // What the person last looked at, per device — a board remembers its tab.
+  let prefs = loadFilters("flows", { panel: "movement", currency: "", window: "90" });
+  $: saveFilters("flows", prefs);
 
   let holonID = "";
   let loading = true;
@@ -81,12 +176,10 @@
   let collective: OpenCollectiveSnapshot | null = null;
   let collectiveError = "";
   let equation: ScoreEquation = DEFAULT_EQUATION;
-  let partners: { id: string; name: string; zone: number }[] = [];
+  let partners: { id: string; name: string; zone: number; kind?: "holon" | "person" }[] = [];
   let memberShares: { id: string; name: string; percentage: number }[] = [];
 
-  let windowId = "90";
   let trackId = "";
-  let selected: SankeyLayoutNode | null = null;
 
   let expensesSub: any;
   let usersSub: any;
@@ -94,18 +187,410 @@
   let reaSub: any;
   let rescoreTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // ── The signed claims log ───────────────────────────────────────────────
+  // A claim is a signed, append-only entry in the holon's own log (kind 1808).
+  // This instance signs with the member's own derived key, so `append` is
+  // enough; whether an entry counts is the fold's call (core), from the
+  // membership log, settings, users and the identity directory — the same
+  // fold the kiosk and the bot run.
+  let claimEntries = new Map<string, LogEvent<unknown>>();
+  // The mints log — what the fund holds to divide — read the same way.
+  let mintEntries = new Map<string, LogEvent<unknown>>();
+  let policyEntries = new Map<string, LogEvent<unknown>>();
+  let membersLog: MembershipEnvelope[] = [];
+  let attestations: IdentityAttestation[] = [];
+  let claimImports: PartnerImport[] = [];
+  let claimsOffs: Array<() => void> = [];
+  let claimsBoundTo = "";
+  let claimAmount = "";
+  let claimMemo = "";
+  let claimBusy = false;
+  let claimError = "";
+  // The give: part of your access handed to another party — a `transfer`
+  // in the same log, judged under the same access.
+  let giveTo = "";
+  let giveAmount = "";
+  let giveMemo = "";
+  $: if (holonID && holonID !== claimsBoundTo) bindClaims(holonID);
+  function bindClaims(id: string) {
+    unbindClaims();
+    claimsBoundTo = id;
+    claimEntries = new Map();
+    mintEntries = new Map();
+    policyEntries = new Map();
+    membersLog = [];
+    claimsOffs.push(
+      holosphere.subscribeLog(id, FLOW_CLAIMS_LENS, (e) => {
+        if (claimsBoundTo !== id) return;
+        claimEntries.set(e.id, e as LogEvent<unknown>);
+        claimEntries = claimEntries;
+      }),
+    );
+    claimsOffs.push(
+      holosphere.subscribeLog(id, FLOW_MINTS_LENS, (e) => {
+        if (claimsBoundTo !== id) return;
+        mintEntries.set(e.id, e as LogEvent<unknown>);
+        mintEntries = mintEntries;
+      }),
+    );
+    claimsOffs.push(
+      holosphere.subscribeLog(id, POLICY_LENS, (e) => {
+        if (claimsBoundTo !== id) return;
+        policyEntries.set(e.id, e as LogEvent<unknown>);
+        policyEntries = policyEntries;
+        void refreshClaimImports(id);
+      }),
+    );
+    void (async () => {
+      try {
+        await holosphere.getAll(id, MEMBERS_LENS);
+        const log = await readMembersLog(holosphere, id);
+        if (claimsBoundTo === id) membersLog = log;
+      } catch {
+        /* not founded yet */
+      }
+      try {
+        const dir = (await holosphere.getAllGlobal(SHIFT_IDENTITY_LENS)) as never[];
+        if (claimsBoundTo === id) attestations = attestationsFrom(dir || []);
+      } catch {
+        /* no directory */
+      }
+    })();
+  }
+  // The partners the policy pins are read by their own rules (their log,
+  // their membership, their policy); re-read when the policy log moves.
+  let importsFor = "";
+  async function refreshClaimImports(id: string) {
+    const key = [...policyEntries.keys()].sort().join(",");
+    if (key === importsFor) return;
+    importsFor = key;
+    await tick(); // claimsCtx has folded the new policy entries
+    try {
+      const next = claimsCtx ? await importPartnerLogs(holosphere, FLOW_CLAIMS_LENS, claimsCtx.policy) : [];
+      if (claimsBoundTo === id) claimImports = next;
+    } catch {
+      claimImports = [];
+    }
+  }
+  function unbindClaims() {
+    for (const off of claimsOffs) off();
+    claimsOffs = [];
+    claimsBoundTo = "";
+    claimImports = [];
+    importsFor = "";
+  }
+  onDestroy(unbindClaims);
+  // Folded twice, both by core: once for the SHAPE (who claimed what sizes
+  // usage and the pot), then JUDGED under the ceilings that shape, the pot
+  // and the usage give — a claim past a right is held as `over`. The
+  // ceilings do not depend on which fold the usage came from (core
+  // `ceiling.ts`), so there is no cycle.
+  $: claimsShape = holonID
+    ? foldClaimsFromLenses({
+        holonId: holonID,
+        entries: [...claimEntries.values()],
+        policyEntries: [...policyEntries.values()],
+        membersLog,
+        settings,
+        users: Object.values(usersById),
+        attestations,
+        imports: claimImports,
+      })
+    : null;
+  $: claimsCtx = holonID && claimsShape
+    ? foldClaimsFromLenses({
+        holonId: holonID,
+        entries: [...claimEntries.values()],
+        policyEntries: [...policyEntries.values()],
+        membersLog,
+        settings,
+        users: Object.values(usersById),
+        attestations,
+        imports: claimImports,
+        rights: ceilings,
+      })
+    : null;
+  $: mintsCtx = holonID
+    ? foldMintsFromLenses({
+        holonId: holonID,
+        entries: [...mintEntries.values()],
+        policyEntries: [...policyEntries.values()],
+        membersLog,
+        settings,
+        users: Object.values(usersById),
+        attestations,
+      })
+    : null;
+  $: myLogRole = claimsCtx
+    ? claimsCtx.actors.roleAt(holosphere.currentPubkey, Math.floor(Date.now() / 1000))
+    : null;
+  $: canMint = !!(mintsCtx && myLogRole && mintsCtx.policy.attesters.includes(myLogRole));
+  let mintAmount = "";
+  let mintUnit = "";
+  let mintMemo = "";
+  let mintSource = "";
+  let mintBusy = false;
+  let mintError = "";
+  $: if (!mintUnit && potUnitList.length) mintUnit = potUnitList[0].toUpperCase();
+  async function submitMint() {
+    if (!holonID || mintBusy) return;
+    const amount = Number(String(mintAmount).replace(",", "."));
+    const unit = mintUnit.trim().toUpperCase();
+    if (!(amount > 0) || !unit) return;
+    mintBusy = true;
+    mintError = "";
+    try {
+      const a = buildMint({ amount, unit, memo: mintMemo.trim() || undefined, source: mintSource || undefined });
+      await holosphere.append(holonID, FLOW_MINTS_LENS, a.item, { refs: a.refs });
+      mintAmount = "";
+      mintMemo = "";
+    } catch (err) {
+      mintError = err instanceof Error ? err.message : String(err);
+    } finally {
+      mintBusy = false;
+    }
+  }
+  const mintStatusLabel: Record<string, string> = {
+    issued: "Issued",
+    pending: "Awaiting attestation",
+    disputed: "Disputed",
+    conflict: "Conflict",
+    rejected: "Not counted",
+  };
+
+  // ---- What reaches this fund from upstream -------------------------------------
+  // A partner whose split seats this holon passes part of ITS pot here (core
+  // climbs the federation record a bounded number of hops).
+  let inbound: InboundRight[] = [];
+  async function loadInbound(id: string) {
+    try {
+      const got = await loadInboundRights(holosphere, id, {
+        scoreOf: (hid) => scoreAllocationMembers(holosphere, hid),
+      });
+      if (holonID === id) inbound = got.inbound;
+    } catch {
+      if (holonID === id) inbound = [];
+    }
+  }
+
+  // ---- The pot -------------------------------------------------------------------
+  // What there is to divide, per unit: the collective's money, what was minted
+  // here, what reaches here. One unit is drawn at a time.
+  let potUnitPick = "";
+  // The holon's Pot, when it has one: what it received on chain is the pot
+  // in those units, and a right in them is collected from the Pot by its
+  // table, never claimed in the log (`held` below). The panel reads the chain.
+  $: potRecord = readPotRecord(settings);
+  let potChain: Record<string, number> = {};
+  $: if (!potRecord && Object.keys(potChain).length) potChain = {};
+  $: potSources = {
+    collective: collective ? { currency: collective.currency, balance: collective.balance } : null,
+    mints: mintsCtx?.folded ?? null,
+    inbound,
+    chain: potChain,
+  };
+  $: potUnitList = potUnits(potSources);
+  $: potUnit = potUnitPick && potUnitList.includes(potUnitPick) ? potUnitPick : (potUnitList[0] ?? "");
+  $: potCollective =
+    collective && potUnit && normalizeCurrency(collective.currency) === potUnit ? collective : null;
+  $: potMinted = potUnit ? mintedIn(potUnit, potSources) : 0;
+  $: potInboundRows = inbound.filter((r) => normalizeCurrency(r.unit) === potUnit);
+  $: potLabel = potCollective
+    ? potCollective.name
+    : potMinted > 0
+      ? "Issued"
+      : potInboundRows.length
+        ? "From upstream"
+        : "Total";
+  $: canAttest = !!(claimsCtx && myLogRole && claimsCtx.policy.attesters.includes(myLogRole));
+  $: claimsProvisional = claimsCtx?.folded.source === "bootstrap";
+  $: claimUnit = potUnit;
+
+  // ── The claims policy ───────────────────────────────────────────────────
+  // A draft of the rule in force; "Set the rules" appends it to the policy
+  // log. This instance signs with the member's derived key: an admin's entry
+  // counts, anyone else's is recorded and ignored — said up front.
+  let rulesOpen = false;
+  let ruleAuthors: Role[] = [];
+  let ruleAttesters: Role[] = [];
+  let ruleQuorum = 0;
+  let ruleConflict: Policy["conflict"] = "earliest";
+  let rulePartners: Record<string, string> = {};
+  let rulesSeeded = "";
+  // Seed the draft from the rule in force whenever a different one lands.
+  $: if (claimsCtx) seedRules(claimsCtx.policy);
+  function seedRules(rule: Policy) {
+    const sig = JSON.stringify(normalizePolicy(rule));
+    if (sig === rulesSeeded) return;
+    rulesSeeded = sig;
+    const p = normalizePolicy(rule);
+    ruleAuthors = p.authors;
+    ruleAttesters = p.attesters;
+    ruleQuorum = p.quorum;
+    ruleConflict = p.conflict;
+    rulePartners = { ...p.partners };
+  }
+  $: ruleDraft = { authors: ruleAuthors, attesters: ruleAttesters, quorum: ruleQuorum, conflict: ruleConflict, partners: rulePartners } satisfies Partial<Policy>;
+  $: rulesUnchanged = samePolicy(ruleDraft, claimsCtx?.policy ?? null);
+  $: rulesCanSign = myLogRole === "admin";
+  function toggleRole(list: "authors" | "attesters", role: Role) {
+    const cur = list === "authors" ? ruleAuthors : ruleAttesters;
+    const next = cur.includes(role) ? cur.filter((r) => r !== role) : [...cur, role];
+    if (!next.length) return;
+    if (list === "authors") ruleAuthors = next;
+    else ruleAttesters = next;
+  }
+  // Each partner's published holon key, so a pin has something to pin.
+  let partnerKeys: Record<string, string | null> = {};
+  async function loadPartnerKeys() {
+    const out: Record<string, string | null> = {};
+    await Promise.all(
+      partners.map(async (p) => {
+        try {
+          const doc = (await holosphere.get(p.id, "settings", p.id)) as { holonPubkey?: unknown } | null;
+          const key = String(doc?.holonPubkey ?? "");
+          out[p.id] = /^[0-9a-f]{64}$/i.test(key) ? key.toLowerCase() : null;
+        } catch {
+          out[p.id] = null;
+        }
+      }),
+    );
+    partnerKeys = out;
+  }
+  function togglePartner(id: string) {
+    const key = partnerKeys[id];
+    if (!key) return;
+    const next = { ...rulePartners };
+    if (next[id]) delete next[id];
+    else next[id] = key;
+    rulePartners = next;
+  }
+  async function saveRules() {
+    if (!holonID || claimBusy || !rulesCanSign || rulesUnchanged) return;
+    claimBusy = true;
+    claimError = "";
+    try {
+      const a = policyRecord(FLOW_CLAIMS_LENS, ruleDraft);
+      await holosphere.append(holonID, POLICY_LENS, a.item, { refs: a.refs });
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    } finally {
+      claimBusy = false;
+    }
+  }
+  const claimStatusLabel: Record<Claim["status"], string> = {
+    approved: "Approved",
+    pending: "Awaiting attestation",
+    disputed: "Disputed",
+    over: "Over the access",
+    conflict: "Conflict",
+    settled: "Paid",
+    rejected: "Not counted",
+  };
+  // Claims and gives in one list, newest first: a give shows who it went to.
+  type LogRow = { kind: "claim"; c: Claim } | { kind: "give"; g: Transfer };
+  $: logRows = ((): LogRow[] => {
+    const rows: LogRow[] = [
+      ...(claimsCtx?.folded.claims ?? []).map((c) => ({ kind: "claim", c }) as LogRow),
+      ...(claimsCtx?.folded.transfers ?? []).map((g) => ({ kind: "give", g }) as LogRow),
+    ];
+    const at = (r: LogRow) => (r.kind === "claim" ? r.c.createdAt : r.g.createdAt);
+    return rows.sort((a, b) => at(a) - at(b)).slice(-20).reverse();
+  })();
+  // A person from the roster, a partner from the federation record, anyone
+  // else through the app's resolver — never a raw id.
+  const partyName = (id: string) => {
+    const mapped = nameMap.get(id);
+    if (mapped && mapped !== `#${id}`) return mapped;
+    return partners.find((p) => p.id === id)?.name || resolvedName(id, $knownNames);
+  };
+  async function submitClaim() {
+    if (!holonID || !selfId || claimBusy) return;
+    const amount = Number(String(claimAmount).replace(",", "."));
+    if (!(amount > 0) || !claimUnit) return;
+    if (!fitsHeadroom(claimMax, amount)) {
+      claimError = `That is more than what is left of your right (${claimMax} ${claimUnit.toUpperCase()}).`;
+      return;
+    }
+    claimBusy = true;
+    claimError = "";
+    try {
+      const a = buildClaim({ party: selfId, amount, unit: claimUnit, memo: claimMemo.trim() || undefined });
+      await holosphere.append(holonID, FLOW_CLAIMS_LENS, a.item, { refs: a.refs });
+      claimAmount = "";
+      claimMemo = "";
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    } finally {
+      claimBusy = false;
+    }
+  }
+  async function submitGive() {
+    if (!holonID || !selfId || claimBusy) return;
+    const amount = Number(String(giveAmount).replace(",", "."));
+    const to = giveTo.trim();
+    if (!(amount > 0) || !claimUnit || !to) return;
+    if (to === selfId) {
+      claimError = "A give names someone else.";
+      return;
+    }
+    if (!fitsHeadroom(claimMax, amount)) {
+      claimError = `That is more than your access (${claimMax} ${claimUnit.toUpperCase()}).`;
+      return;
+    }
+    claimBusy = true;
+    claimError = "";
+    try {
+      const a = buildTransfer({ party: selfId, to, amount, unit: claimUnit, memo: giveMemo.trim() || undefined });
+      await holosphere.append(holonID, FLOW_CLAIMS_LENS, a.item, { refs: a.refs });
+      giveAmount = "";
+      giveMemo = "";
+      giveTo = "";
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    } finally {
+      claimBusy = false;
+    }
+  }
+  async function judgeClaim(c: Claim, verdict: "attest" | "dispute") {
+    if (!holonID || claimBusy) return;
+    claimBusy = true;
+    claimError = "";
+    try {
+      const a = buildClaimVerdict(c.id, verdict);
+      await holosphere.append(holonID, FLOW_CLAIMS_LENS, a.item, { refs: a.refs });
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    } finally {
+      claimBusy = false;
+    }
+  }
+  async function markPaid(c: Claim) {
+    if (!holonID || claimBusy) return;
+    claimBusy = true;
+    claimError = "";
+    try {
+      const a = buildPayout({ claimId: c.id, party: c.party, amount: c.amount, unit: c.unit });
+      await holosphere.append(holonID, FLOW_CLAIMS_LENS, a.item, { refs: a.refs });
+    } catch (err) {
+      claimError = err instanceof Error ? err.message : String(err);
+    } finally {
+      claimBusy = false;
+    }
+  }
+
   // ---- Live lens state ------------------------------------------------------
   //
   // Every lens this component listens to is held as a keyed map and folded in
   // from the subscription payload itself. No handler reads the lens it is
-  // listening to: a read makes Gun re-emit that lens, the re-emission re-fires
+  // listening to: a read makes the store re-emit that lens, the re-emission re-fires
   // the handler, and the handler reads again — a loop that never settles, it
   // only paces itself at whatever the debounce is. One pass here rebuilds the
   // event list, the name map, both Sankeys and the entire ledger, so the tab
   // ends up doing that several times a second for as long as the page is open
   // and eventually runs out of room.
   //
-  // Gun re-emits value-identical records constantly on ordinary relay traffic,
+  // The store may re-emit value-identical records on ordinary relay traffic,
   // so each map also keeps a signature per id and drops echoes that carry no
   // change — otherwise the same rebuild happens for records that did not move.
   const eventsById = new Map<string, REAEvent>();
@@ -118,14 +603,18 @@
   let rescoreDue = false;
   // The federation record is a global, not a lens, so there is nothing to
   // listen to — a slow poll keeps a newly linked partner from needing a reload.
-  // It used to ride along on settings echoes, which is why deduping those needs
-  // a replacement here.
   let federationTimer: ReturnType<typeof setInterval> | null = null;
+  let loadingFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   const FEDERATION_POLL_MS = 60_000;
 
-  $: windowDays = WINDOWS.find((w) => w.id === windowId)?.days ?? 90;
+  $: panel = (PANELS.some((p) => p.id === prefs.panel) ? prefs.panel : "movement") as Panel;
+  $: windowDays = WINDOWS.find((w) => w.id === prefs.window)?.days ?? 90;
 
   $: if ($ID && $ID !== holonID) void bind($ID);
+
+  // The viewer: Telegram first, a Nostr key as fallback — the same order the
+  // rest of the dashboard resolves "me" in.
+  $: selfId = $telegramUser ? String($telegramUser.id) : ($nostrPublicKey ?? null);
 
   // Priority order is reaUsers < profiles, so a users-lens profile wins over
   // whatever username the event stream happened to carry.
@@ -134,8 +623,12 @@
     profiles: Object.values(usersById),
   });
 
-  // One input, two readings of it: the diagram and the ledger under it are the
-  // same core walk, so a bar and the rows inside it can never disagree.
+  // One input, every reading of it: the diagram, the ledger and the balances
+  // are the same records, grouped differently.
+  // The group an expense with no split is shared by: the users lens, less
+  // the holon itself, which older bot records could carry as a member.
+  $: memberIds = Object.keys(usersById).filter((id) => id && id !== holonID);
+
   $: flowInput = {
     holonId: holonID,
     events,
@@ -143,37 +636,124 @@
     collective,
     settings,
     windowDays,
+    members: memberIds,
     nameOf: (id: string) => nameMap.get(id),
     hubLabel: "Holon",
   };
 
   $: graph = buildValueFlows(flowInput);
-
   $: tracks = graph.tracks;
-
   $: if (tracks.length && !tracks.some((t) => trackKey(t) === trackId)) {
     trackId = trackKey(tracks[0]);
   }
-
   $: activeTrack = tracks.find((t) => trackKey(t) === trackId) ?? null;
   $: movementLayout = activeTrack ? layoutSankey(activeTrack) : null;
+  $: formatMovement = formatter(activeTrack);
+
+  // ---- Between people ---------------------------------------------------------
+  //
+  // The same records with both ends kept: who gave what to whom, one matrix
+  // per unit, drawn as a directed chord.
+  $: peopleTracks = buildPeopleFlows(flowInput);
+  let peopleTrackId = "";
+  const peopleKey = (track: PeopleFlowTrack) => `${track.id}:${track.unit}`;
+  $: if (peopleTracks.length && !peopleTracks.some((p) => peopleKey(p) === peopleTrackId)) {
+    peopleTrackId = peopleKey(peopleTracks[0]);
+  }
+  $: activePeople = peopleTracks.find((p) => peopleKey(p) === peopleTrackId) ?? null;
+  /** Stock and lends carry their own unit (kg, pack, lends). */
+  const peopleLabel = (p: PeopleFlowTrack) =>
+    p.id !== "items" ? trackLabel({ id: p.id, unit: p.unit }) : p.unit === "lends" ? "Lends" : p.unit;
+  $: formatPeople =
+    activePeople?.id === "items"
+      ? ((unit: string) => (v: number) => `${Math.round(v * 10) / 10} ${unit}`)(activePeople.unit)
+      : formatter(activePeople ? { id: activePeople.id as ValueFlowTrack["id"], unit: activePeople.unit } : null);
+
+  let selectedParty: ChordGroup | null = null;
+  // Who is rolled into whom does not depend on the radius, so any will do.
+  $: partyBreakdown =
+    selectedParty && activePeople
+      ? chordBreakdown(layoutChord(activePeople, { innerRadius: 100, othersLabel: "Others" }), selectedParty.id)
+      : null;
+
+  $: entries = buildLedger(flowInput).entries;
+
+  // ---- Balances: who can appear, and in which currency ------------------------
+  //
+  // The roster is everyone with any economic footprint — the users lens, the
+  // REA stream, every payer and sharer on an expense. People only: older bot
+  // records could carry the holon id in a split, so it is dropped here.
+  $: people = (() => {
+    const ids = new Set<string>();
+    for (const id of Object.keys(usersById)) ids.add(id);
+    for (const u of extractReaUsers(events)) ids.add(String(u.id));
+    for (const id of participantIds(expenses)) ids.add(id);
+    if (selfId) ids.add(selfId);
+    ids.delete(holonID);
+    const list = [...ids]
+      .filter(Boolean)
+      .map((id) => ({ id, name: partyName(id) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return list;
+  })();
+
+  // Every currency anyone has used or configured, normalized and deduped.
+  $: currencies = [
+    ...new Set(
+      [
+        ...expenseCurrencies(expenses),
+        ...((Array.isArray(settings?.currencies) ? settings.currencies : []) as unknown[])
+          .filter((c): c is string => typeof c === "string")
+          .map(normalizeCurrency),
+        ...events
+          .filter((e: any) => e?.resource?.type === "money" && e?.resource?.unit)
+          .map((e: any) => normalizeCurrency(String(e.resource.unit))),
+      ].filter(Boolean),
+    ),
+  ];
+
+  // Keep a valid currency selected: the remembered one if it is still in use,
+  // else the first available; USD only so a fresh holon can add its first.
+  $: currency = currencies.includes(prefs.currency)
+    ? prefs.currency
+    : (currencies[0] ?? (prefs.currency || "usd"));
+
+  // ---- Allocation -------------------------------------------------------------
 
   // The split is a live draft, seeded from the settings mirror and edited by
   // the panel below the diagram. `allocate()` runs off the draft, so a slider
   // moves the Sankey immediately — nothing is written until Save.
   let allocationConfig = { ...DEFAULT_ALLOCATION_CONFIG };
   let zoneOf: Record<string, number> = {};
+  // The hand-set contributors' split, read under `interiorMode: custom`.
+  let interiorShares: InteriorShares = {};
   let savedAllocation = {
     ...DEFAULT_ALLOCATION_CONFIG,
     zones: {} as Record<string, number>,
+    people: {} as Record<string, number>,
+    shares: {} as InteriorShares,
   };
+  // Partner holons found in the editor and not yet linked: seated in the
+  // draft so the diagram shows them before Save writes the record.
+  let newPartners: { id: string; name: string }[] = [];
+  $: partnerHolons = partners.filter((p) => p.kind !== "person");
+  $: partnersAll = [...partnerHolons, ...newPartners.filter((n) => !partnerHolons.some((p) => p.id === n.id)).map((n) => ({ ...n, zone: 0 }))];
+
+  function sameShares(a: InteriorShares, b: InteriorShares): boolean {
+    const ka = Object.keys(a);
+    const kb = Object.keys(b);
+    return ka.length === kb.length && ka.every((k) => a[k] === b[k]);
+  }
 
   $: allocationDirty =
     allocationConfig.interiorPercent !== savedAllocation.interiorPercent ||
     allocationConfig.steepness !== savedAllocation.steepness ||
     allocationConfig.nzones !== savedAllocation.nzones ||
-    partners.some(
-      (p) => (zoneOf[p.id] ?? 0) !== (savedAllocation.zones[p.id] ?? 0),
+    (allocationConfig.interiorMode ?? "equation") !== (savedAllocation.interiorMode ?? "equation") ||
+    !sameShares(normalizeInteriorShares(interiorShares), savedAllocation.shares) ||
+    newPartners.length > 0 ||
+    Object.keys({ ...zoneOf, ...savedAllocation.zones, ...savedAllocation.people }).some(
+      (id) => (zoneOf[id] ?? 0) !== (savedAllocation.zones[id] ?? savedAllocation.people[id] ?? 0),
     );
 
   /**
@@ -185,210 +765,267 @@
   function seedAllocation(doc: unknown) {
     const config = readAllocationConfig(doc);
     const zones = readZoneAssignments(doc);
+    const people = readZonePeople(doc);
+    const shares = readInteriorShares(doc);
     const wasDirty = allocationDirty;
-    savedAllocation = { ...config, zones };
+    savedAllocation = { ...config, zones, people, shares };
     if (!wasDirty) {
       allocationConfig = { ...config };
-      zoneOf = { ...zones };
+      // One ring map for partners and people: the editor tells them apart.
+      zoneOf = { ...zones, ...people };
+      interiorShares = { ...shares };
     }
   }
 
   /** Partners carry the draft's rings, not the saved ones. */
-  $: zonedPartners = partners.map((p) => ({
-    ...p,
-    zone: zoneOf[p.id] ?? 0,
-  }));
+  $: zonedPartners = [
+    ...partnersAll.map((p) => ({ ...p, zone: zoneOf[p.id] ?? 0 })),
+    // People on rings: in the ring map, not partner holons.
+    ...Object.entries(zoneOf)
+      .filter(([id, zone]) => zone >= 1 && !partnersAll.some((p) => p.id === id))
+      .map(([id, zone]) => ({ id, name: partyName(id), zone, kind: "person" as const })),
+  ];
+
+  // Who the contributors' share goes to: the scored roster under the
+  // equation, the draft's hand-set shares under a custom split — the same
+  // resolver the kiosk reads with and the contract is synced by.
+  $: interiorMembers = resolveInteriorMembers({
+    config: allocationConfig,
+    scored: memberShares,
+    shares: interiorShares,
+    nameOf: (id) => nameMap.get(id) ?? usersById[id]?.first_name,
+  });
+
+  // ---- Cascade -----------------------------------------------------------------
+  //
+  // A recipient can be a holon with a split of its own — a member's id is
+  // their personal holon's id. Core follows each share down through those
+  // splits; this board reads them once per saved roster and draws what core
+  // resolves. Not re-read while the draft is dirty: every edit changes the
+  // roster, and what is downstream of it does not.
+  let cascadeChildren: Record<string, CascadeInputs> = {};
+  let cascadeKey = "";
+  $: rootPartyIds = [
+    ...new Set([
+      ...interiorMembers.map((m) => m.id),
+      ...zonedPartners.filter((p) => p.zone >= 1).map((p) => p.id),
+    ]),
+  ].sort();
+  $: if (!allocationDirty) void loadCascade(holonID, rootPartyIds.join("|"));
+
+  async function loadCascade(holon: string, ids: string) {
+    const want = holosphere && holon ? `${holon}#${ids}` : "";
+    if (want === cascadeKey) return;
+    cascadeKey = want;
+    if (!want || !ids) {
+      cascadeChildren = {};
+      return;
+    }
+    try {
+      const loaded = await loadCascadeChildren(holosphere, ids.split("|"), {
+        rootId: holon,
+        nameOf: (id) => nameMap.get(id),
+        scoreOf: (id) => scoreAllocationMembers(holosphere, id),
+      });
+      if (cascadeKey === want) cascadeChildren = loaded.children;
+    } catch (err) {
+      console.warn("[flows] cascade load failed", err);
+      if (cascadeKey === want) cascadeChildren = {};
+    }
+  }
+
+  $: cascadeRoot = { config: allocationConfig, members: interiorMembers, zoned: zonedPartners };
+  // The shape first, without a pot: who ends up holding part of the fund
+  // decides who usage is attributed to, and usage sizes the pot.
+  $: cascadeShape = Object.keys(cascadeChildren).length
+    ? resolveCascade({
+        holonId: holonID,
+        total: null,
+        root: cascadeRoot,
+        resolveChild: childResolver(cascadeChildren),
+      })
+    : null;
+
+  // ---- Fund usage --------------------------------------------------------------
+  //
+  // Every rights-holder, with the names a collective payee might carry so
+  // OpenCollective's "Ada Lovelace" lands on the member the users lens calls
+  // Ada. Usage needs a real pot, so it only exists with a collective. Spending
+  // follows the movement window; claims are owed whenever they were raised.
+  function aliasesFor(users: Record<string, any>, id: string): string[] {
+    const u = users[id];
+    if (!u) return [];
+    const first = String(u.first_name ?? "").trim();
+    const last = String(u.last_name ?? "").trim();
+    return [
+      String(u.username ?? "").trim(),
+      first,
+      [first, last].filter(Boolean).join(" "),
+    ].filter(Boolean);
+  }
+  $: usageParties = [
+    ...interiorMembers.map((m) => ({ id: m.id, name: m.name, aliases: aliasesFor(usersById, m.id) })),
+    ...zonedPartners
+      .filter((p) => p.zone >= 1)
+      .map((p) => ({ id: p.id, name: p.name, aliases: aliasesFor(usersById, p.id) })),
+    // Whoever holds part of the fund through someone else's giving.
+    ...Object.entries(cascadeShape?.leaves ?? {})
+      .filter(([id]) => id !== holonID)
+      .map(([id, leaf]) => ({ id, name: leaf.label, aliases: aliasesFor(usersById, id) })),
+  ].filter((p, i, all) => all.findIndex((q) => q.id === p.id) === i) as FundUsageParty[];
+  $: usage = potUnit
+    ? buildFundUsage({
+        holonId: holonID,
+        unit: potUnit,
+        parties: usageParties,
+        members: memberIds,
+        expenses,
+        collective,
+        windowDays,
+        claims: claimsShape?.folded ?? null,
+      })
+    : null;
+  // The same usage off the JUDGED fold: a claim held as `over` is not drawn
+  // as claimed. The pot stays on the shape — a verdict moves no pot.
+  $: usageJudged =
+    potUnit && claimsCtx
+      ? buildFundUsage({
+          holonId: holonID,
+          unit: potUnit,
+          parties: usageParties,
+          members: memberIds,
+          expenses,
+          collective,
+          windowDays,
+          claims: claimsCtx.folded,
+        })
+      : usage;
+  $: usageTotal = usageTotals(usageJudged);
 
   $: allocationResult = allocate({
-    // The collective balance is the honest pot; without one, show the shape of
-    // the split as percentages rather than inventing an amount.
-    total: collective?.balance ?? null,
-    unit: collective?.currency ?? "",
+    // The collective's money is the honest pot — what is in the bank plus what
+    // rights-holders already drew, since a right that was spent still was one.
+    // Without a collective, show the shape of the split as percentages rather
+    // than inventing an amount.
+    // The pot is what is held here (the bank, the mints) plus what reaches
+    // here, plus what was already drawn (`potTotal`, core).
+    total: potUnit ? potTotal(potUnit, potSources, usage) || null : null,
+    unit: potUnit,
     config: allocationConfig,
-    members: memberShares,
+    members: interiorMembers,
     zoned: zonedPartners,
   });
-  $: allocationLayout = layoutSankey(
-    allocationToGraph(allocationResult, {
-      pot: collective ? collective.name : "Total",
-      interior: "Interior",
-      exterior: "Exterior",
-    }),
-  );
-  // The panel is the reason this section exists even when nothing is placed
-  // yet: somebody has to be able to place the first partner.
-  $: hasAllocation = memberShares.length > 0 || partners.length > 0;
+  $: cascade = cascadeShape
+    ? resolveCascade({
+        holonId: holonID,
+        total: allocationResult.total,
+        unit: allocationResult.unit,
+        root: cascadeRoot,
+        resolveChild: childResolver(cascadeChildren),
+      })
+    : null;
+  $: allocationLabels = {
+    pot: potLabel,
+    interior: "Contributors share",
+    exterior: "Reciprocity zones",
+    spent: "Spent",
+    claimed: "Claimed",
+    available: "Available",
+    over: "Over",
+    unattributed: "Outside rights",
+    passed: "Passed on",
+    retained: "Kept",
+  };
+  $: allocationTrack = cascade
+    ? cascadeToGraph(cascade, allocationLabels, usageJudged)
+    : allocationToGraph(allocationResult, allocationLabels, usageJudged);
+  // The ceiling every claim is judged against, per party and unit: what each
+  // party KEEPS of the pot (net of what their own split passes on) less the
+  // draws outside the log (core `claimCeilings`).
+  $: rights = cascade ? cascadeRights(cascade) : allocationResult;
+  $: potByUnit = Object.fromEntries(potUnitList.map((u) => [u, potTotal(u, potSources, usage)])) as Record<string, number>;
+  $: ceilings = claimCeilings({ shares: rights, pots: potByUnit, usage, claims: claimsShape?.folded ?? null, held: Object.keys(potChain) });
+  $: myShare = selfId && cascadeShape ? (cascadeShape.leaves[selfId]?.percentage ?? 0) : 0;
+  $: claimMax = selfId && claimUnit ? claimHeadroom(ceilings, claimsCtx?.folded, selfId, claimUnit) : null;
+  $: claimTooBig = !fitsHeadroom(claimMax, Number(String(claimAmount).replace(",", ".")));
+  $: allocationLayout = layoutSankey(allocationTrack);
+  // What is left to the rights-holders, as the diagram draws it, and what was
+  // taken beyond any right — both read off the same stacked bars.
+  $: availableTotal = segmentTotal(allocationTrack, "available");
+  $: overTotal = segmentTotal(allocationTrack, "over");
+  // A stored split counts on its own: a personal holon has no scored member
+  // (its owner is not a member of themselves) and may have no partners yet.
+  $: hasAllocation =
+    interiorMembers.length > 0 || zonedPartners.length > 0 || hasAllocationConfig(settings);
 
-  function trackKey(track: ValueFlowTrack): string {
-    return `${track.id}:${track.unit}`;
-  }
-
-  function trackLabel(track: ValueFlowTrack): string {
-    if (track.id === "time") return "Hours";
-    if (track.id === "appreciation") return "Kudos";
-    if (track.unit === "credit" || track.unit === "credits") return "Credits";
-    return track.unit.toUpperCase();
-  }
-
-  /**
-   * Format a value in its track's unit. Real ISO codes get locale currency
-   * formatting; a holon's own scrip falls back to a plain number plus the unit.
-   */
-  function formatter(track: ValueFlowTrack | null): (value: number) => string {
-    if (!track) return (v) => String(Math.round(v));
-    const code = track.unit.toUpperCase();
-    if (track.id === "money" && /^[A-Z]{3}$/.test(code)) {
-      try {
-        const fmt = new Intl.NumberFormat(undefined, {
-          style: "currency",
-          currency: code,
-          maximumFractionDigits: 0,
-        });
-        return (v) => fmt.format(v);
-      } catch {
-        // Not a currency Intl knows; fall through rather than throwing.
-      }
-    }
-    const fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
-    const unit =
-      track.id === "time" ? "h" : track.id === "appreciation" ? "kudos" : track.unit;
-    return (v) => `${fmt.format(v)} ${unit}`;
-  }
-
-  $: formatMovement = formatter(activeTrack);
-  $: formatAllocation = collective
-    ? formatter({ id: "money", unit: collective.currency } as ValueFlowTrack)
+  // ── The wallet: every unit at once ──────────────────────────────────────
+  // One line per unit the viewer holds anything in — a seat on the fund,
+  // access someone gave them, an open mutual-credit position — built by core
+  // from the same shapes the diagram reads. Tapping a fund line picks the
+  // unit the claims form and the diagram are in.
+  $: creditByUnit = currencies.map((c) => computeMutualCredit(expenses, people, c));
+  $: wallet = selfId
+    ? buildWallet({
+        partyId: selfId,
+        shares: rights,
+        sources: potSources,
+        usage: usageJudged,
+        credit: creditByUnit,
+        held: Object.keys(potChain),
+        ceilings,
+        claims: claimsCtx?.folded ?? null,
+      })
+    : [];
+  const money = (unit: string, v: number) => `${Math.round(v * 100) / 100} ${unit.toUpperCase()}`;
+  const signedMoney = (unit: string, v: number) => `${v < 0 ? "−" : v > 0 ? "+" : ""}${money(unit, Math.abs(v))}`;
+  $: formatAllocation = potUnit
+    ? formatter({ id: "money", unit: potUnit })
     : (v: number) => `${Math.round(v)}%`;
 
-  // ---- Ledger ---------------------------------------------------------------
-
-  const PAGE = 50;
-
-  const SOURCES: { id: LedgerSource | "all"; label: string }[] = [
-    { id: "all", label: "Every source" },
-    { id: "expenses", label: "Expenses" },
-    { id: "rea", label: "Activity" },
-    { id: "opencollective", label: "OpenCollective" },
-    { id: "derived", label: "Rules" },
-  ];
-
-  let search = "";
-  let ledgerDirection: LedgerDirection | "all" = "all";
-  let ledgerTrack = "";
-  let ledgerNode = "";
-  let ledgerSource: LedgerSource | "all" = "all";
-  let newestFirst = true;
-  let rowLimit = PAGE;
-
-  $: entries = buildLedger(flowInput).entries;
-
-  // Unit tabs for the list, in the order the entries first mention them.
-  $: entryTracks = [
-    ...new Map(
-      entries.map((e) => [
-        ledgerTrackKey(e),
-        { id: e.track, unit: e.unit } as ValueFlowTrack,
-      ]),
-    ),
-  ];
-
-  // A window change can retire the unit that was being filtered on; fall back
-  // to everything rather than showing an empty list with no visible cause.
-  $: if (ledgerTrack && !entryTracks.some(([key]) => key === ledgerTrack)) {
-    ledgerTrack = "";
-  }
-  $: if (ledgerNode && !entries.some((e) => e.nodeId === ledgerNode)) {
-    ledgerNode = "";
-  }
-
-  $: filteredEntries = sortLedger(
-    filterLedger(entries, {
-      query: search,
-      track: ledgerTrack,
-      direction: ledgerDirection,
-      nodeId: ledgerNode,
-      source: ledgerSource,
-    }),
-    newestFirst,
-  );
-
-  $: ledgerTotals = summarizeLedger(filteredEntries);
-
-  // Any change to what is being asked for starts the list at the top again.
-  $: filterKey = `${search}|${ledgerDirection}|${ledgerTrack}|${ledgerNode}|${ledgerSource}`;
-  $: if (filterKey) rowLimit = PAGE;
-
-  $: visibleEntries = filteredEntries.slice(0, rowLimit);
-
-  $: ledgerNodeLabel =
-    entries.find((e) => e.nodeId === ledgerNode)?.nodeLabel ?? ledgerNode;
-
-  $: hasLedgerFilter =
-    !!search ||
-    ledgerDirection !== "all" ||
-    !!ledgerTrack ||
-    !!ledgerNode ||
-    ledgerSource !== "all";
-
-  function clearLedgerFilters() {
-    search = "";
-    ledgerDirection = "all";
-    ledgerTrack = "";
-    ledgerNode = "";
-    ledgerSource = "all";
-  }
-
-  /** Formatters are keyed by unit, so building one per unit is enough. */
-  const entryFormatters = new Map<string, (value: number) => string>();
-
-  function unitFormatter(
-    id: ValueFlowTrack["id"],
-    unit: string,
-  ): (value: number) => string {
-    const key = `${id}:${unit}`;
-    let fmt = entryFormatters.get(key);
-    if (!fmt) {
-      fmt = formatter({ id, unit } as ValueFlowTrack);
-      entryFormatters.set(key, fmt);
-    }
-    return fmt;
-  }
-
-  function formatEntry(entry: LedgerEntry): string {
-    return unitFormatter(entry.track, entry.unit)(entry.amount);
-  }
-
-  /** A totals row carries its track as a field, not as a track object. */
-  function totalLabel(total: LedgerTotals): string {
-    return trackLabel({ id: total.track, unit: total.unit } as ValueFlowTrack);
-  }
-
-  function formatTotal(total: LedgerTotals, value: number): string {
-    return unitFormatter(total.track, total.unit)(value);
-  }
-
-  const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
-  const stampFmt = new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-
-  function sourceLabel(source: LedgerSource): string {
-    return SOURCES.find((s) => s.id === source)?.label ?? source;
-  }
-
-  /** The other names on the record, so a row reads without being opened. */
-  function others(entry: LedgerEntry): string[] {
-    return entry.participants.filter((name) => name !== entry.party);
-  }
-
-  // ---- Hover detail ---------------------------------------------------------
+  // ---- Tap detail ---------------------------------------------------------------
   //
-  // A bar is a sum; hovering asks what it is a sum OF. The rows come from the
-  // same ledger entries the bar was built from, so the tooltip cannot claim
-  // anything the list below would contradict.
+  // A bar is a sum; tapping asks what it is a sum OF. The rows come from the
+  // same ledger entries the bar was built from, so the sheet cannot claim
+  // anything the ledger would contradict.
 
   const MAX_NAMES = 4;
+  const SOURCE_LABELS: Record<LedgerSource, string> = {
+    expenses: "Expenses",
+    rea: "Activity",
+    opencollective: "OpenCollective",
+    derived: "Rules",
+  };
+
+  let selected: { node: SankeyLayoutNode; chart: "movement" | "allocation" } | null = null;
+  $: selectedFormat = (selected?.chart === "allocation" ? formatAllocation : formatMovement) as Formatter;
+  $: selectedRows = selected
+    ? selected.chart === "allocation"
+      ? allocationDetails(selected.node)
+      : movementDetails(selected.node)
+    : [];
+
+  // Who is behind the tapped bar, and how much of it is theirs. Core decides
+  // the rows: out-links for a group, in-links for a sink, the swallowed bars
+  // for a "+n more" rollup. A bar with nothing to list stays with its detail
+  // rows and, on the movement side, the ledger hand-off.
+  $: breakdown = ((): BreakdownRow[] => {
+    if (!selected) return [];
+    if (selected.chart === "allocation") {
+      if (selected.node.id === UNATTRIBUTED_ID && usage) {
+        const payees = usage.unattributedPayees
+          .filter((p) => p.unit === usage.unit)
+          .map((p) => ({
+            id: `payee-${p.name}`,
+            label: p.spent > 0 && p.claimed > 0 ? p.name : `${p.name} · ${p.spent > 0 ? "spent" : "claimed"}`,
+            value: p.spent + p.claimed,
+          }));
+        if (payees.length) return payees;
+      }
+      return nodeBreakdown(allocationTrack, allocationLayout, selected.node.id).rows;
+    }
+    if (!activeTrack || !movementLayout) return [];
+    return nodeBreakdown(activeTrack, movementLayout, selected.node.id).rows;
+  })();
 
   function listNames(names: string[]): string {
     if (names.length <= MAX_NAMES) return names.join(", ");
@@ -396,164 +1033,161 @@
   }
 
   /**
-   * The entries behind one bar of the movement chart.
-   *
-   * The layout rolls everything past its top N into a single "+n more" bar; its
-   * contents are whatever the chart is NOT otherwise showing on that side,
-   * which is worked out here rather than guessed at from the layout's rule.
+   * The entries behind one bar of the movement chart. The layout rolls
+   * everything past its top N into a single "+n more" bar; its contents are
+   * whatever the chart is NOT otherwise showing on that side.
    */
   function entriesForNode(node: SankeyLayoutNode): LedgerEntry[] {
     const inTrack = entries.filter((e) => ledgerTrackKey(e) === trackId);
     if (node.kind === "other") {
       const shown = new Set(movementLayout?.nodes.map((n) => n.id) ?? []);
       const direction = node.depth === 0 ? "in" : "out";
-      return inTrack.filter(
-        (e) => e.direction === direction && !shown.has(e.nodeId),
-      );
+      return inTrack.filter((e) => e.direction === direction && !shown.has(e.nodeId));
     }
     return inTrack.filter((e) => e.nodeId === node.id);
   }
 
-  function movementDetails(
-    node: SankeyLayoutNode,
-  ): { label: string; value: string }[] {
+  function movementDetails(node: SankeyLayoutNode): { label: string; value: string }[] {
     const inTrack = entries.filter((e) => ledgerTrackKey(e) === trackId);
-
     if (node.kind === "hub") {
-      const totalIn = inTrack
-        .filter((e) => e.direction === "in")
-        .reduce((sum, e) => sum + e.amount, 0);
-      const totalOut = inTrack
-        .filter((e) => e.direction === "out")
-        .reduce((sum, e) => sum + e.amount, 0);
+      const sum = (d: string) =>
+        inTrack.filter((e) => e.direction === d).reduce((s, e) => s + e.amount, 0);
       const rows = [
-        { label: "In", value: formatMovement(totalIn) },
-        { label: "Out", value: formatMovement(totalOut) },
+        { label: "In", value: formatMovement(sum("in")) },
+        { label: "Out", value: formatMovement(sum("out")) },
         { label: "Entries", value: String(inTrack.length) },
       ];
       if (activeTrack?.balance != null) {
-        rows.push({
-          label: "Balance",
-          value: formatMovement(activeTrack.balance),
-        });
+        rows.push({ label: "Balance", value: formatMovement(activeTrack.balance) });
       }
       return rows;
     }
 
     const behind = entriesForNode(node);
     if (!behind.length) return [];
-
     const rows = [{ label: "Entries", value: String(behind.length) }];
-
     const stamps = behind.map((e) => e.timestamp).sort((a, b) => a - b);
     const first = stamps[0];
     const last = stamps[stamps.length - 1];
     rows.push(
       first === last
         ? { label: "Date", value: dateFmt.format(first) }
-        : {
-            label: "Between",
-            value: `${dateFmt.format(first)} – ${dateFmt.format(last)}`,
-          },
+        : { label: "Between", value: `${dateFmt.format(first)} – ${dateFmt.format(last)}` },
     );
-
-    const names = [
-      ...new Set(behind.flatMap((e) => [e.party, ...e.participants])),
-    ].filter(Boolean);
+    const names = [...new Set(behind.flatMap((e) => [e.party, ...e.participants]))].filter(Boolean);
     if (names.length) {
-      rows.push({
-        label: names.length === 1 ? "Name" : "Names",
-        value: listNames(names),
-      });
+      rows.push({ label: names.length === 1 ? "Name" : "Names", value: listNames(names) });
     }
-
     const largest = behind.reduce((a, b) => (b.amount > a.amount ? b : a));
+    const fmt = formatter({ id: largest.track, unit: largest.unit });
     if (behind.length > 1) {
       rows.push({
         label: "Largest",
         value: largest.description
-          ? `${formatEntry(largest)} · ${largest.description}`
-          : formatEntry(largest),
+          ? `${fmt(largest.amount)} · ${largest.description}`
+          : fmt(largest.amount),
       });
     } else if (largest.description) {
       rows.push({ label: "For", value: largest.description });
     }
-
-    const sources = [...new Set(behind.map((e) => sourceLabel(e.source)))];
-    rows.push({
-      label: sources.length === 1 ? "Source" : "Sources",
-      value: sources.join(", "),
-    });
-
+    const sources = [...new Set(behind.map((e) => SOURCE_LABELS[e.source] ?? e.source))];
+    rows.push({ label: sources.length === 1 ? "Source" : "Sources", value: sources.join(", ") });
     return rows;
   }
 
   /** A ribbon carries exactly what its non-hub end does. */
-  function movementLinkDetails(
-    link: SankeyLayoutLink,
-  ): { label: string; value: string }[] {
+  function movementLinkDetails(link: SankeyLayoutLink): { label: string; value: string }[] {
     const id = link.source === HUB_ID ? link.target : link.source;
     const node = movementLayout?.nodes.find((n) => n.id === id);
     return node ? movementDetails(node) : [];
   }
 
-  function findSlice(nodeId: string) {
-    if (nodeId.startsWith("member-")) {
-      const id = nodeId.slice("member-".length);
-      return allocationResult.interior.find((m) => m.id === id) ?? null;
-    }
-    if (nodeId.startsWith("zone-")) {
-      const zone = Number(nodeId.slice("zone-".length));
-      return allocationResult.exterior.find((z) => z.zone === zone) ?? null;
-    }
-    if (nodeId.startsWith("partner-")) {
-      const id = nodeId.slice("partner-".length);
-      for (const zone of allocationResult.exterior) {
-        const hit = (zone.members ?? []).find((p) => p.id === id);
-        if (hit) return hit;
+  function findZone(nodeId: string) {
+    if (!nodeId.startsWith("zone-")) return null;
+    const zone = Number(nodeId.slice("zone-".length));
+    return allocationResult.exterior.find((z) => z.zone === zone) ?? null;
+  }
+
+  /**
+   * The seats behind one party's bar: their contributor share, if any, and
+   * their place on a ring, if any. A person can hold both, and the bar sums
+   * them — so the tooltip names each.
+   */
+  function findSeats(nodeId: string) {
+    const id = partyIdOf(nodeId);
+    if (id == null) return null;
+    const member = allocationResult.interior.find((m) => m.id === id) ?? null;
+    let ring: { zone: number; slice: AllocationSlice } | null = null;
+    for (const zone of allocationResult.exterior) {
+      const hit = (zone.members ?? []).find((p) => p.id === id);
+      if (hit) {
+        ring = { zone: zone.zone ?? 0, slice: hit };
+        break;
       }
     }
-    return null;
+    if (!member && !ring) return null;
+    const percentage = (member?.percentage ?? 0) + (ring?.slice.percentage ?? 0);
+    const amount =
+      member?.amount == null && ring?.slice.amount == null
+        ? null
+        : (member?.amount ?? 0) + (ring?.slice.amount ?? 0);
+    return { id, member, ring, percentage, amount };
   }
 
   /**
    * Allocation has no entries behind it — it is a rule, not a history — so the
    * detail here is the rule: what share this is, and of whom.
    */
-  function allocationDetails(
-    node: SankeyLayoutNode,
-  ): { label: string; value: string }[] {
+  function allocationDetails(node: SankeyLayoutNode): { label: string; value: string }[] {
     const pct = (value: number) => `${Math.round(value * 10) / 10}%`;
-    const interiorPct = allocationResult.interior.reduce(
-      (sum, m) => sum + m.percentage,
-      0,
-    );
+    const interiorPct = allocationResult.interior.reduce((s, m) => s + m.percentage, 0);
 
     if (node.kind === "pot") {
-      const rows = collective
+      const rows = potCollective
         ? [
-            { label: "Collective", value: collective.name },
-            { label: "Balance", value: formatAllocation(collective.balance) },
+            { label: "Collective", value: potCollective.name },
+            { label: "Balance", value: formatAllocation(potCollective.balance) },
           ]
-        : [{ label: "Pot", value: "No collective configured yet" }];
+        : potUnit
+          ? []
+          : [{ label: "Pot", value: "Nothing in the fund yet" }];
+      if (potMinted > 0) rows.push({ label: "Issued here", value: formatAllocation(potMinted) });
+      for (const r of potInboundRows) {
+        rows.push({ label: `From ${partyName(r.from)}`, value: formatAllocation(r.right) });
+      }
       rows.push(
-        { label: "Interior", value: `${allocationConfig.interiorPercent}%` },
+        { label: "Contributors share", value: `${allocationConfig.interiorPercent}%` },
         {
-          label: "Exterior",
-          value: `${100 - allocationConfig.interiorPercent}%`,
+          label: "Divided",
+          value: allocationConfig.interiorMode === "custom" ? "Custom split" : "By value equation",
         },
+        { label: "Reciprocity zones", value: `${100 - allocationConfig.interiorPercent}%` },
       );
+      if (usage) {
+        rows.push(
+          { label: "Spent", value: formatAllocation(usageTotal.spent) },
+          { label: "Claimed", value: formatAllocation(usageTotal.claimed) },
+        );
+      }
       return rows;
     }
-
+    if (usage && node.id === UNATTRIBUTED_ID) {
+      const rows = [{ label: "What", value: "Paid or promised to someone with no right here." }];
+      const un = usageTotal.unattributed;
+      if (un.spent > 0) rows.push({ label: "Spent", value: formatAllocation(un.spent) });
+      if (un.claimed > 0) rows.push({ label: "Claimed", value: formatAllocation(un.claimed) });
+      if (usage.unattributedPayees.length) {
+        rows.push({ label: "Paid to", value: listNames(usage.unattributedPayees.map((p) => p.name)) });
+      }
+      return rows;
+    }
     if (node.kind === "interior") {
       return [
         { label: "Share of pot", value: pct(interiorPct) },
-        { label: "Members", value: String(allocationResult.interior.length) },
-        { label: "Split by", value: "Contribution score" },
+        { label: "Contributors", value: String(allocationResult.interior.length) },
+        { label: "Split by", value: "Value equation" },
       ];
     }
-
     if (node.kind === "exterior") {
       return [
         { label: "Share of pot", value: pct(100 - interiorPct) },
@@ -561,40 +1195,105 @@
         { label: "Split by", value: "Zone distance" },
       ];
     }
-
-    const slice = findSlice(node.id);
-    if (!slice) return [];
-
-    const rows = [{ label: "Share of pot", value: pct(slice.percentage) }];
-    if (node.kind === "member") {
-      rows.push({ label: "Earned by", value: "Contribution score" });
+    const zone = findZone(node.id);
+    if (zone) {
+      const names = (zone.members ?? []).map((p) => p.label);
+      return [
+        { label: "Share of pot", value: pct(zone.percentage) },
+        { label: "Zone", value: `Zone ${zone.zone}` },
+        {
+          label: names.length === 1 ? "Partner" : "Partners",
+          value: names.length ? listNames(names) : "None yet",
+        },
+      ];
     }
-    if (node.kind === "zone") {
-      const partners = (slice.members ?? []).map((p) => p.label);
+
+    const seats = findSeats(node.id);
+    if (!seats) return [];
+    // One bar, one total; then each seat that feeds it, when there is more
+    // than one to tell apart.
+    const rows = [{ label: "Share of pot", value: pct(seats.percentage) }];
+    const both = !!seats.member && !!seats.ring;
+    if (seats.member) {
+      rows.push(
+        both
+          ? { label: "Contributors share", value: formatAllocation(seats.member.amount ?? seats.member.percentage) }
+          : { label: "Earned by", value: "Value equation" },
+      );
+    }
+    if (seats.ring) {
       rows.push({
-        label: "Ring",
-        value: `Zone ${slice.zone}`,
-      });
-      rows.push({
-        label: partners.length === 1 ? "Partner" : "Partners",
-        value: partners.length ? listNames(partners) : "None yet",
+        label: `Zone ${seats.ring.zone}`,
+        value: both ? formatAllocation(seats.ring.slice.amount ?? seats.ring.slice.percentage) : "Zone distance",
       });
     }
-    if (node.kind === "partner" && slice.zone) {
-      rows.push({ label: "Ring", value: `Zone ${slice.zone}` });
+    if (usage) rows.push(...usageRows(seats.id, seats.amount));
+    return rows;
+  }
+
+  /**
+   * A right's usage, in the pot's currency and then in every other unit the
+   * party touched the fund in. Other units are text only — hours are not euros
+   * and the diagram never sums across units, so neither do these rows.
+   */
+  function usageRows(partyId: string, right: number | null): { label: string; value: string }[] {
+    if (!usage) return [];
+    const rows: { label: string; value: string }[] = [];
+    const use = usageOf(usage, partyId);
+    if (right != null) {
+      const left = right - use.spent - use.claimed;
+      rows.push(
+        { label: "Right", value: formatAllocation(right) },
+        { label: "Spent", value: formatAllocation(use.spent) },
+        { label: "Claimed", value: formatAllocation(use.claimed) },
+        left >= 0
+          ? { label: "Available", value: formatAllocation(left) }
+          : { label: "Over", value: formatAllocation(-left) },
+      );
+    }
+    for (const unit of usageUnits(usage, partyId)) {
+      if (unit === usage.unit) continue;
+      const other = usageOf(usage, partyId, unit);
+      const fmt = formatter({ id: "money", unit });
+      if (other.spent > 0) rows.push({ label: `Spent · ${unit.toUpperCase()}`, value: fmt(other.spent) });
+      if (other.claimed > 0) rows.push({ label: `Claimed · ${unit.toUpperCase()}`, value: fmt(other.claimed) });
     }
     return rows;
   }
 
-  /** Clicking a bar in Movement asks the ledger what is inside it. */
-  function inspect(node: SankeyLayoutNode) {
-    selected = node;
-    if (node.kind === "hub") return;
-    ledgerNode = node.id;
-    ledgerTrack = trackId;
-    document
-      .getElementById("ledger")
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  /** A ribbon says what its deeper end would. */
+  function allocationLinkDetails(link: SankeyLayoutLink): { label: string; value: string }[] {
+    const node = allocationLayout?.nodes.find((n) => n.id === link.target);
+    return node ? allocationDetails(node) : [];
+  }
+
+  // ---- Ledger hand-offs ----------------------------------------------------------
+  //
+  // Other panels can ask the ledger to show something: a tapped bar, a person.
+  // The ledger owns its own filters; these are only what it opens with.
+  let ledgerTrack = "";
+  let ledgerNode = "";
+  let ledgerSearch = "";
+
+  function showInLedger(node: SankeyLayoutNode) {
+    selected = null;
+    if (node.kind !== "hub") {
+      ledgerNode = node.id;
+      ledgerTrack = trackId;
+    }
+    prefs.panel = "ledger";
+    scrollTop();
+  }
+
+  function searchLedger(query: string) {
+    ledgerSearch = query;
+    ledgerNode = "";
+    prefs.panel = "ledger";
+    scrollTop();
+  }
+
+  function scrollTop() {
+    document.getElementById("flows-top")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function teardown() {
@@ -607,6 +1306,8 @@
     rescoreTimer = null;
     if (federationTimer) clearInterval(federationTimer);
     federationTimer = null;
+    if (loadingFallbackTimer) clearTimeout(loadingFallbackTimer);
+    loadingFallbackTimer = null;
     eventsById.clear();
     eventSigs.clear();
     userSigs.clear();
@@ -627,12 +1328,23 @@
     collectiveError = "";
     memberShares = [];
     partners = [];
+    inbound = [];
+    cascadeChildren = {};
+    cascadeKey = "";
     loading = true;
 
     if (!holosphere || !id) {
       loading = false;
       return;
     }
+
+    // Armed BEFORE the first await, as the kiosk does: the first read below
+    // waits on the relays, and a socket that dropped mid-session answers
+    // nothing — the board must settle to what the subscriptions bring in
+    // rather than stay on "reading" for good.
+    loadingFallbackTimer = setTimeout(() => {
+      if (holonID === id) loading = false;
+    }, 9000);
 
     try {
       // subscribeFederated hands back a whole deduped snapshot per change, and
@@ -710,14 +1422,14 @@
           scheduleSettle(id);
         },
       );
-      await refreshEvents(id);
-
+      // The federation and the equation do not depend on the ledger read, and
+      // must not wait on it: with the read hung on a dead socket the board
+      // would clear (see the fallback above) to a split with nobody in it.
       void loadFederation(id);
       federationTimer = setInterval(
         () => void loadFederation(id),
         FEDERATION_POLL_MS,
       );
-
       void loadEquation(holosphere, id)
         .then((eq) => {
           if (holonID !== id) return;
@@ -725,14 +1437,18 @@
           void rescoreMembers();
         })
         .catch(() => {});
+
+      await refreshEvents(id);
     } catch (err) {
       console.error("[flows] bind failed", err);
     } finally {
-      loading = false;
+      if (holonID === id) loading = false;
+      if (loadingFallbackTimer) clearTimeout(loadingFallbackTimer);
+      loadingFallbackTimer = null;
     }
   }
 
-  /** Gun hands back a record map or an array depending on the call. */
+  /** Holosphere hands back a record map or an array depending on the call. */
   function normalizeLens(items: any): any[] {
     if (Array.isArray(items)) return items.filter(Boolean);
     if (items && typeof items === "object") return Object.values(items).filter(Boolean);
@@ -820,14 +1536,18 @@
     try {
       const snapshot = await getFederationSnapshot(holosphere, id);
       if (holonID !== id) return;
+      // People the kiosk seats on rings ride along with the partner holons,
+      // so both boards draw the same reciprocity zones.
       partners = toAllocationPartners(
         snapshot.federated,
         snapshot.partnerNames,
         readZoneAssignments(settings),
+        readZonePeople(settings),
       );
     } catch {
       // A holon with no federation record simply has no exterior.
     }
+    void loadInbound(id);
   }
 
   /** A failure here is never fatal — the movement half stands on its own. */
@@ -852,7 +1572,7 @@
   /**
    * Member shares for the interior, scored through the same pipeline the Status
    * board ranks with — so the two views cannot disagree about contribution.
-   * Runs against an in-memory view of the events rather than re-reading Gun.
+   * Runs against an in-memory view of the events rather than re-reading the store.
    */
   async function rescoreMembers() {
     const id = holonID;
@@ -883,7 +1603,7 @@
         .filter((s) => s.percentage > 0)
         .map((s) => ({
           id: String(s.userId),
-          name: nameMap.get(String(s.userId)) ?? String(s.userId),
+          name: partyName(String(s.userId)),
           percentage: s.percentage,
         }));
     } catch (err) {
@@ -899,505 +1619,716 @@
   onDestroy(teardown);
 </script>
 
-<div class="p-4 md:p-6 text-gray-100">
-  <h1 class="text-2xl font-semibold mb-1">Value Flows</h1>
-  <p class="text-sm text-gray-400 mb-6">
-    Where this holon's value comes from, where it goes, and how it is shared out.
-  </p>
+<div class="board" id="flows-top">
+  <header class="top">
+    <div class="titles">
+      <h1>Value Flows</h1>
+      <p class="sub">Where this holon's value comes from, where it goes, and how it is shared out.</p>
+    </div>
+  </header>
+
+  <!-- The board's one navigation: which reading of the ledger to show. -->
+  <nav class="tabs">
+    <PillSwitch
+      options={PANELS}
+      value={panel}
+      onChange={(id) => (prefs.panel = id)}
+      label="Which panel"
+      stretch
+    />
+  </nav>
 
   {#if loading}
-    <p class="text-gray-400 py-12 text-center">Reading the ledger…</p>
-  {:else if !tracks.length && !hasAllocation}
-    <p class="text-gray-400 py-12 text-center">Nothing has moved here yet.</p>
-  {:else}
-    {#if tracks.length}
-      <section class="mb-10">
-        <div class="flex flex-wrap items-end justify-between gap-3 mb-3">
-          <div>
-            <h2 class="text-lg font-medium">Movement</h2>
-            <p class="text-sm text-gray-400">
-              Where value came from, and where it went.
-            </p>
+    <p class="empty">Reading the ledger…</p>
+  {:else if panel === "movement"}
+    <section class="panel">
+      <header class="head">
+        <div class="titles">
+          <h2>Movement</h2>
+          <p class="sub">Where value came from, and where it went.</p>
+        </div>
+        <div class="controls">
+          {#if tracks.length > 1}
+            <PillSwitch
+              options={tracks.map((t) => ({ id: trackKey(t), label: trackLabel(t) }))}
+              value={trackId}
+              onChange={(id) => (trackId = id)}
+              label="Which unit to show"
+            />
+          {/if}
+          <PillSwitch
+            options={WINDOWS.map((w) => ({ id: w.id, label: w.label }))}
+            value={prefs.window}
+            onChange={(id) => (prefs.window = id)}
+            label="Over what period"
+          />
+        </div>
+      </header>
+
+      {#if !activeTrack}
+        <p class="empty">Nothing has moved here yet.</p>
+      {:else}
+        <div class="stats">
+          <div class="stat">
+            <span class="k">In</span>
+            <span class="v in">{formatMovement(activeTrack.totalIn)}</span>
           </div>
-          <div class="flex flex-wrap gap-2">
-            {#if tracks.length > 1}
-              <div class="seg" role="radiogroup" aria-label="Which unit to show">
-                {#each tracks as track (trackKey(track))}
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={trackId === trackKey(track)}
-                    class:active={trackId === trackKey(track)}
-                    on:click={() => (trackId = trackKey(track))}
-                  >
-                    {trackLabel(track)}
-                  </button>
-                {/each}
-              </div>
-            {/if}
-            <div class="seg" role="radiogroup" aria-label="Over what period">
-              {#each WINDOWS as w (w.id)}
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={windowId === w.id}
-                  class:active={windowId === w.id}
-                  on:click={() => (windowId = w.id)}
-                >
-                  {w.label}
-                </button>
-              {/each}
+          <div class="stat">
+            <span class="k">Out</span>
+            <span class="v out">{formatMovement(activeTrack.totalOut)}</span>
+          </div>
+          {#if activeTrack.balance != null}
+            <div class="stat">
+              <span class="k">Balance</span>
+              <span class="v">{formatMovement(activeTrack.balance)}</span>
             </div>
-          </div>
+          {/if}
         </div>
 
-        {#if activeTrack}
-          <div class="flex flex-wrap gap-8 mb-3">
-            <div>
-              <div class="k">In</div>
-              <div class="v">{formatMovement(activeTrack.totalIn)}</div>
-            </div>
-            <div>
-              <div class="k">Out</div>
-              <div class="v">{formatMovement(activeTrack.totalOut)}</div>
-            </div>
-            {#if activeTrack.balance != null}
-              <div>
-                <div class="k">Balance</div>
-                <div class="v">{formatMovement(activeTrack.balance)}</div>
-              </div>
-            {/if}
-          </div>
-
+        <div class="chart">
           <SankeyChart
             layout={movementLayout}
             format={formatMovement}
-            onSelect={inspect}
+            onSelect={(n) => (selected = { node: n, chart: "movement" })}
             nodeDetails={movementDetails}
             linkDetails={movementLinkDetails}
-            hint="Click to list these entries below"
+            hint="Tap for the entries behind it"
           >
-            <p slot="empty" class="text-gray-400 py-12 text-center">
-              Nothing moved in this window.
-            </p>
+            <p slot="empty" class="empty">Nothing moved in this window.</p>
           </SankeyChart>
-        {/if}
-      </section>
-    {/if}
+        </div>
+        <p class="note">Tap a bar to see what is inside it.</p>
+      {/if}
+    </section>
+  {:else if panel === "people"}
+    <section class="panel">
+      <header class="head">
+        <div class="titles">
+          <h2>Between people</h2>
+          <p class="sub">Who gave what to whom — each arrow points at the person who received it.</p>
+        </div>
+        <div class="controls">
+          {#if peopleTracks.length > 1}
+            <PillSwitch
+              options={peopleTracks.map((p) => ({
+                id: peopleKey(p),
+                label: peopleLabel(p),
+              }))}
+              value={peopleTrackId}
+              onChange={(id) => (peopleTrackId = id)}
+              label="Which unit to show"
+            />
+          {/if}
+          <PillSwitch
+            options={WINDOWS.map((w) => ({ id: w.id, label: w.label }))}
+            value={prefs.window}
+            onChange={(id) => (prefs.window = id)}
+            label="Over what period"
+          />
+        </div>
+      </header>
 
-    {#if hasAllocation}
-      <section>
-        <h2 class="text-lg font-medium">Allocation</h2>
-        <p class="text-sm text-gray-400 mb-3">
-          {collective
-            ? `How ${collective.name} is shared out.`
-            : "How value is shared out."}
-        </p>
-
-        <div class="flex flex-wrap gap-8 mb-3">
-          <div>
-            <div class="k">Interior</div>
-            <div class="v">{allocationConfig.interiorPercent}%</div>
+      {#if !activePeople}
+        <p class="empty">Nothing passed between people in this window.</p>
+      {:else}
+        <div class="stats">
+          <div class="stat">
+            <span class="k">Moved between people</span>
+            <span class="v">{formatPeople(activePeople.total)}</span>
           </div>
-          <div>
-            <div class="k">Exterior</div>
-            <div class="v">{100 - allocationConfig.interiorPercent}%</div>
-          </div>
-          <div>
-            <div class="k">Zones</div>
-            <div class="v">{allocationConfig.nzones}</div>
+          <div class="stat">
+            <span class="k">People</span>
+            <span class="v">{activePeople.parties.length}</span>
           </div>
         </div>
-
-        <SankeyChart
-          layout={allocationLayout}
-          format={formatAllocation}
-          onSelect={(n) => (selected = n)}
-          nodeDetails={allocationDetails}
-        >
-          <p slot="empty" class="text-gray-400 py-12 text-center">
-            No members or partners to share with yet.
+        <div class="chart round">
+          <ChordChart
+            track={activePeople}
+            format={formatPeople}
+            onSelect={(g) => (selectedParty = g)}
+            hint="Click for who, and how much"
+          >
+            <p slot="empty" class="empty">Nothing passed between people in this window.</p>
+          </ChordChart>
+        </div>
+        <p class="note">Hover an arrow to see who gave to whom; click a person for the list.</p>
+      {/if}
+    </section>
+  {:else if panel === "balances"}
+    <BalancesPanel
+      holonId={holonID}
+      {holosphere}
+      {expenses}
+      {people}
+      {currencies}
+      {currency}
+      {selfId}
+      onShowLedger={searchLedger}
+      on:currency={(e) => (prefs.currency = e.detail)}
+    />
+  {:else if panel === "allocation"}
+    <section class="panel">
+      <header class="head">
+        <div class="titles">
+          <h2>Fund allocation rights</h2>
+          <p class="sub">
+            {potCollective
+              ? `Who may direct ${potCollective.name}, by how much — and how much of that is already spent or claimed.`
+              : potUnit
+                ? `Who may direct the fund, in ${potUnit.toUpperCase()} — and how much of that is already spent or claimed.`
+                : "Who may direct the fund, and by how much."}
           </p>
-        </SankeyChart>
+          {#if potUnitList.length > 1}
+            <div class="pot-units" role="radiogroup" aria-label="Unit">
+              {#each potUnitList as u (u)}
+                <button
+                  type="button"
+                  role="radio"
+                  class="btn ghost pick"
+                  class:on={u === potUnit}
+                  aria-checked={u === potUnit}
+                  on:click={() => (potUnitPick = u)}>{u.toUpperCase()}</button
+                >
+              {/each}
+            </div>
+          {/if}
+        </div>
+      </header>
+
+      {#if selfId && wallet.length}
+        <!-- Every unit at once: tokens, vouchers, mutual credit — each on its
+             own line, nothing converted. A fund line sets the unit below. -->
+        <div class="claims-panel wallet">
+          <h3>Your balances</h3>
+          <ul class="wallet-lines" role="radiogroup" aria-label="Your balances">
+            {#each wallet as l (l.unit)}
+              <li>
+                <button
+                  type="button"
+                  role="radio"
+                  class="wline"
+                  class:on={l.unit === potUnit}
+                  class:over={(l.account?.over ?? 0) > 0}
+                  aria-checked={l.unit === potUnit}
+                  disabled={!potUnitList.includes(l.unit)}
+                  on:click={() => (potUnitPick = l.unit)}
+                >
+                  <span class="wunit">{l.unit.toUpperCase()}</span>
+                  <span class="wmain">
+                    {#if l.account}
+                      <strong>{money(l.unit, l.account.over > 0 ? l.account.over : l.available)}</strong>
+                      <span class="muted">{l.account.over > 0 ? "over by" : "available"}</span>
+                    {:else if l.credit}
+                      <strong class:debit={l.credit.net < 0} class:credit={l.credit.net > 0}>{signedMoney(l.unit, l.credit.net)}</strong>
+                      <span class="muted">mutual credit</span>
+                    {/if}
+                  </span>
+                  <span class="wsub muted">
+                    {#if l.held}In the Pot · {/if}
+                    {#if l.account && l.credit}
+                      {l.credit.net > 0 ? `Owed to you ${money(l.unit, l.credit.net)}` : l.credit.net < 0 ? `You owe ${money(l.unit, -l.credit.net)}` : "Square"}
+                    {:else}
+                      {l.sources.map((src) => ({ collective: "Collective", pot: "Pot", mint: "Issued here", inbound: "From upstream", credit: "Shared expenses" })[src]).join(" · ")}
+                    {/if}
+                    {#if l.account}
+                      · right {money(l.unit, l.account.right ?? 0)}
+                      {#if l.account.lifetimeSpent > 0}· paid {money(l.unit, l.account.lifetimeSpent)}{/if}
+                      {#if l.account.claimed > 0}· claimed {money(l.unit, l.account.claimed)}{/if}
+                      {#if l.account.received > 0}· received {money(l.unit, l.account.received)}{/if}
+                      {#if l.account.given > 0}· given {money(l.unit, l.account.given)}{/if}
+                    {/if}
+                  </span>
+                </button>
+              </li>
+            {/each}
+          </ul>
+          <p class="note left">Each unit on its own line — nothing is converted. Mutual credit is between people, never a draw on the fund; settle it in Balances.</p>
+        </div>
+      {/if}
+
+      {#if !hasAllocation}
+        <p class="empty">No members or partners to share with yet.</p>
+      {:else}
+        <div class="stats">
+          <div class="stat">
+            <span class="k">Contributors share</span>
+            <span class="v">{allocationConfig.interiorPercent}%</span>
+            <span class="k sub">{allocationConfig.interiorMode === "custom" ? "custom split" : "by value equation"}</span>
+          </div>
+          <div class="stat">
+            <span class="k">Reciprocity zones</span>
+            <span class="v">{100 - allocationConfig.interiorPercent}%</span>
+          </div>
+          <div class="stat">
+            <span class="k">Zones</span>
+            <span class="v">{allocationConfig.nzones}</span>
+          </div>
+          {#if usage}
+            <!-- These double as the legend for the stacked bars. -->
+            <div class="stat">
+              <span class="k"><i class="swatch spent"></i>Spent</span>
+              <span class="v">{formatAllocation(usageTotal.spent)}</span>
+            </div>
+            <div class="stat">
+              <span class="k"><i class="swatch claimed"></i>Claimed</span>
+              <span class="v">{formatAllocation(usageTotal.claimed)}</span>
+            </div>
+            <div class="stat">
+              <span class="k"><i class="swatch available"></i>Available</span>
+              <span class="v">{formatAllocation(availableTotal)}</span>
+            </div>
+            {#if overTotal > 0}
+              <div class="stat">
+                <span class="k"><i class="swatch over"></i>Over</span>
+                <span class="v">{formatAllocation(overTotal)}</span>
+              </div>
+            {/if}
+          {/if}
+        </div>
+
+        <div class="chart">
+          <SankeyChart
+            layout={allocationLayout}
+            format={formatAllocation}
+            onSelect={(n) => (selected = { node: n, chart: "allocation" })}
+            nodeDetails={allocationDetails}
+            linkDetails={allocationLinkDetails}
+          >
+            <p slot="empty" class="empty">No members or partners to share with yet.</p>
+          </SankeyChart>
+        </div>
 
         <!-- The same split, editable: sliders feed `allocate()` above, and the
-             panel saves off-chain and (with a wallet and a deployed bundle) on
-             it, through the same path Flow Management syncs with. -->
-        <div class="mt-3">
+             panel saves the settings lens every surface reads. -->
+        <div class="editor">
           <AllocationEditor
             holonId={holonID}
             {holosphere}
+            canEdit={may(myLogRole, "settings.guarded")}
             bind:interiorPercent={allocationConfig.interiorPercent}
             bind:steepness={allocationConfig.steepness}
             bind:nzones={allocationConfig.nzones}
+            bind:interiorMode={allocationConfig.interiorMode}
+            bind:shares={interiorShares}
             bind:zoneOf
-            partners={partners.map((p) => ({ id: p.id, name: p.name }))}
-            members={memberShares.map((m) => ({
-              userId: m.id,
-              percentage: m.percentage,
-            }))}
+            partners={partnerHolons.map((p) => ({ id: p.id, name: p.name }))}
+            bind:newPartners
+            members={memberShares.map((m) => ({ userId: m.id, percentage: m.percentage }))}
+            {people}
             saved={savedAllocation}
             on:saved={() => {
-              savedAllocation = { ...allocationConfig, zones: { ...zoneOf } };
+              const zones: Record<string, number> = {};
+              const placedPeople: Record<string, number> = {};
+              for (const [id, zone] of Object.entries(zoneOf)) {
+                if (partnersAll.some((p) => p.id === id)) zones[id] = zone;
+                else if (zone >= 1) placedPeople[id] = zone;
+              }
+              savedAllocation = {
+                ...allocationConfig,
+                zones,
+                people: placedPeople,
+                shares: normalizeInteriorShares(interiorShares),
+              };
+              // The new partners are in the record now; read it back.
+              void loadFederation(holonID);
             }}
           />
         </div>
-
-        <p class="text-xs text-gray-500 mt-2">
-          The concentric editor, deploys and interior-member detail live in Flow
-          Management.
-        </p>
-      </section>
-    {/if}
-
-    {#if entries.length}
-      <section id="ledger" class="mt-10">
-        <div class="flex flex-wrap items-end justify-between gap-3 mb-3">
-          <div>
-            <h2 class="text-lg font-medium">Ledger</h2>
-            <p class="text-sm text-gray-400">
-              Every entry the diagrams are drawn from — who, when, and what for.
-            </p>
-          </div>
-
-          <div class="search">
-            <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="11" cy="11" r="7" />
-              <line x1="16.5" y1="16.5" x2="21" y2="21" />
-            </svg>
-            <input
-              type="search"
-              bind:value={search}
-              aria-label="Search the ledger"
-              placeholder="Search a name, a note, a source…"
-            />
-          </div>
-        </div>
-
-        <div class="filters">
-          <div class="seg" role="radiogroup" aria-label="Which way it moved">
-            {#each [{ id: "all", label: "All" }, { id: "in", label: "In" }, { id: "out", label: "Out" }] as option (option.id)}
-              <button
-                type="button"
-                role="radio"
-                aria-checked={ledgerDirection === option.id}
-                class:active={ledgerDirection === option.id}
-                on:click={() =>
-                  (ledgerDirection = option.id as LedgerDirection | "all")}
-              >
-                {option.label}
-              </button>
-            {/each}
-          </div>
-
-          {#if entryTracks.length > 1}
-            <label class="picker">
-              <span class="sr-only">Unit</span>
-              <select bind:value={ledgerTrack}>
-                <option value="">Every unit</option>
-                {#each entryTracks as [key, track] (key)}
-                  <option value={key}>{trackLabel(track)}</option>
-                {/each}
-              </select>
-            </label>
+        <!-- What the fund holds: a harvest, a stock, a grant — brought in by an
+             attester's signed mint, divided by the split, drawn in its unit. -->
+        <div class="claims-panel">
+          <h3>What the fund holds</h3>
+          {#if inbound.length && selfId && selfId === holonID}
+            <!-- A person's own board: the rights reaching them from every hub they keep. -->
+            <p class="note">Reaching you: {#each inbound as r, i (r.from + r.unit)}{i ? ", " : ""}{r.right} {r.unit.toUpperCase()} from {partyName(r.from)}{/each}.</p>
           {/if}
-
-          <label class="picker">
-            <span class="sr-only">Source</span>
-            <select bind:value={ledgerSource}>
-              {#each SOURCES as source (source.id)}
-                <option value={source.id}>{source.label}</option>
-              {/each}
-            </select>
-          </label>
-
-          {#if ledgerNode}
-            <button
-              type="button"
-              class="chip"
-              on:click={() => (ledgerNode = "")}
-              title="Show every entry again"
-            >
-              In {ledgerNodeLabel} <span aria-hidden="true">✕</span>
-            </button>
-          {/if}
-
-          {#if hasLedgerFilter}
-            <button type="button" class="link" on:click={clearLedgerFilters}>
-              Clear filters
-            </button>
-          {/if}
-        </div>
-
-        <div class="totals">
-          <span class="count">
-            {filteredEntries.length}
-            {filteredEntries.length === 1 ? "entry" : "entries"}
-            {#if filteredEntries.length !== entries.length}
-              <span class="text-gray-500">of {entries.length}</span>
-            {/if}
-          </span>
-          <!-- One total per unit: hours are not euros, and this repo has no
-               exchange rate that could honestly merge them. -->
-          {#each ledgerTotals as total (total.key)}
-            <span class="total">
-              <span class="text-gray-500">{totalLabel(total)}</span>
-              <span class="in">+{formatTotal(total, total.totalIn)}</span>
-              <span class="out">−{formatTotal(total, total.totalOut)}</span>
-            </span>
-          {/each}
-        </div>
-
-        {#if !filteredEntries.length}
-          <p class="text-gray-400 py-10 text-center">
-            No entry matches that. <button
-              type="button"
-              class="link"
-              on:click={clearLedgerFilters}>Clear the filters</button
-            > to see them all.
-          </p>
-        {:else}
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">
-                    <button
-                      type="button"
-                      class="sort"
-                      on:click={() => (newestFirst = !newestFirst)}
-                      aria-label={newestFirst
-                        ? "Sorted newest first; show oldest first"
-                        : "Sorted oldest first; show newest first"}
-                    >
-                      Date <span aria-hidden="true">{newestFirst ? "↓" : "↑"}</span>
-                    </button>
-                  </th>
-                  <th scope="col">Entry</th>
-                  <th scope="col">Description</th>
-                  <th scope="col">Grouped as</th>
-                  <th scope="col">Source</th>
-                  <th scope="col" class="right">Amount</th>
-                </tr>
-              </thead>
+          {#if potInboundRows.length || (mintsCtx && mintsCtx.folded.mints.length)}
+            <table class="claims">
+              <thead><tr><th>What</th><th>Amount</th><th>Status</th></tr></thead>
               <tbody>
-                {#each visibleEntries as entry (entry.id)}
-                  <tr class:derived={entry.derived}>
-                    <td class="date" title={stampFmt.format(entry.timestamp)}>
-                      {dateFmt.format(entry.timestamp)}
-                    </td>
-                    <td>
-                      <span class="party">
-                        <span class="arrow {entry.direction}" aria-hidden="true">
-                          {entry.direction === "in" ? "↓" : "↑"}
-                        </span>
-                        <span class="sr-only">
-                          {entry.direction === "in" ? "In from" : "Out to"}
-                        </span>
-                        {entry.party}
-                      </span>
-                      {#if others(entry).length}
-                        <!-- Everyone else named on the record, so a shared cost
-                             can be read without opening it. -->
-                        <span class="with">with {others(entry).join(", ")}</span>
-                      {/if}
-                    </td>
-                    <td class="desc">
-                      {entry.description}
-                      {#if entry.derived}
-                        <span class="badge">rule</span>
-                      {/if}
-                    </td>
-                    <td>
-                      <!-- The bar this row sits inside; clicking it narrows the
-                           list to the rest of that bar's entries. -->
-                      <button
-                        type="button"
-                        class="node"
-                        title="Show only what is inside {entry.nodeLabel}"
-                        on:click={() => {
-                          ledgerNode = entry.nodeId;
-                          ledgerTrack = ledgerTrackKey(entry);
-                        }}
-                      >
-                        {entry.nodeLabel}
-                      </button>
-                    </td>
-                    <td class="src">{sourceLabel(entry.source)}</td>
-                    <td class="right amount {entry.direction}">
-                      {entry.direction === "in" ? "+" : "−"}{formatEntry(entry)}
-                    </td>
+                {#each inbound as r (r.from + r.unit)}
+                  <tr><th scope="row">Reaching here from {partyName(r.from)}</th><td>{r.right} {r.unit.toUpperCase()}</td><td><span class="badge">Upstream right</span></td></tr>
+                {/each}
+                {#each (mintsCtx?.folded.mints ?? []).filter((m) => m.status !== "rejected").slice(-12).reverse() as m (m.id)}
+                  <tr class={m.status === "issued" ? "approved" : m.status}>
+                    <th scope="row">{m.memo ?? "Issued"}{m.source ? ` · ${partyName(m.source)}` : ""}</th>
+                    <td>{m.amount} {m.unit}</td>
+                    <td><span class="badge">{mintStatusLabel[m.status]}</span></td>
                   </tr>
                 {/each}
               </tbody>
             </table>
-          </div>
-
-          {#if filteredEntries.length > visibleEntries.length}
-            <button
-              type="button"
-              class="more"
-              on:click={() => (rowLimit += PAGE)}
-            >
-              Show {Math.min(PAGE, filteredEntries.length - visibleEntries.length)}
-              more
-            </button>
+          {:else}
+            <p class="empty">Nothing has been brought into the fund yet{collective ? " besides the collective's money" : ""}.</p>
           {/if}
-        {/if}
-      </section>
-    {/if}
-
-    {#if collectiveError}
-      <p class="text-sm text-amber-400 mt-4">{collectiveError}</p>
+          {#if canMint}
+            <form class="claim-form" on:submit|preventDefault={submitMint}>
+              <label>Amount <input type="number" min="0.01" step="0.01" bind:value={mintAmount} required /></label>
+              <label>Unit <input type="text" maxlength="5" placeholder="L" bind:value={mintUnit} required /></label>
+              <label class="grow">What it is <input type="text" maxlength="140" bind:value={mintMemo} /></label>
+              {#if partners.length}
+                <label>From
+                  <select bind:value={mintSource}>
+                    <option value="">—</option>
+                    {#each partners as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+                  </select>
+                </label>
+              {/if}
+              <button type="submit" disabled={mintBusy}>Add to the fund</button>
+            </form>
+          {:else}
+            <p class="note">Only an attester of this fund can add to it.</p>
+          {/if}
+          {#if mintError}<p class="note warn">{mintError}</p>{/if}
+        </div>
+        <!-- The Pot: value held on chain, divided by a rights table committed
+             once per lunation; collect in one transaction. -->
+        <PotPanel
+          {holosphere}
+          {holonID}
+          pot={potRecord}
+          {settings}
+          {usersById}
+          {membersLog}
+          policyEntries={[...policyEntries.values()]}
+          {attestations}
+          {selfId}
+          {myShare}
+          {canAttest}
+          {partyName}
+          on:receipts={(e) => (potChain = e.detail)}
+        />
+        <!-- Claims on the fund: signed entries in the holon's own log, judged
+             by its attesters, folded the same way on every surface. -->
+        <div class="claims-panel">
+          <h3>Claims on the fund</h3>
+          {#if claimsProvisional}
+            <p class="note">This holon is not founded yet: who counts is provisional until the bot signs its membership.</p>
+          {/if}
+          {#if selfId}
+            <form class="claim-form" on:submit|preventDefault={submitClaim}>
+              <label>Amount <input type="number" min="0.01" step="0.01" max={claimMax ?? undefined} bind:value={claimAmount} required /></label>
+              <label class="grow">What for <input type="text" maxlength="140" bind:value={claimMemo} /></label>
+              <button type="submit" disabled={claimBusy || !claimUnit || claimTooBig}>Record a claim{claimUnit ? ` (${claimUnit})` : ""}</button>
+            </form>
+            {#if claimMax != null}
+              <p class="note" class:warn={claimTooBig}>Up to {claimMax} {claimUnit.toUpperCase()} — your access after what was claimed, paid, given or is awaiting attestation.</p>
+            {/if}
+            <!-- A give: a `transfer` in the same log. It burns part of your
+                 access and opens the same amount for whoever it names; judged
+                 like a claim, never taken back. -->
+            <form class="claim-form give-form" on:submit|preventDefault={submitGive}>
+              <label class="grow">Give to
+                <input type="text" list="give-parties" maxlength="80" bind:value={giveTo} placeholder="a member, a partner holon, or an id" required />
+                <datalist id="give-parties">
+                  {#each Object.keys(ceilings ?? {}).filter((id) => id !== selfId) as id (id)}<option value={id}>{partyName(id)}</option>{/each}
+                </datalist>
+              </label>
+              <label>Amount <input type="number" min="0.01" step="0.01" max={claimMax ?? undefined} bind:value={giveAmount} required /></label>
+              <label class="grow">Note <input type="text" maxlength="140" bind:value={giveMemo} /></label>
+              <button type="submit" disabled={claimBusy || !claimUnit || !giveTo.trim() || !fitsHeadroom(claimMax, Number(String(giveAmount).replace(",", ".")))}>Give{claimUnit ? ` (${claimUnit})` : ""}</button>
+            </form>
+          {/if}
+          {#if claimError}<p class="note warn">{claimError}</p>{/if}
+          {#if logRows.length}
+            <table class="claims">
+              <thead><tr><th>Who</th><th>Amount</th><th>What for</th><th>Status</th>{#if canAttest}<th></th>{/if}</tr></thead>
+              <tbody>
+                {#each logRows as row (row.kind === "claim" ? row.c.id : row.g.id)}
+                  {#if row.kind === "give"}
+                    {@const g = row.g}
+                    <tr class={`give ${g.status}`}>
+                      <th scope="row">{partyName(g.party)} → {partyName(g.to)}</th>
+                      <td>{g.amount} {g.unit}</td>
+                      <td class="memo">{g.memo ?? ""}</td>
+                      <td><span class="badge">{claimStatusLabel[g.status]}</span>{#if g.reason && g.status !== "approved"} <small>({g.reason})</small>{/if}</td>
+                      {#if canAttest}
+                        <td class="acts">
+                          {#if g.status !== "rejected"}
+                            {#if g.status !== "approved"}<button type="button" disabled={claimBusy} on:click={() => judgeClaim({ id: g.id } as Claim, "attest")}>Attest</button>{/if}
+                            {#if g.status !== "disputed"}<button type="button" disabled={claimBusy} on:click={() => judgeClaim({ id: g.id } as Claim, "dispute")}>Dispute</button>{/if}
+                          {/if}
+                        </td>
+                      {/if}
+                    </tr>
+                  {:else}
+                    {@const c = row.c}
+                    <tr class={c.status}>
+                      <th scope="row">{partyName(c.party)}</th>
+                      <td>{c.amount} {c.unit}</td>
+                      <td class="memo">{c.memo ?? ""}</td>
+                      <td><span class="badge">{claimStatusLabel[c.status]}</span>{#if c.reason && c.status !== "approved" && c.status !== "settled"} <small>({c.reason})</small>{/if}</td>
+                      {#if canAttest}
+                        <td class="acts">
+                          {#if c.status !== "settled" && c.status !== "rejected"}
+                            {#if c.status !== "approved"}<button type="button" disabled={claimBusy} on:click={() => judgeClaim(c, "attest")}>Attest</button>{/if}
+                            {#if c.status !== "disputed"}<button type="button" disabled={claimBusy} on:click={() => judgeClaim(c, "dispute")}>Dispute</button>{/if}
+                            {#if c.status === "approved"}<button type="button" disabled={claimBusy} on:click={() => markPaid(c)}>Paid</button>{/if}
+                          {/if}
+                        </td>
+                      {/if}
+                    </tr>
+                  {/if}
+                {/each}
+              </tbody>
+            </table>
+          {:else}
+            <p class="empty">No claims or gives recorded in the log yet.</p>
+          {/if}
+          {#if claimsCtx?.folded.imports.length}
+            <p class="note">
+              Partners folded in:
+              {#each claimsCtx.folded.imports as im, i (im.holon)}{i ? ", " : ""}{partyName(im.holon)} ({im.accepted} accepted{im.source === "bootstrap" ? ", key only" : ""}){/each}.
+            </p>
+          {/if}
+          <!-- The rules: an admin's signed word in the policy log, folded as-of-time. -->
+          <details class="rules" bind:open={rulesOpen} on:toggle={() => rulesOpen && void loadPartnerKeys()}>
+            <summary>
+              Rules · quorum {claimsCtx?.policy.quorum ?? 0}, {claimsCtx?.policy.conflict === "quorum" ? "a human decides" : "the first wins"}
+              {#if Object.keys(claimsCtx?.policy.partners ?? {}).length} · {Object.keys(claimsCtx?.policy.partners ?? {}).length} partner(s) pinned{/if}
+            </summary>
+            <p class="note">
+              How claims are judged: who may raise one, who attests, how many attestations count, and what
+              happens when two draw on the same thing. An admin's signed entry of the holon's policy log.
+            </p>
+            {#if !rulesCanSign}
+              <p class="note warn">Only an admin's signature sets the rules; yours would be recorded but not counted.</p>
+            {/if}
+            <div class="rule-row">
+              <span>Who may claim</span>
+              {#each POLICY_ROLES as r (r)}
+                <button type="button" class:on={ruleAuthors.includes(r)} aria-pressed={ruleAuthors.includes(r)} disabled={!rulesCanSign} on:click={() => toggleRole("authors", r)}>{r}s</button>
+              {/each}
+            </div>
+            <div class="rule-row">
+              <span>Who attests</span>
+              {#each POLICY_ROLES as r (r)}
+                <button type="button" class:on={ruleAttesters.includes(r)} aria-pressed={ruleAttesters.includes(r)} disabled={!rulesCanSign} on:click={() => toggleRole("attesters", r)}>{r}s</button>
+              {/each}
+            </div>
+            <div class="rule-row">
+              <label>Attestations needed <input type="number" min="0" max="9" step="1" disabled={!rulesCanSign} bind:value={ruleQuorum} /></label>
+            </div>
+            <div class="rule-row">
+              <span>Two on one basis</span>
+              <button type="button" class:on={ruleConflict === "earliest"} aria-pressed={ruleConflict === "earliest"} disabled={!rulesCanSign} on:click={() => (ruleConflict = "earliest")}>the first wins</button>
+              <button type="button" class:on={ruleConflict === "quorum"} aria-pressed={ruleConflict === "quorum"} disabled={!rulesCanSign} on:click={() => (ruleConflict = "quorum")}>a human decides</button>
+            </div>
+            <div class="rule-row wrap">
+              <span>Partners whose claims count</span>
+              {#if partners.length}
+                {#each partners as p (p.id)}
+                  <button
+                    type="button"
+                    class:on={!!rulePartners[p.id]}
+                    aria-pressed={!!rulePartners[p.id]}
+                    disabled={!rulesCanSign || !partnerKeys[p.id]}
+                    title={partnerKeys[p.id] ? "" : "no key published"}
+                    on:click={() => togglePartner(p.id)}>{p.name}{rulePartners[p.id] ? " · pinned" : ""}</button
+                  >
+                {/each}
+              {:else}
+                <small>No partners.</small>
+              {/if}
+            </div>
+            <div class="rule-row">
+              <button type="button" class="primary" disabled={claimBusy || !rulesCanSign || rulesUnchanged} title={rulesUnchanged ? "These are the rules already in force." : ""} on:click={saveRules}>Set the rules</button>
+            </div>
+          </details>
+        </div>
+      {/if}
+    </section>
+  {:else}
+    {#if entries.length}
+      <LedgerPanel
+        {entries}
+        bind:track={ledgerTrack}
+        bind:node={ledgerNode}
+        bind:search={ledgerSearch}
+      />
+    {:else}
+      <p class="empty">Nothing has been recorded yet.</p>
     {/if}
   {/if}
 
-  {#if selected}
-    <div class="detail">
-      <span class="font-medium">{selected.label}</span>
-      <span class="text-teal-300">{formatMovement(selected.value)}</span>
-      <button type="button" class="ml-2 text-gray-400" on:click={() => (selected = null)}>
-        ✕
-      </button>
-    </div>
+  {#if collectiveError}
+    <p class="note warn">{collectiveError}</p>
   {/if}
 </div>
 
+{#if selectedParty}
+  {@const party = selectedParty}
+  <Sheet title={party.label} on:close={() => (selectedParty = null)}>
+    <dl class="detail">
+      <div class="drow"><dt>Gave</dt><dd>{formatPeople(party.given)}</dd></div>
+      <div class="drow"><dt>Received</dt><dd>{formatPeople(party.received)}</dd></div>
+    </dl>
+    {#each [{ caption: "Gave to", rows: partyBreakdown?.given ?? [], total: party.given }, { caption: "Received from", rows: partyBreakdown?.received ?? [], total: party.received }] as side (side.caption)}
+      {#if side.rows.length}
+        <table class="who">
+          <caption>{side.caption}</caption>
+          <tbody>
+            {#each side.rows as row (row.id)}
+              <tr>
+                <th scope="row">{row.label}</th>
+                <td class="share">{side.total > 0 ? `${Math.round((row.value / side.total) * 100)}%` : ""}</td>
+                <td class="amt">{formatPeople(row.value)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+    {/each}
+  </Sheet>
+{/if}
+
+{#if selected}
+  {@const node = selected.node}
+  <Sheet title={node.label} on:close={() => (selected = null)}>
+    <p class="big">{selectedFormat(node.value)}</p>
+    {#if selectedRows.length}
+      <dl class="detail">
+        {#each selectedRows as row (row.label)}
+          <div class="drow">
+            <dt>{row.label}</dt>
+            <dd>{row.value}</dd>
+          </div>
+        {/each}
+      </dl>
+    {/if}
+    {#if breakdown.length}
+      <!-- Who, and how much: the bars this one is made of. -->
+      <table class="who">
+        <tbody>
+          {#each breakdown as row (row.id)}
+            <tr>
+              <th scope="row">{row.label}</th>
+              <td class="share">{node.value > 0 ? `${Math.round((row.value / node.value) * 100)}%` : ""}</td>
+              <td class="amt">{selectedFormat(row.value)}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
+    <svelte:fragment slot="actions">
+      {#if selected?.chart === "movement"}
+        <button type="button" class="primary" on:click={() => showInLedger(node)}>
+          {node.kind === "hub" ? "Open the ledger" : "List these entries"}
+        </button>
+      {/if}
+    </svelte:fragment>
+  </Sheet>
+{/if}
+
 <style>
+  .board {
+    --flow-accent: #0f766e;
+    padding: 0.9rem 1rem calc(1.6rem + env(safe-area-inset-bottom));
+    max-width: 52rem;
+    margin: 0 auto;
+    color: var(--color-text-primary);
+  }
+
+  @media (min-width: 640px) {
+    .board {
+      padding: 1.2rem 1.5rem 2rem;
+    }
+  }
+
+  .top {
+    margin-bottom: 0.8rem;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 1.45rem;
+    font-weight: 600;
+  }
+
+  h2 {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 600;
+  }
+
+  .sub {
+    margin: 0.15rem 0 0;
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+  }
+
+  /* The tab pill stays put while the panel scrolls under it. */
+  .tabs {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    margin: 0 -0.25rem 1rem;
+    padding: 0.35rem 0.25rem;
+    background: var(--color-bg-primary);
+  }
+
+  .panel {
+    animation: flows-rise 0.42s ease both;
+  }
+
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 0.8rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.4rem;
+    margin: 0.4rem 0 0.8rem;
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+  }
+
   .k {
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: #94a3b8;
+    color: var(--color-text-muted);
   }
 
   .v {
     font-size: 1.3rem;
-    color: #e2e8f0;
   }
 
-  .seg {
-    display: flex;
-    background: #1e293b;
-    border-radius: 9999px;
-    padding: 2px;
+  /* Legend dots, the same hues the stacked bars use. */
+  .swatch {
+    display: inline-block;
+    width: 0.55em;
+    height: 0.55em;
+    border-radius: 999px;
+    margin-right: 0.35em;
+    vertical-align: 0.05em;
   }
-
-  .seg button {
-    padding: 0.3rem 0.8rem;
-    border-radius: 9999px;
-    font-size: 0.82rem;
-    color: #94a3b8;
+  .swatch.spent {
+    background: #f43f5e;
   }
-
-  .seg button.active {
-    background: #0f766e;
-    color: #f0fdfa;
+  .swatch.claimed {
+    background: #f59e0b;
   }
-
-  .detail {
-    position: fixed;
-    bottom: 1.2rem;
-    left: 50%;
-    transform: translateX(-50%);
-    background: #1e293b;
-    border: 1px solid #334155;
-    border-radius: 9999px;
-    padding: 0.5rem 1rem;
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+  .swatch.available {
+    background: #10b981;
   }
-
-  .search {
-    position: relative;
-    display: flex;
-    align-items: center;
-    min-width: 14rem;
-    flex: 1 1 16rem;
-    max-width: 24rem;
-  }
-
-  .search-icon {
-    position: absolute;
-    left: 0.6rem;
-    width: 15px;
-    height: 15px;
-    fill: none;
-    stroke: #94a3b8;
-    stroke-width: 2;
-    stroke-linecap: round;
-    pointer-events: none;
-  }
-
-  .search input {
-    width: 100%;
-    background: #1e293b;
-    border: 1px solid #334155;
-    border-radius: 0.5rem;
-    color: #e2e8f0;
-    font-size: 0.875rem;
-    padding: 0.45rem 0.7rem 0.45rem 2rem;
-  }
-
-  .search input:focus {
-    outline: none;
-    border-color: #0f766e;
-  }
-
-  .filters {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
-  }
-
-  .picker select {
-    background: #1e293b;
-    border: 1px solid #334155;
-    border-radius: 9999px;
-    color: #cbd5e1;
-    font-size: 0.82rem;
-    padding: 0.35rem 0.7rem;
-  }
-
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    background: #0f766e;
-    color: #f0fdfa;
-    border-radius: 9999px;
-    font-size: 0.8rem;
-    padding: 0.3rem 0.7rem;
-  }
-
-  .link {
-    color: #5eead4;
-    font-size: 0.8rem;
-    text-decoration: underline;
-  }
-
-  .totals {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.4rem 1.1rem;
-    font-size: 0.82rem;
-    color: #cbd5e1;
-    margin-bottom: 0.6rem;
-  }
-
-  .count {
-    color: #94a3b8;
-  }
-
-  .total {
-    display: inline-flex;
-    gap: 0.45rem;
-    align-items: baseline;
+  .swatch.over {
+    background: #dc2626;
   }
 
   .in {
@@ -1408,147 +2339,337 @@
     color: #fca5a5;
   }
 
-  .table-wrap {
+  /* The Sankey scrolls sideways inside its own card on a phone rather than
+     pushing the page wider. */
+  .chart {
     overflow-x: auto;
-    border: 1px solid #1e293b;
-    border-radius: 0.6rem;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 18px;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    padding: 0.5rem;
   }
 
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.85rem;
-    min-width: 44rem;
+  .chart > :global(*) {
+    min-width: 32rem;
   }
 
-  thead th {
+  /* A chord is round and sizes itself to the card; it never scrolls. */
+  .chart.round > :global(*) {
+    min-width: 0;
+  }
+
+  .who caption {
     text-align: left;
-    font-weight: 500;
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: #94a3b8;
-    padding: 0.5rem 0.75rem;
-    background: #131c2e;
-    white-space: nowrap;
+    color: var(--color-text-muted);
+    padding: 0.6rem 0 0.3rem;
   }
 
-  tbody td {
-    padding: 0.55rem 0.75rem;
-    border-top: 1px solid #1e293b;
-    vertical-align: top;
+  .editor {
+    margin-top: 0.8rem;
   }
 
-  tbody tr:hover {
-    background: #16202f;
+  .empty {
+    color: var(--color-text-muted);
+    text-align: center;
+    padding: 2.4rem 1rem;
   }
 
-  tbody tr.derived td {
-    color: #94a3b8;
-  }
-
-  .date {
-    color: #94a3b8;
-    white-space: nowrap;
-  }
-
-  .party {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.35rem;
-    color: #e2e8f0;
-  }
-
-  .arrow.in {
-    color: #5eead4;
-  }
-
-  .arrow.out {
-    color: #fca5a5;
-  }
-
-  .with {
-    display: block;
-    color: #64748b;
-    font-size: 0.75rem;
-    margin-left: 1.1rem;
-  }
-
-  .desc {
-    color: #cbd5e1;
-    max-width: 22rem;
-  }
-
-  .badge {
-    display: inline-block;
-    background: #1e293b;
-    color: #94a3b8;
-    border-radius: 9999px;
-    font-size: 0.65rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 0.05rem 0.4rem;
-    margin-left: 0.3rem;
-  }
-
-  .node {
-    display: block;
-    color: #7dd3fc;
+  .note {
+    color: var(--color-text-muted);
     font-size: 0.8rem;
-    text-align: left;
+    text-align: center;
+    margin: 0.7rem 0 0;
   }
 
-  .node:hover {
-    text-decoration: underline;
+  .note.warn {
+    color: #fbbf24;
   }
 
-  .src {
-    color: #64748b;
-    font-size: 0.72rem;
-  }
-
-  .right {
-    text-align: right;
-  }
-
-  .amount {
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .amount.in {
+  .note a {
     color: #5eead4;
   }
 
-  .amount.out {
-    color: #fca5a5;
+  .big {
+    margin: 0;
+    font-size: 1.8rem;
+    color: #5eead4;
   }
 
-  .sort {
+  .detail {
+    margin: 0.8rem 0 0;
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .drow {
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    font-size: 0.92rem;
+  }
+
+  .drow dt {
+    color: var(--color-text-muted);
+    flex: 0 0 auto;
+  }
+
+  .drow dd {
+    margin: 0;
+    text-align: right;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .who {
+    width: 100%;
+    margin: 0.8rem 0 0;
+    border-collapse: collapse;
+    font-size: 0.86rem;
+  }
+  .who th,
+  .who td {
+    padding: 0.3rem 0;
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+    vertical-align: baseline;
+  }
+  .who th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--color-text-primary);
+  }
+  .who .share {
+    text-align: right;
+    padding-left: 0.6rem;
+    color: #94a3b8;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .who .amt {
+    text-align: right;
+    padding-left: 0.8rem;
+    color: #5eead4;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  @keyframes flows-rise {
+    from {
+      opacity: 0;
+      translate: 0 14px;
+    }
+    to {
+      opacity: 1;
+      translate: 0 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .panel {
+      animation: none;
+    }
+  }
+
+  .pot-units {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+  }
+  .pot-units .pick.on {
+    background: var(--ink, #111);
+    color: var(--paper, #fff);
+  }
+
+  .claims-panel {
+    margin-top: 1rem;
+    display: grid;
+    gap: 0.5rem;
+  }
+  .rules {
+    border: 1px solid rgba(128, 128, 128, 0.35);
+    border-radius: 0.6rem;
+    padding: 0.5rem 0.75rem;
+  }
+  .rules summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .rule-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+  }
+  .rule-row.wrap {
+    flex-wrap: wrap;
+  }
+  .rule-row > span {
+    min-width: 11rem;
+    color: inherit;
+    opacity: 0.8;
+  }
+  .rule-row button {
+    padding: 0.3rem 0.8rem;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    background: transparent;
     color: inherit;
     font: inherit;
-    letter-spacing: inherit;
-    text-transform: inherit;
+    cursor: pointer;
+    opacity: 0.7;
   }
-
-  .more {
-    margin-top: 0.7rem;
-    background: #1e293b;
-    border-radius: 0.5rem;
-    color: #cbd5e1;
-    font-size: 0.82rem;
-    padding: 0.45rem 0.9rem;
+  .rule-row button.on {
+    opacity: 1;
+    font-weight: 600;
   }
-
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
+  .rule-row button:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+  .rule-row input {
+    width: 4rem;
+    margin-left: 0.4rem;
+  }
+  .claims-panel h3 {
+    margin: 0;
+    font-size: 1rem;
+  }
+  .wallet-lines {
+    list-style: none;
+    margin: 0;
     padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
+    display: grid;
+    gap: 0.35rem;
+  }
+  .wline {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 4rem minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 0.75rem;
+    align-items: center;
+    padding: 0.45rem 0.75rem;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    background: transparent;
+    border: 1px solid rgba(128, 128, 128, 0.35);
+    border-radius: 0.6rem;
+    cursor: pointer;
+  }
+  .wline:disabled {
+    cursor: default;
+  }
+  .wline.on {
+    border-color: #2a9d8f;
+    box-shadow: inset 0 0 0 1px #2a9d8f;
+  }
+  .wline.over {
+    border-color: #e76f51;
+  }
+  .wline .wunit {
+    grid-row: 1 / span 2;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  .wline .wmain {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+  .wline .wmain strong {
+    font-size: 1.15rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .wline .wsub {
+    font-size: 0.78rem;
+  }
+  .wline .credit {
+    color: #2a9d8f;
+  }
+  .wline .debit {
+    color: #e76f51;
+  }
+  .note.left {
+    text-align: left;
+    margin-top: 0;
+  }
+  .claim-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.5rem;
+  }
+  .claim-form label {
+    display: grid;
+    gap: 0.15rem;
+    font-size: 0.85rem;
+  }
+  .claim-form label.grow {
+    flex: 1 1 10rem;
+  }
+  .give-form {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed rgba(128, 128, 128, 0.4);
+  }
+  .claim-form input {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid rgba(128, 128, 128, 0.4);
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+  }
+  .claim-form button,
+  .claims .acts button {
+    padding: 0.4rem 0.8rem;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .claims {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+  .claims th,
+  .claims td {
+    text-align: left;
+    padding: 0.35rem 0.5rem;
+    border-top: 1px solid rgba(128, 128, 128, 0.25);
+  }
+  .claims .memo {
+    opacity: 0.75;
+  }
+  .claims .acts {
+    display: flex;
+    gap: 0.3rem;
+  }
+  .claims .badge {
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid rgba(128, 128, 128, 0.4);
+    font-size: 0.75rem;
+  }
+  .claims tr.approved .badge,
+  .claims tr.settled .badge {
+    border-color: #2a9d8f;
+    color: #2a9d8f;
+  }
+  .claims tr.disputed .badge,
+  .claims tr.over .badge,
+  .claims tr.conflict .badge,
+  .claims tr.rejected .badge {
+    border-color: #e76f51;
+    color: #e76f51;
   }
 </style>

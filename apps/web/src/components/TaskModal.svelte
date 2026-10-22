@@ -8,8 +8,12 @@
     import CompleterModal from './shared/CompleterModal.svelte';
     import SourceBadge from './shared/SourceBadge.svelte';
     import PublishToFederationButton from './shared/PublishToFederationButton.svelte';
+    import ProposalVote from './governance/ProposalVote.svelte';
+    import TaskChat from './TaskChat.svelte';
     import { formatDate } from "../utils/date";
-    import { resolveImage } from "../utils/imageServer";
+    import { get } from "svelte/store";
+    import { pictureUrl, resolveMediaServers, uploadBlob } from "@holons/core/media";
+    import { signerFromSecretKey } from "@holons/core/holosphere";
     import { fileToDownscaledDataURL } from "../utils/imageCompression";
     import {
         type ScoreEquation,
@@ -23,7 +27,7 @@
         subscribeToHolon,
         isSubscribed
     } from "../lib/holonCache";
-    import { nostrPublicKey } from "../lib/stores/nostr";
+    import { nostrPrivateKey, nostrPublicKey } from "../lib/stores/nostr";
     import { telegramStore } from "../lib/stores/telegram";
     import { notifyWriteDenied } from "../lib/stores/writeNotifications";
     import {
@@ -33,6 +37,9 @@
     import { getColorFromCategory } from "@holons/core/categories";
     import {
         toggleParticipant as coreToggleParticipant,
+        toggleHost as coreToggleHost,
+        hostsOf,
+        isEventQuest,
         applyTaskCompletion,
         planTaskCompletion,
         executeCompletionPlan,
@@ -42,8 +49,16 @@
         applyBreakdownProposal,
         saveTasksToHolon,
         BREAKDOWN_MAX_GOAL_DESCRIPTION_CHARS,
+        QUEST_FREQUENCIES,
+        applyOccurrenceCompletion,
+        planOccurrenceCompletion,
+        setQuestFrequency,
+        taskRef,
+        boardUrlOf,
+        ensureTaskBoard,
         type ApplyBreakdownResult,
         type BreakdownStep,
+        type QuestFrequency,
     } from "@holons/core/tasks";
     import {
         parseInstant,
@@ -53,11 +68,28 @@
     } from "@holons/core/datetime";
     import { getEventStore } from "../lib/rea/eventStore";
     import { queryManager } from "$lib/holosphere/QueryManager";
-    import { reflectMembership } from "../utils/reflectMembership";
+    import { refreshMemberDm } from "../utils/refreshMemberDm";
+    import { Lock, Unlock } from "svelte-feathers";
+    import { isLocked } from "@holons/core/privacy";
+    import AudienceEditor from "./shared/AudienceEditor.svelte";
+
+    // Privacy: the card is locked (sealed on the relays, read by this holon's
+    // members and the holons it is shared with) from here; a whole lens is
+    // locked from the federation page. No key is shown or typed.
+    let lockOpen = false;
+    let cardLocked = false;
+    async function checkLocked(hs: HoloSphere | undefined, holon: string, l: string, id: string) {
+        if (!hs || !holon || !id) { cardLocked = false; return; }
+        try { cardLocked = await isLocked(hs, { holon, lens: l, item: id }); } catch { cardLocked = false; }
+    }
+    $: void checkLocked(holosphere, holonId, lens, questId);
 
     export let quest: any;
     export let questId: string;
     export let holonId: string;
+    // The lens this record was read from. The Telegram bot keeps its events in
+    // `events`; every write here goes back there, never to a copy in `quests`.
+    export let lens: string = "quests";
     // When the modal was opened from a specific recurring-task instance, this holds
     // that occurrence's ISO `when`. Completion toggles apply only to that occurrence.
     export let occurrenceWhen: string | undefined = undefined;
@@ -122,25 +154,30 @@
     let recurringStatus = quest.status || 'ongoing';
     let frequency: string | null = quest.frequency ?? null;
 
-    type FrequencyOption = { value: string | null; label: string };
+    // The cadence vocabulary is core's (@holons/core/tasks recurrence) — the
+    // same set the kiosk offers, so a cadence picked on either surface reads
+    // on the other.
+    type FrequencyOption = { value: QuestFrequency | null; label: string };
+    const FREQUENCY_LABELS: Record<QuestFrequency, string> = {
+        daily: 'Daily',
+        weekly: 'Weekly',
+        biweekly: 'Every 2 weeks',
+        monthly: 'Monthly',
+        quarterly: 'Quarterly',
+        sixmonths: 'Every 6 months',
+        yearly: 'Yearly',
+    };
     const frequencyOptions: FrequencyOption[] = [
         { value: null, label: 'Never' },
-        { value: 'daily', label: 'Daily' },
-        { value: 'weekly', label: 'Weekly' },
-        { value: 'monthly', label: 'Monthly' },
-        { value: 'quarterly', label: 'Quarterly' },
-        { value: 'yearly', label: 'Yearly' },
+        ...QUEST_FREQUENCIES.map((value) => ({ value, label: FREQUENCY_LABELS[value] })),
     ];
 
-    async function updateFrequency(newFrequency: string | null) {
+    async function updateFrequency(newFrequency: QuestFrequency | null) {
         if ((frequency ?? null) === (newFrequency ?? null)) return;
         frequency = newFrequency;
-        const updates: any = { frequency: newFrequency };
-        // When clearing frequency, also drop the recurringTaskId so the scheduler stops it.
-        if (newFrequency === null && quest.recurringTaskId) {
-            updates.recurringTaskId = null;
-        }
-        await updateQuest(updates);
+        // Core also drops the recurringTaskId when the cadence is cleared, so
+        // the scheduler stops it.
+        await updateQuest(setQuestFrequency(quest, newFrequency));
     }
 
     let editingTitle = false;
@@ -305,8 +342,17 @@
         quest = updatedQuest;
         dispatch("updated", { questId, quest: updatedQuest });
 
-        // Sync quest in background — roll back on failure.
-        holosphere.put(holonId, "quests", updatedQuest).catch((error: any) => {
+        // Sync quest in background — roll back on failure. Core mirrors the
+        // change into the member's personal holon as part of this write; once
+        // it landed, a member who left gets their linked DM refreshed.
+        // `isSelected` is the pre-toggle state, so joined === !isSelected.
+        holosphere.put(holonId, lens, updatedQuest).then(() => {
+            refreshMemberDm({
+                questId: String(updatedQuest.id),
+                userId: user.id,
+                joined: !isSelected,
+            });
+        }).catch((error: any) => {
             quest = previousQuest;
             dispatch("updated", { questId, quest: previousQuest });
             if (error?.name === 'AuthorizationError') {
@@ -324,14 +370,29 @@
             });
         }
 
-        // Mirror into the member's personal holon + (re)send the linked DM.
-        // `isSelected` is the pre-toggle state, so joined === !isSelected.
-        void reflectMembership({
-            holosphere,
-            holonId,
-            questId: String(updatedQuest.id),
-            userId: user.id,
-            joined: !isSelected,
+    }
+
+    // Hosts of an event: when any is named they get the credit for it;
+    // otherwise every participant does (core's creditedMembers).
+    $: isEvent = isEventQuest(quest);
+    $: hostIds = new Set(hostsOf(quest).map((h: any) => String(h.id)));
+
+    function toggleUserHost(user: User) {
+        const host: any = { id: user.id };
+        if (user.username) host.username = user.username;
+        if (user.first_name) host.first_name = user.first_name;
+        const updatedQuest: any = coreToggleHost(quest, host);
+        const previousQuest = quest;
+        quest = updatedQuest;
+        dispatch("updated", { questId, quest: updatedQuest });
+        holosphere.put(holonId, lens, updatedQuest).catch((error: any) => {
+            quest = previousQuest;
+            dispatch("updated", { questId, quest: previousQuest });
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("[TaskModal.svelte] Error syncing host:", error);
+            }
         });
     }
 
@@ -376,10 +437,10 @@
         try {
             // holosphere.put() is optimistic - caches locally and returns immediately
             // For holograms, holosphere automatically routes writes to the source holon
-            await holosphere.put(holonId, "quests", updatedQuest);
+            await holosphere.put(holonId, lens, updatedQuest);
             quest = updatedQuest;
             // Let the host view (Calendar, Tasks, …) merge the change into its
-            // own task map immediately — the Gun subscription echo of a local
+            // own task map immediately — the store's subscription echo of a local
             // put isn't reliable enough to repaint chips/cards without it.
             dispatch("updated", { questId, quest: updatedQuest });
 
@@ -413,15 +474,16 @@
                     holosphere as any,
                     holonId,
                     questId,
+                    { lens },
                 );
                 if (!result.sourceDeleted) {
                     throw new Error("Source delete failed");
                 }
                 // Synchronously drop from the shared cache so the next
                 // snapshot emission doesn't flash the deleted card back
-                // into any list view that hasn't received Gun's null
+                // into any list view that hasn't received the store's null
                 // tombstone yet.
-                queryManager.evict(holonId, "quests", questId);
+                queryManager.evict(holonId, lens, questId);
 
                 dispatch("close", { deleted: true, questId });
             } catch (error: any) {
@@ -471,12 +533,13 @@
         });
     })();
 
-    // Toggle completion. For recurring occurrences, only this occurrence is
-    // toggled (no accounting is recorded, so no picker); otherwise the series
-    // completion opens the participant picker first.
+    // Toggle completion. Completing credits contributions — for a one-off
+    // quest and for one occurrence of a recurring series alike — so the
+    // participant picker opens first either way. Un-completing skips it.
     function handleCompleteClick() {
         if (isOccurrenceView) {
-            toggleOccurrenceCompleted();
+            if (isOccurrenceCompleted) toggleOccurrenceCompleted();
+            else showCompleterModal = true;
             return;
         }
         completeQuest();
@@ -500,6 +563,7 @@
         recordCompletion(participants);
     }
 
+    /** Un-tick this occurrence (ticking goes through the picker + credits). */
     async function toggleOccurrenceCompleted() {
         if (!occurrenceWhen) return;
         const current: string[] = Array.isArray(quest.completedOccurrences) ? quest.completedOccurrences : [];
@@ -523,6 +587,10 @@
 
     /** Record the completion crediting exactly the confirmed participants. */
     async function recordCompletion(participants: any[]) {
+        if (isOccurrenceView) {
+            await recordOccurrenceCompletion(participants);
+            return;
+        }
         // The confirmed set replaces the task's participants — unticking someone
         // both drops their credit and takes them off the record.
         const questToComplete = { ...quest, participants };
@@ -544,7 +612,7 @@
         const eventStore = getEventStore(holosphere);
 
         try {
-            await executeCompletionPlan(holosphere as any, eventStore, holonId, plan);
+            await executeCompletionPlan(holosphere as any, eventStore, holonId, plan, { lens });
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
                 notifyWriteDenied('Unable to save - no write permission for this holon');
@@ -556,6 +624,40 @@
         quest = result.task;
         dispatch("updated", { questId, quest: result.task });
         dispatch("taskCompleted", { questId });
+        dispatch("close");
+    }
+
+    /**
+     * One occurrence of a recurring series: the series stays open and only
+     * gets this occurrence ticked off, while the confirmed participants are
+     * credited exactly as for a one-off — same events, same equation, keyed
+     * under the occurrence so each one counts on its own. The confirmed set
+     * shapes the credits only; the series' roster is not rewritten.
+     */
+    async function recordOccurrenceCompletion(participants: any[]) {
+        if (!occurrenceWhen) return;
+        const result = applyOccurrenceCompletion(quest, occurrenceWhen, currentUserId(), { isAdmin: true });
+        if (!result.ok) {
+            console.warn('[TaskModal] applyOccurrenceCompletion blocked:', result.reason);
+            return;
+        }
+        const plan = planOccurrenceCompletion(result.task, occurrenceWhen, equation, {
+            holonId,
+            now: Date.now(),
+            credited: participants,
+        });
+        try {
+            await executeCompletionPlan(holosphere as any, getEventStore(holosphere), holonId, plan, { lens });
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+                return;
+            }
+            console.error('[TaskModal] executeCompletionPlan (occurrence) failed:', error);
+        }
+        quest = result.task;
+        dispatch("updated", { questId, quest: result.task });
+        dispatch("taskCompleted", { questId, occurrenceWhen });
         dispatch("close");
     }
 
@@ -762,12 +864,11 @@
         }
     }
 
-    // Read a chosen image, downscale + re-encode as JPEG, and persist it on
-    // the quest as a `data:image/jpeg;base64,…` URL. The compression step is
-    // mandatory because the picture replicates through the Holosphere graph
-    // to every peer — uncompressed phone-camera shots would bloat state for
-    // the entire holon. Format stays compatible with telegram-ui inlined
-    // pictures and the existing resolveImage() render path.
+    // Read a chosen image, downscale + re-encode as JPEG, upload it to
+    // Blossom signed by the member's key, and store the hosted URL on the
+    // quest — the same shape the bot stores, so every surface, every bot and
+    // other Nostr clients can show it. If no media server takes it the
+    // compressed data: URL is stored instead, as before.
     async function handlePictureSelect(event: Event) {
         const input = event.currentTarget as HTMLInputElement;
         const file = input.files?.[0];
@@ -793,12 +894,32 @@
                 alert("Failed to read this image. Try a different file.");
                 return;
             }
-            await updateQuest({ picture: processed.src });
+            await updateQuest({ picture: await hostPicture(processed.src) });
         } catch (err) {
             console.error("[TaskModal.svelte] Failed to attach picture:", err);
             alert("Failed to attach picture.");
         } finally {
             pictureUploading = false;
+        }
+    }
+
+    async function hostPicture(dataUrl: string): Promise<string> {
+        const sk = get(nostrPrivateKey);
+        if (!sk) return dataUrl;
+        try {
+            const [head, b64] = dataUrl.split(",");
+            const type = /^data:([^;]+)/.exec(head)?.[1] ?? "image/jpeg";
+            const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+            const blob = await uploadBlob({
+                bytes,
+                type,
+                signer: signerFromSecretKey(sk),
+                servers: resolveMediaServers(import.meta.env.VITE_MEDIA_SERVERS),
+            });
+            return blob.url;
+        } catch (err) {
+            console.warn("[TaskModal.svelte] Blossom upload failed, storing the picture inline:", err);
+            return dataUrl;
         }
     }
 
@@ -906,7 +1027,9 @@
         }
         const nostrPubKey = $nostrPublicKey;
         if (nostrPubKey) {
-            return { id: nostrPubKey, username: nostrPubKey.slice(0, 8) + '...', firstName: 'Nostr', lastName: 'User' };
+            // The key alone: its name is resolved wherever it is shown (kind 0,
+            // the holon's record), never a stand-in stored on the task.
+            return { id: nostrPubKey };
         }
         return undefined; // core falls back to the parent task's initiator
     }
@@ -1111,46 +1234,45 @@
         showRecurringEditor = false;
     }
 
-    // Canvas: navigate to an existing per-task canvas, or initialize one.
-    function navigateToCanvas() {
-        if (quest && quest.canvasId) {
-            goto(`/${holonId}/canvas/${quest.canvasId}`);
-        }
-    }
+    // Chat & whiteboard hang off the task where it really lives (a hologram
+    // resolves to its source, core `taskRef`), so everyone shares them.
+    $: chatRef = quest && questId && holonId ? taskRef(quest, holonId, questId) : null;
+    $: boardHref = boardUrlOf(quest);
+    let showChat = false;
+    let boardBusy = false;
 
-    function createCanvasForTask() {
-        if (!holosphere || !holonId || !questId) {
-            console.error("Cannot create canvas: missing parameters");
-            return;
+    async function startBoard() {
+        if (!holosphere || !chatRef || boardBusy) return;
+        const ref = chatRef;
+        // Open the tab inside the click: browsers block one opened after an await.
+        const w = window.open("about:blank", "_blank");
+        boardBusy = true;
+        try {
+            const res = await ensureTaskBoard(
+                {
+                    get: (key) => holosphere.get(ref.holon, lens, key),
+                    put: (record) => holosphere.put(ref.holon, lens, record),
+                },
+                ref.key,
+            );
+            if (!res) throw new Error("Whiteboard not saved");
+            quest = { ...quest, boardUrl: res.url };
+            if (w) {
+                w.opener = null;
+                w.location.href = res.url;
+            } else {
+                window.open(res.url, "_blank", "noopener");
+            }
+        } catch (error: any) {
+            w?.close();
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("Error creating whiteboard for task:", error);
+            }
+        } finally {
+            boardBusy = false;
         }
-        if (quest.canvasId) {
-            navigateToCanvas();
-            return;
-        }
-        const canvasId = `task_${questId}_canvas`;
-        const newCanvas = {
-            id: canvasId,
-            data: [],
-            updatedAt: Date.now(),
-        };
-        const previousQuest = quest;
-        quest = { ...quest, canvasId };
-
-        Promise.all([
-            holosphere.put(holonId, "canvases", newCanvas),
-            holosphere.put(holonId, "quests", quest),
-        ])
-            .then(() => {
-                goto(`/${holonId}/canvas/${canvasId}`);
-            })
-            .catch((error: any) => {
-                quest = previousQuest;
-                if (error?.name === 'AuthorizationError') {
-                    notifyWriteDenied('Unable to save - no write permission for this holon');
-                } else {
-                    console.error("Error creating canvas for task:", error);
-                }
-            });
     }
 
     // Add function to create checklist for this task. Optimistic — flip the
@@ -1181,7 +1303,7 @@
 
         Promise.all([
             holosphere.put(holonId, "checklists", newChecklist),
-            holosphere.put(holonId, "quests", quest),
+            holosphere.put(holonId, lens, quest),
         ]).catch((error: any) => {
             quest = previousQuest;
             if (error?.name === 'AuthorizationError') {
@@ -1285,6 +1407,26 @@
                         </button>
                     {/if}
                 
+                {#if holosphere && holonId && questId}
+                    <div class="mt-2">
+                        <!-- The lock sits at the far right of its row. -->
+                        <button
+                            type="button"
+                            class="ml-auto flex items-center gap-1 text-xs text-gray-300 hover:text-white"
+                            aria-expanded={lockOpen}
+                            title={cardLocked ? "Private — only this holon and the holons it is shared with can read it" : "Public — anyone can read it"}
+                            on:click={() => (lockOpen = !lockOpen)}
+                        >
+                            {#if cardLocked}<Lock size="12" /> Private{:else}<Unlock size="12" /> Public{/if}
+                        </button>
+                        {#if lockOpen}
+                            <div class="mt-2">
+                                <AudienceEditor {holosphere} scope={{ holon: holonId, lens, item: questId }} on:change={(e) => (cardLocked = e.detail.locked)} />
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
+
                 <!-- Compact metadata -->
                 <div class="flex items-center gap-2 mt-1 text-xs text-gray-400">
                     {#if quest.created}
@@ -1498,7 +1640,7 @@
                 {#if quest.picture}
                     <div class="relative rounded-lg overflow-hidden bg-gray-700/30 group">
                         <img
-                            src={resolveImage(quest.picture)}
+                            src={pictureUrl(quest.picture)}
                             alt={quest.title}
                             class="w-full max-h-64 object-cover"
                             loading="lazy"
@@ -1844,6 +1986,11 @@
 
                 <!-- Right column -->
                 <div class="space-y-3 min-h-0">
+                    {#if quest?.type === 'proposal' && holonId}
+                        <!-- A proposal is decided by signed ballots on the votes
+                             log, not by who joined it (core folds, this renders). -->
+                        <ProposalVote {holonId} proposalId={String(questId ?? quest.id)} selfId={currentUserId()} names={$nameMap ?? {}} />
+                    {/if}
                     <!-- Team Selection -->
                     <div class="bg-gray-700/30 p-3 rounded-lg">
                         <h4 class="text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
@@ -1928,6 +2075,20 @@
                                             </div>
                                         </div>
 
+                                        <!-- Host toggle (events only): named hosts get the credit instead of the participants -->
+                                        {#if isEvent}
+                                            {@const isHostUser = hostIds.has(String(user.id))}
+                                            <button
+                                                class="px-2 py-1 rounded text-xs flex-shrink-0 touch-manipulation min-h-[32px] min-w-[44px] {isHostUser ? 'bg-amber-500/30 text-amber-300' : 'bg-gray-600/30 text-gray-400 hover:bg-gray-600/50'}"
+                                                on:click|stopPropagation={() => toggleUserHost(user)}
+                                                aria-pressed={isHostUser}
+                                                title={isHostUser ? 'Host (gets the credit) — tap to remove' : 'Make host: hosts get the credit instead of the participants'}
+                                                type="button"
+                                            >
+                                                Host
+                                            </button>
+                                        {/if}
+
                                         <!-- Time tracking button (only for selected users) -->
                                         {#if isSelected}
                                             <button
@@ -1989,28 +2150,48 @@
                             </button>
                         {/if}
 
-                        {#if quest.canvasId}
-                            <button
+                        {#if boardHref}
+                            <a
                                 class="w-full px-2 py-1 bg-purple-500/20 text-purple-300 rounded text-xs hover:bg-purple-500/30 transition-colors flex items-center gap-2"
-                                on:click={navigateToCanvas}
-                                type="button"
+                                href={boardHref}
+                                target="_blank"
+                                rel="noopener noreferrer"
                             >
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h18v12H3zM12 16v4M8 20h8M7 12l3-3 3 2 4-4"/>
                                 </svg>
-                                Open Canvas
-                            </button>
+                                Open Whiteboard
+                            </a>
                         {:else}
                             <button
                                 class="w-full px-2 py-1 bg-gray-600 text-gray-300 rounded text-xs hover:bg-gray-500 transition-colors flex items-center gap-2"
-                                on:click={createCanvasForTask}
+                                on:click={startBoard}
+                                disabled={boardBusy || !chatRef}
                                 type="button"
                             >
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                                 </svg>
-                                Create Canvas
+                                Create Whiteboard
                             </button>
+                        {/if}
+
+                        <button
+                            class="w-full px-2 py-1 rounded text-xs transition-colors flex items-center gap-2 {showChat ? 'bg-sky-500/30 text-sky-200' : 'bg-sky-500/20 text-sky-300 hover:bg-sky-500/30'}"
+                            on:click={() => (showChat = !showChat)}
+                            aria-expanded={showChat}
+                            disabled={!chatRef}
+                            type="button"
+                        >
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                            </svg>
+                            Chat
+                        </button>
+                        {#if showChat && chatRef}
+                            {#key `${chatRef.holon}|${chatRef.key}`}
+                                <TaskChat {holosphere} ref={chatRef} />
+                            {/key}
                         {/if}
                     </div>
                 </div>
@@ -2062,7 +2243,7 @@
                     <div class="flex gap-2">
                     <PublishToFederationButton
                         {holonId}
-                        lens="quests"
+                        {lens}
                         item={quest}
                         onPublished={handlePublished}
                     />

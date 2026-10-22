@@ -1,12 +1,13 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // Voice overlay: owns the WS session lifecycle (via the controller) and
   // renders the transcript bubble + paste-a-transcript panel above the views'
   // fab row. The buttons themselves live inline in each view (VoiceButtons),
   // in the same row as the ＋ fab.
   import { onDestroy, onMount } from "svelte";
-  import { holonId, idle } from "$lib/stores";
+  import { holonId } from "$lib/stores";
   import { t } from "$lib/i18n";
   import {
     initVoice,
@@ -22,7 +23,9 @@
     muted,
     toggleMute,
     closeBubble,
+    drawerOpen,
   } from "$lib/voice/controller";
+  import { pendingPlan } from "$lib/voice/plan";
 
   let typed = "";
   let teardown: (() => void) | null = null;
@@ -40,10 +43,7 @@
 </script>
 
 {#if $available && $holonId}
-  <div
-    class="voice-overlay"
-    class:idle={$idle && !$recording && $status === "ready"}
-  >
+  <div class="voice-overlay">
     {#if $bubbleOpen && ($youSaid || $holonsSaid || $activeTool || $status === "thinking" || $recording)}
       <div class="bubble" role="status">
         <div class="bubble-controls">
@@ -75,7 +75,7 @@
             title={$t("common.close")}
             on:click={closeBubble}
           >
-            ✕
+            <Icon name="close" />
           </button>
         </div>
         {#if $youSaid}<p class="you">“{$youSaid}”</p>{/if}
@@ -83,11 +83,9 @@
           <p class="tool">{$t("voice.listening")}</p>
         {:else if $status === "thinking"}
           <p class="tool">
-            {$activeTool
-              ? `⚙ ${$activeTool}`
-              : $youSaid
+            {#if $activeTool}<Icon name="gear" /> {$activeTool}{:else}{$youSaid
                 ? $t("voice.thinking")
-                : $t("voice.transcribing")}
+                : $t("voice.transcribing")}{/if}
             <span class="dots"><i></i><i></i><i></i></span>
           </p>
         {:else if $status === "speaking" && !$holonsSaid}
@@ -95,6 +93,11 @@
         {/if}
         {#if $holonsSaid}<p class="holons">{$holonsSaid}</p>{/if}
       </div>
+    {/if}
+    {#if !$drawerOpen && $pendingPlan && $pendingPlan.changeset.changes.length > 0}
+      <button class="review" on:click={() => drawerOpen.set(true)}>
+        {$t("voice.plan.review", { n: $pendingPlan.changeset.changes.length })}
+      </button>
     {/if}
     {#if $typeOpen}
       <div class="typepanel">
@@ -127,11 +130,6 @@
     flex-direction: column;
     align-items: flex-end;
     gap: 0.6rem;
-    transition: opacity 0.4s ease;
-  }
-  /* Fade with the rest of the chrome when the kiosk sits idle. */
-  .voice-overlay.idle {
-    opacity: 0.35;
   }
 
   .bubble {
@@ -177,7 +175,7 @@
   }
   /* Muted reads as "off". */
   .bubble-controls .ctl.silenced {
-    color: #dc2626;
+    color: var(--danger);
   }
   .bubble p {
     margin: 0;
@@ -228,6 +226,20 @@
     }
   }
 
+  /* Proposed changes waiting while the drawer is hidden — one tap reopens it. */
+  .review {
+    min-height: 40px;
+    padding: 0 1rem;
+    border: 0;
+    border-radius: 999px;
+    background: var(--teal);
+    color: var(--on-teal);
+    font-weight: 700;
+    font-size: 0.9rem;
+    box-shadow: var(--shadow-soft);
+    cursor: pointer;
+  }
+
   .typepanel {
     width: min(22rem, calc(100vw - 3rem));
     background: var(--paper, #fff);
@@ -264,7 +276,7 @@
   }
   .typeactions .send {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
   }
   .typeactions .send:disabled {
     opacity: 0.5;

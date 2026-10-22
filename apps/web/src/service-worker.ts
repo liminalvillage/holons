@@ -11,7 +11,7 @@
 // - Navigation requests: network-first so users get fresh routes when online,
 //   fall back to cached shell when offline.
 // - Same-origin static assets: cache-first (they're content-hashed).
-// - Everything else (Gun peer, Mapbox tiles, Telegram SDK, Google Translate,
+// - Everything else (Nostr relays, Mapbox tiles, Telegram SDK, Google Translate,
 //   external APIs): bypass — let the network handle it. Caching live sync
 //   traffic would be actively wrong.
 

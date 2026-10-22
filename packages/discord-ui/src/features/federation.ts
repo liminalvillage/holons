@@ -114,25 +114,40 @@ export const federationFeature: Feature = {
       // Upsert-safe: preserve any lenses the partner already has configured.
       const snapshot = await getFederationSnapshot(hs(ctx), ctx.holonId);
       const existing = snapshot.lensConfig[targetId];
-      await setFederationPartner(hs(ctx), ctx.holonId, targetId, {
-        inbound: existing?.inbound ?? [],
-        outbound: existing?.outbound ?? [],
-        partnerName: targetName,
-      });
-      await interaction.reply({
-        content: `🔗 Linked to **${targetName}** (\`${targetId}\`).`,
-        flags: MessageFlags.Ephemeral,
-      });
+      const outcome = await setFederationPartner(
+        hs(ctx),
+        ctx.holonId,
+        targetId,
+        {
+          inbound: existing?.inbound ?? [],
+          outbound: existing?.outbound ?? [],
+          partnerName: targetName,
+        }
+      );
+      const content =
+        outcome.self === 'held'
+          ? '⚠️ Only an admin of this holon can change its federation.'
+          : outcome.partner === 'requested'
+            ? `🔗 Linked to **${targetName}** (\`${targetId}\`) on this side. Their admins were asked to accept the link.`
+            : `🔗 Linked to **${targetName}** (\`${targetId}\`).`;
+      await interaction.reply({ content, flags: MessageFlags.Ephemeral });
       return;
     }
 
     if (sub === 'remove') {
       const targetId = interaction.options.getString('holon-id', true).trim();
-      await removeFederationPartner(hs(ctx), ctx.holonId, targetId);
-      await interaction.reply({
-        content: `🔗 Removed link to \`${targetId}\`.`,
-        flags: MessageFlags.Ephemeral,
-      });
+      const outcome = await removeFederationPartner(
+        hs(ctx),
+        ctx.holonId,
+        targetId
+      );
+      const content =
+        outcome.self === 'held'
+          ? '⚠️ Only an admin of this holon can change its federation.'
+          : outcome.partner === 'requested'
+            ? `🔗 Removed link to \`${targetId}\` on this side. Their admins were asked to drop theirs too.`
+            : `🔗 Removed link to \`${targetId}\`.`;
+      await interaction.reply({ content, flags: MessageFlags.Ephemeral });
       return;
     }
 

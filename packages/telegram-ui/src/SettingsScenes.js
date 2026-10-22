@@ -14,19 +14,14 @@
  * @property {DB} db - Database instance
  * @property {Telegraf} bot - The Telegraf bot instance
  * @property {Settings} settings - Settings module reference
- * @property {string} network - Blockchain network name
- * @property {number} chainId - Blockchain chain ID
- * @property {ethers.Wallet} wallet - Ethereum wallet for transactions
  *
  * @example
  * const scenes = new SettingsScenes(bot, db, settings);
  * scenes.registerScenes(stage);
  */
-import { ethers } from 'ethers';
-
 import i18next from 'i18next';
+import { linkContext, outcomeText } from './federationLinks.js';
 import { Scenes } from 'telegraf';
-import * as fs from 'fs';
 
 export default class SettingsScenes {
   /**
@@ -39,36 +34,6 @@ export default class SettingsScenes {
   constructor(bot, db, settings) {
     this.db = db;
     this.bot = bot;
-
-    // spagheti
-    this.network = process.env.NETWORK;
-    this.chainId = parseInt(process.env.CHAINID);
-    this.bot = bot;
-    this.db = db;
-    this.settings = settings;
-    this.privateKey = process.env.WEB3KEY;
-    this.provider = new ethers.JsonRpcProvider(process.env.WEB3PROVIDER);
-    this.wallet = new ethers.Wallet(this.privateKey, this.provider);
-    // this.holons = new Holons(this.bot, this.db, this.settings);
-    // spagheti
-
-    // more spagheti
-    const deploymentData = JSON.parse(
-      fs.readFileSync('./contracts/deployment.json', 'utf-8')
-    )[this.network];
-    const holonsAddress = deploymentData.Holons;
-    const holonsABI = JSON.parse(
-      fs.readFileSync('./contracts/Holons.json', 'utf-8')
-    ).abi;
-    this.holonsContract = new ethers.Contract(
-      holonsAddress,
-      holonsABI,
-      this.wallet
-    );
-
-    // Create Holons instance and pass the contract
-    this.holons = null;
-    // this.holons.setHolons(this.holons);
 
     // Scenes migrated to InputScene:
     // - purpose_scene, name_scene, domains_scene, values_scene, roles_scene, hex_scene
@@ -194,21 +159,29 @@ export default class SettingsScenes {
 
         // Federate using KeyManager with proper public keys
         // console.log('Federation actually happens here, in the scenes!');
-        await this.db.keyManager.setupFederation(
+        const res = await this.db.keyManager.setupFederation(
           holonId.toString(),
           federationID.toString(),
           {
             lensConfig: { inbound: [], outbound: [] },
+            ...(await linkContext(ctx, federationID)),
           }
         );
 
-        // Success message
-        await ctx.reply(
-          i18next.t('settings_federation_success', {
-            lng: language,
-            defaultValue: `✅ Federated with ${federationID}. Configure lenses below.`,
-          })
-        );
+        // Success message, and what happened on the partner's side
+        if (res?.success) {
+          await ctx.reply(
+            i18next.t('settings_federation_success', {
+              lng: language,
+              defaultValue: `✅ Federated with ${federationID}. Configure lenses below.`,
+            })
+          );
+        }
+        const line =
+          res?.outcome?.partner !== 'unchanged'
+            ? outcomeText(res?.outcome, federationID, language)
+            : null;
+        if (line) await ctx.reply(line);
 
         // Store message IDs for cleanup
         ctx.scene.state.userMessageId = ctx.message.message_id;

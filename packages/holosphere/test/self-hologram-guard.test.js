@@ -7,17 +7,12 @@
 // at the destination, redirected the write to its soul — the SOURCE — and
 // stored the pointer on top of the original, destroying its content and
 // leaving a hologram that points at its own path. Resolving such a husk
-// loops, Gun re-emits unboundedly, and the fire-storm guard quarantines the
+// loops, resolution would chase itself unboundedly, and the guard quarantines the
 // lens (the "board frozen until reload" failure).
 
 import { testSphere, cleanupTestEnv } from './helpers/testenv.js';
 
-// KNOWN ENFORCE GAP: hologram/pointer writes are unsigned by design (the sign
-// hook skips them), so enforce-mode reads drop them from the authorized view.
-// This suite asserts raw hologram semantics and is skipped under
-// HOLO_TEST_SIGNING=enforce until envelopes resolve through soul redirects.
-const describeUnlessEnforce = process.env.HOLO_TEST_SIGNING === 'enforce' ? describe.skip : describe;
-describeUnlessEnforce('Self-hologram guards', () => {
+describe('Self-hologram guards', () => {
     let holoSphere;
     const sourceHolon = 'selfGuardSource';
     const mirrorHolon = 'selfGuardMirror';

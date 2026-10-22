@@ -1,31 +1,31 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
+  import { personName } from "$lib/data";
   // Confirm who took part before a completion is recorded — the participant set
   // drives the REA accounting, so this keeps credit honest. Toggle people off
   // who didn't actually participate, and add anyone from the holon's members
-  // who isn't already listed. This dialog IS the participation gate: you never
+  // who isn't already listed — or, through "Search the federation…", someone
+  // from a partner holon (FederationSearch). This dialog IS the participation gate: you never
   // have to join a task before you can complete it (see complete.ts), so the
   // current user is always one of the rows.
   // Avatars come from the kiosk's /api/avatar route.
   import { get } from "svelte/store";
   import Modal from "./Modal.svelte";
+  import FederationSearch from "./FederationSearch.svelte";
   import { avatarUrl } from "./Avatars.svelte";
   import { completionRequest, holonId } from "$lib/stores";
-  import { telegramUser } from "$lib/auth";
-  import { getHolosphere } from "$lib/holosphere";
+  import { currentUser } from "$lib/auth";
+  import { loadMembers, type Member } from "$lib/members";
   import { t } from "$lib/i18n";
-  import type { Quest } from "@holons/core/tasks";
+  import { hostsOf, type Quest } from "@holons/core/tasks";
 
-  type Member = {
-    id: string | number;
-    username?: string;
-    first_name?: string;
-    last_name?: string;
-  };
   type Row = { key: string; name: string; on: boolean; user: Member };
 
   let task: Quest | null = null;
   let rows: Row[] = [];
+  // The task is an event that names hosts: they are who gets credited.
+  let hosted = false;
   let members: Member[] = []; // the holon's `users` lens
 
   // Rebuild whenever a new request arrives.
@@ -38,9 +38,16 @@
     }
     if (req.task === task) return;
     task = req.task;
-    const list = (
-      Array.isArray(task.participants) ? task.participants : []
-    ) as Member[];
+    searching = false;
+    // An event that names hosts credits THEM (core's creditedMembers), so the
+    // dialog confirms the hosts instead of the participants.
+    const hostList = hostsOf(task) as Member[];
+    hosted = hostList.length > 0;
+    const list = hosted
+      ? hostList
+      : ((Array.isArray(task.participants)
+          ? task.participants
+          : []) as Member[]);
     rows = list.map((p, i) => ({
       key: String(p?.id ?? p?.username ?? `p${i}`),
       name: partName(p),
@@ -51,8 +58,9 @@
     // never means joining the task first. Pre-ticked only when nobody else is
     // on the task — with a team already listed, tapping ✓ for them shouldn't
     // quietly hand you a share of the credit.
-    const me = get(telegramUser);
+    const me = get(currentUser);
     if (
+      !hosted &&
       me?.id != null &&
       !rows.some((r) => String(r.user?.id) === String(me.id))
     )
@@ -65,26 +73,13 @@
           user: me as Member,
         },
       ];
-    void loadMembers();
-  }
-
-  async function loadMembers() {
-    const hid = get(holonId);
-    if (!hid) return;
-    try {
-      const hs = await getHolosphere();
-      const all = await hs.getAll(hid, "users");
-      members = (
-        Array.isArray(all) ? all : Object.values(all ?? {})
-      ) as Member[];
-    } catch {
-      members = [];
-    }
+    void loadMembers(get(holonId) ?? undefined).then((list) => {
+      members = list;
+    });
   }
 
   function partName(p: Member): string {
-    const full = [p?.first_name, p?.last_name].filter(Boolean).join(" ").trim();
-    return full || (p?.username ? `@${p.username}` : `#${p?.id ?? "?"}`);
+    return personName(p);
   }
   function initial(p: Member): string {
     return (p?.first_name?.[0] ?? p?.username?.[0] ?? "·").toUpperCase();
@@ -103,12 +98,23 @@
     rows[i].on = !rows[i].on;
     rows = rows;
   }
+  /** The select's last entry: open the federation search instead. */
+  const FEDERATION = "__federation";
+  let searching = false;
+
   function addMember(e: Event) {
     const id = (e.target as HTMLSelectElement).value;
     (e.target as HTMLSelectElement).value = "";
     if (!id) return;
+    if (id === FEDERATION) {
+      searching = true;
+      return;
+    }
     const m = members.find((x) => String(x.id) === id);
-    if (!m) return;
+    if (m) addRow(m);
+  }
+  function addRow(m: Member) {
+    if (rows.some((r) => String(r.user?.id) === String(m.id))) return;
     rows = [
       ...rows,
       { key: String(m.id), name: partName(m), on: true, user: m },
@@ -129,7 +135,9 @@
         first_name: r.user?.first_name,
         last_name: r.user?.last_name,
       }));
-    const adjusted: Quest = { ...req.task, participants };
+    const adjusted: Quest = hosted
+      ? { ...req.task, hosts: participants }
+      : { ...req.task, participants };
     completionRequest.set(null);
     req.onConfirm(adjusted);
   }
@@ -138,9 +146,11 @@
 {#if $completionRequest}
   <Modal on:close={cancel}>
     <div class="confirm">
-      <div class="glyph" aria-hidden="true">🎉</div>
+      <div class="glyph" aria-hidden="true"><Icon name="party" /></div>
       <h3>{$t("complete.title")}</h3>
-      <p class="lead">{$t("complete.lead")}</p>
+      <p class="lead">
+        {hosted ? $t("complete.leadHosts") : $t("complete.lead")}
+      </p>
 
       <ul class="people">
         {#each rows as r, i (r.key)}
@@ -166,25 +176,30 @@
                 {/if}
               </span>
               <span class="nm">{r.name}</span>
-              <span class="box">{r.on ? "✓" : ""}</span>
+              <span class="box"
+                >{#if r.on}<Icon name="check" />{/if}</span
+              >
             </button>
           </li>
         {/each}
       </ul>
 
-      {#if available.length}
-        <label class="add">
-          <span class="add-ico">＋</span>
-          <select
-            on:change={addMember}
-            aria-label={$t("complete.addMemberAria")}
-          >
-            <option value="">{$t("complete.addMember")}</option>
-            {#each available as m (m.id)}
-              <option value={String(m.id)}>{partName(m)}</option>
-            {/each}
-          </select>
-        </label>
+      <label class="add">
+        <span class="add-ico">＋</span>
+        <select on:change={addMember} aria-label={$t("complete.addMemberAria")}>
+          <option value="">{$t("complete.addMember")}</option>
+          {#each available as m (m.id)}
+            <option value={String(m.id)}>{partName(m)}</option>
+          {/each}
+          <option value={FEDERATION}>{$t("people.searchFederation")}</option>
+        </select>
+      </label>
+      {#if searching}
+        <FederationSearch
+          exclude={rows.map((r) => r.user?.id)}
+          on:pick={(e) => addRow(e.detail)}
+          on:close={() => (searching = false)}
+        />
       {/if}
 
       <div class="actions">
@@ -241,7 +256,7 @@
       color 0.15s ease;
   }
   .row.on {
-    background: #e7f3f1;
+    background: var(--teal-wash);
     color: var(--ink);
   }
   .av {
@@ -304,7 +319,7 @@
     flex: 0 0 auto;
     font-size: 1.2rem;
     font-weight: 800;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .add select {
     flex: 1;
@@ -337,11 +352,11 @@
   }
   .primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .ghost {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--ghost);
     color: var(--ink);
   }
   .primary:active,

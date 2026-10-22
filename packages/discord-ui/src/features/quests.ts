@@ -53,8 +53,8 @@ function initiatorFrom(user: DiscordUser): QuestInitiator {
 }
 
 /**
- * Guard against partial Holosphere reads: GUN can surface a quest before its
- * array fields have synced, which would make the core toggles throw. Coerce the
+ * Guard against malformed quest records (older writers stored list fields as
+ * strings or objects), which would make the core toggles throw. Coerce the
  * list fields to arrays so handlers never crash mid-interaction.
  */
 function normalizeQuest(quest: Quest | null): Quest | null {

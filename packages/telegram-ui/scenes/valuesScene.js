@@ -1,18 +1,16 @@
 import { Scenes, Markup } from 'telegraf';
+import { completeStep } from './flow.js';
+import valuesData from '../data/values.json' with { type: 'json' };
 
-// Define the values that can function as the user's DNA
-const values = [
-  'Integrity',
-  'Compassion',
-  'Courage',
-  'Respect',
-  'Responsibility',
-  'Honesty',
-  'Empathy',
-  'Innovation',
-];
+// The values a member can pick as part of their DNA, with what each means.
+const values = valuesData.values;
+const ids = values.map(v => v.id);
 
-const valuesPerPage = 4; // Number of values to display per page
+const valuesPerPage = 10; // two columns of five
+const pageCount = Math.ceil(values.length / valuesPerPage);
+
+/** How a value id reads on a button (`Quality_Evaluation` → `Quality/Evaluation`). */
+const label = id => id.replace(/_/g, '/');
 
 // Create a scene for onboarding
 const valuesScene = new Scenes.BaseScene('values');
@@ -20,102 +18,83 @@ const valuesScene = new Scenes.BaseScene('values');
 // Entry point for the scene
 valuesScene.enter(ctx => {
   ctx.session.page = 0; // Initialize page number
-  ctx.session.selectedValues = []; // Initialize selected values
-  ctx
-    .reply(
-      'Great! Now Please select the values that represent you the most:',
-      showValuesKeyboard(ctx)
-    )
-    .catch(error => {
-      console.log(error);
-    });
+  ctx.session.selectedValues = {}; // value → picked?
+  ctx.reply(valuesText(ctx), valuesKeyboard(ctx)).catch(error => {
+    console.log(error);
+  });
 });
 
-// Function to display values page
-function showValuesKeyboard(ctx) {
-  const page = ctx.session.page;
-  const buttons = values
-    .slice(page * valuesPerPage, (page + 1) * valuesPerPage)
-    .map(value => [
-      Markup.button.callback(
-        (ctx.session.selectedValues[value] ? '✅ ' : '☑️ ') + value,
-        `value_${value}`
-      ),
-    ]);
+/** The prompt, with what each value on this page means. */
+function valuesText(ctx) {
+  const picked = ids.filter(id => ctx.session.selectedValues[id]).length;
+  const page = values.slice(
+    ctx.session.page * valuesPerPage,
+    (ctx.session.page + 1) * valuesPerPage
+  );
+  return [
+    `Please select the values that represent you the most (${picked} picked):`,
+    '',
+    ...page.map(v => `• ${label(v.id)} — ${v.description}`),
+  ].join('\n');
+}
 
-  // Add navigation buttons
-  if (page > 0) buttons.push([Markup.button.callback('<', 'prev_page')]);
-  if (page < Math.ceil(values.length / valuesPerPage) - 1)
-    buttons.push([Markup.button.callback('>', 'next_page')]);
+// Function to display values page
+function valuesKeyboard(ctx) {
+  const page = ctx.session.page;
+  const cells = ids
+    .slice(page * valuesPerPage, (page + 1) * valuesPerPage)
+    .map(id =>
+      Markup.button.callback(
+        (ctx.session.selectedValues[id] ? '✅ ' : '☑️ ') + label(id),
+        `value_${id}`
+      )
+    );
+  const buttons = [];
+  for (let i = 0; i < cells.length; i += 2) buttons.push(cells.slice(i, i + 2));
+
+  const nav = [];
+  if (page > 0) nav.push(Markup.button.callback('<', 'prev_page'));
+  nav.push(Markup.button.callback(`${page + 1}/${pageCount}`, 'values_page'));
+  if (page < pageCount - 1) nav.push(Markup.button.callback('>', 'next_page'));
+  buttons.push(nav);
   buttons.push([Markup.button.callback('Done', 'done_picking')]);
   return Markup.inlineKeyboard(buttons);
-  //ctx.editMessageText('Great! Now Please select the values that represent you the most:',  Markup.inlineKeyboard(buttons)).catch((error) => {console.log(error)  });
+}
+
+function refresh(ctx) {
+  ctx.answerCbQuery().catch(() => {});
+  ctx.editMessageText(valuesText(ctx), valuesKeyboard(ctx)).catch(error => {
+    console.log(error);
+  });
 }
 
 // Handle value selection
-values.forEach(value => {
-  valuesScene.action(`value_${value}`, ctx => {
-    // Add the selected value to the user's session or database
-    // if (ctx.session.selectedValues[value])
-    //   ctx.session.selectedValues[value]=false;
-    // else
-    //   ctx.session.selectedValues[value]=true;
-    ctx.session.selectedValues[value] = !ctx.session.selectedValues[value];
-    ctx
-      .editMessageText(
-        'Please select the values that represent you the most:',
-        showValuesKeyboard(ctx)
-      )
-      .catch(error => {
-        console.log(error);
-      });
-    //showValuesPage(ctx); // Refresh the page to allow further selection
+ids.forEach(id => {
+  valuesScene.action(`value_${id}`, ctx => {
+    ctx.session.selectedValues[id] = !ctx.session.selectedValues[id];
+    refresh(ctx);
   });
 });
 
 // Handle page navigation
 valuesScene.action('prev_page', ctx => {
-  ctx.session.page--;
-  ctx
-    .editMessageText(
-      'Please select the values that represent you the most:',
-      showValuesKeyboard(ctx)
-    )
-    .catch(error => {
-      console.log(error);
-    });
+  ctx.session.page = Math.max(0, ctx.session.page - 1);
+  refresh(ctx);
 });
 
 valuesScene.action('next_page', ctx => {
-  ctx.session.page++;
-  ctx
-    .editMessageText(
-      'Please select the values that represent you the most:',
-      showValuesKeyboard(ctx)
-    )
-    .catch(error => {
-      console.log(error);
-    });
+  ctx.session.page = Math.min(pageCount - 1, ctx.session.page + 1);
+  refresh(ctx);
 });
 
-valuesScene.action('done_picking', ctx => {
-  if (!ctx.session.wizard) {
-    // save the new data to the database
-    ctx.session.db.gun
-      .get(ctx.from.id.toString())
-      .get('values')
-      .put(ctx.session.values);
-    valuesScene.leave();
-    ctx.session.sceneStack.pop();
-    ctx.scene.enter(ctx.session.sceneStack[ctx.session.sceneStack.length - 1]);
-    return;
-  }
+// The page counter is only a label.
+valuesScene.action('values_page', ctx => ctx.answerCbQuery().catch(() => {}));
 
-  ctx.session.stage += 1;
-  ctx.session.values = Object.keys(ctx.session.selectedValues);
-  if (ctx.session.stage === ctx.session.sequence.length)
-    ctx.scene.enter('done');
-  else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
+valuesScene.action('done_picking', async ctx => {
+  await ctx.answerCbQuery().catch(() => {});
+  // Only what is still ticked: a value tapped twice is in the map as `false`.
+  ctx.session.values = ids.filter(id => ctx.session.selectedValues[id]);
+  return completeStep(ctx, { values: ctx.session.values });
 });
 
 // Export the scene

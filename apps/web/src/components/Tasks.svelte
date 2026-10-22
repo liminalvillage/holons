@@ -28,10 +28,13 @@
 	import {
 		applyTaskCompletion,
 		planTaskCompletion,
-		executeCompletionPlan
+		executeCompletionPlan,
+		isEventQuest,
+		taskWallPlacement
 	} from "@holons/core/tasks";
 	import { getEventStore } from "../lib/rea/eventStore";
 	import { getColorFromCategory } from "@holons/core/categories";
+	import { privacyOfHolon } from "@holons/core/privacy";
 	import {
 		getCachedEquation,
 		preloadHolon,
@@ -44,7 +47,7 @@
 	import { queryManager } from "$lib/holosphere/QueryManager";
 	import { dndzone } from "svelte-dnd-action";
 	import { flip } from "svelte/animate";
-	import { showFederated, showHolograms, showUnverified, passesLensFilters } from "$lib/stores/lensFilters";
+	import { showFederated, showHolograms, passesLensFilters } from "$lib/stores/lensFilters";
 	import { loadFilters, saveFilters } from "$lib/util/persistedFilters";
 	import TaskCard from "./shared/TaskCard.svelte";
 	import CompleterModal from "./shared/CompleterModal.svelte";
@@ -110,6 +113,16 @@
 	let holonName = $derived(resolvedName(holonID, $nameMap, null, 'Tasks'));
 	let store: Store = $state({});
 	let quests = $derived(Object.entries(store));
+	// Cards sealed on the relays (the lock glyph): the whole lens, or single
+	// cards locked from their own view. Read from vault records, no key needed.
+	let lockedIds = $state(new Set<string>());
+	async function refreshLocks() {
+		if (!holosphere || !holonID) { lockedIds = new Set(); return; }
+		try {
+			const flags = (await privacyOfHolon(holosphere, holonID)).quests;
+			lockedIds = flags?.locked ? new Set(Object.keys(store)) : new Set(flags?.items ?? []);
+		} catch { lockedIds = new Set(); }
+	}
 
 	// Helper function to check if a quest matches the current filterType
 	function matchesFilterType(quest: Quest, currentFilterType: string): boolean {
@@ -339,6 +352,10 @@
 	// Add this variable to track the selected task
 	let selectedTask: any = $state(null);
 	let selectedTaskId: string | null = null; // For URL parameter support
+	// The lens the open card was read from: `quests`, or `events` for an event
+	// the Telegram bot created (its deep link is `/events?event=<id>`).
+	let selectedLens: string = $state('quests');
+	let eventLensLookup: string | null = null; // id already looked up in `events`
 
 	// Add these near the top of the script section, after the interface definitions
 	// let sortField: 'x' | 'y' = 'x'; // Removed
@@ -396,7 +413,16 @@
 				return false;
 			}
 
-			if (!passesLensFilters(quest as any, $showHolograms, $showFederated, $showUnverified)) {
+			// The task board is what is still ahead: a past event belongs to
+			// the calendar alone, and a recurring one shows once. Core owns
+			// that rule; the /events list keeps its full history.
+			if (filterType !== 'event' && isEventQuest(quest)) {
+				if (status === "completed" || !taskWallPlacement(quest as any, new Date())) {
+					return false;
+				}
+			}
+
+			if (!passesLensFilters(quest as any, $showHolograms, $showFederated)) {
 				return false;
 			}
 
@@ -461,6 +487,7 @@
 			console.error("Cannot select task: missing key");
 			return;
 		}
+		selectedLens = 'quests';
 		selectedTask = { key, quest };
 		
 		// Update URL with task parameter
@@ -550,12 +577,8 @@
 					};
 				} else if (nostrPubKey) {
 					// Use Nostr identity
-					initiatorInfo = {
-						id: nostrPubKey,
-						username: nostrPubKey.slice(0, 8) + "...",
-						firstName: "Nostr",
-						lastName: "User"
-					};
+					// The key alone — named where it is shown, never a stand-in on the record.
+					initiatorInfo = { id: nostrPubKey };
 				} else {
 					// Fallback to default
 					initiatorInfo = {
@@ -576,12 +599,8 @@
 						lastName: telegramUser.last_name || ""
 					};
 				} else if (nostrPubKey) {
-					initiatorInfo = {
-						id: nostrPubKey,
-						username: nostrPubKey.slice(0, 8) + "...",
-						firstName: "Nostr",
-						lastName: "User"
-					};
+					// The key alone — named where it is shown, never a stand-in on the record.
+					initiatorInfo = { id: nostrPubKey };
 				} else {
 					initiatorInfo = {
 						id: holonID,
@@ -829,7 +848,7 @@
 			// Drop from queryManager's cache too. Otherwise the next snapshot
 			// emission (any unrelated quest update, or just another subscriber
 			// registering) re-puts the deleted item into our `store` before
-			// Gun's null tombstone has propagated through `subscribe()` — and
+			// the store's null tombstone has propagated through `subscribe()` — and
 			// the deleted card flashes back into the list.
 			if (holonID) queryManager.evict(holonID, 'quests', deletedId);
 			// Update local store immediately
@@ -1019,13 +1038,34 @@
 	}
 
 	// Open the URL-selected task as soon as it appears in the store.
-	function maybeOpenSelectedTask() {
-		if (!selectedTaskId || selectedTask || !store[selectedTaskId]) return;
-		selectedTask = { key: selectedTaskId, quest: store[selectedTaskId] };
+	function openLinked(key: string, quest: Quest, lens: string) {
+		selectedLens = lens;
+		selectedTask = { key, quest };
 		const url = new URL(window.location.href);
 		url.searchParams.delete('task');
+		url.searchParams.delete('event');
 		replaceState(url.toString(), { replaceState: true });
 		selectedTaskId = null;
+	}
+
+	function maybeOpenSelectedTask() {
+		if (!selectedTaskId || selectedTask) return;
+		if (store[selectedTaskId]) {
+			openLinked(selectedTaskId, store[selectedTaskId], 'quests');
+			return;
+		}
+		// Not among the quests: an event the bot created lives in `events`.
+		// Looked up once per id, after the quests stream has had its say.
+		if (filterType !== 'event' || !holonID || eventLensLookup === selectedTaskId) return;
+		const id = selectedTaskId;
+		eventLensLookup = id;
+		holosphere
+			.get(holonID, 'events', id)
+			.then((found: any) => {
+				if (!found || found._deleted || selectedTask || selectedTaskId !== id) return;
+				openLinked(id, { ...found, participants: found.participants ?? [] } as Quest, 'events');
+			})
+			.catch((err: any) => console.warn('[Tasks.svelte] events lens lookup failed:', err));
 	}
 
 	// One live federation-aware quests stream. subscribeFederated emits the local
@@ -1056,6 +1096,7 @@
 			(items: any[]) => {
 				if (questsLoadKey !== loadKey) return; // stale (user switched holon)
 				store = buildStoreFromItems(items);
+				void refreshLocks();
 				isLoading = false;
 				loadingFederated = false;
 				preResolveHologramNames(Object.entries(store));
@@ -1080,7 +1121,8 @@
 	onMount(() => {
 		// Check for task parameter in URL
 		const urlParams = new URLSearchParams(window.location.search);
-		const taskParam = urlParams.get('task');
+		// `?task=` everywhere; the bot links events as `/events?event=<id>`.
+		const taskParam = urlParams.get('task') ?? urlParams.get('event');
 		if (taskParam) {
 			selectedTaskId = taskParam;
 		}
@@ -1101,6 +1143,7 @@
 			const { taskId } = event.detail;
 			if (taskId && store[taskId]) {
 				selectedTask = null;
+				selectedLens = 'quests';
 				selectedTask = { key: taskId, quest: store[taskId] };
 			}
 		};
@@ -1417,6 +1460,7 @@
 									role="button"
 									tabindex={0}
 									ariaLabel={`Open task: ${quest.title}`}
+									locked={lockedIds.has(String(quest.id ?? key))}
 								/>
 								<div class="flex flex-shrink-0 items-center">
 									<PublishToFederationButton
@@ -1467,9 +1511,12 @@
 		quest={selectedTask.quest}
 		questId={selectedTask.key}
 		holonId={holonID}
+		lens={selectedLens}
 		on:close={handleTaskDeleted}
 		on:taskCompleted={handleTaskCompleted}
 		on:updated={(e) => {
+			// `store` mirrors the quests lens; an `events`-lens card is not in it.
+			if (selectedLens !== 'quests') return;
 			store = { ...store, [e.detail.questId]: e.detail.quest };
 		}}
 	/>

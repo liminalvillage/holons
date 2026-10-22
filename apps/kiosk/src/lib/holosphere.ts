@@ -12,28 +12,22 @@
 import {
   createHoloSphere,
   createHolonWriter,
-  enableRelayBackup,
   type HolonWriter,
 } from "@holons/core/holosphere";
+import { projectionOptionsFor } from "@holons/core/nostr";
+import { membersTrustedAuthors } from "@holons/core/holons";
+import { cellToLatLng } from "h3-js";
 import type { HoloSphere } from "holosphere";
 import type { LibraryDB } from "@holons/core/library";
 import type { ChecklistStore } from "@holons/core/checklists";
-import { Buffer } from "buffer";
 import {
   resolveAppName,
-  resolveBackend,
-  resolvePeers,
+  resolveEnforceReads,
   resolveRelays,
-  resolveSigningMode,
+  resolveShiftCoordinator,
 } from "./config";
 import { actingAs } from "./auth";
-import { lookupHolonName } from "./hns";
-
-// Holosphere/Gun reach for a Node-ish Buffer; make sure one exists in-browser
-// before the library loads.
-if (typeof globalThis !== "undefined" && !(globalThis as any).Buffer) {
-  (globalThis as any).Buffer = Buffer;
-}
+import { countsAsPresent, looksLikeRecord, type LensId } from "./maplens";
 
 const DEVICE_KEY = "kiosk_device_key";
 
@@ -63,39 +57,54 @@ let instance: Promise<HoloSphere> | null = null;
 /** Build (once) and return the shared HoloSphere instance. */
 export function getHolosphere(): Promise<HoloSphere> {
   if (!instance) {
-    // Backend selection (see config.ts): "gun" reads from the production Gun
-    // peer; "nostr" makes the relay the wire — Gun goes peerless as the local
-    // cache and every read/write/subscription travels as a signed NIP-01
-    // kind-30078 event. Either way the config must go through `extra` — the v2
-    // constructor only honors `gunOptions.peers` / `nostr.relays`; a top-level
-    // `peers` key is silently dropped and the instance falls back to its
-    // built-in default.
-    const backend = resolveBackend();
-    // Promise.resolve normalises the factory's overloaded return type.
-    instance = Promise.resolve(
-      createHoloSphere({
-        appName: resolveAppName(),
-        privateKey: deviceKeyHex(),
-        logLevel: "ERROR",
-        awaitReady: true,
-        ...(backend === "nostr"
-          ? { backend, extra: { nostr: { relays: resolveRelays() } } }
-          : { extra: { gunOptions: { peers: resolvePeers() } } }),
-      }),
-    );
-    // Mirror every write to the relay as a signed event while Gun stays the
-    // wire, so the display keeps seeing production data. The decision of when
-    // that applies belongs to core (it is a no-op on the nostr backend, where
-    // the transport already publishes).
-    instance = instance.then(async (hs) => {
-      await enableRelayBackup(hs, {
-        relays: resolveRelays(),
-        mode: resolveSigningMode(),
-        backend,
-        onError: (err) =>
-          console.error("[kiosk] could not enable signing", err),
-      });
-      return hs;
+    // The relays are the wire (see config.ts): every read/write/subscription
+    // travels as a signed NIP-01 kind-30078 event, mirrored into the local
+    // IndexedDB store so a reload paints instantly and the display survives
+    // a flaky network.
+    // Every write is ALSO published as its standard Nostr kind (NIP-52 /
+    // NIP-99 / NIP-51 / NIP-58 / NIP-29) next to the 30078 record, so any
+    // Nostr client can read it — on for every lens unless
+    // VITE_KIOSK_PROJECTIONS (or VITE_HOLOSPHERE_PROJECTIONS) says `off`.
+    const appName = resolveAppName();
+    const privateKey = deviceKeyHex();
+    instance = createHoloSphere({
+      appName,
+      privateKey,
+      relays: resolveRelays(),
+      store: { adapter: "indexeddb" },
+      // Shifts are NOT carried on the kind-30078 envelope: occurrences,
+      // signups and the identity directory are the standard NIP-52 / kind-31926
+      // events Elinor already publishes, decoded straight into lenses. Reading
+      // them needs `relay.commonshub.dev` in the relay list — it is in the
+      // default set, so only a deployment that overrides VITE_KIOSK_RELAYS has
+      // to include it explicitly.
+      standardWires: {
+        shifts: { coordinatorPubkey: resolveShiftCoordinator() ?? undefined },
+        shiftIdentity: {},
+      },
+      // Core registers its append-only logs (fund claims, mints, rights,
+      // votes — kind 1808) itself; every reader folds them the same way (see
+      // $lib/flowsClaims, $lib/governanceVotes).
+      nostr: {
+        ...projectionOptionsFor({
+          appName,
+          privateKey,
+          lenses:
+            (import.meta.env.VITE_KIOSK_PROJECTIONS as string | undefined) ??
+            (import.meta.env.VITE_HOLOSPHERE_PROJECTIONS as string | undefined),
+          cellToLatLng,
+        }),
+        // A member's kind-0 edit on any Nostr client folds back into their
+        // `users` record here: the holon's seated keys are the trusted authors.
+        trustedAuthors: (holon: string) =>
+          instance
+            ? instance.then((hs) => membersTrustedAuthors(hs)(holon))
+            : Promise.resolve([]),
+      },
+      // Authorized reads: only accepted authors' claims are shown for a holon
+      // someone is defined to speak for (VITE_HOLOSPHERE_ENFORCE=off opts out).
+      enforce: resolveEnforceReads(),
+      awaitReady: true,
     });
 
     // Dev-only: expose the instance so the kiosk can be poked from the console
@@ -107,72 +116,13 @@ export function getHolosphere(): Promise<HoloSphere> {
   return instance;
 }
 
-// Session cache of holon-id → display name. Only *resolved* names are cached;
-// an unresolved holon is left out so a later call (e.g. after its data has
-// replicated) can retry.
-const holonNameCache = new Map<string, string>();
-
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-// One resolution attempt. Tries, in order:
-//   1. HNS — a global, signed, federation-free name table.
-//   2. The holon's own `settings/<id>` record — the source holosphere itself
-//      uses; it may come back as an object OR an array of entries, so handle
-//      both (the array case is why partner names previously read as ids).
-// Returns "" when nothing is found yet.
-async function resolveHolonName(
-  hs: HoloSphere,
-  holonId: string,
-): Promise<string> {
-  try {
-    const hns = await lookupHolonName(hs, holonId);
-    if (hns && hns.trim()) return hns;
-  } catch {
-    /* fall through to settings */
-  }
-  try {
-    const s: any = await hs.get(holonId, "settings", holonId);
-    const raw = Array.isArray(s) ? s.find((e: any) => e?.name)?.name : s?.name;
-    if (raw && String(raw).trim()) return String(raw);
-  } catch {
-    /* no name available yet */
-  }
-  return "";
-}
-
-/**
- * Resolve a holon's friendly name, then cache it for the session. Returns ""
- * when no name can be read (caller falls back to the id).
- *
- * A federation partner's settings/HNS replicate shortly *after* we subscribe
- * to it, so a single immediate read often races and misses — we retry a few
- * times with backoff before giving up. Only positive results are cached.
- */
-export async function getHolonName(
-  hs: HoloSphere,
-  holonId: string,
-): Promise<string> {
-  const cached = holonNameCache.get(holonId);
-  if (cached) return cached;
-
-  for (const delay of [0, 800, 2000]) {
-    if (delay) await sleep(delay);
-    const name = await resolveHolonName(hs, holonId);
-    if (name) {
-      holonNameCache.set(holonId, name);
-      return name;
-    }
-  }
-  return "";
-}
-
 /** A `{ unsubscribe }` shape, tolerant of older promise-returning builds. */
 export interface Subscription {
   unsubscribe: () => void;
 }
 
 /** Normalise a `holosphere.subscribe` return so teardown never throws. */
-function normalizeSub(raw: unknown): Subscription {
+export function normalizeSub(raw: unknown): Subscription {
   if (raw && typeof (raw as any).unsubscribe === "function") {
     return raw as Subscription;
   }
@@ -198,7 +148,7 @@ function normalizeSub(raw: unknown): Subscription {
 
 /**
  * Subscribe to every key in a holon's lens, accumulating items into a Map keyed
- * by their `id` (falling back to the Gun key). `null` payloads are deletions.
+ * by their `id` (falling back to the record key). `null` payloads are deletions.
  * `onChange` fires after each mutation with a fresh array snapshot.
  */
 export function subscribeLens<T extends { id?: string | number }>(
@@ -227,6 +177,51 @@ export function subscribeLens<T extends { id?: string | number }>(
   return normalizeSub(raw);
 }
 
+/**
+ * Live "does this cell contain anything for this lens" — the dock map's
+ * presence channel, one per visible (lens, hex) cell, mirroring the dashboard
+ * map's rule set (see maplens.countsAsPresent). A `null` emission is a
+ * deletion and un-lights the key, like a `_deleted` tombstone. `onChange`
+ * fires only when the boolean actually changes.
+ *
+ * `onItem` taps every record emission (tombstones included, so a caller's
+ * accumulator can drop them); the dock map's cell panel is fed from this tap.
+ */
+export function subscribeLensPresence(
+  holosphere: HoloSphere,
+  holonId: string,
+  lens: LensId,
+  onChange: (has: boolean) => void,
+  onItem?: (item: Record<string, unknown>, key: string) => void,
+): Subscription {
+  const present = new Set<string>();
+  let last: boolean | null = null;
+  const raw = holosphere.subscribe(holonId, lens, (item: any, key?: string) => {
+    if (!key) return;
+    if (item == null) {
+      present.delete(key);
+      const hasNow = present.size > 0;
+      if (hasNow !== last) {
+        last = hasNow;
+        onChange(hasNow);
+      }
+      return;
+    }
+    // Real records — tombstones and completed quests included, which the
+    // counting below must still see to UN-light — always pass.
+    if (!looksLikeRecord(item)) return;
+    onItem?.(item, key);
+    if (countsAsPresent(lens, item)) present.add(key);
+    else present.delete(key);
+    const has = present.size > 0;
+    if (has !== last) {
+      last = has;
+      onChange(has);
+    }
+  });
+  return normalizeSub(raw);
+}
+
 // NOTE: federation aggregation used to live here as `createLensAggregator`
 // (which tagged partner items with a bespoke `_holon` marker). That job now
 // belongs to HoloSphere's `subscribeFederated`, which folds in per-lens inbound
@@ -242,9 +237,9 @@ export function subscribeLens<T extends { id?: string | number }>(
  * Announce a successful local write so the layout's write-echo watchdog can
  * verify the live subscription actually heard it (see `lensEmitAt` in
  * stores.ts). Every write path funnels through here. `at` must be captured
- * BEFORE the put starts: Gun fires the local echo during the put, ahead of
- * the ack, so a post-ack timestamp would always outrun the echo and read as
- * "no echo" — a false stall on every healthy write.
+ * BEFORE the put starts: the store fires the local echo during the put,
+ * ahead of the returned promise, so a post-put timestamp would always outrun
+ * the echo and read as "no echo" — a false stall on every healthy write.
  */
 function announceWrite(holon: string, lens: string, at: number): void {
   if (typeof window === "undefined") return;
@@ -300,6 +295,46 @@ export async function getLibraryDb(): Promise<LibraryDB> {
   };
 }
 
+/** A plain lens store: what the Stock board's item specs need. */
+export interface LensStore {
+  get: (holon: string, lens: string, key?: string | number) => Promise<unknown>;
+  getAll: (holon: string, lens: string) => Promise<unknown[]>;
+  put: (holon: string, lens: string, data: unknown) => Promise<unknown>;
+  delete: (
+    holon: string,
+    lens: string,
+    key: string | number,
+  ) => Promise<unknown>;
+}
+
+/**
+ * The generic read/write/delete adapter over Holosphere, with the logged-in
+ * user as `actingAs` and the write-echo announcement like every other write
+ * path. `getLibraryDb` is this same shape, typed for core's library.
+ */
+export async function getLensStore(): Promise<LensStore> {
+  const hs = await getHolosphere();
+  return {
+    get: (holon, lens, key) =>
+      key != null ? hs.get(holon, lens, String(key)) : hs.get(holon, lens),
+    getAll: (holon, lens) => hs.getAll(holon, lens) as Promise<unknown[]>,
+    put: async (holon, lens, data) => {
+      const at = Date.now();
+      const res = await hs.put(
+        holon,
+        lens,
+        data as object,
+        {
+          actingAs: actingAs(),
+        } as any,
+      );
+      announceWrite(holon, lens, at);
+      return res;
+    },
+    delete: (holon, lens, key) => hs.delete(holon, lens, String(key)),
+  };
+}
+
 /**
  * A `ChecklistStore` adapter over Holosphere so core's checklist CRUD owns the
  * meaning of lists. Writes carry the logged-in Telegram user as `actingAs` and
@@ -335,6 +370,7 @@ export interface ReaStore {
     bucket: string,
     key?: string | number,
   ) => Promise<unknown>;
+  delete: (holon: string, bucket: string, key: string) => Promise<unknown>;
 }
 
 /**
@@ -361,5 +397,13 @@ export async function getReaStore(): Promise<ReaStore> {
     },
     get: (holon, bucket, key) =>
       key != null ? hs.get(holon, bucket, String(key)) : hs.get(holon, bucket),
+    delete: async (holon, bucket, key) => {
+      const at = Date.now();
+      const res = await hs.delete(holon, bucket, key, null, {
+        actingAs: actingAs(),
+      } as any);
+      announceWrite(holon, bucket, at);
+      return res;
+    },
   };
 }

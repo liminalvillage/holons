@@ -19,12 +19,17 @@ import {
 import {
   actorMatchesBooking,
   bookingOriginFor,
+  bookingSpan,
+  bookingStatus,
   computeBorrowerInitials,
   findOverlappingBooking,
   getDisplayBookings,
+  hasTime,
   isBookingActive,
   makeBooking,
-  toDayKey,
+  minuteKey,
+  returnableBooking,
+  toBound,
   withBookings,
   ymd,
   type Booking
@@ -158,8 +163,8 @@ export function filterItems(items: LibraryItem[], term: string): LibraryItem[] {
   );
 }
 
-/** Aggregate library stats (totals, byType, borrowed/available). */
-export function getLibraryStats(items: LibraryItem[]): LibraryStats {
+/** Aggregate library stats (totals, byType, borrowed/available) at `on`. */
+export function getLibraryStats(items: LibraryItem[], on: Date = new Date()): LibraryStats {
   const byType: Record<string, number> = {};
   for (const item of items) {
     const type = item.type || LIBRARY_TYPES.OTHER;
@@ -167,8 +172,8 @@ export function getLibraryStats(items: LibraryItem[]): LibraryStats {
   }
   return {
     total: items.length,
-    borrowed: items.filter((i) => i.borrowed).length,
-    available: items.filter((i) => !i.borrowed).length,
+    borrowed: items.filter((i) => bookingStatus(i, on).state !== 'available').length,
+    available: items.filter((i) => bookingStatus(i, on).state === 'available').length,
     byType
   };
 }
@@ -234,6 +239,17 @@ export async function setItemValue(
   return { ok: true, item };
 }
 
+/**
+ * A range is bookable when both bounds are the same kind and it is not empty:
+ * days may start and end on the same day, a timed stretch must end after it
+ * starts.
+ */
+function validRange(start: string, end: string): boolean {
+  if (hasTime(start) !== hasTime(end)) return false;
+  const { from, to } = bookingSpan({ start, end });
+  return from < to;
+}
+
 export interface BookItemResult {
   ok: boolean;
   item?: LibraryItem;
@@ -247,8 +263,10 @@ export interface BookItemResult {
 }
 
 /**
- * Book an item for `borrower` over an inclusive [start, end] day range —
- * starting today when `start` is omitted. This is THE borrow primitive: it
+ * Book an item for `borrower` over [start, end] — whole days (inclusive
+ * `YYYY-MM-DD` or a Date), or a stretch of clock time when both bounds are
+ * `YYYY-MM-DDTHH:mm` (end exclusive, so 14:00–15:00 leaves 15:00 free).
+ * Starts now when `start` is omitted. This is THE borrow primitive: it
  * appends to `bookings[]` (migrating a legacy single-borrow into the array on
  * the way) after checking the range against every existing booking, then
  * recomputes the legacy mirror fields via `withBookings`.
@@ -266,6 +284,11 @@ export interface BookingContext {
   actingHolon?: string | number | null;
   /** Its display name, when known, for a readable origin chip. */
   actingHolonName?: string | null;
+  /**
+   * The holon's wall clock (see `wallClock`), for a host in another time zone.
+   * Defaults to the host's own clock.
+   */
+  now?: Date;
 }
 
 export async function bookItem(
@@ -280,9 +303,10 @@ export async function bookItem(
   const item = (await db.get(holon, LENS, itemId)) as LibraryItem | null;
   if (!item) return { ok: false, reason: 'not_found' };
 
-  const start = range.start ? toDayKey(range.start) : ymd(new Date());
-  const end = toDayKey(range.end);
-  if (end < start) return { ok: false, item, reason: 'invalid_range' };
+  const now = opts.now ?? new Date();
+  const end = toBound(range.end);
+  const start = range.start ? toBound(range.start) : hasTime(end) ? minuteKey(now) : ymd(now);
+  if (!validRange(start, end)) return { ok: false, item, reason: 'invalid_range' };
 
   const conflict = findOverlappingBooking(item, start, end);
   if (conflict) return { ok: false, item, conflict, reason: 'overlaps' };
@@ -296,7 +320,7 @@ export async function bookItem(
     end,
     bookingOriginFor(holon, opts.actingHolon, opts.actingHolonName)
   );
-  const updated = withBookings(item, [...getDisplayBookings(item), booking]);
+  const updated = withBookings(item, [...getDisplayBookings(item), booking], now);
   await db.put(holon, LENS, updated);
 
   return { ok: true, item: updated, booking, isOwner: updated.createdBy === borrower.id };
@@ -339,7 +363,7 @@ export async function borrowItem(
       ok: false,
       item: res.item,
       conflict: res.conflict,
-      reason: isBookingActive(res.conflict) ? 'already_borrowed' : 'overlaps'
+      reason: isBookingActive(res.conflict, opts.now) ? 'already_borrowed' : 'overlaps'
     };
   }
   // invalid_range can only mean returnDate is before today.
@@ -354,26 +378,32 @@ export interface ReturnItemResult {
 }
 
 /**
- * End the booking that covers today. Only its borrower (matched by id,
- * falling back to '@'-tolerant name comparison) may return. Future
- * reservations on the same item survive the return. The current item
- * snapshot is always returned (on success and on `not_borrowed`/`forbidden`)
- * so callers can render meaningful error messages without re-fetching.
+ * Bring an item back: end the returner's booking that covers now, or — a late
+ * return — their most recent one whose time is already up. Only the borrower
+ * (matched by id, falling back to '@'-tolerant name comparison) may return.
+ * Other bookings on the item survive. The current item snapshot is always
+ * returned (on success and on `not_borrowed`/`forbidden`) so callers can
+ * render meaningful error messages without re-fetching.
  */
 export async function returnItem(
   db: LibraryDB,
   holonId: string | number,
   itemId: string,
-  returner: BorrowActor
+  returner: BorrowActor,
+  opts: { now?: Date } = {}
 ): Promise<ReturnItemResult> {
   const holon = String(holonId);
   const item = (await db.get(holon, LENS, itemId)) as LibraryItem | null;
   if (!item) return { ok: false, reason: 'not_found' };
 
   const bookings = getDisplayBookings(item);
-  const active = bookings.find((b) => isBookingActive(b)) ?? null;
-  if (!active) return { ok: false, reason: 'not_borrowed', item };
-  if (!actorMatchesBooking(active, returner)) return { ok: false, reason: 'forbidden', item };
+  const now = opts.now ?? new Date();
+  const mine = returnableBooking(item, returner, now);
+  if (!mine) {
+    // Nothing of theirs to return: either someone else has it, or nobody does.
+    const held = bookingStatus(item, now).state !== 'available';
+    return { ok: false, reason: held ? 'forbidden' : 'not_borrowed', item };
+  }
 
   const isOwner = item.createdBy === returner.id;
 
@@ -381,7 +411,8 @@ export async function returnItem(
   // hand the returned item straight to accounting helpers.
   const updated = withBookings(
     item,
-    bookings.filter((b) => b.id !== active.id)
+    bookings.filter((b) => b.id !== mine.id),
+    now
   );
   updated.returnedAt = new Date().toISOString();
   await db.put(holon, LENS, updated);
@@ -436,7 +467,8 @@ export interface UpdateBookingResult {
 }
 
 /**
- * Reschedule an existing booking to a new inclusive [start, end] range. Only
+ * Reschedule an existing booking to a new [start, end] range (days or timed,
+ * as in `bookItem`). Only
  * its borrower may edit; the new range is checked against every *other*
  * booking on the item.
  */
@@ -457,9 +489,9 @@ export async function updateBookingDates(
   if (!existing) return { ok: false, item, reason: 'no_such_booking' };
   if (!actorMatchesBooking(existing, actor)) return { ok: false, item, reason: 'forbidden' };
 
-  const start = toDayKey(range.start);
-  const end = toDayKey(range.end);
-  if (end < start) return { ok: false, item, reason: 'invalid_range' };
+  const start = toBound(range.start);
+  const end = toBound(range.end);
+  if (!validRange(start, end)) return { ok: false, item, reason: 'invalid_range' };
 
   const conflict = findOverlappingBooking(item, start, end, bookingId);
   if (conflict) return { ok: false, item, conflict, reason: 'overlaps' };

@@ -17,7 +17,7 @@ describe('race-free read-after-write (enforce)', () => {
   beforeAll(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-rf-'));
     sphere = new HoloSphere({ appName: 'rf-test', privateKey: generateSecretKey(),
-      gunOptions: { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false } });
+      store: { adapter: 'memory' } });
     await sphere.enableSigning({ relays: [], enforce: true, perActorLenses: ['participation'] });
   }, 30000);
 

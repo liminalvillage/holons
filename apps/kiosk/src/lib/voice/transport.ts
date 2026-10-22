@@ -26,10 +26,9 @@ export const OPENAI_API_BASE = "https://api.openai.com/v1";
 export const VOICE_PROXY_BASE = "/api/ai/voice";
 
 /**
- * Resolve the direct pipeline's transport. A client-held key (pasted in
- * Settings or a dev VITE_OPENAI_API_KEY) is an explicit choice and wins;
- * otherwise a deploy whose serverless env holds the key — the same
- * OPENAI_API_KEY the breakdown feature uses — speaks through the relay.
+ * Resolve the direct pipeline's transport. A key pasted on this device in an
+ * earlier build is an explicit choice and wins; otherwise a deploy whose
+ * serverless env holds OPENAI_API_KEY speaks through the relay.
  * Null: the direct mode cannot run.
  */
 export function pickVoiceTransport(
@@ -48,7 +47,7 @@ export interface VoiceModeInputs {
   deviceKey: boolean;
   /** VITE_VOICE_WS_URL is baked into the build. */
   wsUrl: boolean;
-  /** Any client-held key (device key OR dev VITE_OPENAI_API_KEY). */
+  /** A client-held key (the device key). */
   clientKey: boolean;
   /** The deploy's /api/ai/voice relay probed as configured. */
   serverConfigured: boolean;

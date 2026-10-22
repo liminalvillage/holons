@@ -63,6 +63,10 @@ export interface RespondInput {
   message?: string;
   price?: number;
   currency?: string;
+  /** The standing offer the response draws on, if any. */
+  offerId?: string;
+  offerHolonId?: string;
+  reservationId?: string;
   /** Override the generated response id. Mostly for tests. */
   id?: string;
   /** Override the timestamp (ms since epoch). Mostly for tests. */
@@ -105,6 +109,9 @@ export function respondToNeed(need: PublishedNeed, input: RespondInput): Respond
       ? { price: input.price }
       : {}),
     ...(input.currency ? { currency: input.currency } : {}),
+    ...(input.offerId ? { offerId: input.offerId } : {}),
+    ...(input.offerHolonId ? { offerHolonId: input.offerHolonId } : {}),
+    ...(input.reservationId ? { reservationId: input.reservationId } : {}),
   };
 
   const updated: PublishedNeed = {

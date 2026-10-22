@@ -72,22 +72,39 @@ async function loadExpenses(
   throw new Error('Provide either "expenses" (JSON array) or "holon"');
 }
 
+/**
+ * The group an expense with no split is shared by: the ids given, else the
+ * holon's users lens, else nobody.
+ */
+async function loadMembers(
+  deps: ToolDeps,
+  args: { members?: Array<string | number>; holon?: string }
+): Promise<AgentId[]> {
+  if (Array.isArray(args.members) && args.members.length > 0) return args.members as AgentId[];
+  if (typeof args.holon === 'string' && args.holon.length > 0) {
+    const h = await deps.getHoloSphere();
+    const raw = await h.getAll(args.holon, 'users');
+    const list = Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? Object.values(raw) : [];
+    return (list as Array<{ id?: AgentId }>).map((u) => u?.id).filter((id): id is AgentId => id != null);
+  }
+  return [];
+}
+
 export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
   server.tool(
     'expense_create',
     'Create a normalized expense via @holons/core. Optionally persists via HoloSphere when persist=true.',
     {
-      holon: z.string().describe('HoloSphere holon id (used as fallback splitWith and for persistence).'),
+      holon: z.string().describe('HoloSphere holon id (used for persistence).'),
       expense: z
         .string()
-        .describe('JSON-encoded CreateExpenseInput: { id, amount, currency, description, paidBy, splitWith?, picture?, date? }. holonId is taken from the "holon" arg unless overridden here.'),
+        .describe('JSON-encoded CreateExpenseInput: { id, amount, currency, description, paidBy, splitWith?, picture?, date? }. splitWith is an explicit list of member ids; omit it for an empty split.'),
       persist: z.boolean().optional().describe('When true, h.put(holon, "expenses", created).'),
     },
     async ({ holon, expense, persist }) => {
       try {
         const input = parseJson<Partial<CreateExpenseInput>>(expense, 'expense');
         const fullInput: CreateExpenseInput = {
-          holonId: input.holonId ?? holon,
           id: input.id ?? Date.now(),
           amount: Number(input.amount),
           currency: String(input.currency ?? ''),
@@ -116,7 +133,7 @@ export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
     {
       holon: z
         .string()
-        .describe('Holon id (fallback holonId/splitWith and persistence target).'),
+        .describe('Holon id (persistence target).'),
       expenses: z
         .string()
         .describe(
@@ -141,7 +158,6 @@ export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
         for (let i = 0; i < arr.length; i++) {
           const input = arr[i] ?? {};
           const fullInput: CreateExpenseInput = {
-            holonId: input.holonId ?? holon,
             // Stagger default ids by index so a same-millisecond batch can't collide.
             id: input.id ?? Date.now() + i,
             amount: Number(input.amount),
@@ -184,11 +200,16 @@ export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
       holon: z.string().optional().describe('Holon id to fetch expenses from when "expenses" is omitted.'),
       userId: z.union([z.string(), z.number()]).describe('User whose net balance to compute.'),
       currency: z.string().describe('Currency code (will be normalized by core).'),
+      members: z
+        .array(z.union([z.string(), z.number()]))
+        .optional()
+        .describe('Everyone in the group; an expense with no split is shared by all of them. Defaults to the holon\'s users when "holon" is given.'),
     },
-    async ({ expenses, holon, userId, currency }) => {
+    async ({ expenses, holon, userId, currency, members }) => {
       try {
         const list = await loadExpenses(deps, { expenses, holon });
-        const net = calculateBalance(list, userId as AgentId, currency);
+        const roster = await loadMembers(deps, { members, holon });
+        const net = calculateBalance(list, userId as AgentId, currency, roster);
         return ok({ userId, currency, net, expenseCount: list.length });
       } catch (err) {
         return fail(err);
@@ -266,21 +287,17 @@ export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
     }
   );
 
-  // holonId is the sentinel used when the split would otherwise become empty.
   server.tool(
     'expense_toggle_participant',
-    'Toggle a user in/out of an expense splitWith. Falls back to [holonId] when removing the last participant.',
+    'Toggle a user in/out of an expense splitWith. Removing the last participant leaves the split empty.',
     {
       expense: z.string().describe('JSON-encoded Expense.'),
       userId: z.union([z.string(), z.number()]).describe('User id to toggle.'),
-      holonId: z
-        .union([z.string(), z.number()])
-        .describe('Holon id used as the sentinel when the split becomes empty.'),
     },
-    async ({ expense, userId, holonId }) => {
+    async ({ expense, userId }) => {
       try {
         const exp = parseJson<Expense>(expense, 'expense');
-        const next = toggleParticipant(exp, userId as AgentId, holonId as AgentId);
+        const next = toggleParticipant(exp, userId as AgentId);
         return ok({ expense: next });
       } catch (err) {
         return fail(err);
@@ -288,9 +305,6 @@ export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
     }
   );
 
-  // holonId is accepted for forward-compat with the toggle variant; core's
-  // removeParticipant does not currently re-seed an empty splitWith with the
-  // holon sentinel, so we leave that behaviour to the caller.
   server.registerTool(
     'expense_remove_participant',
     {
@@ -299,9 +313,6 @@ export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
       inputSchema: {
         expense: z.string().describe('JSON-encoded Expense.'),
         userId: z.union([z.string(), z.number()]).describe('User id to remove.'),
-        holonId: z
-          .union([z.string(), z.number()])
-          .describe('Holon id (accepted for forward-compat; not used by core.removeParticipant).'),
       },
     },
     async ({ expense, userId }) => {
@@ -356,13 +367,17 @@ export function registerExpensesTools(server: McpServer, deps: ToolDeps): void {
         expenses: z.string().describe('JSON array of Expense objects.'),
         userId: z.union([z.string(), z.number()]).describe('User to score.'),
         currency: z.string().describe('Currency code (normalized internally).'),
+        members: z
+          .array(z.union([z.string(), z.number()]))
+          .optional()
+          .describe('Everyone in the group; an expense with no split is shared by all of them.'),
       },
     },
-    async ({ expenses, userId, currency }) => {
+    async ({ expenses, userId, currency, members }) => {
       try {
         const list = parseJson<Expense[]>(expenses, 'expenses');
         if (!Array.isArray(list)) throw new Error('"expenses" must be a JSON array');
-        const net = computeUserCurrencyBalance(list, userId as AgentId, currency);
+        const net = computeUserCurrencyBalance(list, userId as AgentId, currency, (members ?? []) as AgentId[]);
         return ok({ userId, currency, net, expenseCount: list.length });
       } catch (err) {
         return fail(err);

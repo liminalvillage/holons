@@ -3,15 +3,31 @@
 # kiosk
 
 A minimal, touch-first **kiosk PWA** for the entrance of the hub. One vertical
-screen, three views, auto-rotating between them unless someone is interacting:
+screen with a tab strip, auto-rotating between tabs unless someone is
+interacting:
 
-1. **Calendar** — the month at a glance, with post-it notes for what's coming up.
-2. **Tasks** — the backlog, as a wall of sticky notes.
-3. **Library** — the library of things, and what's available to borrow.
+- **Tasks** — the backlog, as a wall of sticky notes (list, swipe and graph layouts).
+- **Calendar** — the month at a glance, with post-it notes for what's coming up.
+- **Shifts** — community shifts in the Elinor format, read live from the relay.
+- **Library** — the library of things, and what's available to borrow.
+- **Lists** — the holon's checklists and shopping lists.
+- **Roles** — who holds which role.
+- **Status** — the holon's standing (opt-in, behind a framing modal).
+- **Flows** — expenses, REA events and the collective's summary as Sankeys;
+  its **Balances** layout reads the same expenses as mutual credit — who is
+  owed, who owes, the fewest transfers that square everyone — and lets a
+  logged-in member add an expense or mark a debt paid. The Allocation
+  section's ⚙ edits the split, the rings and the OpenCollective slug in place.
+
+The strip is the caretaker's: drag a tab to reorder it, hold to hide (✕) or
+add (+) tabs, pin one — all remembered per device. Closing the board shrinks
+it into the **dock**: one circle per holon this device has opened, plus a "+"
+that adds a board by id, label, npub, Ethereum address or pasted link.
 
 _Less is more._ Just the holon's life, served read-only and local-first from
-[Holosphere](https://gun.eco) — with a small caretaker **Settings** panel for
-the few knobs that matter.
+Holosphere (signed Nostr events on the relays, mirrored into the browser's
+IndexedDB) — with a small caretaker **Settings** panel for the few knobs that
+matter.
 
 ## How it works
 
@@ -19,8 +35,16 @@ the few knobs that matter.
   plain files from anywhere). It depends only on `holosphere` and `@holons/core`
   — it reuses the shared HoloSphere factory and library domain helpers, and
   re-implements no domain rules of its own (core owns meaning).
-- **Live data:** subscribes to the holon's `quests` lens (calendar events + task
-  backlog) and `library` lens.
+- **Live data:** the browser is the Nostr client. `src/lib/holosphere.ts`
+  builds one HoloSphere through the shared core factory — the production
+  relays as the wire, an IndexedDB store as the cache, a per-device signing
+  key — and the layout subscribes to the holon's `quests` (calendar events +
+  task backlog), `library`, `roles` and `checklists` lenses through
+  `subscribeFederated`, plus the per-device `hidden` lens. Every write is
+  signed and published as a kind-30078 event and, by default, also as its
+  standard Nostr kind (NIP-52 / NIP-99 / NIP-51 / NIP-58 / NIP-29) so any
+  Nostr client can read it. Shifts come straight from the relay via
+  `@holons/core/shifts` (see [`docs/shifts-elinor.md`](../../docs/shifts-elinor.md)).
 - **Show & Layout pills:** one global pills band under the tabs adapts to the
   active tab. Its **Show** pill chooses whose items appear — **Personal**
   (only the logged-in user's), **Local** (this holon), or **Global** (this
@@ -43,8 +67,8 @@ the few knobs that matter.
   `setFederationPartner` / `removeFederationPartner`). These edits write the
   shared federation record and apply immediately.
 - **Production by default:** the entrance display reads the production `Holons`
-  namespace from the production Gun relay — independent of the shared dev
-  `VITE_HOLONS_APP`. Override per-screen with `VITE_KIOSK_APP` / `VITE_KIOSK_PEER`.
+  namespace from the production relays — independent of the shared dev
+  `VITE_HOLONS_APP`. Override per-screen with `VITE_KIOSK_APP` / `VITE_KIOSK_RELAYS`.
 - **Holon button:** the ⬡ button opens the holon's full web dashboard at
   `https://dashboard.holons.io/<holon-id>` in a new tab.
 - **Tap to zoom:** any post-it or card comes forward into a detail card showing
@@ -61,27 +85,39 @@ the few knobs that matter.
   time to the next flip. Rotation freezes while a detail card is open.
 - **PWA:** installable, fullscreen, portrait-locked, with an offline app shell.
 - **Home page:** a screen with no holon (the bare domain, an unboxed display)
-  shows the landing page instead of a board — what Holons is, what it's for,
-  and one button that starts a holon. See below.
+  shows the map — the dock with the earth beneath it and every hub this
+  device has opened on it — instead of a board. A hub brings its federation
+  partners onto the dock with it (tagged `via` in `kiosk_dock`); removing it
+  asks whether they go too. The reading page (what Holons is, how to start a
+  hub) lives at `/about`, linked from the map. See below.
 
 ## The home page
 
-`src/lib/views/HomeView.svelte` is the front door: the layout renders it in
-place of the kiosk chrome whenever no holon resolves. It closes a round trip
-that leaves the web entirely:
+The map is the front door: with no holon resolved the layout renders the dock
+(`DockView`, map mode by default) in place of the board. A `/<id>` link from
+the bot, or a display pinned in Settings, opens that board directly and
+docks it; closing the board lands on the map. `src/lib/views/HomeView.svelte`
+is the `/about` page. It closes a round trip that leaves the web entirely:
 
-1. **Out.** "Start a holon" deep-links to `t.me/<bot>?startgroup=hub` —
-   Telegram's own group chooser, with "create a new group" right there. The
-   group _is_ the holon, so there is nothing to sign up for.
-2. **Over.** The bot joins and posts its group welcome, now carrying an
+1. **Out.** "Start a hub" deep-links to `t.me/<bot>?startgroup=claim_<token>`
+   (Telegram's own group chooser, with "create a new group" right there) or
+   `t.me/<bot>?start=claim_<token>` (a private chat: a personal hub). The
+   group _is_ the holon, so there is nothing to sign up for. The token is a
+   one-time claim minted by the screen (`@holons/core/onboarding`); the same
+   two links sit behind the dock's **+** → **Start a new hub**.
+2. **Over.** Telegram delivers the payload to the bot as the chat's first
+   `/start claim_<token>`. The bot records `<token> → this chat` on the relay
+   (namespace `hubclaims`, lens `claims`) and posts its welcome, carrying an
    **Open this holon's board** button pointing at `KIOSK_ADDRESS/<holon id>`
-   (`packages/telegram-ui/src/Settings.ts`). That button is the way back.
+   (`packages/telegram-ui/src/Settings.ts`).
 3. **Back.** Telegram can't hand anything to the tab that was left behind, so
-   the page notes the hand-off in `localStorage` on the way out and re-checks it
-   when the tab regains focus. A visitor who returns lands on a highlighted
-   "welcome back" step whose field takes whatever they happen to have copied —
-   a holon id, a `t.me/c/…` message link, a `/dashboard` link, a hub address
-   (`parseHolonRef` in `src/lib/holons.ts`, spec'd in `holons.test.ts`).
+   the screen keeps the pending token and the hand-off note in `localStorage`
+   and watches the relay for the claim (`src/lib/hubclaim.ts`): the moment
+   the bot redeems it, the new hub docks and opens by itself. Should the loop
+   not close — an older bot, a relay hiccup — a paste line still takes
+   whatever they happen to have copied: a holon id, a `t.me/c/…` message
+   link, a `/dashboard` link, a hub address (`parseHolonRef` in
+   `src/lib/holons.ts`, spec'd in `holons.test.ts`).
 
 Opening a board from that field navigates to `/<holon id>` and is deliberately
 **not** remembered on the device — the URL is the shareable thing, and only
@@ -89,15 +125,20 @@ Opening a board from that field navigates to `/<holon id>` and is deliberately
 
 ## Configuration
 
-The kiosk shares the monorepo-root `.env`. It reads exactly two vars (see
-[`.env.example`](./.env.example)), each overridable per device via a URL query
-param or the in-app **Settings** panel, then remembered in `localStorage`:
+The kiosk shares the monorepo-root `.env` (see [`.env.example`](./.env.example)
+for every variable it reads). The data-layer vars, each overridable per device
+via a URL query param or the in-app **Settings** panel and then remembered in
+`localStorage`:
 
-| What          | Env var            | URL param / Settings   | Default                     |
-| ------------- | ------------------ | ---------------------- | --------------------------- |
-| Holon to show | `VITE_KIOSK_HOLON` | `/<id>`, `?holon=<id>` | _(none)_                    |
-| App namespace | `VITE_KIOSK_APP`   | `?app=<name>`          | `Holons` (production)       |
-| Gun relay     | `VITE_KIOSK_PEER`  | —                      | `https://gun.holons.io/gun` |
+| What          | Env var                  | URL param / Settings   | Default                                            |
+| ------------- | ------------------------ | ---------------------- | -------------------------------------------------- |
+| Holon to show | `VITE_KIOSK_HOLON`       | `/<id>`, `?holon=<id>` | _(none)_                                           |
+| App namespace | `VITE_KIOSK_APP`         | `?app=<name>`          | `Holons` (production)                              |
+| Relays        | `VITE_KIOSK_RELAYS`      | —                      | `wss://relay.holons.io,wss://relay.commonshub.dev` |
+| Projections   | `VITE_KIOSK_PROJECTIONS` | —                      | every lens (`off` or a comma list narrows it)      |
+
+The kiosk-scoped vars win; the shared `VITE_HOLOSPHERE_RELAYS` /
+`VITE_HOLOSPHERE_PROJECTIONS` are the fallback.
 
 To pin a screen the first time, open it once at `https://…/?holon=<holon-id>`,
 or open **Settings** and type the id. To _visit_ a holon without re-pointing the
@@ -125,38 +166,54 @@ so a single `/setdomain hubs.network` authorises every `*.hubs.network` kiosk.
 In dev, `VITE_DEV_TELEGRAM_USER_*` auto-signs-in so you can exercise editing
 without the widget.
 
+`VITE_KIOSK_LOGIN` picks which logins the card offers — `telegram`, `nostr`,
+`ethereum`, comma-separated; unset means all. `VITE_KIOSK_LOGIN=telegram` is
+the Telegram-only switch. A Telegram login signs with the member's derived key
+when the server has `NOSTR_DERIVATION_SECRET` (the bot's value), so the person
+is linked to every hub their chat is in with no further step; the key lives in
+memory only and is re-derived from the session cookie on each load.
+
 ## Voice
 
 The voice widget (hold-to-talk + typed transcripts) runs one of two pipelines
 behind the same UI:
 
-| Mode     | Pipeline                                                                                                                          | Enable with                                                          |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `ws`     | A [`@holons/voice-ui`](../../packages/voice-ui) server owns STT → agent → TTS (local models or hosted APIs)                       | `VITE_VOICE_WS_URL` (defaults to probing `ws://localhost:8787`)      |
-| `direct` | The browser itself calls the OpenAI API: Whisper STT → chat-completions agent loop with in-page tools over Holosphere → tts-1 TTS | An OpenAI API key entered in **Settings** (kept on that device only) |
+| Mode     | Pipeline                                                                                                                                                                    | Enable with                                                     |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `ws`     | A [`@holons/voice-ui`](../../packages/voice-ui) server owns STT → agent → TTS (local models or hosted APIs)                                                                 | `VITE_VOICE_WS_URL` (defaults to probing `ws://localhost:8787`) |
+| `direct` | The browser drives the OpenAI pipeline through the deploy's `/api/ai/voice` relay: Whisper STT → chat-completions agent loop with in-page tools over Holosphere → tts-1 TTS | `OPENAI_API_KEY` in the deploy's server env                     |
 
-Direct mode needs no companion server — a deployed kiosk speaks on its own.
-The caretaker pastes an OpenAI API key into **Settings → Voice**; it is stored
-in the device's `localStorage` (never in the deployed bundle) and applies
-immediately, so each kiosk site/device carries its own key. Clearing the field
-turns voice off again. Use a dedicated, spending-capped key per hub, since
-anyone with physical access to the device could read it.
+Direct mode needs no companion server — a deployed kiosk speaks on its own,
+through its session-gated `/api/ai/voice` relay, so the key never leaves the
+server. (A key an earlier build stored on a device is still honoured.)
+
+Text AI — task breakdown and drafting a record from a description — runs on
+Claude through `/api/ai/breakdown` and `/api/ai/draft`, with
+`ANTHROPIC_API_KEY` (and optionally `HOLONS_AI_MODEL`, default
+`claude-opus-5-5`) in the deploy's server env. Without it those buttons stay
+hidden.
 
 `VITE_VOICE_MODE=ws|direct` picks the mode explicitly; otherwise an explicit
 `VITE_VOICE_WS_URL` keeps `ws`, else an available key enables `direct`. With
-neither, the buttons stay hidden. For local dev, `VITE_OPENAI_API_KEY` in the
-root `.env` acts as a fallback key (do **not** set it on Netlify — it would
-bake the key into the public bundle). Optional model overrides:
+neither, the buttons stay hidden. There is no build-time key — anything baked
+into the bundle is public. Optional model overrides:
 `VITE_VOICE_LLM_MODEL` (`gpt-4o-mini`), `VITE_VOICE_STT_MODEL` (`whisper-1`),
 `VITE_VOICE_TTS_MODEL` (`tts-1`), `VITE_VOICE_TTS_VOICE` (`alloy`).
 
 ## Develop
 
 ```bash
-pnpm -F kiosk dev       # http://localhost:5273
-pnpm -F kiosk build     # static build → ./build
-pnpm -F kiosk preview   # serve the production build
+pnpm -F @holons/core build   # the kiosk consumes core's compiled dist
+pnpm -F kiosk dev            # http://localhost:5273 — open /<holon id> or /<label>
+pnpm -F kiosk test           # vitest specs next to the modules in src/lib
+pnpm -F kiosk typecheck      # svelte-check
+pnpm -F kiosk lint           # prettier --check
+pnpm -F kiosk build          # static build → ./build
+pnpm -F kiosk preview        # serve the production build
 ```
+
+In dev the HoloSphere instance is exposed as `window.__kiosk` for poking from
+the console (`__kiosk.nostrRelays()`, `await __kiosk.listHolons()`).
 
 ## Deploy (Netlify, multi-tenant)
 

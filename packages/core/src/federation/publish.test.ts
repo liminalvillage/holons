@@ -15,8 +15,6 @@ function mockHolosphere(opts: MockOpts = {}): {
 	put: ReturnType<typeof vi.fn>;
 	propagate: ReturnType<typeof vi.fn>;
 	createHologram: ReturnType<typeof vi.fn>;
-	getNodeRef: ReturnType<typeof vi.fn>;
-	cascadeRegistrations: string[];
 } {
 	const put = vi.fn(async () => {
 		if (opts.putError) throw opts.putError;
@@ -27,25 +25,10 @@ function mockHolosphere(opts: MockOpts = {}): {
 		...item
 	}));
 
-	// Track every `getNodeRef(soul).get('_holograms').get(newSoul).put(true)`
-	// chain triggered by the forwarder-side cascade registration so tests
-	// can assert it fired on the right pair of souls.
-	const cascadeRegistrations: string[] = [];
-	const getNodeRef = vi.fn((soul: string) => ({
-		get: (k1: string) => ({
-			get: (k2: string) => ({
-				put: (_v: any) => {
-					cascadeRegistrations.push(`${soul}/${k1}/${k2}`);
-				},
-			}),
-		}),
-	}));
-
 	const holosphere = {
 		put,
 		propagate,
 		createHologram,
-		getNodeRef,
 		appname: 'test-app',
 		getFederation: vi.fn(async () => ({ federated: opts.federated ?? [] })),
 		get: vi.fn(async (_h: string, lens: string) =>
@@ -54,7 +37,7 @@ function mockHolosphere(opts: MockOpts = {}): {
 		isValidH3: () => !!opts.isH3
 	} as unknown as HoloSphere;
 
-	return { holosphere, put, propagate, createHologram, getNodeRef, cascadeRegistrations };
+	return { holosphere, put, propagate, createHologram };
 }
 
 const ctx = (holosphere: HoloSphere) => ({
@@ -162,6 +145,21 @@ describe('publishToFederation', () => {
 		expect(out.usedHolograms).toBe(true);
 	});
 
+	it('all target leaves a LINKED settings.hex to propagate, so it is written once', async () => {
+		// Once the home hex is a real partner, propagate() writes it with the
+		// scalespace reach its config asks for. A second flat write here would
+		// land later at the same key and overwrite the one that climbs.
+		const m = mockHolosphere({
+			federated: ['8928308280fffff', 'p1'],
+			settingsHex: '8928308280fffff',
+			propagateResult: { success: 2, messages: [] }
+		});
+		const out = await publishToFederation(ctx(m.holosphere), { kind: 'all' });
+		expect(m.put).not.toHaveBeenCalled();
+		expect(m.propagate).toHaveBeenCalledOnce();
+		expect(out.publishedTo).toBe(2); // both legs came from propagate
+	});
+
 	it('all target skips settings.hex when includeSettingsHex is false', async () => {
 		const m = mockHolosphere({ federated: [], settingsHex: '8928308280fffff' });
 		const out = await publishToFederation(
@@ -223,24 +221,8 @@ describe('publishToFederation', () => {
 			soul: 'app/origin-holon/quests/q-1',
 		});
 		expect(out.publishedTo).toBe(1);
-
-		// And the forwarder must also register the new hop in ITS OWN
-		// `_holograms` set so updates from the original source cascade
-		// through us to the new hop, even when the cross-holon write to
-		// the original source's `_holograms` set doesn't make it across
-		// the Gun mesh.
-		expect(m.cascadeRegistrations).toContain(
-			'test-app/home-holon/quests/q-1/_holograms/test-app/p1/quests/q-1',
-		);
-	});
-
-	it('skips forwarder-side _holograms cascade on a fresh publish (not a forward)', async () => {
-		const m = mockHolosphere();
-		await publishToFederation(ctx(m.holosphere), { kind: 'partner', holonId: 'p1' });
-		// Fresh publishes don't need the extra local registration — holosphere's
-		// own put already registers the new hologram at the source's set on the
-		// same local instance.
-		expect(m.cascadeRegistrations).toEqual([]);
+		// The pointer written at p1 is a record in the forwarder's own store,
+		// so the source's backlinks already index the new hop for the cascade.
 	});
 
 	it('h3 home holon enables propagateToParents', async () => {

@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // The Lists tab — the holon's shared checklists (agenda, shopping, ad-hoc
   // lists), mirroring the holons dashboard's Checklists feature. Core owns
@@ -13,14 +14,17 @@
     rawChecklists,
     holonId,
     showNotice,
-    scope,
     rotationHold,
-    pillsSuppressed,
   } from "$lib/stores";
-  import { telegramUser, loginOpen } from "$lib/auth";
-  import { getChecklistStore } from "$lib/holosphere";
+  import { requestSwitch } from "$lib/dock";
+
+  /** A provenance badge tap travels to the holon the card came from. */
+  function jumpToSource(id: string | undefined, name?: string): void {
+    if (id) requestSwitch(id, { name, from: $holonId });
+  }
+  import { currentUser, loginOpen } from "$lib/auth";
+  import { getChecklistStore, getHolosphere } from "$lib/holosphere";
   import { t } from "$lib/i18n";
-  import { personalChecklists } from "$lib/personal";
   import { recordKey, sourceRef, holoSeed } from "$lib/data";
   import Modal from "$lib/components/Modal.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
@@ -35,11 +39,8 @@
     toggleItem,
     type Checklist,
   } from "@holons/core/checklists";
-
-  $: shownLists =
-    $scope === "personal"
-      ? personalChecklists($checklistCards, $telegramUser?.id)
-      : $checklistCards;
+  import { SHOPPING_KEY } from "@holons/core/shopping";
+  import { syncNeedsFromShopping } from "@holons/core/needs";
 
   // ── Open list ─────────────────────────────────────────────────────────────
   // The tapped list "opens" in place of the grid (like the dashboard). The
@@ -59,10 +60,9 @@
 
   // Suspend auto-rotation while a list is open so the screen can't flip away
   // from under whoever is ticking it (same pattern as the Status breakdown).
-  // The shell's pills band hides too — the Show filter is meaningless while
-  // a single list fills the board.
+  // The shell's pills band stays put: the chrome reads the same on every
+  // tab, open list or not.
   $: rotationHold.set(openId != null);
-  $: pillsSuppressed.set(openId != null);
 
   function openList(id: string) {
     openId = id;
@@ -84,7 +84,7 @@
   // Every mutation goes through core over the identity-aware store; a list
   // mirrored from a partner holon is written where it actually lives.
   function requireUser(): boolean {
-    if (get(telegramUser)) return true;
+    if (get(currentUser)) return true;
     loginOpen.set(true);
     return false;
   }
@@ -102,11 +102,17 @@
 
   let busy = false;
 
-  async function mutate(fn: () => Promise<void>, failMsg: string) {
+  async function mutate(
+    fn: () => Promise<Checklist | null | void>,
+    failMsg: string,
+    ref?: { holon: string; key: string } | null,
+  ) {
     if (busy) return;
     busy = true;
     try {
-      await fn();
+      const written = await fn();
+      if (ref && ref.key === SHOPPING_KEY)
+        afterShoppingWrite(ref.holon, written ?? undefined);
     } catch (err) {
       console.error("[kiosk] checklist write failed", err);
       showNotice(failMsg);
@@ -115,24 +121,61 @@
     }
   }
 
+  // The shopping list is demand (@holons/core/needs, `syncNeedsFromShopping`):
+  // whatever is still to buy stands as a need, closed when checked off —
+  // automatic, with a per-holon switch on the Needs & Offers board. Fired
+  // after every write to the list, never awaited: a list must not fail on
+  // its side effect. The list as just written travels along, so the sync
+  // does not race the store's own fold of that write.
+  function afterShoppingWrite(holon: string, list?: Checklist) {
+    const user = get(currentUser);
+    if (!user) return;
+    void getHolosphere()
+      .then((hs) =>
+        syncNeedsFromShopping(hs, holon, {
+          list,
+          initiator: {
+            id: user.id,
+            username: user.username ?? String(user.id),
+            firstName: user.first_name,
+            lastName: user.last_name,
+          },
+        }),
+      )
+      .then((out) => {
+        if (out.errors.length)
+          console.warn("[kiosk] shopping needs sync", out.errors);
+      })
+      .catch((err) => console.warn("[kiosk] shopping needs sync", err));
+  }
+
   function toggle(index: number) {
     if (!requireUser() || !openRaw || !openId) return;
     const ref = writeRef(openRaw);
     if (!ref) return;
-    void mutate(async () => {
-      const store = await getChecklistStore();
-      await toggleItem(store, ref.holon, ref.key, index);
-    }, $t("lists.updateFailed"));
+    void mutate(
+      async () => {
+        const store = await getChecklistStore();
+        return toggleItem(store, ref.holon, ref.key, index);
+      },
+      $t("lists.updateFailed"),
+      ref,
+    );
   }
 
   function removeItem(index: number) {
     if (!requireUser() || !openRaw || !openId) return;
     const ref = writeRef(openRaw);
     if (!ref) return;
-    void mutate(async () => {
-      const store = await getChecklistStore();
-      await removeItemAt(store, ref.holon, ref.key, index);
-    }, $t("lists.removeItemFailed"));
+    void mutate(
+      async () => {
+        const store = await getChecklistStore();
+        const res = await removeItemAt(store, ref.holon, ref.key, index);
+        return res?.checklist ?? null;
+      },
+      $t("lists.removeItemFailed"),
+      ref,
+    );
   }
 
   let addItemText = "";
@@ -141,24 +184,36 @@
     if (!text || !requireUser() || !openRaw || !openId) return;
     const ref = writeRef(openRaw);
     if (!ref) return;
-    void mutate(async () => {
-      const store = await getChecklistStore();
-      await appendItems(store, ref.holon, ref.key, [{ text, checked: false }]);
-      addItemText = "";
-    }, $t("lists.addItemFailed"));
+    void mutate(
+      async () => {
+        const store = await getChecklistStore();
+        const list = await appendItems(store, ref.holon, ref.key, [
+          { text, checked: false },
+        ]);
+        addItemText = "";
+        return list;
+      },
+      $t("lists.addItemFailed"),
+      ref,
+    );
   }
 
   function clearDone() {
     if (!requireUser() || !openRaw || !openId) return;
     const ref = writeRef(openRaw);
     if (!ref) return;
-    void mutate(async () => {
-      const store = await getChecklistStore();
-      const res = await clearChecklist(store, ref.holon, ref.key);
-      if (!res.ok && res.reason === "nothing_to_remove") {
-        showNotice($t("lists.nothingTicked"));
-      }
-    }, $t("lists.clearFailed"));
+    void mutate(
+      async () => {
+        const store = await getChecklistStore();
+        const res = await clearChecklist(store, ref.holon, ref.key);
+        if (!res.ok && res.reason === "nothing_to_remove") {
+          showNotice($t("lists.nothingTicked"));
+        }
+        return res.ok ? res.checklist : null;
+      },
+      $t("lists.clearFailed"),
+      ref,
+    );
   }
 
   // Deleting is a two-tap confirm — the first tap arms the button.
@@ -196,7 +251,7 @@
   }
 
   async function addList() {
-    const user = get(telegramUser);
+    const user = get(currentUser);
     const hid = get(holonId);
     if (!user || !hid) return;
     const name = addName.trim();
@@ -233,9 +288,8 @@
 
   onMount(() => {
     return () => {
-      // Release the holds if we unmount with a list still open.
+      // Release the hold if we unmount with a list still open.
       rotationHold.set(false);
-      pillsSuppressed.set(false);
     };
   });
 </script>
@@ -253,7 +307,9 @@
           >
             ‹
           </button>
-          <span class="picon" aria-hidden="true">{openCard?.icon ?? "📋"}</span>
+          <span class="picon" aria-hidden="true"
+            ><Icon name={openCard?.icon ?? "check-square"} /></span
+          >
           <div class="ptext">
             <h2>{openCard?.title ?? openRaw?.id ?? ""}</h2>
             <span class="count">
@@ -261,7 +317,8 @@
                 done: openDone,
                 total: openItems.length,
               })}
-              {#if openCard?.source}· ⇄ {openCard.source}{/if}
+              {#if openCard?.source}· <Icon name="swap" />
+                {openCard.source}{/if}
             </span>
           </div>
           <button
@@ -270,7 +327,8 @@
             disabled={!openItems.length}
             title={$t("lists.clearTicked")}
           >
-            ↺ {$t("lists.clear")}
+            <Icon name="undo" />
+            {$t("lists.clear")}
           </button>
           {#if openCard && !openCard.special}
             <button
@@ -280,7 +338,9 @@
               on:blur={() => (confirmDelete = false)}
               title={$t("lists.deleteList")}
             >
-              {confirmDelete ? $t("lists.tapConfirm") : "🗑"}
+              {#if confirmDelete}{$t("lists.tapConfirm")}{:else}<Icon
+                  name="trash"
+                />{/if}
             </button>
           {/if}
         </header>
@@ -305,7 +365,7 @@
                     (e.preventDefault(), toggle(index))}
                 >
                   <span class="tick" aria-hidden="true">
-                    {item.checked ? "✓" : ""}
+                    {#if item.checked}<Icon name="check" />{/if}
                   </span>
                   <span class="itext">{item.text}</span>
                   <button
@@ -313,7 +373,7 @@
                     on:click|stopPropagation={() => removeItem(index)}
                     aria-label={$t("lists.removeItemAria", { item: item.text })}
                   >
-                    ✕
+                    <Icon name="close" />
                   </button>
                 </div>
               </li>
@@ -331,12 +391,10 @@
           <button type="submit" disabled={!addItemText.trim()}>＋</button>
         </form>
       </div>
-    {:else if $scope === "personal" && !$telegramUser}
-      <p class="empty">{$t("lists.loginPersonal")}</p>
-    {:else if shownLists.length}
+    {:else if $checklistCards.length}
       <!-- The grid of list cards. -->
       <div class="grid">
-        {#each shownLists as list (list.key)}
+        {#each $checklistCards as list (list.key)}
           <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
           <article
             class="card"
@@ -349,9 +407,17 @@
             on:click={() => openList(list.key)}
             on:keydown={(e) => onKey(e, list.key)}
           >
-            <div class="icon">{list.icon}</div>
+            <div class="icon"><Icon name={list.icon} /></div>
             <h3>{list.title}</h3>
-            {#if list.source}<span class="src">⇄ {list.source}</span>{/if}
+            {#if list.source}<button
+                type="button"
+                class="src"
+                title={$t("source.open", { name: list.source })}
+                on:pointerdown|stopPropagation
+                on:click|stopPropagation={() =>
+                  jumpToSource(list.sourceId, list.source)}
+                ><Icon name="swap" /> {list.source}</button
+              >{/if}
             <span
               class="status"
               class:cleared={list.total > 0 && list.done === list.total}
@@ -386,7 +452,7 @@
 {#if addOpen}
   <Modal on:close={() => (addOpen = false)}>
     <div class="form">
-      <div class="glyph" aria-hidden="true">☑</div>
+      <div class="glyph" aria-hidden="true"><Icon name="check-square" /></div>
       <h3>{$t("lists.startList")}</h3>
       <p class="lead">{$t("lists.startLead")}</p>
       <input
@@ -469,9 +535,13 @@
     word-break: break-word;
   }
   .src {
+    padding: 0;
     font-size: 0.68rem;
     font-weight: 700;
-    color: var(--glow, var(--teal-deep));
+    /* The source holon's own hue, carried by the ink rather than replacing it:
+       a holon's colour is a ground (a pastel by day, a jewel by night), never
+       something to read on its own. */
+    color: color-mix(in srgb, var(--glow, var(--teal)) 30%, var(--ink));
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -489,7 +559,7 @@
   }
   .status.cleared {
     background: var(--note-mint);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .card.is-foreign {
     box-shadow:
@@ -526,7 +596,7 @@
     border-radius: 50%;
     font-size: 1.6rem;
     line-height: 1;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     background: var(--paper);
     display: grid;
     place-items: center;
@@ -564,7 +634,7 @@
     border-radius: 999px;
     font-size: 0.85rem;
     font-weight: 700;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     background: var(--paper);
     white-space: nowrap;
   }
@@ -575,11 +645,11 @@
     opacity: 0.4;
   }
   .tool.danger {
-    color: #9a3b2f;
+    color: var(--danger);
   }
   .tool.danger.armed {
-    background: #9a3b2f;
-    color: #fff;
+    background: var(--danger);
+    color: var(--on-danger);
   }
 
   .items {
@@ -673,7 +743,7 @@
     border-radius: 14px;
     font-size: 1.4rem;
     line-height: 1;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     box-shadow: var(--shadow-soft);
   }
@@ -700,7 +770,7 @@
     border-radius: 50%;
     font-size: 2rem;
     line-height: 1;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     box-shadow: 0 10px 24px rgba(14, 107, 102, 0.4);
     display: grid;
@@ -721,7 +791,7 @@
   }
   .form .glyph {
     font-size: 1.8rem;
-    color: var(--teal);
+    color: var(--teal-ink);
     font-weight: 800;
   }
   .form h3 {
@@ -773,11 +843,11 @@
   }
   .form .primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .form .ghost {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--ghost);
     color: var(--ink);
   }
   .form .primary:active,

@@ -22,6 +22,17 @@ const need = (status: PublishedNeed['status']): PublishedNeed =>
   }) as PublishedNeed;
 
 describe('respondToNeed', () => {
+  it('keeps the link to a standing offer', () => {
+    const out = respondToNeed(need('requested'), {
+      responder: { id: 7, holonId: 'mill-holon' },
+      offerId: 'offer-stock-flour',
+      offerHolonId: 'mill-holon',
+      id: 'resp-offer',
+    });
+    expect(out.ok).toBe(true);
+    expect(out.response).toMatchObject({ offerId: 'offer-stock-flour', offerHolonId: 'mill-holon' });
+    expect('reservationId' in out.response!).toBe(false);
+  });
   it('appends the response and flips a requested need to offered', () => {
     const out = respondToNeed(need('requested'), {
       responder: { id: 7, name: 'Local Mill', holonId: 'mill-holon' },

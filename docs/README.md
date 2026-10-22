@@ -12,7 +12,12 @@ the project lives at <https://github.com/HolonicLabs/holons>.
 
 | Document | Description |
 | --- | --- |
-| [architecture.md](./architecture.md) | The monorepo's layered model, what each package owns, and the identity-aware Holosphere/GunDB data layer. |
-| [realtime-sync.md](./realtime-sync.md) | How data stays live across UIs and federated holons: GunDB transport, web initialization, subscriptions, federation messaging, notifications. |
+| [architecture.md](./architecture.md) | The monorepo's layered model, what each package owns, and the identity-aware Holosphere data layer (signed events on relays, local store). |
+| [nostr-onboarding.md](./nostr-onboarding.md) | Handoff for new contributors: a Nostr primer, how Holons stores data as signed events on relays with a local event-sourced store, the Commons Hub kiosk's data path, repo map, gotchas, first tasks, and a community-relay runbook. |
+| [realtime-sync.md](./realtime-sync.md) | How data stays live across UIs and federated holons: relay transport and local store, web initialization, subscriptions, federation messaging, notifications. |
 | [USER_GUIDE.md](./USER_GUIDE.md) | End-user guide: identity/keys, joining holons, tasks, calendar, expenses, federation, and troubleshooting. |
 | [FEDERATION_COMPONENT.md](./FEDERATION_COMPONENT.md) | The web Federation configuration component: managing federation relationships and per-lens data sharing. |
+| [nostr-interop.md](./nostr-interop.md) | The cross-app Nostr contract shared with Elinor and LibreSesh: `d` tags stay opaque, `t: group-<id>` is the join key, provenance rides the `holons` tag, trust is explicit, foreign records are read-only. |
+| [shifts-elinor.md](./shifts-elinor.md) | The Elinor community-shifts format Holons reads and writes: kinds 31923/31925/31926, RSVP resolution across a person's keys, and where each rule lives in the code. |
+| [flows-harvest-collective.md](./flows-harvest-collective.md) | A harvest shared across holons on Flows: a mother holon seating locations and pickers with weights, the cascade into each holon's own split, mints as the pot (litres, not money), and redemption through the claims log — the Olive Collective worked example. |
+| [rea-ledger.md](./rea-ledger.md) | The ValueFlows ledger (`rea_events`) and how core derives it from every economic write in every UI: the projection behind `holosphere.put`, stable ids, what each interaction records, commitments and intents, the one explicit call for shifts. |

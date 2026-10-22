@@ -1,8 +1,11 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
-  import { onMount, tick } from "svelte";
+  import Icon from "$lib/components/Icon.svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { get } from "svelte/store";
   import { autoScrollToEnd } from "$lib/autoscroll";
+  import { createEdgeScroll } from "$lib/edgescroll";
+  import { createMoment, type DayWindow } from "$lib/calendarcreate";
   import {
     events as questEvents,
     backlog,
@@ -12,22 +15,30 @@
     holonId,
     selection,
     editOnOpen,
-    categoryColors,
     showNotice,
-    scope,
     calendarMode,
+    offerSettings,
   } from "$lib/stores";
-  import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
-  import type { CalendarMode } from "$lib/config";
+  import { requestSwitch } from "$lib/dock";
+
+  /** A provenance badge tap travels to the holon the card came from. */
+  function jumpToSource(id: string | undefined, name?: string): void {
+    if (id) requestSwitch(id, { name, from: $holonId });
+  }
+  import { isLoggedIn, loginOpen, currentUser } from "$lib/auth";
+  import { setCalendarView, type CalendarMode } from "$lib/config";
   import { getWriter } from "$lib/holosphere";
   import { t, locale, type MessageKey } from "$lib/i18n";
   import {
     createTask,
     localDayNumber,
+    moveOccurrence,
+    setQuestFrequency,
     shiftSchedule,
     type Quest,
   } from "@holons/core/tasks";
   import { toStoredInstant } from "@holons/core/datetime";
+  import { lunationAt } from "@holons/core/flows";
   import {
     noteColor,
     noteTilt,
@@ -36,9 +47,12 @@
     type CalendarEvent,
     holoSeed,
   } from "$lib/data";
-  import { personalEvents, personalTasks } from "$lib/personal";
+  import { externalEvents, refreshExternalCalendars } from "$lib/calendars";
+  import { inkOn } from "$lib/palette";
   import Avatars from "$lib/components/Avatars.svelte";
+  import CalendarSettings from "$lib/components/CalendarSettings.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
+  import YearTimeline from "./YearTimeline.svelte";
 
   // ── What this board shows ──────────────────────────────────────────────---
   // The Calendar tab passes nothing and gets the holon's dated quests; the
@@ -58,21 +72,26 @@
    * two boards remember their windows separately.
    */
   export let mode: CalendarMode | null = null;
+  /**
+   * How the year timeline's tap-to-jump switches this board to the day
+   * window. The Calendar tab's default writes the shared `calendarMode`
+   * store; a caller that drives `mode` from its own store (the Library's
+   * booking calendar) passes its own setter so the jump lands on the right
+   * board.
+   */
+  export let onModeChange: ((m: CalendarMode) => void) | null = null;
   $: view = mode ?? $calendarMode;
 
-  // The Show pill narrows the calendar too: under Mine only events the user
-  // is going to (RSVPs toggle participants, so people IS the RSVP list) — and,
-  // on the booking spans, only the bookings that are theirs (the borrower is
-  // the span's single "participant").
-  $: uid = $telegramUser?.id;
-  $: baseEvents = events ?? $questEvents;
-  $: shownEvents =
-    $scope === "personal" ? personalEvents(baseEvents, uid) : baseEvents;
+  // Subscribed external calendars belong to the Calendar tab's own board, not
+  // to a caller that hands us its own spans (the Library's bookings) — those
+  // answer "when is this resource gone", and a room's opening hours are no
+  // part of that answer. Refreshing is throttled inside `$lib/calendars`.
+  $: ownBoard = events == null;
+  $: void refreshExternalCalendars(ownBoard ? $holonId : null);
+  $: shownEvents = events ?? [...$questEvents, ...$externalEvents];
 
   // Open tasks with no date yet — the source for "drag onto a day to schedule".
-  $: baseBacklog =
-    $scope === "personal" ? personalTasks($backlog, uid) : $backlog;
-  $: unscheduled = readonly ? [] : baseBacklog.filter((t) => !t.due);
+  $: unscheduled = readonly ? [] : $backlog.filter((t) => !t.due);
 
   // One write path for every calendar gesture (move / unschedule / resize):
   // a federated card's write is routed to its owner holon under its source key
@@ -119,8 +138,36 @@
 
   function open(ev: CalendarEvent) {
     if (justDragged) return;
+    // Nothing to open for a subscribed calendar: the holon watches this
+    // event, it doesn't own it. Say where it came from instead.
+    if (ev.external) {
+      showNotice(
+        $t("cal.fromCalendar", {
+          title: ev.title,
+          name: ev.external.calendarName,
+        }),
+      );
+      return;
+    }
     if (onOpen) onOpen(ev);
-    else openQuest(ev.id, "event");
+    // An occurrence opens its series, remembering which date was tapped so
+    // the card can tick off just that one.
+    else
+      openQuest(ev.occurrence?.seriesId ?? ev.id, "event", ev.occurrence?.when);
+  }
+
+  /**
+   * The quest behind a card on this board, by the card's view id — for an
+   * occurrence of a recurring series that is the series' record, with the
+   * occurrence alongside so a gesture can say WHICH date it started from.
+   */
+  function resolveCard(
+    id: string,
+  ): { q: Quest; occurrence?: CalendarEvent["occurrence"] } | null {
+    const ev = shownEvents.find((e) => e.id === id);
+    const questId = ev?.occurrence?.seriesId ?? id;
+    const q = get(rawQuests).find((x) => String(x.id ?? x.title) === questId);
+    return q ? { q, occurrence: ev?.occurrence } : null;
   }
   function openTask(id: string) {
     if (justDragged) return;
@@ -132,6 +179,22 @@
       open(ev);
     }
   }
+
+  /**
+   * The board's own settings sheet: the feed other calendars subscribe to,
+   * and the calendars this one follows. Only on the Calendar tab — a booking
+   * calendar borrows the board, not the holon's calendar plumbing. Opened
+   * from the gear in the pills band, which this board offers only while it
+   * IS the Calendar tab's own (see `offerSettings`).
+   */
+  let settingsOpen = false;
+  let dropSettings: (() => void) | null = null;
+  $: if (ownBoard && !dropSettings)
+    dropSettings = offerSettings({
+      labelKey: "cal.set.title",
+      open: () => (settingsOpen = true),
+    });
+  onDestroy(() => dropSettings?.());
 
   // ── Drag & drop: schedule / reschedule by dropping a card on a day ─────────-
   // Pointer-based so it works with touch and mouse alike. A small movement
@@ -146,6 +209,25 @@
   let startY = 0;
   let pendingId: string | null = null;
   let pendingTitle = "";
+  let dragArmed = false; // drag allowed: at once for mouse, after a hold for touch
+  let dragHoldTimer: ReturnType<typeof setTimeout> | null = null;
+  let panX = true; // the pressed card lets the browser pan this way (touch-action)
+  let panY = true;
+  let lastX = 0; // where the pressed pointer is now (the hold checks it stayed)
+  let lastY = 0;
+  const HOLD_SLOP_PX = 8; // a finger moving further than this is scrolling
+  // Holding a card at the top/bottom edge scrolls the calendar that way; the
+  // slot under a still pointer changes as it glides, so re-aim the drop.
+  const edgeScroll = createEdgeScroll({
+    onScroll: () => {
+      if (drag) computeDrop(drag.x, drag.y);
+    },
+  });
+  onDestroy(() => {
+    unbind();
+    unbindResize();
+    edgeScroll.stop();
+  });
 
   function pad2(n: number): string {
     return String(n).padStart(2, "0");
@@ -167,10 +249,16 @@
     const el = document.elementFromPoint(x, y) as HTMLElement | null;
     // Over the drawer (or its drag-time drop hint) → unschedule, not reschedule.
     dropOnTray = el?.closest(".tray, .unschedule-zone") != null;
-    const dayEl = dropOnTray
+    // The year timeline has no per-day cells: it publishes the stretch of
+    // time it shows, and the pointer's x picks the day within it.
+    const yearEl = dropOnTray
       ? null
-      : (el?.closest<HTMLElement>("[data-day]") ?? null);
-    dropDay = dayEl?.dataset.day ?? null;
+      : (el?.closest<HTMLElement>("[data-view-from]") ?? null);
+    const dayEl =
+      dropOnTray || yearEl
+        ? null
+        : (el?.closest<HTMLElement>("[data-day]") ?? null);
+    dropDay = yearEl ? yearDayAt(yearEl, x) : (dayEl?.dataset.day ?? null);
     if (dayEl && dayEl.dataset.hours != null) {
       const rect = dayEl.getBoundingClientRect();
       const min = Math.round(minForY(y - rect.top) / 15) * 15;
@@ -180,26 +268,84 @@
     }
   }
 
-  function beginDrag(e: PointerEvent, id: string, title: string) {
+  /** The day under `x` on the year timeline (see its `data-view-*`). */
+  function yearDayAt(el: HTMLElement, x: number): string {
+    const rect = el.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (x - rect.left) / rect.width));
+    const from = Number(el.dataset.viewFrom);
+    const to = Number(el.dataset.viewTo);
+    return isoDay(new Date(Math.min(to - 1, from + (to - from) * frac)));
+  }
+
+  function beginDrag(
+    e: PointerEvent,
+    id: string,
+    title: string,
+    locked = false,
+  ) {
     if (readonly) return; // a booking span isn't dragged — see the props above
+    if (locked) return; // nor an event read out of someone else's calendar
     if (e.button != null && e.button !== 0) return;
     pendingId = id;
     pendingTitle = title;
     startX = e.clientX;
     startY = e.clientY;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    // Mouse: drag on move. Touch: a still long-press arms it, so a swipe that
+    // starts on a card scrolls the calendar instead of lifting the card — a
+    // finger that crept or anything that scrolled meanwhile never arms.
+    dragArmed = e.pointerType === "mouse";
+    if (!dragArmed)
+      dragHoldTimer = setTimeout(() => {
+        dragHoldTimer = null;
+        if (Math.hypot(lastX - startX, lastY - startY) > HOLD_SLOP_PX)
+          onPointerCancel();
+        else dragArmed = true;
+      }, 280);
+    // Only a drawer chip lifts straight away across its scroll axis; every
+    // other card is dragged by a hold alone (a sideways swipe on the year
+    // window pans it).
+    const target = e.currentTarget as HTMLElement;
+    const ta = target.closest(".tray")
+      ? getComputedStyle(target).touchAction
+      : "auto";
+    panX = !/pan-y|none/.test(ta) || /pan-x/.test(ta);
+    panY = !/pan-x|none/.test(ta) || /pan-y/.test(ta);
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerCancel);
+    window.addEventListener("touchmove", onDragTouch, { passive: false });
+    document.addEventListener("scroll", onPendingScroll, true);
+  }
+
+  // A scroll anywhere while the press is still undecided means the finger is
+  // scrolling, not lifting (the browser doesn't always cancel the pointer).
+  function onPendingScroll() {
+    if (!drag && !dragArmed) onPointerCancel();
+  }
+
+  // Once the hold has armed, the browser would take the finger's move as a
+  // pan and cancel our pointer; swallowing touchmoves keeps the drag ours
+  // (same trick as the Tasks wall).
+  function onDragTouch(e: TouchEvent) {
+    if (dragArmed || drag) e.preventDefault();
   }
 
   function unbind() {
+    if (dragHoldTimer) clearTimeout(dragHoldTimer);
+    dragHoldTimer = null;
+    dragArmed = false;
     window.removeEventListener("pointermove", onPointerMove);
     window.removeEventListener("pointerup", onPointerUp);
     window.removeEventListener("pointercancel", onPointerCancel);
+    window.removeEventListener("touchmove", onDragTouch);
+    document.removeEventListener("scroll", onPendingScroll, true);
   }
 
   function onPointerCancel() {
     unbind();
+    edgeScroll.stop();
     drag = null;
     dropDay = null;
     dropMin = null;
@@ -209,17 +355,35 @@
 
   function onPointerMove(e: PointerEvent) {
     if (!drag) {
+      if (pendingId == null) return;
+      lastX = e.clientX;
+      lastY = e.clientY;
       const moved = Math.hypot(e.clientX - startX, e.clientY - startY);
-      if (moved < 8 || pendingId == null) return;
+      // Not yet armed (touch, before the hold): a real move along an axis
+      // the card lets the browser pan is a scroll. Along the other axis (a
+      // drawer chip's lift) nothing scrolls, so it drags straight away.
+      if (!dragArmed) {
+        if (moved <= HOLD_SLOP_PX) return;
+        const horizontal =
+          Math.abs(e.clientX - startX) > Math.abs(e.clientY - startY);
+        if (horizontal ? panX : panY) {
+          onPointerCancel();
+          return;
+        }
+        dragArmed = true;
+      }
+      if (moved < 8) return;
       drag = { id: pendingId, title: pendingTitle, x: e.clientX, y: e.clientY };
     }
     e.preventDefault();
     drag = { ...drag, x: e.clientX, y: e.clientY };
     computeDrop(e.clientX, e.clientY);
+    edgeScroll.move(e.clientX, e.clientY);
   }
 
   function onPointerUp() {
     unbind();
+    edgeScroll.stop();
     const id = drag?.id ?? null;
     const day = dropDay;
     const min = dropMin;
@@ -237,6 +401,8 @@
     } else if (dragged && id && day) {
       justDragged = true; // swallow the click that follows this pointerup
       setTimeout(() => (justDragged = false), 0);
+      // The year window has no clock, so it works like a month cell: the day
+      // changes, a time the card already had stays.
       void applyDrop(id, day, min);
     }
   }
@@ -244,8 +410,9 @@
   async function applyDrop(id: string, day: string, min: number | null) {
     const hid = get(holonId);
     if (!hid) return;
-    const q = get(rawQuests).find((x) => String(x.id ?? x.title) === id);
-    if (!q) return;
+    const card = resolveCard(id);
+    if (!card) return;
+    const { q, occurrence } = card;
     if (!get(isLoggedIn)) {
       loginOpen.set(true);
       return;
@@ -258,7 +425,8 @@
         localDateTime(day, Math.floor(min / 60), min % 60),
       );
     } else if (q.when && /T\d\d:/.test(String(q.when))) {
-      // Dropped on a day cell, but it already had a time → keep the time.
+      // Dropped on a day cell (or the year window), but it already had a
+      // time → keep the time.
       when = toStoredInstant(
         localDateTime(day, oldStart.getHours(), oldStart.getMinutes()),
       );
@@ -268,8 +436,14 @@
 
     // Moving the whole card shifts the start — core carries the end along so
     // the span keeps its length AND its form (an all-day range stays bare
-    // dates; only a timed one becomes instants).
-    const updated = { ...q, ...shiftSchedule(q, when) };
+    // dates; only a timed one becomes instants). Dragging one occurrence of a
+    // recurring series moves the SERIES by that much: the meeting moved, not
+    // just this week's.
+    const timing = occurrence
+      ? moveOccurrence(q, occurrence.when, when)
+      : shiftSchedule(q, when);
+    if (!timing) return;
+    const updated = { ...q, ...timing };
     await saveQuest(q, updated, "cal.verbMove");
   }
 
@@ -282,8 +456,9 @@
   async function applyUnschedule(id: string) {
     const hid = get(holonId);
     if (!hid) return;
-    const q = get(rawQuests).find((x) => String(x.id ?? x.title) === id);
-    if (!q) return;
+    const card = resolveCard(id);
+    if (!card) return;
+    const { q, occurrence } = card;
     if (!q.when) return; // already unscheduled — nothing to clear
     if (!get(isLoggedIn)) {
       loginOpen.set(true);
@@ -291,22 +466,47 @@
     }
     const updated: Quest = { ...q, when: "", ends: "", until: "" };
     if (String(q.type ?? "").toLowerCase() === "event") updated.type = "task";
+    // An undated series can't repeat — dropping an occurrence in the drawer
+    // stops the whole series, cadence included.
+    if (occurrence) Object.assign(updated, setQuestFrequency(q, null));
     await saveQuest(q, updated, "cal.verbUnschedule");
   }
 
-  // ── Long-press / + to create ──────────────────────────────────────────────-
+  // ── Hold, then drag for the length; + to create ───────────────────────────
   // Holding still on an empty hour, day cell or week row for ~half a second
-  // drops a fresh draft task there and opens the detail card in edit mode. A
-  // bare day (no time component) becomes an all-day task; the hour timeline
-  // also carries the pressed time. New cards are plain tasks (not pure events)
-  // so they show on both the Tasks wall and here. The draft is only written on
-  // Save, so a cancel leaves no trace. Moving past a small threshold (a
-  // scroll/drag) or lifting early aborts, and presses that land on an existing
-  // card are ignored.
+  // lifts a fresh draft there (a haptic tick marks the moment) and the finger
+  // then DRAWS ITS LENGTH: on the hour timeline dragging down or up stretches
+  // a ghost block in 15-minute steps, on a day cell dragging across the cells
+  // makes a multi-day span. Lifting drops the draft into the detail card in
+  // edit mode with its start and end filled in. A bare day (no time
+  // component) becomes an all-day task; the hour timeline also carries the
+  // pressed time. New cards are plain tasks (not pure events) so they show on
+  // both the Tasks wall and here. The draft is only written on Save, so a
+  // cancel leaves no trace. Moving past a small threshold BEFORE the hold
+  // fires (a scroll/drag) or lifting early aborts, and presses that land on
+  // an existing card are ignored.
   const LONG_PRESS_MS = 500;
+  const STRETCH_SLOP = 6;
+  const DEFAULT_DUR_MIN = 60;
   let pressTimer: ReturnType<typeof setTimeout> | null = null;
   let pressX = 0;
   let pressY = 0;
+
+  /** The draft being drawn — from the hold firing to the finger lifting. */
+  let stretch: {
+    /** The day pressed (ISO), the span's first day on a day cell. */
+    day: string;
+    /** Minutes from midnight on the hour timeline, null on a day cell. */
+    min: number | null;
+    /** Timed: the length drawn so far. */
+    durMin: number;
+    /** All-day: the cell the finger is over — the span's other end. */
+    endDay: string;
+    /** Pointer y when the hold fired: length is the drag from here. */
+    y0: number;
+    /** The finger travelled: the length is the person's, not the default. */
+    moved: boolean;
+  } | null = null;
 
   function newId(): string {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -332,7 +532,7 @@
     // their own drag/tap/resize gestures.
     if (
       el.closest(
-        ".day-event, .allday-chip, .chip, .note, .resize-handle, .tray-chip",
+        ".day-event, .allday-chip, .chip, .more-card, .resize-handle, .tray-chip",
       )
     )
       return;
@@ -357,20 +557,132 @@
       } catch {
         /* haptics are best-effort */
       }
-      void createAt(day, min);
+      stretch = {
+        day,
+        min,
+        durMin: min == null ? 0 : Math.min(DEFAULT_DUR_MIN, windowEndMin - min),
+        endDay: day,
+        y0: y,
+        moved: false,
+      };
+      window.addEventListener("pointermove", onStretchMove);
+      window.addEventListener("pointerup", onStretchUp);
+      window.addEventListener("pointercancel", onStretchCancel);
+      // The finger is still down on a scrolling surface: once it moves the
+      // browser would take the gesture as a pan and cancel our pointer.
+      // Swallowing touchmoves keeps the drag ours (same trick as the tab
+      // strip's reorder).
+      window.addEventListener("touchmove", onStretchTouch, { passive: false });
     }, LONG_PRESS_MS);
     window.addEventListener("pointermove", onPressMove);
     window.addEventListener("pointerup", clearPress);
     window.addEventListener("pointercancel", clearPress);
   }
 
-  // Build a draft task for `day` (and, on the hour timeline, `min` minutes from
-  // midnight) and open it in the detail modal's edit mode. Login-gated, like the
-  // other writes in this view.
-  async function createAt(day: string, min: number | null) {
+  function onStretchTouch(e: TouchEvent) {
+    if (stretch) e.preventDefault();
+  }
+
+  function unbindStretch() {
+    window.removeEventListener("pointermove", onStretchMove);
+    window.removeEventListener("pointerup", onStretchUp);
+    window.removeEventListener("pointercancel", onStretchCancel);
+    window.removeEventListener("touchmove", onStretchTouch);
+  }
+
+  function onStretchMove(e: PointerEvent) {
+    if (!stretch) return;
+    e.preventDefault();
+    const moved =
+      stretch.moved || Math.abs(e.clientY - stretch.y0) > STRETCH_SLOP;
+    if (stretch.min != null) {
+      // Like the resize grip: the length follows the drag from where the
+      // hold fired, starting from the default hour, snapped to the quarter.
+      const delta = ((e.clientY - stretch.y0) / HOUR_PX) * 60;
+      let dur = Math.round((DEFAULT_DUR_MIN + delta) / 15) * 15;
+      dur = Math.max(15, Math.min(windowEndMin - stretch.min, dur));
+      if (dur !== stretch.durMin || moved !== stretch.moved)
+        stretch = { ...stretch, durMin: dur, moved };
+    } else {
+      // Across day cells: the cell under the finger is the span's other end
+      // (either direction — the span is normalised on release). The hour
+      // timeline's columns don't count: an all-day draft stays all-day.
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const cell = el?.closest<HTMLElement>("[data-day]");
+      const d = cell && cell.dataset.hours == null ? cell.dataset.day : null;
+      const endDay = d ?? stretch.endDay;
+      if (endDay !== stretch.endDay || moved !== stretch.moved)
+        stretch = { ...stretch, endDay, moved };
+    }
+  }
+
+  function onStretchCancel() {
+    unbindStretch();
+    stretch = null;
+  }
+
+  function onStretchUp() {
+    unbindStretch();
+    const s = stretch;
+    stretch = null;
+    if (!s) return;
+    justDragged = true; // a card under the lifted finger must not open
+    setTimeout(() => (justDragged = false), 0);
+    if (s.min != null) {
+      // Untouched, the draft keeps no explicit end (it renders at the default
+      // length and the card's form leaves the end open); drawn, it keeps
+      // the length drawn.
+      const ends = s.moved
+        ? toStoredInstant(
+            new Date(
+              localDateTime(
+                s.day,
+                Math.floor(s.min / 60),
+                s.min % 60,
+              ).getTime() +
+                s.durMin * 60000,
+            ),
+          )
+        : undefined;
+      void createAt(s.day, s.min, ends);
+    } else {
+      // ISO days sort as strings, so the span's ends order themselves.
+      const [first, last] =
+        s.day <= s.endDay ? [s.day, s.endDay] : [s.endDay, s.day];
+      void createAt(first, null, first === last ? undefined : last);
+    }
+  }
+
+  /** Does the span being drawn cover this (all-day) cell? */
+  function stretchCovers(iso: string, s: typeof stretch): boolean {
+    if (!s || s.min != null) return false;
+    const [first, last] =
+      s.day <= s.endDay ? [s.day, s.endDay] : [s.endDay, s.day];
+    return iso >= first && iso <= last;
+  }
+
+  function fmtMin(min: number): string {
+    return localDateTime(
+      "2000-01-01",
+      Math.floor(min / 60),
+      min % 60,
+    ).toLocaleTimeString($locale, { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function fmtDur(min: number): string {
+    return `${Math.floor(min / 60)}h${min % 60 ? ` ${min % 60}m` : ""}`;
+  }
+
+  // Build a draft EVENT for `day` (and, on the hour timeline, `min` minutes
+  // from midnight; `ends` is the stored end, when a length was drawn) and open
+  // it in the detail modal's edit mode. Drawn on the calendar means it belongs
+  // to the calendar: a tentative date shouldn't also turn up as a chore on the
+  // backlog wall. The card's type switch turns it into a task if it is one.
+  // Login-gated, like the other writes in this view.
+  async function createAt(day: string, min: number | null, ends?: string) {
     const hid = get(holonId);
     if (!hid) return;
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!user) {
       loginOpen.set(true);
       return;
@@ -384,37 +696,43 @@
         lastName: user.last_name,
       },
       title: "",
+      type: "event",
     });
     draft.id = newId();
     draft.when =
       min != null
         ? toStoredInstant(localDateTime(day, Math.floor(min / 60), min % 60))
         : day;
+    if (ends) draft.ends = ends;
     editOnOpen.set(true); // open straight in edit mode
     selection.set({ kind: "task", quest: draft, isNew: true });
   }
 
-  // The + button creates an all-day draft on a day that's currently in view, so
-  // the new card lands where the user is looking: the open day, or today when
-  // it falls inside the shown week/month, else the first day of that period.
-  function defaultCreateDay(): string {
-    const today = startOfDay(get(now));
-    if (view === "day") return isoDay(anchorDay);
-    if (view === "week")
-      return isoDay(
-        weekDays.some((d) => sameDay(d, today)) ? today : weekDays[0],
-      );
-    return isoDay(
-      today.getMonth() === monthAnchor.getMonth() &&
-        today.getFullYear() === monthAnchor.getFullYear()
-        ? today
-        : monthAnchor,
-    );
+  // The + button drafts an event in the window on screen — today while
+  // today is in it, else the window's first day — at the present time, so
+  // what is added turns up where the person is looking (`$lib/calendarcreate`
+  // has the rule). It used to be "now" regardless, which wrote a ＋ pressed
+  // over another day into today, out of sight.
+  function openCreate() {
+    const t = createMoment(shownWindow, get(now));
+    void createAt(isoDay(t), t.getHours() * 60 + t.getMinutes());
   }
 
-  function openCreate() {
-    void createAt(defaultCreateDay(), null);
-  }
+  /** The days the current window shows, `[start, end)`. */
+  $: shownWindow = ((): DayWindow => {
+    if (view === "day") return { start: anchorDay, end: addDays(anchorDay, 1) };
+    if (view === "week")
+      return { start: weekDays[0], end: addDays(weekDays[0], 7) };
+    if (view === "month")
+      return {
+        start: monthAnchor,
+        end: new Date(monthAnchor.getFullYear(), monthAnchor.getMonth() + 1, 1),
+      };
+    return {
+      start: new Date(displayYear, 0, 1),
+      end: new Date(displayYear + 1, 0, 1),
+    };
+  })();
 
   // ── Resize: drag a day-event's bottom edge to change its length ───────────--
   let resize: {
@@ -433,20 +751,77 @@
     return 60;
   }
 
+  // Touch: the grip arms like the card's own drag — only after a still hold.
+  // It used to resize at once, and it is the bottom quarter of a one-hour
+  // card on a phone: a finger sliding over a card (a scroll, or a drag that
+  // didn't wait for the hold) did nothing on the body but rewrote the end
+  // time whenever it started near the lower edge.
+  let resizePending: { id: string; baseMin: number } | null = null;
+  let resizeHoldTimer: ReturnType<typeof setTimeout> | null = null;
+  let resizeStartX = 0;
+  let resizeStartY = 0;
+  let resizeLastX = 0;
+  let resizeLastY = 0;
+
   function beginResize(e: PointerEvent, ev: CalendarEvent) {
     if (readonly) return;
     if (e.button != null && e.button !== 0) return;
     e.stopPropagation(); // a resize must not also start a move-drag
-    e.preventDefault();
     const base = eventDurationMin(ev);
-    resize = { id: ev.id, startY: e.clientY, baseMin: base, curMin: base };
+    if (e.pointerType === "mouse") {
+      e.preventDefault();
+      resize = { id: ev.id, startY: e.clientY, baseMin: base, curMin: base };
+    } else {
+      resizePending = { id: ev.id, baseMin: base };
+      resizeStartX = resizeLastX = e.clientX;
+      resizeStartY = resizeLastY = e.clientY;
+      resizeHoldTimer = setTimeout(() => {
+        resizeHoldTimer = null;
+        const p = resizePending;
+        resizePending = null;
+        const crept =
+          Math.hypot(resizeLastX - resizeStartX, resizeLastY - resizeStartY) >
+          HOLD_SLOP_PX;
+        if (!p || crept) {
+          unbindResize();
+          return;
+        }
+        // The length follows the finger from where the hold fired.
+        resize = {
+          id: p.id,
+          startY: resizeLastY,
+          baseMin: p.baseMin,
+          curMin: p.baseMin,
+        };
+      }, 280);
+    }
     window.addEventListener("pointermove", onResizeMove);
     window.addEventListener("pointerup", onResizeUp);
     window.addEventListener("pointercancel", onResizeUp);
   }
 
+  function unbindResize() {
+    if (resizeHoldTimer) clearTimeout(resizeHoldTimer);
+    resizeHoldTimer = null;
+    resizePending = null;
+    window.removeEventListener("pointermove", onResizeMove);
+    window.removeEventListener("pointerup", onResizeUp);
+    window.removeEventListener("pointercancel", onResizeUp);
+  }
+
   function onResizeMove(e: PointerEvent) {
-    if (!resize) return;
+    if (!resize) {
+      // Still undecided: a finger that travels before the hold is not a resize.
+      if (!resizePending) return;
+      resizeLastX = e.clientX;
+      resizeLastY = e.clientY;
+      if (
+        Math.hypot(e.clientX - resizeStartX, e.clientY - resizeStartY) >
+        HOLD_SLOP_PX
+      )
+        unbindResize();
+      return;
+    }
     e.preventDefault();
     const deltaMin = ((e.clientY - resize.startY) / HOUR_PX) * 60;
     let min = Math.round((resize.baseMin + deltaMin) / 15) * 15; // 15-min snap
@@ -455,9 +830,7 @@
   }
 
   function onResizeUp() {
-    window.removeEventListener("pointermove", onResizeMove);
-    window.removeEventListener("pointerup", onResizeUp);
-    window.removeEventListener("pointercancel", onResizeUp);
+    unbindResize();
     const r = resize;
     resize = null;
     if (r && r.curMin !== r.baseMin) {
@@ -470,7 +843,9 @@
   async function applyResize(id: string, durMin: number) {
     const hid = get(holonId);
     if (!hid) return;
-    const q = get(rawQuests).find((x) => String(x.id ?? x.title) === id);
+    // Stretching one occurrence sets the length of the series: `ends` is
+    // computed from the series' own start below, so every occurrence follows.
+    const q = resolveCard(id)?.q;
     if (!q) return;
     if (!get(isLoggedIn)) {
       loginOpen.set(true);
@@ -493,11 +868,33 @@
   $: if (view !== lastMode) {
     lastMode = view;
     offset = 0;
-    if (view === "day") void focusDay();
+    if (hasHours) void focusDay();
   }
   function step(dir: 1 | -1) {
     offset += dir;
-    if (view === "day") void focusDay();
+    if (hasHours) void focusDay();
+  }
+  // The day and week windows share the hour timeline (and its focus scroll).
+  $: hasHours = view === "day" || view === "week";
+
+  // Year timeline tap-to-jump: land the day window on the tapped date. The
+  // day offset is written BEFORE the mode flips (with `lastMode` pre-set so
+  // the mode-change reaction above doesn't reset it back to today).
+  function gotoDay(date: Date) {
+    // The click that ends a card's drag lands on the timeline too — that
+    // was a move, not a tap on the day underneath.
+    if (justDragged) return;
+    const days = Math.round(
+      (startOfDay(date).getTime() - startOfDay(get(now)).getTime()) / 86400000,
+    );
+    lastMode = "day";
+    offset = days;
+    if (onModeChange) onModeChange("day");
+    else {
+      calendarMode.set("day");
+      setCalendarView("day");
+    }
+    void focusDay();
   }
 
   const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -539,11 +936,132 @@
   function tiltStyle(id: string, bg: string): string {
     return `--tilt: ${noteTilt(id)}deg; background: ${bg};`;
   }
-  // Shared category→colour map (see stores) so an event's note matches the same
-  // category on the task wall; blank categories fall back to the hash.
-  const noteColorFor = (category: string | undefined): string =>
-    (category ? $categoryColors.get(category) : undefined) ??
-    noteColor(category);
+  // A note's fill is the hash of its category (the same step a holon's colour
+  // and the glow edge of a mirrored card come from), so an event matches the
+  // same category on the task wall and never changes colour as records from
+  // elsewhere arrive.
+  const noteColorFor = noteColor;
+  // An event's own colour (a followed calendar's) wins over its category's.
+  const noteBg = (ev: CalendarEvent): string =>
+    ev.color ?? noteColorFor(ev.category);
+  // A chosen literal colour brings its own readable ink (see palette.inkOn);
+  // the theme's notes keep the default. Dropped into `--ev-ink` as a style.
+  /** The ↻ glyph's tooltip: which cadence this occurrence belongs to. */
+  const repeatsTitle = (ev: CalendarEvent): string =>
+    ev.occurrence
+      ? $t("cal.repeatsTitle", {
+          cadence: $t(`detail.freq.${ev.occurrence.frequency}` as MessageKey),
+        })
+      : "";
+  const inkStyle = (ev: CalendarEvent): string => {
+    const ink = inkOn(ev.color);
+    return ink ? ` --ev-ink: ${ink};` : "";
+  };
+
+  // ── Month: crowded days ────────────────────────────────────────────────---
+  // A cell shows its first MONTH_CHIPS events; the rest fold into a stacked
+  // "+N more" card. Hovering it (mouse) or tapping it (touch) opens a popover
+  // with the whole day, from which any event opens or drags like a chip.
+  const MONTH_CHIPS = 2;
+  interface DayPop {
+    iso: string;
+    date: Date;
+    /** The cell's viewport box — the popover hangs off it. */
+    rect: { left: number; top: number; bottom: number; width: number };
+  }
+  let dayPop: DayPop | null = null;
+  let dayPopEl: HTMLElement | null = null;
+  let popCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  $: popEvents = dayPop ? eventsOn(dayPop.date, shownEvents) : [];
+
+  function openDayPop(day: Date, cell: HTMLElement) {
+    cancelPopClose();
+    const r = cell.getBoundingClientRect();
+    dayPop = {
+      iso: isoDay(day),
+      date: day,
+      rect: { left: r.left, top: r.top, bottom: r.bottom, width: r.width },
+    };
+  }
+  function closeDayPop() {
+    cancelPopClose();
+    dayPop = null;
+  }
+  function cancelPopClose() {
+    if (popCloseTimer) clearTimeout(popCloseTimer);
+    popCloseTimer = null;
+  }
+  // Mouse: leaving the cell (or the popover) closes it after a beat, so the
+  // pointer can cross the gap between the two without the popover vanishing.
+  function schedulePopClose() {
+    cancelPopClose();
+    popCloseTimer = setTimeout(() => (dayPop = null), 180);
+  }
+  function hoverMore(e: PointerEvent, day: Date) {
+    if (e.pointerType !== "mouse") return;
+    const cell = (e.currentTarget as HTMLElement).closest<HTMLElement>(".cell");
+    if (cell) openDayPop(day, cell);
+  }
+  function leaveCell(e: PointerEvent) {
+    if (e.pointerType !== "mouse" || !dayPop) return;
+    schedulePopClose();
+  }
+  function tapMore(e: MouseEvent, day: Date) {
+    e.stopPropagation();
+    const iso = isoDay(day);
+    if (dayPop?.iso === iso) closeDayPop();
+    else {
+      const cell = (e.currentTarget as HTMLElement).closest<HTMLElement>(
+        ".cell",
+      );
+      if (cell) openDayPop(day, cell);
+    }
+  }
+  // A press anywhere outside the popover (and off its own card) closes it;
+  // so does Escape, and so does a card being lifted off it to drag.
+  function onWindowPointerDown(e: PointerEvent) {
+    if (!dayPop) return;
+    const el = e.target as HTMLElement | null;
+    if (dayPopEl?.contains(el) || el?.closest(".more-card")) return;
+    closeDayPop();
+  }
+  function onWindowKey(e: KeyboardEvent) {
+    if (e.key === "Escape" && dayPop) closeDayPop();
+  }
+  $: if (drag) dayPop = null;
+  // Navigating (or switching mode) leaves the popover behind.
+  $: closeOnNav(view, offset);
+  function closeOnNav(_view: CalendarMode, _offset: number) {
+    dayPop = null;
+  }
+  // The popover sits on the viewport below (or, near the bottom, above) its
+  // cell, kept inside the screen. Mounted at the document root so the board's
+  // stacking contexts and the scroll area's clipping can't cut it off.
+  const POP_W_REM = 20;
+  function popStyle(rect: DayPop["rect"]): string {
+    if (typeof window === "undefined") return "";
+    const gap = 8;
+    const w = Math.min(POP_W_REM * rootRem, window.innerWidth - gap * 2);
+    const left = Math.max(
+      gap,
+      Math.min(rect.left, window.innerWidth - w - gap),
+    );
+    const below = rect.bottom + 6;
+    const room = Math.min(window.innerHeight * 0.6, 24 * rootRem);
+    const vert =
+      below + room <= window.innerHeight - gap
+        ? `top: ${below}px;`
+        : `bottom: ${Math.max(gap, window.innerHeight - rect.top + 6)}px;`;
+    return `left: ${left}px; width: ${w}px; ${vert}`;
+  }
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        node.remove();
+      },
+    };
+  }
 
   // ── Anchors (driven by the live clock + nav offset) ───────────────────────
   $: anchorDay = addDays(startOfDay($now), view === "day" ? offset : 0);
@@ -555,6 +1073,24 @@
   })();
 
   $: monthAnchor = new Date($now.getFullYear(), $now.getMonth() + offset, 1);
+  // Year window: offset counts whole years.
+  $: displayYear = $now.getFullYear() + (view === "year" ? offset : 0);
+  // The lunation we're in, new moon to new moon, for the close-up under the
+  // year (`to` is the cycle's last ms; the line's span ends at the next moon).
+  $: lunation = lunationAt($now.getTime());
+  $: lunationRange = { from: lunation.from, to: lunation.to + 1 };
+  $: lunationTitle = (() => {
+    const fmt = (ms: number) =>
+      new Date(ms).toLocaleDateString($locale, {
+        day: "numeric",
+        month: "short",
+      });
+    return $t("cal.lunationSpan", {
+      n: lunation.index,
+      from: fmt(lunationRange.from),
+      to: fmt(lunationRange.to),
+    });
+  })();
   $: monthGrid = (() => {
     const start = new Date(monthAnchor);
     start.setDate(1 - monthAnchor.getDay());
@@ -577,7 +1113,34 @@
   let rootRem = 16;
   // Live height of the unscheduled drawer, so the + button rides above it.
   let trayHeight = 0;
-  $: HOUR_PX = Math.round(rootRem * 3.4);
+  // The week fits its waking hours on screen: the hour height is derived from
+  // the visible timeline (the scroll area minus the sticky date band) so that
+  // WEEK_FROM..WEEK_TO fill it exactly, and the window opens scrolled to
+  // WEEK_FROM. Earlier/later hours stay reachable by scrolling. A floor keeps
+  // the rows tappable on a very short screen (then it scrolls a little).
+  const WEEK_FROM_HOUR = 9;
+  const WEEK_TO_HOUR = 23;
+  let bodyHeight = 0;
+  let headsHeight = 0;
+  // The week's all-day strip is pinned under the date band (it must not
+  // scroll away with the early hours), so it takes visible height too.
+  let alldayHeight = 0;
+  let hoursRowEl: HTMLElement | null = null;
+  // Room for the hour labels, which sit just above their line: the first one
+  // peeks out under the pinned band, the last one clears the bottom edge.
+  const WEEK_EDGE_REM = 0.8;
+  $: weekPinnedPx = headsHeight + (view === "week" ? alldayHeight : 0);
+  $: weekHourPx = Math.max(
+    Math.round(rootRem * 1.4),
+    Math.floor(
+      (bodyHeight - weekPinnedPx - rootRem * WEEK_EDGE_REM) /
+        (WEEK_TO_HOUR - WEEK_FROM_HOUR),
+    ),
+  );
+  $: HOUR_PX = view === "week" ? weekHourPx : Math.round(rootRem * 3.4);
+  // Re-land on WEEK_FROM whenever the week's row height settles or changes
+  // (first measure, rotation, window resize).
+  $: if (view === "week" && weekHourPx > 0) void focusDay();
 
   function measureRem() {
     if (typeof document === "undefined") return;
@@ -612,6 +1175,22 @@
     await tick();
     requestAnimationFrame(() => {
       if (!scrollEl) return;
+      if (view === "week") {
+        // 09:00 right under the sticky date band, so 09:00–23:00 is the screen.
+        if (!hoursRowEl) return;
+        const rowTop =
+          hoursRowEl.getBoundingClientRect().top -
+          scrollEl.getBoundingClientRect().top +
+          scrollEl.scrollTop;
+        scrollEl.scrollTop = Math.max(
+          0,
+          rowTop +
+            yForMin(WEEK_FROM_HOUR * 60) -
+            weekPinnedPx -
+            rootRem * (WEEK_EDGE_REM / 2),
+        );
+        return;
+      }
       const mins = sameDay(anchorDay, get(now))
         ? minutesOf(get(now))
         : MORNING_MIN;
@@ -668,7 +1247,7 @@
   onMount(() => {
     measureRem();
     window.addEventListener("resize", measureRem);
-    if (view === "day") void focusDay();
+    if (hasHours) void focusDay();
     // Kiosk displays are unattended — glide the timeline once so booked content
     // below the fold is shown without anyone dragging. Capped at the lowest
     // booked event so it never scrolls down into empty evening hours.
@@ -703,6 +1282,9 @@
     /** The day itself — spans need it to say which of their days this is. */
     date: Date;
     label: string;
+    /** Stacked header parts for the (narrow) week columns: "Mon" / "23". */
+    dow: string;
+    dom: number;
     allDay: CalendarEvent[];
     timed: CalendarEvent[];
     layout: Map<string, { col: number; cols: number }>;
@@ -727,6 +1309,8 @@
         day: "numeric",
         month: "short",
       }),
+      dow: day.toLocaleDateString($locale, { weekday: "short" }),
+      dom: day.getDate(),
       allDay: evs.filter((e) => e.allDay || e.multiDay),
       timed,
       layout: eventLayout(timed),
@@ -737,12 +1321,18 @@
   // Events come in as an argument (not read inside makeColumn) so Svelte's
   // dependency tracking recomputes the columns when the events — or the scope
   // narrowing them — change.
-  $: dayCols = showNextDay
-    ? [
-        makeColumn(anchorDay, true, shownEvents),
-        makeColumn(nextDay, false, shownEvents),
-      ]
-    : [makeColumn(anchorDay, true, shownEvents)];
+  // The week is the same timeline with seven columns. None of them is
+  // "primary": the hour labels get a gutter column of their own (see
+  // `.gutter-col`), so every day's events span their full column width.
+  $: dayCols =
+    view === "week"
+      ? weekDays.map((d) => makeColumn(d, false, shownEvents))
+      : showNextDay
+        ? [
+            makeColumn(anchorDay, true, shownEvents),
+            makeColumn(nextDay, false, shownEvents),
+          ]
+        : [makeColumn(anchorDay, true, shownEvents)];
 
   // Inline geometry for a timed event's note. The next-day column has no hour
   // gutter, so its events span the full column width.
@@ -761,7 +1351,7 @@
       `top: ${top}px; height: ${height}px;` +
       ` left: calc(${pad} + (100% - ${inner}) * ${lay.col} / ${lay.cols});` +
       ` width: calc((100% - ${inner}) / ${lay.cols} - 0.2rem);` +
-      ` background: ${noteColorFor(ev.category)};`
+      ` background: ${noteBg(ev)};`
     );
   }
 
@@ -801,10 +1391,12 @@
         })
       : view === "week"
         ? `${weekDays[0].toLocaleDateString($locale, { day: "numeric", month: "short" })} – ${weekDays[6].toLocaleDateString($locale, { day: "numeric", month: "short" })}`
-        : monthAnchor.toLocaleDateString($locale, {
-            month: "long",
-            year: "numeric",
-          });
+        : view === "year"
+          ? String(displayYear)
+          : monthAnchor.toLocaleDateString($locale, {
+              month: "long",
+              year: "numeric",
+            });
 
   // What a card says about its own timing on `day`. A span says which of its
   // days this is; only its FIRST day also carries the start time (the later
@@ -895,14 +1487,11 @@
     </div>
   </header>
 
-  {#if $scope === "personal" && !$telegramUser}
-    <p class="scopehint">{$t("cal.loginEvents")}</p>
-  {/if}
-
   <div
     class="scrollarea scroll"
     bind:this={scrollEl}
     bind:clientWidth={bodyWidth}
+    bind:clientHeight={bodyHeight}
   >
     {#if view === "month"}
       <div class="weekdays">
@@ -920,141 +1509,182 @@
             class:dim={!inMonth}
             class:today={isToday}
             class:drop={dropDay === iso}
+            class:stretch={stretchCovers(iso, stretch)}
             data-day={iso}
             on:pointerdown={beginCreatePress}
+            on:pointerleave={leaveCell}
           >
             <span class="num">{day.getDate()}</span>
             <div class="chips">
-              {#each evs.slice(0, 2) as ev (ev.id)}
+              {#each evs.slice(0, MONTH_CHIPS) as ev (ev.id)}
                 <span class="lift chip-wrap">
                   <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                   <span
                     class="chip tilt"
-                    class:draggable={!readonly}
+                    class:draggable={!readonly && !ev.external}
+                    class:ext={!!ev.external}
                     class:is-foreign={!!ev.sourceColor}
                     class:holo={!!ev.hologram}
+                    class:done={!!ev.completed}
                     style:--holo-seed={holoSeed(ev.id)}
+                    class:tinted={!!inkOn(ev.color)}
                     style="{tiltStyle(
                       ev.id,
-                      noteColorFor(ev.category),
-                    )} --glow: {ev.sourceColor ?? 'transparent'};"
+                      noteBg(ev),
+                    )} --glow: {ev.sourceColor ?? 'transparent'};{inkStyle(ev)}"
                     title={ev.title}
                     role="button"
                     tabindex="0"
-                    on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
+                    on:pointerdown={(e) =>
+                      beginDrag(e, ev.id, ev.title, !!ev.external)}
                     on:click={() => open(ev)}
                     on:keydown={(e) => onKey(e, ev)}
                     >{#if ev.multiDay}<span class="spanb"
                         >{spanLabel(ev, day)}</span
+                      >{/if}{#if ev.occurrence}<span
+                        class="rec"
+                        title={repeatsTitle(ev)}><Icon name="repeat" /></span
                       >{/if}{ev.title}</span
                   >
                 </span>
               {/each}
-              {#if evs.length > 2}
-                <span class="more">+{evs.length - 2}</span>
+              {#if evs.length > MONTH_CHIPS}
+                <!-- The rest of the day, as a small stack of cards: hover or
+                     tap to unfold the whole day. -->
+                <button
+                  class="more-card"
+                  class:open={dayPop?.iso === iso}
+                  aria-expanded={dayPop?.iso === iso}
+                  aria-haspopup="dialog"
+                  aria-label={$t("cal.moreEvents", {
+                    n: evs.length - MONTH_CHIPS,
+                  })}
+                  title={$t("cal.moreEvents", { n: evs.length - MONTH_CHIPS })}
+                  on:pointerenter={(e) => hoverMore(e, day)}
+                  on:click={(e) => tapMore(e, day)}
+                >
+                  <!-- Narrow cells (phones) show just the count. -->
+                  <span class="more-long"
+                    >{$t("cal.moreEvents", {
+                      n: evs.length - MONTH_CHIPS,
+                    })}</span
+                  ><span class="more-short">+{evs.length - MONTH_CHIPS}</span>
+                </button>
               {/if}
             </div>
           </div>
         {/each}
       </div>
-    {:else if view === "week"}
-      <div class="week">
-        {#each weekDays as day (day.toISOString())}
-          {@const evs = eventsOn(day, shownEvents)}
-          {@const isToday = sameDay(day, $now)}
-          {@const iso = isoDay(day)}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div
-            class="row"
-            class:today={isToday}
-            class:drop={dropDay === iso}
-            data-day={iso}
-            on:pointerdown={beginCreatePress}
-          >
-            <div class="daychip">
-              <span class="dow"
-                >{day.toLocaleDateString($locale, { weekday: "short" })}</span
-              >
-              <span class="dom">{day.getDate()}</span>
-            </div>
-            {#if evs.length}
-              <div class="row-notes">
-                {#each evs as ev (ev.id)}
-                  <span class="lift">
-                    <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-                    <article
-                      class="note sm tilt"
-                      class:draggable={!readonly}
-                      class:is-foreign={!!ev.sourceColor}
-                      class:holo={!!ev.hologram}
-                      style:--holo-seed={holoSeed(ev.id)}
-                      style="{tiltStyle(
-                        ev.id,
-                        noteColorFor(ev.category),
-                      )} --glow: {ev.sourceColor ?? 'transparent'};"
-                      role="button"
-                      tabindex="0"
-                      on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
-                      on:click={() => open(ev)}
-                      on:keydown={(e) => onKey(e, ev)}
-                    >
-                      <span class="when">{timeLabel(ev, day)}</span>
-                      <span class="ttl">{ev.title}</span>
-                    </article>
-                  </span>
-                {/each}
-              </div>
-            {:else}
-              <span class="row-empty">—</span>
-            {/if}
-          </div>
-        {/each}
-      </div>
+    {:else if view === "year"}
+      <!-- the whole year as a lunar timeline (moons, solstices, cards) -->
+      <YearTimeline
+        events={shownEvents}
+        year={displayYear}
+        now={$now}
+        {noteColorFor}
+        onOpen={open}
+        onSelectDay={gotoDay}
+        onDragStart={(e, ev) => beginDrag(e, ev.id, ev.title, !!ev.external)}
+        lifting={dragArmed || drag != null}
+        {dropDay}
+      />
+      <!-- …and the lunation we're in, close up: the same line spanning only
+           new moon to new moon -->
+      <YearTimeline
+        events={shownEvents}
+        year={displayYear}
+        range={lunationRange}
+        title={lunationTitle}
+        now={$now}
+        {noteColorFor}
+        onOpen={open}
+        onSelectDay={gotoDay}
+        onDragStart={(e, ev) => beginDrag(e, ev.id, ev.title, !!ev.external)}
+        lifting={dragArmed || drag != null}
+        {dropDay}
+      />
     {:else}
-      <!-- day timeline — one column, or two (with the next day) when wide -->
-      <div class="day-cols" class:twin={dayCols.length > 1}>
-        <!-- Date band: only needed with two columns (the period header already
-             names the day in single-column view). Sticks above the timeline so
-             each column's day stays visible while the hours scroll. -->
+      <!-- hour timeline — the day (one column, or two with the next day when
+           wide) and the week (seven columns, plus a gutter for the hour labels) -->
+      {@const wk = view === "week"}
+      <div class="day-cols" class:twin={dayCols.length > 1} class:wk>
+        <!-- Date band: only needed with several columns (the period header
+             already names the day in single-column view). Sticks above the
+             timeline so each column's day stays visible while the hours
+             scroll. In the week, tapping a day opens it. -->
         {#if dayCols.length > 1}
-          <div class="col-heads">
+          <div class="col-heads" bind:clientHeight={headsHeight}>
+            {#if wk}<div class="gutter-col" aria-hidden="true"></div>{/if}
             {#each dayCols as col (col.iso)}
-              <div class="col-head" class:today={col.isToday}>{col.label}</div>
+              {#if wk}
+                <button
+                  class="col-head stacked"
+                  class:today={col.isToday}
+                  on:click={() => gotoDay(col.date)}
+                  aria-label={col.label}
+                >
+                  <span class="dow">{col.dow}</span>
+                  <span class="dom">{col.dom}</span>
+                </button>
+              {:else}
+                <div class="col-head" class:today={col.isToday}>
+                  {col.label}
+                </div>
+              {/if}
             {/each}
           </div>
         {/if}
 
         {#if dayCols.some((c) => c.allDay.length)}
-          <div class="allday-row">
+          <div
+            class="allday-row"
+            bind:clientHeight={alldayHeight}
+            style:--heads-h="{headsHeight}px"
+          >
+            {#if wk}
+              <div class="gutter-col allday-gutter" aria-hidden="true">
+                <span class="allday-label">all day</span>
+              </div>
+            {/if}
             {#each dayCols as col (col.iso)}
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <div
                 class="allday"
                 class:drop={dropDay === col.iso && dropMin === null}
+                class:stretch={stretchCovers(col.iso, stretch)}
                 data-day={col.iso}
                 on:pointerdown={beginCreatePress}
               >
-                <span class="allday-label">all day</span>
+                {#if !wk}<span class="allday-label">all day</span>{/if}
                 <div class="allday-items">
                   {#each col.allDay as ev (ev.id)}
                     <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                     <span
                       class="allday-chip"
-                      class:draggable={!readonly}
+                      class:draggable={!readonly && !ev.external}
+                      class:ext={!!ev.external}
                       class:is-foreign={!!ev.sourceColor}
                       class:holo={!!ev.hologram}
+                      class:done={!!ev.completed}
                       style:--holo-seed={holoSeed(ev.id)}
-                      style="background: {noteColorFor(
-                        ev.category,
-                      )}; --glow: {ev.sourceColor ?? 'transparent'};"
+                      class:tinted={!!inkOn(ev.color)}
+                      style="background: {noteBg(
+                        ev,
+                      )}; --glow: {ev.sourceColor ?? 'transparent'};{inkStyle(
+                        ev,
+                      )}"
                       role="button"
                       tabindex="0"
                       title={ev.title}
-                      on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
+                      on:pointerdown={(e) =>
+                        beginDrag(e, ev.id, ev.title, !!ev.external)}
                       on:click={() => open(ev)}
                       on:keydown={(e) => onKey(e, ev)}
                       >{#if ev.multiDay}<span class="spanb"
                           >{spanLabel(ev, col.date)}</span
+                        >{/if}{#if ev.occurrence}<span
+                          class="rec"
+                          title={repeatsTitle(ev)}><Icon name="repeat" /></span
                         >{/if}{ev.title}</span
                     >
                   {/each}
@@ -1066,7 +1696,11 @@
 
         <!-- One shared hour grid behind both day columns, so the lines are drawn
              once: they always line up across days and never glitch on scroll. -->
-        <div class="hours-row" style="height: {gridHeight}px;">
+        <div
+          class="hours-row"
+          bind:this={hoursRowEl}
+          style="height: {gridHeight}px;"
+        >
           <div class="hour-grid" aria-hidden="true">
             {#each HOURS as h}
               <div class="hour" style="top: {yForMin(h * 60, HOUR_PX)}px;">
@@ -1075,10 +1709,12 @@
             {/each}
           </div>
 
+          {#if wk}<div class="gutter-col" aria-hidden="true"></div>{/if}
           {#each dayCols as col (col.iso)}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="hours-col"
+              class:today={col.isToday}
               data-day={col.iso}
               data-hours="1"
               on:pointerdown={beginCreatePress}
@@ -1088,6 +1724,29 @@
                   class="slot-hint"
                   style="top: {yForMin(dropMin, HOUR_PX)}px;"
                 ></div>
+              {/if}
+
+              {#if stretch && stretch.min != null && stretch.day === col.iso}
+                <!-- The draft being drawn: its bottom edge follows the finger. -->
+                <div
+                  class="stretch-ghost"
+                  class:gutter={col.primary}
+                  style="top: {yForMin(
+                    stretch.min,
+                    HOUR_PX,
+                  )}px; height: {(stretch.durMin / 60) * HOUR_PX}px;"
+                  aria-hidden="true"
+                >
+                  <span class="stretch-when"
+                    >{fmtMin(stretch.min)}–{fmtMin(
+                      stretch.min + stretch.durMin,
+                    )}</span
+                  >
+                  <span class="stretch-dur">{fmtDur(stretch.durMin)}</span>
+                  {#if !stretch.moved}
+                    <span class="stretch-hint">{$t("cal.stretchHint")}</span>
+                  {/if}
+                </div>
               {/if}
 
               {#each col.timed as ev (ev.id)}
@@ -1102,10 +1761,13 @@
                 <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
                 <article
                   class="day-event"
-                  class:draggable={!readonly}
+                  class:draggable={!readonly && !ev.external}
+                  class:ext={!!ev.external}
+                  class:tinted={!!inkOn(ev.color)}
                   class:resizing={resize?.id === ev.id}
                   class:is-foreign={!!ev.sourceColor}
                   class:holo={!!ev.hologram}
+                  class:done={!!ev.completed}
                   style:--holo-seed={holoSeed(ev.id)}
                   class:compact
                   style="{eventBox(
@@ -1115,10 +1777,13 @@
                     col.primary,
                     HOUR_PX,
                   )} --glow: {ev.sourceColor ??
-                    'transparent'}; --ev-font: {compactFont(heightPx)}px;"
+                    'transparent'}; --ev-font: {compactFont(
+                    heightPx,
+                  )}px;{inkStyle(ev)}"
                   role="button"
                   tabindex="0"
-                  on:pointerdown={(e) => beginDrag(e, ev.id, ev.title)}
+                  on:pointerdown={(e) =>
+                    beginDrag(e, ev.id, ev.title, !!ev.external)}
                   on:click={() => open(ev)}
                   on:keydown={(e) => onKey(e, ev)}
                 >
@@ -1146,16 +1811,32 @@
                           class="dur"
                         >
                           · {durLabel}</span
+                        >{/if}{#if ev.occurrence}<span
+                          class="rec"
+                          title={repeatsTitle(ev)}><Icon name="repeat" /></span
                         >{/if}</span
                     >
                     <span class="ttl">{ev.title}</span>
                     {#if ev.location}<span class="where">{ev.location}</span
                       >{/if}
-                    {#if ev.source}<span class="src">⇄ {ev.source}</span>{/if}
+                    {#if ev.source}<button
+                        type="button"
+                        class="src"
+                        title={$t("source.open", { name: ev.source })}
+                        on:pointerdown|stopPropagation
+                        on:click|stopPropagation={() =>
+                          jumpToSource(ev.sourceId, ev.source)}
+                        ><Icon name="swap" /> {ev.source}</button
+                      >{/if}
+                    {#if ev.external}<span class="src"
+                        ><Icon name="external" />
+                        {ev.external.calendarName}</span
+                      >{/if}
                     {#if ev.people.length || ev.appreciation}
                       <div class="ev-foot">
                         {#if ev.appreciation}<span class="appr"
-                            ><span class="h">♥</span> {ev.appreciation}</span
+                            ><span class="h"><Icon name="heart" /></span>
+                            {ev.appreciation}</span
                           >{/if}
                         {#if ev.people.length}
                           <Avatars people={ev.people} size="1.35rem" />
@@ -1163,7 +1844,7 @@
                       </div>
                     {/if}
                   {/if}
-                  {#if !readonly}
+                  {#if !readonly && !ev.external}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <span
                       class="resize-handle"
@@ -1237,12 +1918,82 @@
       <button
         class="fab"
         on:click={openCreate}
-        aria-label={$t("cal.newTask")}
-        title={$t("cal.newTask")}>＋</button
+        aria-label={$t("cal.newEvent")}
+        title={$t("cal.newEvent")}>＋</button
       >
     </div>
   {/if}
 </div>
+
+<svelte:window on:pointerdown={onWindowPointerDown} on:keydown={onWindowKey} />
+
+{#if dayPop}
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <div
+    class="day-pop"
+    role="dialog"
+    tabindex="-1"
+    aria-label={dayPop.date.toLocaleDateString($locale, {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    })}
+    style={popStyle(dayPop.rect)}
+    use:portal
+    bind:this={dayPopEl}
+    on:pointerenter={cancelPopClose}
+    on:pointerleave={leaveCell}
+  >
+    <header class="pop-head">
+      <span class="pop-date"
+        >{dayPop.date.toLocaleDateString($locale, {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+        })}</span
+      >
+      <span class="pop-count"
+        >{$t("cal.dayEvents", { n: popEvents.length })}</span
+      >
+    </header>
+    <div class="pop-list scroll">
+      {#each popEvents as ev (ev.id)}
+        <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+        <article
+          class="pop-chip"
+          class:draggable={!readonly && !ev.external}
+          class:ext={!!ev.external}
+          class:is-foreign={!!ev.sourceColor}
+          class:holo={!!ev.hologram}
+          class:done={!!ev.completed}
+          style:--holo-seed={holoSeed(ev.id)}
+          class:tinted={!!inkOn(ev.color)}
+          style="background: {noteBg(ev)}; --glow: {ev.sourceColor ??
+            'transparent'};{inkStyle(ev)}"
+          role="button"
+          tabindex="0"
+          on:pointerdown={(e) => beginDrag(e, ev.id, ev.title, !!ev.external)}
+          on:click={() => open(ev)}
+          on:keydown={(e) => onKey(e, ev)}
+        >
+          <span class="when"
+            >{timeLabel(ev, dayPop.date)}{#if ev.occurrence}<span
+                class="rec"
+                title={repeatsTitle(ev)}><Icon name="repeat" /></span
+              >{/if}</span
+          >
+          <span class="ttl">{ev.title}</span>
+          {#if ev.location}<span class="where">{ev.location}</span>{/if}
+          {#if ev.people.length}
+            <div class="ev-foot">
+              <Avatars people={ev.people} size="1.2rem" />
+            </div>
+          {/if}
+        </article>
+      {/each}
+    </div>
+  </div>
+{/if}
 
 {#if drag}
   <div
@@ -1252,6 +2003,10 @@
   >
     {drag.title}
   </div>
+{/if}
+
+{#if settingsOpen}
+  <CalendarSettings on:close={() => (settingsOpen = false)} />
 {/if}
 
 <style>
@@ -1347,7 +2102,7 @@
     border-radius: 50%;
     font-size: 2rem;
     line-height: 1;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     box-shadow: 0 10px 24px rgba(14, 107, 102, 0.4);
     display: grid;
@@ -1375,14 +2130,27 @@
   }
 
   /* ── Drag & drop ───────────────────────────────────────────────────────--- */
+  /* Read out of a calendar the holon follows: nothing here can be moved,
+     resized or opened, and the dashed edge says so before a finger tries. */
+  .ext {
+    outline: 1.5px dashed var(--muted);
+    outline-offset: -3px;
+  }
+  /* A note in a chosen literal colour (a followed calendar's): its text takes
+     the ink that reads on that colour, whatever the theme (see inkStyle). */
+  .tinted,
+  .tinted :is(.ttl, .when, .where, .src, .dur, .spanb, .cline) {
+    color: var(--ev-ink);
+  }
   .draggable {
-    touch-action: none;
+    /* Pans stay the browser's until a hold arms the drag (see beginDrag). */
+    touch-action: manipulation;
     cursor: grab;
   }
   .drop {
     outline: 2px dashed var(--teal);
     outline-offset: -2px;
-    background: #e7f3f1 !important;
+    background: var(--teal-wash) !important;
   }
   .drag-ghost {
     position: fixed;
@@ -1476,6 +2244,7 @@
 
   /* Pill band + date navigation, stacked and centred. */
   .head {
+    position: relative;
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
@@ -1492,15 +2261,6 @@
     gap: 0.4rem;
     width: 100%;
   }
-  /* One-line hint when the Mine scope has no one to be personal about; the
-     (blank) grid still renders beneath it. */
-  .scopehint {
-    margin: 0;
-    padding: 0.2rem 1.4rem 0.4rem;
-    text-align: center;
-    color: var(--muted);
-    font-size: 0.92rem;
-  }
   .period {
     margin: 0;
     font-size: 1.45rem;
@@ -1516,7 +2276,7 @@
     border-radius: 50%;
     font-size: 1.7rem;
     line-height: 1;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     background: var(--paper);
     display: grid;
     place-items: center;
@@ -1569,11 +2329,11 @@
     text-align: center;
   }
   .cell.today {
-    background: #e7f3f1;
+    background: var(--teal-wash);
     outline: 2px solid var(--teal);
   }
   .cell.today .num {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-weight: 800;
   }
   .chips {
@@ -1591,7 +2351,7 @@
     max-width: 100%;
     font-size: 0.62rem;
     font-weight: 700;
-    color: rgba(32, 48, 47, 0.78);
+    color: var(--ink-soft);
     padding: 0.12rem 0.34rem;
     border-radius: 3px 6px 6px 6px;
     white-space: nowrap;
@@ -1599,11 +2359,147 @@
     text-overflow: ellipsis;
     text-align: center;
   }
-  .more {
+  /* The fold: a little stack of cards standing in for the rest of the day.
+     Two offset "sheets" behind it read as a pile; hover lifts it. */
+  .more-card {
+    position: relative;
+    display: block;
+    width: 100%;
+    margin-top: 2px;
+    padding: 0.16rem 0.34rem;
+    border: 1px solid var(--line);
+    border-radius: 3px 6px 6px 6px;
+    background: var(--card);
+    font: inherit;
     font-size: 0.6rem;
-    color: var(--muted);
-    font-weight: 700;
+    font-weight: 800;
+    color: var(--teal-ink);
     text-align: center;
+    cursor: pointer;
+    box-shadow:
+      0 2px 0 -1px var(--card),
+      0 2px 0 0 var(--line),
+      0 4px 0 -2px var(--card),
+      0 4px 0 -1px var(--line);
+    transition:
+      transform 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+  .more-card {
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .more-short {
+    display: none;
+  }
+  @media (max-width: 40rem) {
+    .more-long {
+      display: none;
+    }
+    .more-short {
+      display: inline;
+    }
+  }
+  .more-card:hover,
+  .more-card.open {
+    transform: translateY(-1px);
+    background: var(--teal-wash);
+    border-color: var(--teal);
+    box-shadow:
+      0 3px 0 -1px var(--card),
+      0 3px 0 0 var(--teal),
+      0 6px 0 -2px var(--card),
+      0 6px 0 -1px var(--teal),
+      var(--shadow-soft);
+  }
+
+  /* The unfolded day: a floating sheet hanging off its cell (viewport
+     positioned, mounted on <body>), listing every card of the day. */
+  .day-pop {
+    position: fixed;
+    z-index: 1000;
+    box-sizing: border-box;
+    padding: 0.6rem 0.6rem 0.7rem;
+    border-radius: 14px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.18);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    animation: kiosk-rise 0.18s ease both;
+  }
+  .pop-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0 0.2rem;
+  }
+  .pop-date {
+    font-size: 0.9rem;
+    font-weight: 800;
+    color: var(--ink);
+    text-transform: capitalize;
+  }
+  .pop-count {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .pop-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    max-height: min(60vh, 24rem);
+    overflow-y: auto;
+    padding: 0.15rem;
+  }
+  .pop-chip {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    padding: 0.4rem 0.6rem 0.45rem;
+    border-radius: 4px 12px 12px 12px;
+    box-shadow: var(--shadow-soft);
+    cursor: grab;
+    touch-action: none;
+  }
+  .pop-chip:active {
+    filter: brightness(0.97);
+  }
+  .pop-chip .when {
+    font-size: 0.64rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ink-soft);
+  }
+  .pop-chip .ttl {
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1.15;
+    color: var(--ink);
+  }
+  .pop-chip .where {
+    font-size: 0.76rem;
+    color: var(--ink-soft);
+  }
+  .pop-chip .ev-foot {
+    margin-top: 0.25rem;
+  }
+  .pop-chip.is-foreign {
+    box-shadow:
+      0 0 0 2px var(--glow),
+      0 0 14px 1px color-mix(in srgb, var(--glow) 55%, transparent),
+      var(--shadow-soft);
+  }
+  .pop-chip.done {
+    opacity: 0.55;
+  }
+  .pop-chip.done .ttl {
+    text-decoration: line-through;
   }
   /* "2/3" — which day of a multi-day span this card is showing. A quiet inked
      badge on the note itself, so a span reads as one thing continuing rather
@@ -1617,62 +2513,6 @@
     font-variant-numeric: tabular-nums;
     font-size: 0.9em;
     opacity: 0.85;
-  }
-
-  /* ── Week ──────────────────────────────────────────────────────────────── */
-  .week {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 0.8rem;
-    padding: 0.5rem 0.6rem;
-    border-radius: 14px;
-    background: var(--paper);
-    min-height: 4.2rem;
-  }
-  .row.today {
-    background: #e7f3f1;
-    outline: 2px solid var(--teal);
-  }
-  .daychip {
-    flex: 0 0 3rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    line-height: 1.05;
-  }
-  .daychip .dow {
-    font-size: 0.7rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    color: var(--muted);
-    letter-spacing: 0.04em;
-  }
-  .daychip .dom {
-    font-size: 1.3rem;
-    font-weight: 800;
-    color: var(--ink);
-    font-variant-numeric: tabular-nums;
-  }
-  .row.today .dom,
-  .row.today .dow {
-    color: var(--teal-deep);
-  }
-  .row-notes {
-    display: flex;
-    gap: 0.7rem;
-    flex-wrap: wrap;
-    flex: 1;
-    min-width: 0;
-  }
-  .row-empty {
-    color: var(--line);
-    font-size: 1.3rem;
-    padding-left: 0.4rem;
   }
 
   /* ── Day timeline ──────────────────────────────────────────────────────--- */
@@ -1706,7 +2546,10 @@
      the column rule only matches when a second column is present). */
   .day-cols.twin .col-heads > * + *,
   .day-cols.twin .allday-row > * + *,
-  .hours-col + .hours-col {
+  .day-cols.wk .col-heads > * + *,
+  .day-cols.wk .allday-row > * + *,
+  .hours-col + .hours-col,
+  .gutter-col + .hours-col {
     border-left: 1px solid var(--line);
   }
   .col-head {
@@ -1717,7 +2560,133 @@
     color: var(--muted);
   }
   .col-head.today {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
+  }
+  /* Week header: weekday over the date, like a wall calendar; a button so
+     tapping a day jumps to it. */
+  .col-head.stacked {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.05rem;
+    padding: 0.3rem 0 0.35rem;
+    border: 0;
+    background: none;
+    font: inherit;
+    line-height: 1.05;
+    cursor: pointer;
+    min-height: 44px;
+  }
+  .col-head.stacked .dow {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+  .col-head.stacked .dom {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .col-head.stacked.today .dow,
+  .col-head.stacked.today .dom {
+    color: var(--teal-ink);
+  }
+  .col-head.stacked.today .dom {
+    background: var(--teal);
+    color: var(--on-teal);
+    border-radius: 999px;
+    min-width: 1.7rem;
+    padding: 0.05rem 0.3rem;
+  }
+
+  /* Week: the hour labels live in a gutter column of their own so the seven
+     day columns stay equal and their events use the full column width. */
+  .day-cols.wk {
+    --gutter: 3rem;
+  }
+  @media (max-width: 40rem) {
+    .day-cols.wk {
+      --gutter: 2.4rem;
+    }
+  }
+  .gutter-col {
+    flex: 0 0 var(--gutter, 3rem);
+    width: var(--gutter, 3rem);
+  }
+  .day-cols.wk .hour-label {
+    width: calc(var(--gutter) - 0.35rem);
+  }
+  .day-cols.wk .now-time {
+    white-space: nowrap;
+  }
+  .allday-gutter {
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding: 0.3rem 0.35rem 0.6rem 0;
+  }
+  .allday-gutter .allday-label {
+    margin-top: 0.4rem;
+    text-align: right;
+    line-height: 1.1;
+  }
+  /* Pinned under the date band so the week's all-day events stay in view
+     while the timeline sits on the waking hours. */
+  .day-cols.wk .allday-row {
+    position: sticky;
+    top: var(--heads-h, 0px);
+    z-index: 5;
+    background: var(--paper);
+  }
+  .day-cols.wk .allday {
+    padding-left: 0.15rem;
+    padding-right: 0.15rem;
+    margin-bottom: 0;
+    border-radius: 0;
+  }
+  .day-cols.wk .allday-items {
+    gap: 0.3rem;
+  }
+  .day-cols.wk .allday-chip {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0.3rem 0.45rem;
+    font-size: 0.72rem;
+  }
+  .day-cols.wk .hours-col.today {
+    background: color-mix(in srgb, var(--teal) 6%, transparent);
+  }
+  /* Seven narrow columns: tighter cards, the title first, the extras (place,
+     source) left to the card itself. */
+  .day-cols.wk .day-event {
+    padding: 0.2rem 0.3rem 0.5rem;
+    border-radius: 3px 8px 8px 8px;
+  }
+  .day-cols.wk .day-event .when {
+    font-size: 0.58rem;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    flex: 0 0 auto;
+  }
+  .day-cols.wk .day-event .ttl {
+    font-size: 0.8rem;
+    line-height: 1.12;
+    overflow-wrap: anywhere;
+  }
+  .day-cols.wk .day-event .where,
+  .day-cols.wk .day-event .src {
+    display: none;
+  }
+  .day-cols.wk .day-event .ev-foot {
+    margin-top: 0.2rem;
+  }
+  .day-cols.wk .slot-hint {
+    left: 0.15rem;
   }
 
   .allday {
@@ -1812,7 +2781,7 @@
     animation: none;
   }
   .day-event .dur {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   /* Bottom grip: drag to change the event's length. */
   .resize-handle {
@@ -1840,7 +2809,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: rgba(32, 48, 47, 0.62);
+    color: var(--ink-soft);
   }
   .day-event .ttl {
     font-size: 0.95rem;
@@ -1850,14 +2819,17 @@
   }
   .day-event .where {
     font-size: 0.78rem;
-    color: rgba(32, 48, 47, 0.62);
+    color: var(--ink-soft);
   }
   .day-event .src {
     margin-top: 0.15rem;
+    padding: 0;
     font-size: 0.7rem;
     font-weight: 700;
-    /* Tinted with the source holon's own colour (same hue as its glow edge). */
-    color: var(--glow, var(--teal-deep));
+    /* The source holon's own hue, carried by the ink rather than replacing it:
+       a holon's colour is a ground (a pastel by day, a jewel by night), never
+       something to read on its own. */
+    color: color-mix(in srgb, var(--glow, var(--teal)) 30%, var(--ink));
   }
   .day-event .ev-foot {
     display: flex;
@@ -1871,7 +2843,7 @@
     gap: 0.15rem;
     font-size: 0.74rem;
     font-weight: 700;
-    color: #9a3b2f;
+    color: var(--danger);
   }
   .day-event .appr .h {
     font-size: 1.4em;
@@ -1914,6 +2886,52 @@
   .day-event.compact .resize-handle {
     height: 0.45rem;
   }
+  /* A span being drawn across day cells / week rows / the all-day row. */
+  .stretch {
+    outline: 2px solid var(--teal);
+    outline-offset: -2px;
+    background: color-mix(in srgb, var(--teal) 14%, var(--card)) !important;
+  }
+  /* The draft being drawn on the hour timeline — a teal block whose bottom
+     edge follows the finger, reading its start–end and length. */
+  .stretch-ghost {
+    position: absolute;
+    left: 0.15rem;
+    right: 0.3rem;
+    z-index: 7;
+    box-sizing: border-box;
+    border-radius: 4px 12px 12px 12px;
+    border: 2px solid var(--teal);
+    background: color-mix(in srgb, var(--teal) 22%, var(--card));
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
+    padding: 0.2rem 0.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 0.15rem 0.5rem;
+    overflow: hidden;
+    pointer-events: none;
+    font-size: 0.85rem;
+    line-height: 1.2;
+    color: var(--teal-ink);
+  }
+  .stretch-ghost.gutter {
+    left: 3.2rem;
+  }
+  .stretch-when {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .stretch-dur {
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .stretch-hint {
+    flex-basis: 100%;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
   .slot-hint {
     position: absolute;
     left: 3rem;
@@ -1952,44 +2970,19 @@
     top: -0.82em;
     font-size: 0.64rem;
     font-weight: 800;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     padding: 0.08rem 0.45rem;
     border-radius: 999px;
     box-shadow: var(--shadow-soft);
   }
 
-  /* ── Shared post-it notes ──────────────────────────────────────────────--- */
-  .note {
-    border-radius: 4px 14px 14px 14px;
-    animation: kiosk-rise 0.4s ease both;
-    cursor: pointer;
-  }
+  /* ── Month chips ───────────────────────────────────────────────────────--- */
   .chip {
     cursor: pointer;
   }
-  .note:active,
   .chip:active {
     filter: brightness(0.97);
-  }
-  .note .when {
-    font-size: 0.7rem;
-    font-weight: 700;
-    color: rgba(32, 48, 47, 0.62);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .note.sm {
-    display: flex;
-    flex-direction: column;
-    padding: 0.5rem 0.7rem 0.6rem;
-    max-width: 11rem;
-  }
-  .note.sm .ttl {
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: var(--ink);
-    line-height: 1.15;
   }
 
   /* Federated / hologram events — a coloured edge keyed by their source holon
@@ -1997,8 +2990,7 @@
      coming from elsewhere, across every calendar surface they appear on. The
      surfaces that carry a soft lift keep it (re-stated here, since their own
      `box-shadow` rule would otherwise win on specificity). */
-  .chip.is-foreign,
-  .note.is-foreign {
+  .chip.is-foreign {
     box-shadow:
       0 0 0 2px var(--glow),
       0 0 14px 1px color-mix(in srgb, var(--glow) 55%, transparent);
@@ -2010,5 +3002,28 @@
       0 0 0 2px var(--glow),
       0 0 14px 1px color-mix(in srgb, var(--glow) 55%, transparent),
       var(--shadow-soft);
+  }
+
+  /* Occurrences of a recurring series carry a small ↻ ahead of the title (or
+     beside the hour), and one that has been ticked off fades and strikes
+     through — it stays on the board so the week still reads as it went. */
+  .rec {
+    display: inline-block;
+    margin-right: 0.25em;
+    font-weight: 700;
+    opacity: 0.75;
+  }
+  .when .rec {
+    margin: 0 0 0 0.35em;
+  }
+  .chip.done,
+  .allday-chip.done,
+  .day-event.done {
+    opacity: 0.55;
+  }
+  .chip.done,
+  .allday-chip.done,
+  .day-event.done .ttl {
+    text-decoration: line-through;
   }
 </style>

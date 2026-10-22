@@ -4,9 +4,6 @@
  * just that actor's own record. Resolution reads the signed envelope store, so a
  * raw-store deletion by a stranger can't hide your signed data.
  */
-import os from 'node:os';
-import path from 'node:path';
-import fs from 'node:fs';
 import HoloSphere from '../holosphere.js';
 import { generateSecretKey, getPublicKey, buildEvent } from '../nostr-events.js';
 
@@ -16,21 +13,17 @@ const ids = (a) => a.map((i) => i.id).sort();
 const owners = (a) => a.map((r) => r._owner).sort();
 
 describe('signed delete', () => {
-  let sphere, dir, Bsk, Bpub;
+  let sphere, Bsk, Bpub;
 
   async function writeAs(sk, lens, item, at) {
     const evt = buildEvent({ holon: HOLON, lens, item, sk, created_at: at });
-    await new Promise((r) => { let s = false; const d = () => { if (!s) { s = true; r(); } };
-      setTimeout(d, 2000);
-      sphere.gun.get(sphere.appname).get(HOLON).get('_events').get(lens).get(item.id).get(evt.pubkey)
-        .put(JSON.stringify(evt), () => d()); });
+    sphere.store.apply(evt, { origin: 'remote' });
   }
 
   beforeAll(async () => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-del-'));
     Bsk = generateSecretKey(); Bpub = getPublicKey(Bsk);
     sphere = new HoloSphere({ appName: 'del-test', privateKey: generateSecretKey(),
-      gunOptions: { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false } });
+      store: { adapter: 'memory' } });
     await sphere.enableSigning({ relays: [], enforce: true, perActorLenses: ['participation'] });
     await sphere.addReadKey(Bpub);
   }, 30000);
@@ -38,7 +31,6 @@ describe('signed delete', () => {
   afterAll(async () => {
     try { sphere?.disableSigning(); } catch {}
     try { await sphere?.close?.(); } catch {}
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   }, 15000);
 
   test('a singleton item disappears from the view after a signed delete', async () => {
@@ -59,7 +51,7 @@ describe('signed delete', () => {
     await sphere.put(HOLON, 'tasks', { id: 't2', title: 'Plant the orchard' });
     await wait(300);
     // simulate an attacker wiping the raw slot (open graph) — no signed tombstone
-    await new Promise((r) => sphere.gun.get(sphere.appname).get(HOLON).get('tasks').get('t2').put(null, () => r()));
+    sphere.store.putRaw(HOLON, 'tasks', 't2', { id: 't2', _deleted: true });
     await wait(300);
     // the signed envelope is intact, so the item still resolves
     expect(ids(await sphere.getAll(HOLON, 'tasks'))).toEqual(['t2']);

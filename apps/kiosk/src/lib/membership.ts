@@ -5,8 +5,6 @@
 // invariant (owned by @holons/core/tasks) is applied to current data.
 
 import {
-  reflectJoin,
-  reflectLeave,
   toggleAppreciation,
   toggleParticipant,
   type Quest,
@@ -14,8 +12,10 @@ import {
 } from "@holons/core/tasks";
 import { getHolosphere, getWriter } from "./holosphere";
 
+// A Telegram user id (number) or a key user's pubkey hex — core stores
+// QuestParticipant.id as string | number and compares identities stringified.
 export type TgUser = {
-  id: number;
+  id: number | string;
   username?: string;
   first_name?: string;
   last_name?: string;
@@ -70,50 +70,28 @@ export async function toggleAppreciate(
 }
 
 /** Is the user a participant of the (already-toggled) quest? */
-function isParticipant(quest: Quest, userId: number): boolean {
+function isParticipant(quest: Quest, userId: number | string): boolean {
   const list = (quest.participants ?? []) as QuestParticipant[];
   return list.some((p) => String(p?.id) === String(userId));
 }
 
 /**
- * Mirror a membership change into the joiner's personal holon and refresh their
- * Telegram DM. `joined` reflects the post-toggle state. Best-effort: a failure
- * here must never undo the participant write the caller already made.
- *
- *  - join  → core `reflectJoin` writes a {id,soul} hologram into
- *            (userId,'quests',questId), then the bot DM is (re)created.
- *  - leave → core `reflectLeave` deletes that hologram, then the DM is refreshed.
- *
- * The DM is triggered via the same-origin `/api/quest/refresh` proxy (the bot's
- * own endpoint is CORS-locked to the dashboard origin).
+ * Ask the bot to (re)send the Telegram DM linked to a card in the user's own
+ * holon, after their place on it changed. The hologram behind that DM is
+ * core's doing — every roster write mirrors itself into each person's holon
+ * (`attachRosterMirror`) — so this only delivers. Best-effort, and only ever
+ * for the signed-in user: the same-origin `/api/quest/refresh` proxy refuses
+ * any chat but the caller's own.
  */
-export async function reflectMembership(
-  holonId: string,
-  quest: Quest,
+export async function refreshOwnDm(
+  questId: string,
   user: TgUser,
-  joined: boolean,
 ): Promise<void> {
-  try {
-    const holosphere = await getHolosphere();
-    const ctx = {
-      holosphere,
-      homeHolonId: holonId,
-      quest: { id: String(quest.id) },
-      user: person(user),
-    };
-    if (joined) await reflectJoin(ctx);
-    else await reflectLeave(ctx);
-  } catch (err) {
-    console.warn("[kiosk] reflectMembership failed", err);
-  }
   try {
     await fetch("/api/quest/refresh", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chatId: String(user.id),
-        questId: String(quest.id),
-      }),
+      body: JSON.stringify({ chatId: String(user.id), questId }),
     });
   } catch {
     /* DM refresh is best-effort */
@@ -138,15 +116,36 @@ export async function toggleJoin(
   const writer = await getWriter(holon);
   const ok = await writer.put("quests", updated);
   if (!ok) return false;
-  // Mirror into the joiner's personal holon + (re)send the linked DM.
-  // Best-effort: the membership write already succeeded.
-  await reflectMembership(
-    holon,
-    updated,
-    user,
-    isParticipant(updated, user.id),
-  );
+  await refreshOwnDm(key, user);
   return true;
+}
+
+/**
+ * Put someone else on a card's roster — anyone in the holon, not just the
+ * signed-in user. Core's write mirrors the card into that person's own holon.
+ * Returns the card as written, `"already"` when they take part already, or
+ * `"failed"` when the read or the write didn't land.
+ */
+export async function addMember(
+  holonId: string,
+  questId: string,
+  member: TgUser,
+  ref?: SourceRef,
+): Promise<Quest | "already" | "failed"> {
+  const holon = ref?.holon ?? holonId;
+  const key = ref?.key ?? questId;
+  const q = await freshQuest(holon, key);
+  if (!q) return "failed";
+  if (isParticipant(q, member.id)) return "already";
+  try {
+    // Not on the roster (checked above), so the toggle adds — and, by core's
+    // participate-XOR-appreciate rule, takes them off the appreciation list.
+    const updated = toggleParticipant(q, person(member));
+    const writer = await getWriter(holon);
+    return (await writer.put("quests", updated)) ? updated : "failed";
+  } catch {
+    return "failed";
+  }
 }
 
 /**
@@ -170,7 +169,7 @@ export async function joinOnly(
     const writer = await getWriter(holon);
     const ok = await writer.put("quests", updated);
     if (!ok) return "failed";
-    await reflectMembership(holon, updated, user, true);
+    await refreshOwnDm(key, user);
     return "joined";
   } catch {
     return "failed";
@@ -178,7 +177,7 @@ export async function joinOnly(
 }
 
 /** Is the user among the quest's appreciators? */
-function isAppreciating(quest: Quest, userId: number): boolean {
+function isAppreciating(quest: Quest, userId: number | string): boolean {
   const list = (quest.appreciation ?? []) as QuestParticipant[];
   return list.some((p) => String(p?.id) === String(userId));
 }

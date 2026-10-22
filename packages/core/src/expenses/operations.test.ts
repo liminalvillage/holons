@@ -20,14 +20,13 @@ const expense: Expense = {
 
 describe('createExpense', () => {
   it('rejects non-positive or non-numeric amounts', () => {
-    expect(createExpense({ id: 1, holonId: 100, amount: 0, currency: 'eur', description: 'x', paidBy: 1 })).toBeNull();
-    expect(createExpense({ id: 1, holonId: 100, amount: NaN, currency: 'eur', description: 'x', paidBy: 1 })).toBeNull();
+    expect(createExpense({ id: 1, amount: 0, currency: 'eur', description: 'x', paidBy: 1 })).toBeNull();
+    expect(createExpense({ id: 1, amount: NaN, currency: 'eur', description: 'x', paidBy: 1 })).toBeNull();
   });
 
   it('normalizes currency and strips leading prepositions', () => {
     const e = createExpense({
       id: 1,
-      holonId: 100,
       amount: 5,
       currency: 'EUR',
       description: 'for pizza',
@@ -38,35 +37,34 @@ describe('createExpense', () => {
     expect(e!.description).toBe('pizza');
   });
 
-  it('falls back to [holonId] when splitWith is empty', () => {
+  it('keeps the split empty when splitWith is omitted', () => {
     const e = createExpense({
       id: 1,
-      holonId: 100,
       amount: 5,
       currency: 'eur',
       description: 'solo',
       paidBy: 1,
     });
-    expect(e!.splitWith).toEqual([100]);
+    expect(e!.splitWith).toEqual([]);
   });
 });
 
 describe('toggleParticipant', () => {
-  it('adds when absent and removes the holon sentinel', () => {
-    const seeded: Expense = { ...expense, splitWith: [100] };
-    const next = toggleParticipant(seeded, 2, 100);
+  it('adds when absent', () => {
+    const seeded: Expense = { ...expense, splitWith: [] };
+    const next = toggleParticipant(seeded, 2);
     expect(next.splitWith).toEqual([2]);
   });
 
-  it('removes when present and falls back to [holonId] if empty', () => {
+  it('removes when present and leaves the split empty', () => {
     const seeded: Expense = { ...expense, splitWith: [2] };
-    const next = toggleParticipant(seeded, 2, 100);
-    expect(next.splitWith).toEqual([100]);
+    const next = toggleParticipant(seeded, 2);
+    expect(next.splitWith).toEqual([]);
   });
 
   it('does not mutate the input', () => {
     const original = { ...expense, splitWith: [...expense.splitWith] };
-    toggleParticipant(expense, 3, 100);
+    toggleParticipant(expense, 3);
     expect(expense).toEqual(original);
   });
 });

@@ -2,7 +2,6 @@ import type { HoloSphere } from "holosphere";
 // @ts-ignore — registry is exported from holosphere ESM but missing from type declarations
 import { registry } from "holosphere";
 import { addParticipant as addTaskParticipant } from "@holons/core/tasks";
-import { reflectMembership } from "./reflectMembership";
 import {
   clearParticipants as clearRoleParticipants,
   setPermanent as setRoleHolder,
@@ -93,7 +92,7 @@ export class QRActionService {
   /**
    * Reads a single item from a (possibly other) holon. On a fresh scan the
    * item is a cold cross-holon read, so we wait for the network rather than
-   * letting Gun's synchronous miss report it as not-found.
+   * letting a cold local-store miss report it as not-found.
    */
   private async getItem(
     holonID: string,
@@ -587,14 +586,6 @@ export class QRActionService {
             this.participantFor(user),
           );
           await this.putItem(params.holonID, "quests", updated);
-          // Mirror into the joiner's personal holon + send the linked DM.
-          void reflectMembership({
-            holosphere: this.holosphere,
-            holonId: params.holonID,
-            questId: String(updated.id ?? params.itemId),
-            userId: user.id,
-            joined: true,
-          });
           console.log(
             `[QRActionService] Added user ${user.id} to existing event ${params.itemId}`,
           );
@@ -681,15 +672,6 @@ export class QRActionService {
       // Save quest data using the event ID as key
       await this.putItem(params.holonID, "quests", questData);
 
-      // Mirror into the creator/participant's personal holon + send the DM.
-      void reflectMembership({
-        holosphere: this.holosphere,
-        holonId: params.holonID,
-        questId: String(questData.id),
-        userId: user.id,
-        joined: true,
-      });
-
       console.log(
         `[QRActionService] Event Quest created successfully for user ${user.id} to event ${params.title}`,
       );
@@ -751,14 +733,6 @@ export class QRActionService {
             this.participantFor(user),
           );
           await this.putItem(params.holonID, "quests", updated);
-          // Mirror into the joiner's personal holon + send the linked DM.
-          void reflectMembership({
-            holosphere: this.holosphere,
-            holonId: params.holonID,
-            questId: String(updated.id ?? params.itemId),
-            userId: user.id,
-            joined: true,
-          });
           console.log(
             `[QRActionService] Added user ${user.id} to existing quest ${params.itemId}`,
           );
@@ -839,15 +813,6 @@ export class QRActionService {
 
       // Save quest data using the task ID as key
       await this.putItem(params.holonID, "quests", questData);
-
-      // Mirror into the assignee/participant's personal holon + send the DM.
-      void reflectMembership({
-        holosphere: this.holosphere,
-        holonId: params.holonID,
-        questId: String(questData.id),
-        userId: user.id,
-        joined: true,
-      });
 
       console.log(
         `[QRActionService] Task Quest created successfully for user ${user.id} to task ${params.title}`,

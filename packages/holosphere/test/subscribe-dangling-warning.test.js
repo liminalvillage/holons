@@ -53,13 +53,11 @@ describe('subscribe emits a janitor-parseable warning for unresolved holograms',
         try {
             const sub = hs.subscribe(holon, lens, () => { /* consumer ignores */ });
 
-            // Inject a bare hologram pointer at holon/lens/key. We can't use
-            // `put` (it would register/rewrite); write the stored shape the
-            // wire delivers for a federated pointer directly.
+            // Inject a bare hologram pointer at holon/lens/key straight into
+            // the store, the shape the wire delivers for a federated pointer.
             const key = 'dangling-1';
             const soul = `${APP}/source-holon/quests/${key}`;
-            hs.gun.get(APP).get(holon).get(lens).get(key)
-                .put(JSON.stringify({ id: key, soul }));
+            hs.store.putRaw(holon, lens, key, { id: key, soul });
 
             await new Promise(r => setTimeout(r, 800));
             sub.unsubscribe();

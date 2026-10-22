@@ -1,6 +1,6 @@
 // Lock in the `holosphere.getAll` return-shape contract:
 // **Always resolves to `Array<T>`** — never null, never an object map, never
-// a string, never a single-char from a Gun pipe glitch. Every consumer
+// a string, never a single-char from a stringified-item glitch. Every consumer
 // (web dashboard, telegram bot, MCP server) relies on this so they can
 // drop the historical `ensureArray(...) / Array.isArray(...) ? ... :
 // Object.values(...)` defensive code.

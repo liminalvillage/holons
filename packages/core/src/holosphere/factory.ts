@@ -1,40 +1,157 @@
 /**
  * UI-agnostic factory for `HoloSphere` instances.
  *
- * Both UIs (web + telegram bot) used to build `HoloSphere` independently with
- * subtly different code paths. This module is the single place where the
- * constructor is invoked; UI wrappers add only environment-specific concerns
- * (svelte stores, Node key files, etc.).
+ * Every UI builds its `HoloSphere` here so the constructor is invoked in one
+ * place; UI wrappers add only environment-specific concerns (svelte stores,
+ * Node key files, etc.).
  *
  * The factory deliberately does NOT touch `process.env`, `localStorage`, or
- * filesystem — callers must resolve their own private key. That keeps the
- * core importable from any runtime (browser, Node, edge).
+ * the filesystem — callers resolve their own private key, relays and store
+ * location (see `resolveRelays` in `./relays.js`). That keeps the core
+ * importable from any runtime (browser, Node, edge).
+ *
+ * Every write is signed by `privateKey` and published to the relays. Reads
+ * are enforced: for every holon that has someone defined to speak for it
+ * (its key, its founded `_members` log, or its anchored records — see
+ * `./authority.js`), only accepted authors' claims are shown; the rest waits
+ * in `getPending`. `enforce: false` reads the open graph (tooling, forensics).
  */
 
 import { HoloSphere } from 'holosphere';
+import { attachLedger, type LedgerHost } from '../rea/attach.js';
+import { attachRosterMirror, type RosterMirrorHost } from '../tasks/roster-mirror.js';
+import { createWireRegistry } from 'holosphere/store';
+import { createShiftIdentityWire, createShiftWire } from '../shifts/wire.js';
+import { PROTOCOL_LENSES } from '../protocol/events.js';
+import { FLOW_CLAIMS_LENS } from '../flows/claims.js';
+import { FLOW_MINTS_LENS } from '../flows/mints.js';
+import { FLOW_RIGHTS_LENS } from '../flows/rights-log.js';
+import { GOVERNANCE_VOTES_LENS } from '../governance/votes.js';
+import type { ProjectionHook } from '../nostr/types.js';
+import { createReadAuthority, roleOfSync, type VouchContext } from './authority.js';
 
 /**
- * Configuration for {@link createHoloSphere}. Mirrors the subset of
- * `HoloSphereConfig` both UIs care about, plus an `awaitReady` flag.
- *
- * Anything not modelled here can be passed through `extra` — useful for
- * Nostr-specific keys like `nostr: { relays, peers, persistence }`.
+ * Every append-only lens core writes (kind 1808): the protocol's own logs
+ * plus each domain's. Registered on every HoloSphere the factory builds, so
+ * a new log is readable on every surface the day it lands — no UI keeps its
+ * own copy of this list.
+ */
+export const APPEND_LENSES: readonly string[] = [
+  ...PROTOCOL_LENSES,
+  FLOW_CLAIMS_LENS,
+  FLOW_MINTS_LENS,
+  FLOW_RIGHTS_LENS,
+  GOVERNANCE_VOTES_LENS,
+];
+
+/** Where the local store persists (see holosphere/STORE.md). */
+export interface HoloSphereStoreOptions {
+  /**
+   * `'memory'` (default outside a browser; serverless functions, scripts),
+   * `'indexeddb'` (default in a browser), `'file'` (long-lived Node hosts),
+   * or `'auto'`.
+   */
+  adapter?: 'memory' | 'indexeddb' | 'file' | 'auto';
+  /** Directory for the file adapter. */
+  dir?: string;
+  compactAfter?: number;
+  /** Pre-built wire registry. Usually set for you by `standardWires`. */
+  wire?: unknown;
+}
+
+/**
+ * Lenses carried on their OWN standard Nostr kinds instead of the kind-30078
+ * envelope, so records another Nostr app publishes are readable as an ordinary
+ * lens. Omit this and nothing changes: every lens stays on the envelope.
+ */
+export interface StandardWireOptions {
+  /**
+   * NIP-52 community shifts, as published by Elinor. Enables
+   * `getAll(holon, 'shifts')` and `getAll(holon, 'shifts_rsvp')`.
+   *
+   * Set `coordinatorPubkey` in production. Without it any author's occurrences
+   * are accepted, which is fine against a relay you control and is not fine on
+   * a shared one.
+   */
+  shifts?: { coordinatorPubkey?: string };
+  /**
+   * The kind-31926 identity directory, as a global lens. Supplies participant
+   * names and collapses one person's several keys, so a cancel under one key
+   * beats a signup under another. Enables `getAllGlobal('shift_identity')`.
+   *
+   * `providers` narrows the subscription by author; left open it fetches the
+   * whole directory, which is what preserves the board's current behaviour of
+   * honouring any provider.
+   */
+  shiftIdentity?: { providers?: string[] };
+}
+
+/** Relay-side extras: standard-kind projections and their reverse sync. */
+export interface HoloSphereNostrOptions {
+  syncTimeoutMs?: number;
+  pageSize?: number;
+  verbose?: boolean;
+  projections?: ProjectionHook[];
+  signerFor?: (userId: string | number) => string | Uint8Array | null | undefined;
+  providerKey?: string | Uint8Array | null;
+  reverseSync?: boolean;
+  trustedAuthors?: (holon: string) => string[] | Promise<string[]>;
+  reverseLookbackSec?: number;
+}
+
+/**
+ * Configuration for {@link createHoloSphere}.
  */
 export interface CreateHoloSphereOptions {
   /** Application namespace (e.g. `"Holons"`, `"HolonsDebug"`). */
   appName: string;
   /** Private key as hex string or raw bytes. Resolved by the caller. */
   privateKey?: Uint8Array | string | null;
-  /** Backend selector — defaults to whatever holosphere picks (Gun in 1.3). */
-  backend?: string;
-  /** Holosphere log level (`'INFO'`, `'DEBUG'`, ...). */
-  logLevel?: string;
+  /**
+   * Relay URLs — the wire. An instance without relays is local-only
+   * (tests, offline tooling). Resolve with `resolveRelays(env)`.
+   */
+  relays?: string[];
+  /** Local store configuration. */
+  store?: HoloSphereStoreOptions;
+  /** Relay-side extras (projections, sync tuning). */
+  nostr?: HoloSphereNostrOptions;
   /** Strict-mode toggle for holosphere. */
   strict?: boolean;
   /** When true, await `holosphere.ready()` before returning. */
   awaitReady?: boolean;
+  /** Lenses carried on their own standard Nostr kinds (see {@link StandardWireOptions}). */
+  standardWires?: StandardWireOptions;
   /** Forward arbitrary extra keys to `HoloSphereConfig`. */
   extra?: Record<string, unknown>;
+  /**
+   * Keep the `rea_events` ledger in line with every economic write (see
+   * `@holons/core/rea` `attachLedger`). On by default — every UI accounts
+   * the same way. `false` only for tooling that must write raw records
+   * (imports, forensics).
+   */
+  ledger?: boolean;
+  /**
+   * Keep every person a task or event names holding a hologram of it in their
+   * own holon (see `@holons/core/tasks` `attachRosterMirror`). On by default —
+   * adding someone to a card is the same on every UI. `false` only for
+   * tooling that must write raw records (imports, forensics).
+   */
+  rosterMirror?: boolean;
+  /**
+   * Extra append-only lenses (kind 1808, every signed entry kept — see
+   * `@holons/core/protocol`). Core's own logs (`APPEND_LENSES`) are always
+   * registered; pass a list to add an app's, or `false` for none at all.
+   * Registering costs nothing until a lens is read or written.
+   */
+  appendLenses?: readonly string[] | false;
+  /**
+   * Authorized reads (default on): each holon's accepted authors decide what
+   * a read returns; unsigned or foreign claims wait in `getPending`. The same
+   * rule decides whose privacy grants are accepted. `false` reads the open
+   * graph, as before — for tooling that must see everything.
+   */
+  enforce?: boolean;
 }
 
 /**
@@ -44,24 +161,65 @@ export interface CreateHoloSphereOptions {
  * a `Promise<HoloSphere>` when it's true — matching the natural usage in each
  * UI (web awaits, bot uses sync).
  */
-export function createHoloSphere(options: CreateHoloSphereOptions): HoloSphere;
 export function createHoloSphere(
   options: CreateHoloSphereOptions & { awaitReady: true }
 ): Promise<HoloSphere>;
+export function createHoloSphere(options: CreateHoloSphereOptions): HoloSphere;
 export function createHoloSphere(
   options: CreateHoloSphereOptions
 ): HoloSphere | Promise<HoloSphere> {
-  const { appName, privateKey, backend, logLevel, strict, awaitReady, extra } = options;
+  const { appName, privateKey, relays, store, nostr, strict, awaitReady, standardWires, extra, ledger, rosterMirror, appendLenses, enforce } = options;
 
+  // A lens that owns a standard kind needs the store to consume that kind.
+  // Built here so no UI has to know the registry exists.
+  let storeCfg: (HoloSphereStoreOptions & { appendLenses?: string[] }) | undefined = store;
+  if (standardWires?.shifts || standardWires?.shiftIdentity) {
+    const wire = createWireRegistry();
+    if (standardWires.shifts) wire.register(createShiftWire(standardWires.shifts));
+    if (standardWires.shiftIdentity) wire.register(createShiftIdentityWire(standardWires.shiftIdentity));
+    storeCfg = { ...(store ?? {}), wire };
+  }
+  // Core's logs ride along by default; an app adds its own.
+  if (appendLenses !== false) {
+    const lenses = [...new Set([...APPEND_LENSES, ...(appendLenses ?? [])])];
+    storeCfg = { ...(storeCfg ?? {}), appendLenses: lenses };
+  }
+
+  // Who counts, per holon, for every read and for every grant: one rule,
+  // one cache, wired into both layers. An explicit `signing` in `extra`
+  // (test modes) keeps its own read mode.
+  const authority = enforce === false ? null : createReadAuthority();
+  const enforced = authority
+    ? {
+        signing: {
+          enforce: 'authority',
+          authority: (holo: HoloSphere, holon: string) => authority.authorityFor(holo, holon),
+          vouch: (holo: HoloSphere, ctx: VouchContext) => authority.vouchFor(holo, ctx),
+        },
+        privacy: {
+          acceptGrantFrom: (holo: HoloSphere, holon: string, lens: string, sender: string) => authority.acceptGrantFrom(holo, holon, lens, sender),
+          // The vault obeys the same table as every read: a member's vault
+          // counts, only an admin retires another key's.
+          roleOf: (holo: HoloSphere, holon: string, pubkey: string) => roleOfSync(holo, holon, pubkey),
+        },
+      }
+    : {};
   const config: Record<string, unknown> = {
     appName,
     ...(privateKey !== undefined ? { privateKey } : {}),
-    ...(backend ? { backend } : {}),
-    ...(logLevel ? { logLevel } : {}),
+    ...(relays ? { relays } : {}),
+    ...(storeCfg ? { store: storeCfg } : {}),
+    ...(nostr ? { nostr } : {}),
     ...(strict !== undefined ? { strict } : {}),
+    ...enforced,
     ...(extra ?? {}),
   };
 
   const instance = new HoloSphere(config as any);
+  // The rule the reads enforce, reachable for a UI that wants to say where a
+  // key stands (`writeAcceptance`) and for tests.
+  if (authority) (instance as unknown as { _readAuthority?: unknown })._readAuthority = authority;
+  if (ledger !== false) attachLedger(instance as unknown as LedgerHost);
+  if (rosterMirror !== false) attachRosterMirror(instance as unknown as RosterMirrorHost);
   return awaitReady ? instance.ready().then(() => instance) : instance;
 }

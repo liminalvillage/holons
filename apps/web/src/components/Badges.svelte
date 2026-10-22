@@ -68,7 +68,7 @@
     let subscribedHolonId: string | null = null;
 
     // Local-first + progressive load via queryManager.subscribe: cached
-    // snapshots paint immediately, then items stream in as Gun delivers
+    // snapshots paint immediately, then items stream in as the store delivers
     // them (local graph first, federated peers after). No await on
     // getAll on the render path.
     function loadData() {

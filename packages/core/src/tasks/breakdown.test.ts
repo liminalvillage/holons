@@ -7,7 +7,7 @@ import {
   BREAKDOWN_MAX_DESCRIPTION_CHARS,
   BREAKDOWN_MAX_GOAL_DESCRIPTION_CHARS,
   BreakdownValidationError,
-  PROPOSE_STEPS_TOOL,
+  BREAKDOWN_SCHEMA,
   applyBreakdownProposal,
   buildBreakdownPrompt,
   parseBreakdownProposal,
@@ -108,16 +108,16 @@ describe('buildBreakdownPrompt', () => {
   });
 
   it('forces the model to name the language first (anchor against drift)', () => {
-    const schema = PROPOSE_STEPS_TOOL.input_schema as Record<string, any>;
+    const schema = BREAKDOWN_SCHEMA as Record<string, any>;
     // First property = first thing generated; the commitment must precede
-    // the steps it anchors. Required so OpenAI strict mode never omits it.
+    // the steps it anchors. Required so structured output never omits it.
     expect(Object.keys(schema.properties)[0]).toBe('language');
     expect(schema.required).toContain('language');
   });
 
   it('offers the model no way to order steps among themselves', () => {
     const stepProps = (
-      (PROPOSE_STEPS_TOOL.input_schema as Record<string, any>).properties.steps
+      (BREAKDOWN_SCHEMA as Record<string, any>).properties.steps
         .items as Record<string, any>
     ).properties;
     expect(stepProps).not.toHaveProperty('dependsOnSteps');

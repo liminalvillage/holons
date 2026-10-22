@@ -72,16 +72,23 @@ export function userName(
   rec: NameRecord | null | undefined,
   opts: NameOptions = {},
 ): string {
-  const { first, last, username, id } = nameParts(rec);
+  const { first, last, id } = nameParts(rec);
+  // A handle that is only the id spelled out (the bot's default when Telegram
+  // gives no username) or digits alone is not a name.
+  const username = nameParts(rec).username;
+  const handle = username && username !== id && !/^\d+$/.test(username) ? username : '';
   if (first || last) {
     if (first && last) {
       return opts.lastName === 'initial'
-        ? `${first} ${last.charAt(0)}.`
+        ? `${first} ${last.charAt(0).toUpperCase()}.`
         : `${first} ${last}`;
     }
     return first || last;
   }
-  if (username) return opts.at ? `@${username}` : username;
+  if (handle) {
+    const bare = handle.replace(/^@/, '');
+    return opts.at ? `@${bare}` : bare;
+  }
   if (opts.idFallback !== false && id) return `#${id}`;
   return opts.unknown ?? 'Unknown';
 }
@@ -158,3 +165,25 @@ export function buildNameMap(
   }
   return mergeNameMaps(rea, quests, profiles);
 }
+
+// ── Ids, profiles and the resolver ────────────────────────────────────────
+export {
+  cleanName,
+  idKind,
+  isKeyId,
+  isPlaceholderName,
+  normalizeId,
+  shortId,
+  type IdKind,
+} from './ids.js';
+export {
+  PROFILE_AUTHORS_CHUNK,
+  fetchProfiles,
+  mergeProfileContent,
+  parseProfileEvent,
+  profileDisplayName,
+  type ProfileMeta,
+  type ProfileQueryHost,
+} from './profiles.js';
+export { publishProfile, type ProfilePatch, type ProfilePublishHost, type PublishProfileOptions } from './publish.js';
+export { createNameResolver, type NameResolver, type NameResolverOptions, type ResolverHost } from './resolver.js';

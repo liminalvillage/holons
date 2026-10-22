@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { shortId } from "@holons/core/identity";
 import { describe, expect, it } from "vitest";
 import { makeTranslator } from "./i18n";
 import {
   dueLabelFor,
+  personName,
   toBacklog,
   toBookingEvents,
   toChecklists,
   toEvents,
+  toExternalEvents,
+  externalEventColor,
   toRoles,
   toThings,
   toSuggestions,
@@ -53,6 +57,129 @@ describe("toEvents — spans", () => {
       false,
     ]);
     expect(timed.end).toEqual(new Date(2026, 7, 20, 17, 0));
+  });
+});
+
+describe("toEvents — recurring series", () => {
+  const now = new Date(2026, 8, 10, 12); // 10 Sep 2026
+
+  it("draws one event per occurrence, keyed to the series", () => {
+    const evs = toEvents(
+      [quest("standup", { when: "2026-09-01", frequency: "weekly" })],
+      undefined,
+      undefined,
+      undefined,
+      now,
+    );
+    // A season back → a year and a half ahead: Sep 1 is the first in view.
+    expect(evs[0].id).toBe("standup::2026-09-01");
+    expect(evs[0].date).toEqual(new Date(2026, 8, 1));
+    expect(evs[1].date).toEqual(new Date(2026, 8, 8));
+    expect(evs[0].occurrence).toEqual({
+      seriesId: "standup",
+      when: "2026-09-01",
+      completed: false,
+      frequency: "weekly",
+    });
+    // Ids stay unique across the run so view keys never collide.
+    expect(new Set(evs.map((e) => e.id)).size).toBe(evs.length);
+    // No card for the series record itself.
+    expect(evs.some((e) => e.id === "standup")).toBe(false);
+  });
+
+  it("carries the series' span and flags ticked-off occurrences", () => {
+    const evs = toEvents(
+      [
+        quest("retreat", {
+          when: "2026-09-04",
+          ends: "2026-09-06",
+          frequency: "monthly",
+          completedOccurrences: ["2026-10-04"],
+        }),
+      ],
+      undefined,
+      undefined,
+      undefined,
+      now,
+    );
+    expect(evs[0].days).toBe(3);
+    expect(evs[0].end).toEqual(new Date(2026, 8, 6));
+    expect(evs[1].occurrence?.completed).toBe(true);
+  });
+
+  it("draws a series that starts beyond the window as its own start", () => {
+    const [ev] = toEvents(
+      [quest("far", { when: "2030-01-01", frequency: "weekly" })],
+      undefined,
+      undefined,
+      undefined,
+      now,
+    );
+    expect(ev.id).toBe("far");
+    expect(ev.occurrence).toBeUndefined();
+  });
+
+  it("leaves a one-off alone", () => {
+    const [ev] = toEvents(
+      [quest("once", { when: "2026-09-12" })],
+      undefined,
+      undefined,
+      undefined,
+      now,
+    );
+    expect(ev.id).toBe("once");
+    expect(ev.occurrence).toBeUndefined();
+  });
+});
+
+describe("toBacklog — recurring tasks", () => {
+  const now = new Date(2026, 8, 10, 12);
+
+  it("is due on the next open occurrence, and says it repeats", () => {
+    const [task] = toBacklog(
+      [
+        quest("bins", {
+          when: "2026-09-01",
+          frequency: "weekly",
+          completedOccurrences: ["2026-09-15"],
+        }),
+      ],
+      undefined,
+      "loved",
+      undefined,
+      undefined,
+      now,
+    );
+    expect(task.frequency).toBe("weekly");
+    expect(task.due).toEqual(new Date(2026, 8, 22));
+  });
+
+  it("keeps a one-off's own date and no cadence", () => {
+    const [task] = toBacklog(
+      [quest("once", { when: "2026-09-01" })],
+      undefined,
+      "loved",
+      undefined,
+      undefined,
+      now,
+    );
+    expect(task.frequency).toBeNull();
+    expect(task.due).toEqual(new Date(2026, 8, 1));
+  });
+});
+
+describe("toBacklog — provenance", () => {
+  it("carries the source holon's id beside its label so a badge can travel there", () => {
+    const [task] = toBacklog([
+      {
+        ...quest("fence"),
+        _federation: { origin: "-100777" },
+      } as unknown as Quest,
+    ]);
+    expect(task.sourceId).toBe("-100777");
+    expect(task.source).toBeTruthy();
+    const [own] = toBacklog([quest("own")]);
+    expect(own.sourceId).toBeUndefined();
   });
 });
 
@@ -291,19 +418,107 @@ describe("toThings — borrow state mapping", () => {
         borrowed: true,
         borrower: "Roberto",
         borrowerId: "235",
+        borrowedAt: "2026-07-20",
         returnBy: "2026-07-30",
       },
       { id: "Ladder", type: "tool", borrowed: false },
     ] as unknown as LibraryItem[];
-    const out = toThings(items);
+    const out = toThings(
+      items,
+      undefined,
+      undefined,
+      undefined,
+      new Date(2026, 6, 25),
+    );
     const drill = out.find((t) => t.id === "Drill")!;
     expect(drill.available).toBe(false);
+    expect(drill.overdue).toBe(false);
     expect(drill.borrowerId).toBe("235");
     expect(drill.returnBy).toBeInstanceOf(Date);
     const ladder = out.find((t) => t.id === "Ladder")!;
     expect(ladder.available).toBe(true);
     expect(ladder.borrowerId).toBeNull();
     expect(ladder.returnBy).toBeNull();
+  });
+});
+
+describe("toThings — the state follows the clock, not the stored flag", () => {
+  const car = {
+    id: "Car",
+    type: "other",
+    // Written when the booking was made, hours before it began.
+    borrowed: false,
+    bookings: [
+      {
+        id: "b1",
+        start: "2026-09-01T14:00",
+        end: "2026-09-01T15:00",
+        borrowerId: "235",
+        borrower: "Roberto",
+        created: "2026-09-01T08:00:00.000Z",
+      },
+    ],
+  } as unknown as LibraryItem;
+  const at = (h: number, m = 0) =>
+    toThings(
+      [car],
+      undefined,
+      undefined,
+      undefined,
+      new Date(2026, 8, 1, h, m),
+    )[0];
+
+  it("is available before the hour, out during it, overdue after", () => {
+    expect(at(13, 59).available).toBe(true);
+    const during = at(14, 30);
+    expect(during.available).toBe(false);
+    expect(during.overdue).toBe(false);
+    expect(during.borrower).toBe("Roberto");
+    expect(during.returnBy).toEqual(new Date(2026, 8, 1, 15, 0));
+    const after = at(15, 0);
+    expect(after.available).toBe(false);
+    expect(after.overdue).toBe(true);
+  });
+});
+
+describe("toBookingEvents — a booking by the clock", () => {
+  const car = (start: string, end: string) =>
+    ({
+      id: "Car",
+      type: "other",
+      bookings: [
+        {
+          id: "b1",
+          start,
+          end,
+          borrowerId: "235",
+          borrower: "Roberto",
+          created: "2026-08-20T10:00:00.000Z",
+        },
+      ],
+    }) as unknown as LibraryItem;
+
+  it("sits at its own hours instead of spanning the day", () => {
+    const [span] = toBookingEvents([
+      car("2026-09-01T14:00", "2026-09-01T15:00"),
+    ]);
+    expect(span.allDay).toBe(false);
+    expect(span.date).toEqual(new Date(2026, 8, 1, 14, 0));
+    expect(span.end).toEqual(new Date(2026, 8, 1, 15, 0));
+    expect(span.days).toBe(1);
+    expect(span.multiDay).toBe(false);
+  });
+
+  it("counts the days it touches; ending at midnight stays in the day before", () => {
+    const [evening] = toBookingEvents([
+      car("2026-09-01T22:00", "2026-09-02T00:00"),
+    ]);
+    expect(evening.days).toBe(1);
+    const [overnight] = toBookingEvents([
+      car("2026-09-01T22:00", "2026-09-02T08:00"),
+    ]);
+    expect(overnight.days).toBe(2);
+    expect(overnight.multiDay).toBe(true);
   });
 });
 
@@ -416,7 +631,7 @@ describe("toChecklists — list card mapping", () => {
     expect(build.total).toBe(2);
     expect(build.special).toBe(false);
     expect(out[0].special).toBe(true);
-    expect(out[0].icon).toBe("🛒");
+    expect(out[0].icon).toBe("cart");
   });
 
   it("types legacy records so agenda/shopping ids read as special", () => {
@@ -424,7 +639,7 @@ describe("toChecklists — list card mapping", () => {
       { id: "agenda", items: [] },
     ] as unknown as Checklist[]);
     expect(out[0].special).toBe(true);
-    expect(out[0].icon).toBe("📅");
+    expect(out[0].icon).toBe("calendar");
   });
 
   it("drops blank ids, and dedupes on the origin-qualified key", () => {
@@ -527,5 +742,233 @@ describe("hologram flag — projection cards", () => {
         { id: "list", items: [], ...envelope } as unknown as Checklist,
       ])[0].hologram,
     ).toBe(true);
+  });
+});
+
+describe("toExternalEvents — a calendar the holon follows", () => {
+  const feed = {
+    id: "cal_1",
+    url: "https://example.com/rooms.ics",
+    name: "Room bookings",
+    enabled: true,
+  };
+  const occurrence = (over: Record<string, unknown> = {}) => ({
+    id: "uid-1",
+    title: "Yoga",
+    start: new Date(2026, 4, 7, 9, 0),
+    end: new Date(2026, 4, 7, 10, 0),
+    allDay: false,
+    calendarUrl: feed.url,
+    ...over,
+  });
+
+  it("namespaces ids by feed, so two calendars can share a UID", () => {
+    const [a] = toExternalEvents([occurrence()], feed);
+    const [b] = toExternalEvents([occurrence()], { ...feed, id: "cal_2" });
+    expect(a.id).toBe("ext:cal_1:uid-1");
+    expect(b.id).toBe("ext:cal_2:uid-1");
+  });
+
+  it("marks the event as external so the board won't drag or open it", () => {
+    const [ev] = toExternalEvents([occurrence()], feed);
+    expect(ev.external).toEqual({
+      calendarName: "Room bookings",
+      url: feed.url,
+    });
+    expect(ev.people).toEqual([]);
+    expect(ev.multiDay).toBe(false);
+    expect(ev.days).toBe(1);
+  });
+
+  it("draws a one-day all-day entry on one day (iCal DTEND is exclusive)", () => {
+    const [ev] = toExternalEvents(
+      [
+        occurrence({
+          allDay: true,
+          start: new Date(2026, 0, 1),
+          end: new Date(2026, 0, 2),
+        }),
+      ],
+      feed,
+    );
+    expect(ev.allDay).toBe(true);
+    expect(ev.days).toBe(1);
+    expect(ev.end?.getDate()).toBe(1);
+  });
+
+  it("paints every entry of a feed in the feed's colour", () => {
+    const chosen = { ...feed, color: "#ffe79a" };
+    const [a, b] = toExternalEvents(
+      [occurrence(), occurrence({ id: "uid-2" })],
+      chosen,
+    );
+    expect(a.color).toBe("#ffe79a");
+    expect(b.color).toBe("#ffe79a");
+    expect(externalEventColor(chosen)).toBe("#ffe79a");
+  });
+
+  it("falls back to a stable post-it note hashed from the feed id", () => {
+    const [ev] = toExternalEvents([occurrence()], feed);
+    expect(ev.color).toMatch(/^var\(--note-/);
+    expect(ev.color).toBe(externalEventColor(feed));
+    expect(externalEventColor({ ...feed, id: "cal_2" })).toBe(
+      externalEventColor({ id: "cal_2" }),
+    );
+  });
+});
+
+describe("the two boards stay separate", () => {
+  // The `quests` lens is shared: offers, needs and whatever a future domain
+  // parks there arrive in the same subscription as tasks and events. Core's
+  // `questKind` draws the line; these lock in what each board shows.
+  const mixed: Quest[] = [
+    quest("chore", { when: "2026-08-20" }),
+    quest("standup", { type: "event", when: "2026-08-20" }),
+    quest("flour", { type: "offer", when: "2026-08-20" }),
+    quest("wanted-flour", { type: "need", when: "2026-08-20" }),
+    quest("borrow-drill", { type: "request", when: "2026-08-20" }),
+    quest("some-resource", { type: "resource", when: "2026-08-20" }),
+  ];
+
+  const at = (y: number, mo: number, d: number) => new Date(y, mo - 1, d, 12);
+  const wall = (quests: Quest[], now: Date) =>
+    toBacklog(quests, undefined, undefined, undefined, undefined, now)
+      .map((t) => t.id)
+      .sort();
+
+  it("keeps marketplace and unknown records off the wall", () => {
+    expect(wall(mixed, at(2026, 8, 1))).toEqual(["chore", "standup"]);
+  });
+
+  it("drops an event from the wall once its day has passed; the task stays", () => {
+    expect(wall(mixed, at(2026, 8, 20))).toEqual(["chore", "standup"]);
+    expect(wall(mixed, at(2026, 8, 21))).toEqual(["chore"]);
+  });
+
+  it("puts a recurring event on the wall once, as its next occurrence", () => {
+    const series = [
+      quest("circle", {
+        type: "event",
+        when: "2026-08-05",
+        frequency: "weekly",
+      }),
+    ];
+    const out = toBacklog(
+      series,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      at(2026, 8, 20),
+    );
+    expect(out.map((t) => t.id)).toEqual(["circle"]);
+    expect(out[0].due).toEqual(new Date(2026, 7, 26));
+  });
+
+  it("keeps a past and a completed event on the calendar, drawn as done", () => {
+    const past = [
+      quest("standup", { type: "event", when: "2026-01-20" }),
+      quest("party", {
+        type: "event",
+        when: "2026-01-21",
+        status: "completed",
+      }),
+      quest("called-off", {
+        type: "event",
+        when: "2026-01-22",
+        status: "cancelled",
+      }),
+    ];
+    const out = toEvents(
+      past,
+      undefined,
+      undefined,
+      undefined,
+      at(2026, 8, 20),
+    );
+    expect(out.map((e) => [e.id, !!e.completed])).toEqual([
+      ["standup", false],
+      ["party", true],
+    ]);
+    expect(wall(past, at(2026, 8, 20))).toEqual([]);
+  });
+
+  it("draws a completed series up to today and no further", () => {
+    const ended = [
+      quest("circle", {
+        type: "event",
+        when: "2026-08-05",
+        frequency: "weekly",
+        status: "completed",
+      }),
+    ];
+    const out = toEvents(
+      ended,
+      undefined,
+      undefined,
+      undefined,
+      at(2026, 8, 20),
+    );
+    expect(out.map((e) => e.occurrence?.when)).toEqual([
+      "2026-08-05",
+      "2026-08-12",
+      "2026-08-19",
+    ]);
+    expect(out.every((e) => e.completed)).toBe(true);
+  });
+
+  it("keeps offers, needs and unknown records off the calendar too", () => {
+    expect(
+      toEvents(mixed)
+        .map((e) => e.id)
+        .sort(),
+    ).toEqual(["chore", "standup"]);
+  });
+
+  it("still calls an untyped record a task — the historical default", () => {
+    const legacy = [quest("old", { type: undefined })];
+    expect(toBacklog(legacy).map((t) => t.id)).toEqual(["old"]);
+  });
+
+  it("folds the legacy task spellings onto the wall", () => {
+    const out = toBacklog([
+      quest("a", { type: "quest" }),
+      quest("b", { type: "recurring" }),
+      quest("c", { type: "Task" }),
+    ]);
+    expect(out.map((t) => t.id).sort()).toEqual(["a", "b", "c"]);
+  });
+
+  it("leaves an undated event off the calendar without adding it to the wall", () => {
+    const orphan = [quest("someday", { type: "event" })];
+    expect(toEvents(orphan)).toEqual([]);
+    expect(toBacklog(orphan)).toEqual([]);
+  });
+});
+
+describe("personName — first name and a dotted surname", () => {
+  it("reads 'First S.' when both names are there", () => {
+    expect(personName({ first_name: "Roberto", last_name: "Valenti" })).toBe(
+      "Roberto V.",
+    );
+  });
+
+  it("accepts the initiator's camelCase shape", () => {
+    expect(personName({ firstName: "Ada", lastName: "lovelace" })).toBe(
+      "Ada L.",
+    );
+  });
+
+  it("never shows a handle when a name exists", () => {
+    expect(personName({ first_name: "Sam", username: "samwise" })).toBe("Sam");
+    expect(personName({ last_name: "Ng", username: "ng" })).toBe("Ng");
+  });
+
+  it("falls back to the bare username, then the id", () => {
+    expect(personName({ username: "samwise", id: 4 })).toBe("samwise");
+    expect(personName({ id: 4 })).toBe("#4");
+    // A key with no record is shown in the one short form, never bare hex.
+    expect(personName({ id: "ab".repeat(32) })).toBe(shortId("ab".repeat(32)));
+    expect(personName(undefined)).toBe("");
   });
 });

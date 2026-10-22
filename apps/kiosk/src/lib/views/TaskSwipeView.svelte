@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   // Swipe mode for the Tasks view: one big card at a time, Tinder-style.
   // Swipe right to JOIN (participate), up to LIKE (appreciate), left to SKIP.
   // Geometry/ordering is pure logic in lib/deck.ts; the writes come in through
@@ -7,17 +8,31 @@
   // A swipe never *undoes* anything — already-joined/liked cards no-op through.
   import Avatars from "$lib/components/Avatars.svelte";
   import Confetti from "$lib/components/Confetti.svelte";
-  import { telegramUser, loginOpen } from "$lib/auth";
-  import { swipeDismissed, showNotice, taskViewMode, scope } from "$lib/stores";
-  import { setScope, setTaskView } from "$lib/config";
-  import { sameId } from "$lib/personal";
-  import { resolveImage } from "$lib/image";
+  import { currentUser, loginOpen } from "$lib/auth";
+  import {
+    holonId,
+    swipeDecks,
+    showNotice,
+    taskSort,
+    taskViewMode,
+  } from "$lib/stores";
+  import { requestSwitch } from "$lib/dock";
+  import { get } from "svelte/store";
+  import { tick } from "svelte";
+  import { setTaskView } from "$lib/config";
+  import { sameId } from "$lib/ids";
+  import { pictureUrl } from "@holons/core/media";
   import { hideImg } from "$lib/components/Avatars.svelte";
   import {
     badgeOpacity,
     cardTransform,
+    dealOrder,
+    deckKey,
+    decksFor,
     deckTasks,
+    EMPTY_DECK,
     swipeDecision,
+    type DeckState,
     type SwipeDirection,
   } from "$lib/deck";
   import type { BacklogTask } from "$lib/data";
@@ -25,6 +40,8 @@
   import { t } from "$lib/i18n";
 
   export let tasks: BacklogTask[];
+  /** Cards sealed on the relays (the lock glyph). */
+  export let lockedIds: Set<string> = new Set();
   export let colorFor: (category: string | undefined) => string;
   export let dueLabel: (t: BacklogTask) => string | null;
   export let onOpen: (id: string) => void;
@@ -37,7 +54,7 @@
   /** Revert a committed swipe (the Undo chip) — toggles the write back off. */
   export let onRevert: (t: BacklogTask, kind: "join" | "like") => Promise<void>;
 
-  $: uid = $telegramUser?.id;
+  $: uid = $currentUser?.id;
   function participating(t: BacklogTask): boolean {
     return t.people.some((p) => sameId(p.id, uid));
   }
@@ -46,7 +63,23 @@
   }
 
   // ── Deck state ─────────────────────────────────────────────────────────────
-  $: deck = deckTasks(tasks, $swipeDismissed);
+  // A deck is personal: one per hub and per person (see DeckState in
+  // $lib/deck). Whoever is at the screen now keeps only their own decks, so
+  // the next visitor never inherits what the last one swiped away.
+  $: key = deckKey($holonId, uid);
+
+  /** A provenance badge tap travels to the holon the card came from. */
+  function jumpToSource(id: string | undefined, name?: string): void {
+    if (id) requestSwitch(id, { name, from: $holonId });
+  }
+  $: swipeDecks.update((all) => decksFor(all, uid));
+  $: mine = $swipeDecks.get(key) ?? EMPTY_DECK;
+  // Freeze the dealing order as cards are first seen: someone else's like
+  // re-ranks the wall's "most loved" sort live, and must not reshuffle a deck
+  // a person is halfway through. (`deal` reads the store untracked, so its
+  // own write can't re-trigger it.)
+  $: deal(key, tasks);
+  $: deck = deckTasks(tasks, mine.dismissed, mine.order);
   $: topTask = deck[0] ?? null;
   // Up to three cards render as a stack; the top one is interactive.
   $: stack = deck.slice(0, 3);
@@ -54,14 +87,37 @@
   let deckW = 0;
   $: threshold = Math.min(110, (deckW || 320) * 0.35);
 
-  function dismiss(id: string) {
-    swipeDismissed.update((s) => new Set(s).add(id));
+  function patchDeck(k: string, fn: (d: DeckState) => DeckState) {
+    swipeDecks.update((all) =>
+      new Map(all).set(k, fn(all.get(k) ?? EMPTY_DECK)),
+    );
   }
-  function unDismiss(id: string) {
-    swipeDismissed.update((s) => {
-      const next = new Set(s);
-      next.delete(id);
-      return next;
+  function deal(k: string, dealt: BacklogTask[]) {
+    const prev = get(swipeDecks).get(k) ?? EMPTY_DECK;
+    const order = dealOrder(prev.order, dealt);
+    if (order !== prev.order) patchDeck(k, (d) => ({ ...d, order }));
+  }
+  // Picking another sort is asking for another order — re-deal under it. The
+  // store can notify before the re-sorted `tasks` prop lands, so freeze again
+  // only once the view has settled.
+  let dealtSort = $taskSort;
+  $: if ($taskSort !== dealtSort) {
+    dealtSort = $taskSort;
+    const k = key;
+    patchDeck(k, (d) => ({ ...d, order: [] }));
+    void tick().then(() => k === key && deal(k, tasks));
+  }
+
+  // `k` is the deck the swipe began in: a write can land after the person
+  // logged out, and must not touch whoever's deck is on screen by then.
+  function dismiss(k: string, id: string) {
+    patchDeck(k, (d) => ({ ...d, dismissed: new Set(d.dismissed).add(id) }));
+  }
+  function unDismiss(k: string, id: string) {
+    patchDeck(k, (d) => {
+      const dismissed = new Set(d.dismissed);
+      dismissed.delete(id);
+      return { ...d, dismissed };
     });
   }
 
@@ -89,12 +145,16 @@
     dx = e.clientX - startX;
     dy = e.clientY - startY;
   }
+  // The id a finished press counts as a tap on, until its click arrives.
+  let tappedId: string | null = null;
+
   function onPointerUp() {
     if (!dragging) return;
     dragging = false;
     const tap = Math.hypot(dx, dy) < 6;
     const dir = swipeDecision(dx, dy, threshold);
     const id = topTask?.id;
+    tappedId = null;
     if (dir) {
       void commit(dir);
     } else {
@@ -102,11 +162,21 @@
       // move is a tap — zoom the card forward instead.
       dx = 0;
       dy = 0;
-      if (tap && id) onOpen(id);
+      if (tap && id) tappedId = id;
     }
+  }
+  // Open on the CLICK, not on pointerup. A finger's click is dispatched after
+  // pointerup and hit-tested afresh: opening the detail card on pointerup put
+  // its buttons under the finger first, so the same tap pressed whichever one
+  // was there — Delete, Mark complete, Edit (same trap as Modal's backdrop).
+  function onCardClick() {
+    const id = tappedId;
+    tappedId = null;
+    if (id) onOpen(id);
   }
   function onPointerCancel() {
     dragging = false;
+    tappedId = null;
     dx = 0;
     dy = 0;
   }
@@ -136,12 +206,20 @@
   let sessionJoins = 0;
   let sessionLikes = 0;
 
-  let undo: { task: BacklogTask; kind: "skip" | "join" | "like" } | null = null;
+  let undo: {
+    task: BacklogTask;
+    kind: "skip" | "join" | "like";
+    deck: string;
+  } | null = null;
   let undoTimer: ReturnType<typeof setTimeout> | null = null;
 
-  function offerUndo(task: BacklogTask, kind: "skip" | "join" | "like") {
+  function offerUndo(
+    task: BacklogTask,
+    kind: "skip" | "join" | "like",
+    deck: string,
+  ) {
     if (undoTimer) clearTimeout(undoTimer);
-    undo = { task, kind };
+    undo = { task, kind, deck };
     undoTimer = setTimeout(() => (undo = null), 4000);
   }
 
@@ -150,7 +228,7 @@
     undo = null;
     if (undoTimer) clearTimeout(undoTimer);
     if (!u) return;
-    unDismiss(u.task.id); // the card returns to the front of the deck
+    unDismiss(u.deck, u.task.id); // the card returns to the front of the deck
     if (u.kind === "join") {
       sessionJoins = Math.max(0, sessionJoins - 1);
       await onRevert(u.task, "join");
@@ -185,7 +263,7 @@
     if (!task || leaving) return;
     // Joining and liking are writes — they need a logged-in user. Skipping is
     // local and always allowed.
-    if (dir !== "left" && !$telegramUser) {
+    if (dir !== "left" && !$currentUser) {
       springBack();
       loginOpen.set(true);
       return;
@@ -197,11 +275,12 @@
       return;
     }
 
+    const k = key;
     flyOff(task, dir);
-    dismiss(task.id); // optimistic — a failed write un-dismisses below
+    dismiss(k, task.id); // optimistic — a failed write un-dismisses below
 
     if (dir === "left") {
-      offerUndo(task, "skip");
+      offerUndo(task, "skip", k);
     } else if (dir === "right") {
       if (participating(task)) {
         showNotice($t("swipe.alreadyIn"));
@@ -210,11 +289,11 @@
         if (res === "joined") {
           sessionJoins += 1;
           party();
-          offerUndo(task, "join");
+          offerUndo(task, "join", k);
         } else if (res === "already") {
           showNotice($t("swipe.alreadyIn"));
         } else {
-          unDismiss(task.id);
+          unDismiss(k, task.id);
           showNotice($t("swipe.joinFailed"));
         }
       }
@@ -226,11 +305,11 @@
         if (res === "liked") {
           sessionLikes += 1;
           pop();
-          offerUndo(task, "like");
+          offerUndo(task, "like", k);
         } else if (res === "already") {
           showNotice($t("swipe.alreadyAppreciated"));
         } else {
-          unDismiss(task.id);
+          unDismiss(k, task.id);
           showNotice($t("swipe.appreciateFailed"));
         }
       }
@@ -249,7 +328,11 @@
   }
 
   function startOver() {
-    swipeDismissed.set(new Set());
+    // A fresh round: every card back, dealt in the backlog's current order.
+    patchDeck(key, () => ({
+      dismissed: new Set(),
+      order: tasks.map((t) => t.id),
+    }));
     sessionJoins = 0;
     sessionLikes = 0;
   }
@@ -258,10 +341,8 @@
     setTaskView("cards");
   }
   // Post-triage landing: an explicit tap (unlike the old silent hop) that
-  // flips the Show pill to Mine and the layout to the list, both persisted.
-  function seeMine() {
-    scope.set("personal");
-    setScope("personal");
+  // flips the layout to the list, persisted.
+  function seeList() {
     taskViewMode.set("list");
     setTaskView("list");
   }
@@ -302,7 +383,9 @@
                 {$t("swipe.skip")}
               </div>
             {:else}
-              <div class="stamp like" style="opacity: 1;">♥ LIKE</div>
+              <div class="stamp like" style="opacity: 1;">
+                <Icon name="heart" /> LIKE
+              </div>
             {/if}
             <h3>{leaving.task.title}</h3>
           </article>
@@ -315,7 +398,8 @@
           class:front={i === 0}
           style="--depth: {i}; z-index: {8 - i};"
         >
-          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <!-- Keys are handled on the deck (onDeckKey), not per card. -->
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_click_events_have_key_events -->
           <article
             class="card"
             class:top={i === 0}
@@ -333,6 +417,7 @@
             on:pointermove={onPointerMove}
             on:pointerup={onPointerUp}
             on:pointercancel={onPointerCancel}
+            on:click={onCardClick}
           >
             {#if i === 0}
               <div class="stamp join" style="opacity: {badges.join};">
@@ -342,12 +427,13 @@
                 {$t("swipe.skip")}
               </div>
               <div class="stamp like" style="opacity: {badges.like};">
-                ♥ LIKE
+                <Icon name="heart" /> LIKE
               </div>
             {/if}
             {#if participating(task)}
               <div class="ribbon" aria-label={$t("swipe.joinedRibbonAria")}>
-                {$t("swipe.joined")} ✓
+                {$t("swipe.joined")}
+                <Icon name="check" />
               </div>
             {/if}
             <h3>{task.title}</h3>
@@ -356,14 +442,14 @@
                 class="initiator"
                 title={$t("tasks.proposedBy", { name: task.initiator.name })}
               >
-                <span aria-hidden="true">💡</span>
+                <span aria-hidden="true"><Icon name="bulb" /></span>
                 <span class="iname">{task.initiator.name}</span>
               </div>
             {/if}
             {#if task.picture}
               <img
                 class="thumb"
-                src={resolveImage(task.picture)}
+                src={pictureUrl(task.picture)}
                 alt=""
                 loading="lazy"
                 on:error={hideImg}
@@ -373,13 +459,30 @@
               <p class="desc">{task.description}</p>
             {/if}
             <div class="meta">
+              {#if lockedIds.has(String(task.id))}<span
+                  class="locked"
+                  title={$t("tasks.locked")}><Icon name="lock" /></span
+                >{/if}
               {#if task.category}<span class="tag">{task.category}</span>{/if}
-              {#if task.source}<span class="src">⇄ {task.source}</span>{/if}
-              {#if dueLabel(task)}<span class="due">{dueLabel(task)}</span>{/if}
+              {#if task.source}<button
+                  type="button"
+                  class="src"
+                  title={$t("source.open", { name: task.source })}
+                  on:pointerdown|stopPropagation
+                  on:click|stopPropagation={() =>
+                    jumpToSource(task.sourceId, task.source)}
+                  ><Icon name="swap" /> {task.source}</button
+                >{/if}
+              {#if dueLabel(task)}<span class="due"
+                  >{#if task.frequency}<Icon name="repeat" />
+                  {/if}{dueLabel(task)}</span
+                >{/if}
             </div>
             <div class="cardfoot">
               <span class="heart" class:on={appreciating(task)}>
-                <span class="glyph" aria-hidden="true">♥</span>
+                <span class="glyph" aria-hidden="true"
+                  ><Icon name="heart" /></span
+                >
                 {#if task.appreciation}
                   <span class="count">{task.appreciation}</span>
                 {/if}
@@ -392,7 +495,7 @@
         </div>
       {:else}
         <div class="alldone">
-          <div class="star" aria-hidden="true">✶</div>
+          <div class="star" aria-hidden="true"><Icon name="star" /></div>
           <h3>{$t("swipe.allCaughtUp")}</h3>
           <p>
             {$t("swipe.roundSummary", {
@@ -404,11 +507,9 @@
             <button class="primary" on:click={startOver}
               >{$t("swipe.startOver")}</button
             >
-            {#if $telegramUser}
-              <button class="primary" on:click={seeMine}
-                >{$t("swipe.seeMine")}</button
-              >
-            {/if}
+            <button class="primary" on:click={seeList}
+              >{$t("swipe.seeList")}</button
+            >
             <button class="ghost" on:click={backToWall}>
               {$t("swipe.backToWall")}
             </button>
@@ -417,13 +518,13 @@
       {/each}
 
       {#if heartPop}
-        <div class="heartpop" aria-hidden="true">♥</div>
+        <div class="heartpop" aria-hidden="true"><Icon name="heart" /></div>
       {/if}
     </div>
 
     {#if undo}
       <button class="undo" on:click={doUndo}>
-        ↺ Undo {undo.kind === "join"
+        <Icon name="undo" /> Undo {undo.kind === "join"
           ? "join"
           : undo.kind === "like"
             ? "like"
@@ -440,6 +541,15 @@
 {/if}
 
 <style>
+  .meta .locked {
+    display: inline-flex;
+    align-items: center;
+    color: var(--ink-soft);
+  }
+  .meta .locked :global(svg) {
+    width: 0.85em;
+    height: 0.85em;
+  }
   .stage {
     flex: 1;
     min-height: 0;
@@ -608,13 +718,16 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: rgba(32, 48, 47, 0.55);
+    color: var(--ink-soft);
   }
   .src {
     font-size: 0.74rem;
     font-weight: 700;
-    color: var(--glow, var(--teal-deep));
-    background: rgba(255, 255, 255, 0.7);
+    /* The source holon's own hue, carried by the ink rather than replacing it:
+       a holon's colour is a ground (a pastel by day, a jewel by night), never
+       something to read on its own. */
+    color: color-mix(in srgb, var(--glow, var(--teal)) 30%, var(--ink));
+    background: var(--glass);
     border-radius: 999px;
     padding: 0.1rem 0.5rem;
     max-width: 11rem;
@@ -626,7 +739,7 @@
     font-size: 0.78rem;
     font-weight: 700;
     color: var(--ink);
-    background: rgba(255, 255, 255, 0.55);
+    background: var(--glass);
     border-radius: 999px;
     padding: 0.1rem 0.55rem;
   }
@@ -641,7 +754,7 @@
     width: 1.9rem;
     height: 1.9rem;
     line-height: 1;
-    color: rgba(154, 59, 47, 0.55);
+    color: var(--heart-quiet);
   }
   .heart .glyph {
     grid-area: 1 / 1;
@@ -652,11 +765,10 @@
     transform: translateY(0.1em);
     font-size: 0.66rem;
     font-weight: 800;
-    color: #fff;
-    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+    color: var(--on-heart);
   }
   .heart.on {
-    color: #d4493a;
+    color: var(--heart);
   }
 
   /* Foreign-holon glow, same treatment as the wall. */
@@ -680,24 +792,24 @@
     letter-spacing: 0.08em;
     opacity: 0;
     pointer-events: none;
-    background: rgba(255, 255, 255, 0.55);
+    background: var(--glass);
     z-index: 3;
   }
   .stamp.join {
     left: 1rem;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     transform: rotate(-14deg);
   }
   .stamp.skip {
     right: 1rem;
-    color: #6d7b79;
+    color: var(--ink-soft);
     transform: rotate(14deg);
   }
   .stamp.like {
     top: auto;
     bottom: 4.2rem;
     left: 50%;
-    color: #d4493a;
+    color: var(--heart);
     transform: translateX(-50%) rotate(-6deg);
   }
 
@@ -708,7 +820,7 @@
     right: -2.6rem;
     transform: rotate(35deg);
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     font-size: 0.72rem;
     font-weight: 800;
     letter-spacing: 0.08em;
@@ -765,7 +877,7 @@
     display: grid;
     place-items: center;
     font-size: 7rem;
-    color: #d4493a;
+    color: var(--heart);
     pointer-events: none;
     z-index: 30;
     animation: swipe-heartpop 0.9s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
@@ -803,7 +915,7 @@
   }
   .alldone .star {
     font-size: 3rem;
-    color: var(--teal);
+    color: var(--teal-ink);
     animation: swipe-glow 2.4s ease-in-out infinite;
   }
   @keyframes swipe-glow {
@@ -842,7 +954,7 @@
   }
   .doneactions .primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .doneactions .ghost {

@@ -1,11 +1,19 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import "../app.css";
-  import { onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { page } from "$app/stores";
-  import { getHolosphere, getHolonName, subscribeLens } from "$lib/holosphere";
+  import { afterNavigate, replaceState } from "$app/navigation";
+  import { getHolosphere, subscribeLens } from "$lib/holosphere";
+  import { isShortName, resolveNames } from "$lib/names";
+  import {
+    accentFamily,
+    holonColor,
+    holonColors,
+    learnHolonColor,
+    washOf,
+  } from "$lib/palette";
   import type { Subscription } from "$lib/holosphere";
-  import { subdomainOf, SUBDOMAIN_HOLONS } from "$lib/holons";
   import { getFederationSnapshot } from "@holons/core/federation";
   import { HIDDEN_LENS, hiddenIdSet, isRefHidden } from "@holons/core/hidden";
   import type { HiddenEntry } from "@holons/core/hidden";
@@ -17,9 +25,16 @@
     resolveLibraryPref,
     resolveRolesPref,
     resolveChecklistsPref,
+    resolveShiftsPref,
+    resolveStockPref,
+    resolveOffersPref,
+    resolveStockView,
+    resolveOffersView,
     resolveStatusEnabled,
     resolveFlowsEnabled,
-    resolveBrandName,
+    resolveTasksEnabled,
+    resolveCalendarEnabled,
+    resolveTabOrder,
     resolveBrandLogo,
     resolveAccent,
     resolveThemeMode,
@@ -28,11 +43,15 @@
     resolveTaskSort,
     resolveLibraryView,
     resolveRolesView,
+    resolveFlowsView,
     resolveCalendarView,
     resolveLibraryCalendarView,
   } from "$lib/config";
-  import { themeMode, startTheme } from "$lib/theme";
+  import { activeTheme, themeMode, startTheme } from "$lib/theme";
   import { langMode, holonLang, startI18n, tr, type Lang } from "$lib/i18n";
+  import { may, writeAcceptance } from "@holons/core/holosphere";
+  import { bindFedRequests } from "$lib/fedrequests";
+  import { sessionKeyPub } from "$lib/sessionKey";
   import { loadSettings } from "@holons/core/settings";
   import { get } from "svelte/store";
   import {
@@ -40,12 +59,14 @@
     rawLibrary,
     rawRoles,
     rawChecklists,
+    rawStock,
     lensEmitAt,
     showNotice,
     holonName,
     holonId as holonIdStore,
+    writeStanding,
+    standing,
     partnerNames,
-    brandName,
     brandLogo,
     accent,
     scope,
@@ -53,12 +74,21 @@
     libraryPref,
     rolesPref,
     checklistsPref,
+    shiftsPref,
+    stockPref,
+    offersPref,
     statusEnabled,
     flowsEnabled,
+    tasksEnabled,
+    calendarEnabled,
+    tabOrder,
     taskViewMode,
     taskSort,
     libraryViewMode,
     rolesViewMode,
+    flowsViewMode,
+    stockViewMode,
+    offersViewMode,
     calendarMode,
     libraryCalendarMode,
     boardReady,
@@ -69,24 +99,61 @@
     startClock,
     startRotation,
     noteInteraction,
+    activeTab,
+    requestedTab,
+    visibleTabs,
+    pendingCard,
+    selection,
+    openQuest,
+    openThing,
+    type TabId,
   } from "$lib/stores";
-  import { initAuth, loginOpen } from "$lib/auth";
+  import { pathForTab, tabForPath } from "$lib/tabroute";
+  import {
+    linkedCardFromSearch,
+    searchWithCard,
+    selectionCard,
+    withoutSelectionCard,
+  } from "$lib/cardlink";
+  import {
+    dockState,
+    dockOpenTarget,
+    dockSwitchTarget,
+    nameBoard,
+    rememberBoard,
+    requestOpen,
+    touchBoard,
+    segmentFor,
+  } from "$lib/dock";
+  import { dockPartnersOf } from "$lib/dockfed";
+  import { initAuth, loginOpen, currentUser } from "$lib/auth";
+  import { readRememberedKey } from "$lib/rememberKey";
+  import { loadMyHubs, recordMyHub } from "$lib/myhubs";
+  import { pendingLink, telegramLinkOpen } from "$lib/tglink";
+  import { returningFromBot } from "$lib/config";
+  import { ensureProfile } from "@holons/core/holons";
+  import { isHolonId } from "@holons/core/protocol";
+  import { startShifts } from "$lib/shifts";
   import { startSwAutoReload } from "$lib/swUpdate";
+  import { startInstallWatcher } from "$lib/install";
+  import { manifestHref, startPathFor } from "$lib/manifest";
   import type { Quest } from "@holons/core/tasks";
   import type { LibraryItem } from "@holons/core/library";
   import type { Role } from "@holons/core/roles";
   import type { Checklist } from "@holons/core/checklists";
-  import { keyLinkOpen } from "$lib/sessionKey";
-  import HomeView from "$lib/views/HomeView.svelte";
+  import DockView from "$lib/components/DockView.svelte";
   import TabBar from "$lib/components/TabBar.svelte";
   import DetailModal from "$lib/components/DetailModal.svelte";
-  import KeyLinkModal from "$lib/components/KeyLinkModal.svelte";
   import Modal from "$lib/components/Modal.svelte";
-  import TelegramLogin from "$lib/components/TelegramLogin.svelte";
+  import LoginCard from "$lib/components/LoginCard.svelte";
   import UserMenu from "$lib/components/UserMenu.svelte";
   import Settings from "$lib/components/Settings.svelte";
   import CompleteConfirm from "$lib/components/CompleteConfirm.svelte";
+  import SwitchConfirm from "$lib/components/SwitchConfirm.svelte";
   import VoiceWidget from "$lib/components/VoiceWidget.svelte";
+  import VoiceDrawer from "$lib/components/VoiceDrawer.svelte";
+  import { swallowsContextMenu } from "$lib/holdmenu";
+  import { lockPageZoom } from "$lib/nozoom";
 
   let booting = true;
   let mounted = false;
@@ -105,6 +172,7 @@
   let librarySub: FederatedSub | null = null;
   let rolesSub: FederatedSub | null = null;
   let checklistsSub: FederatedSub | null = null;
+  let stockSub: FederatedSub | null = null;
 
   // The holon's mute list (`hidden` lens): source addresses of federated
   // cards this board has hidden. "Deleting" a federated card writes here —
@@ -158,14 +226,17 @@
     libraryOn: boolean,
     rolesOn: boolean,
     checklistsOn: boolean,
+    stockOn: boolean,
   ) {
     if (!id) {
       questsSub?.unsubscribe();
       librarySub?.unsubscribe();
       rolesSub?.unsubscribe();
       checklistsSub?.unsubscribe();
+      stockSub?.unsubscribe();
       hiddenSub?.unsubscribe();
       questsSub = librarySub = rolesSub = checklistsSub = hiddenSub = null;
+      stockSub = null;
       boundHolon = null;
       hiddenSet = new Set();
       lastQuestItems = [];
@@ -173,6 +244,7 @@
       rawLibrary.set([]);
       rawRoles.set([]);
       rawChecklists.set([]);
+      rawStock.set([]);
       holonName.set("");
       holonLang.set(null);
       partnerNames.set({});
@@ -208,7 +280,9 @@
       librarySub?.unsubscribe();
       rolesSub?.unsubscribe();
       checklistsSub?.unsubscribe();
+      stockSub?.unsubscribe();
       hiddenSub?.unsubscribe();
+      stockSub = null; // recreated below when the Stock tab is enabled
       librarySub = null; // recreated below when the Library tab is enabled
       rolesSub = null; // recreated below when the Roles tab is enabled
       checklistsSub = null; // recreated below when the Lists tab is enabled
@@ -231,10 +305,20 @@
       boundHolon = id;
       boundFed = fed;
       holonName.set("");
-      // Holon display name (best-effort; the screen works without it).
-      getHolonName(hs, id).then((name) => {
-        if (boundHolon === id && name) holonName.set(name);
+      // Holon display name (best-effort; the screen works without it). The
+      // dock circle is named from the SAME resolution, so an unnamed holon
+      // shows its id rather than inheriting the last board's name.
+      nameBoard(id, "");
+      resolveNames([id]).then((m) => {
+        if (boundHolon !== id) return;
+        const name = m.get(id) ?? "";
+        if (isShortName(name, id)) return;
+        holonName.set(name);
+        nameBoard(id, name);
       });
+      // Holon colour override (best-effort): re-read on every bind so a colour
+      // chosen on another surface lands on the next open.
+      void learnHolonColor(hs, id, { fresh: true });
       // Holon language (best-effort) for auto-mode i18n. Read the RAW settings
       // field: `parseHolonSettings` defaults a missing language to "en", which
       // would wrongly pin auto-mode kiosks to English on holons that never
@@ -311,6 +395,23 @@
       checklistsSub = null;
       rawChecklists.set([]);
     }
+    if (stockOn && !stockSub) {
+      stockSub = hs.subscribeFederated(
+        id,
+        "stock",
+        (items) => {
+          lensEmitAt.stock = Date.now();
+          rawStock.set(items as unknown[]);
+        },
+        // Specs are keyed by ITEM id and two holons can both keep "flour";
+        // each holon's copy stays, split by origin in $lib/stock.
+        { includeFederated: fed, dedupeAcrossSpaces: false },
+      );
+    } else if (!stockOn && stockSub) {
+      stockSub.unsubscribe();
+      stockSub = null;
+      rawStock.set([]);
+    }
 
     // Federated toggle flipped (holon unchanged) → fold partners in/out live on
     // every active lens, without tearing down the local subscription so the
@@ -321,6 +422,7 @@
       librarySub?.setFederated(fed);
       rolesSub?.setFederated(fed);
       checklistsSub?.setFederated(fed);
+      stockSub?.setFederated(fed);
     }
 
     booting = false;
@@ -333,6 +435,7 @@
         librarySub?.unsubscribe();
         rolesSub?.unsubscribe();
         checklistsSub?.unsubscribe();
+        stockSub?.unsubscribe();
         hiddenSub?.unsubscribe();
       };
     }
@@ -347,9 +450,13 @@
       if (boundHolon !== id) return;
       partnerNames.set({ ...snap.partnerNames });
       for (const partner of snap.federated) {
+        // A partner's colour override, so its mirrored cards glow in the same
+        // colour its own board, orb and hexagon wear.
+        void learnHolonColor(hs, partner);
         if (snap.partnerNames[partner]) continue;
-        getHolonName(hs, partner).then((name) => {
-          if (boundHolon !== id || !name) return;
+        resolveNames([partner]).then((m) => {
+          const name = m.get(partner) ?? "";
+          if (boundHolon !== id || isShortName(name, partner)) return;
           partnerNames.update((cur) => ({ ...cur, [partner]: name }));
         });
       }
@@ -365,19 +472,110 @@
   // subscription is untouched; partner items purge and re-seed.
   function onFederationChanged() {
     if (get(federated)) {
-      for (const sub of [questsSub, librarySub, rolesSub, checklistsSub]) {
+      for (const sub of [
+        questsSub,
+        librarySub,
+        rolesSub,
+        checklistsSub,
+        stockSub,
+      ]) {
         sub?.setFederated(false);
         sub?.setFederated(true);
       }
     }
     const id = boundHolon;
     if (id) getHolosphere().then((hs) => hydratePartnerNames(hs, id));
+    if (id) void refreshStanding(id);
   }
+
+  // ── Where this key stands ───────────────────────────────────────────────
+  //
+  // Reads are enforced: a hub with a defined authority shows only accepted
+  // keys' writes to everyone else. A person whose key is not accepted here
+  // still sees their own changes (their store holds them) and would never
+  // learn nobody else does — so the standing is computed on bind and on
+  // every session-key change, shown in the account menu, and said once per
+  // hub and key as a notice.
+  const standingSaid = new Set<string>();
+  const profileSaid = new Set<string>();
+  // The hub's signed roster arrives from the relays after the bind, so the
+  // first reading can be "open" (nothing known yet) or "held" (log not here
+  // yet) for a key the hub has in fact linked. Re-read on a short, bounded
+  // schedule until the answer is "accepted"; a new bind or key starts over.
+  const STANDING_RECHECKS_MS = [4000, 12000, 30000, 60000];
+  let standingTimers: ReturnType<typeof setTimeout>[] = [];
+  let hsKeyNow = (): string | null => null;
+  function scheduleStandingRechecks(id: string, key: string) {
+    for (const t of standingTimers) clearTimeout(t);
+    standingTimers = STANDING_RECHECKS_MS.map((ms) =>
+      setTimeout(() => {
+        if (id === boundHolon && key === hsKeyNow())
+          void refreshStanding(id, true);
+      }, ms),
+    );
+  }
+  onDestroy(() => {
+    for (const t of standingTimers) clearTimeout(t);
+  });
+  async function refreshStanding(id: string, recheck = false) {
+    let hs: HoloSphere;
+    try {
+      hs = await getHolosphere();
+    } catch {
+      return;
+    }
+    hsKeyNow = () => hs.currentPubkey;
+    const key = hs.currentPubkey;
+    try {
+      // A re-check must see what landed since: the read-authority cache
+      // would otherwise hand back the same answer for ten seconds.
+      if (recheck)
+        (
+          hs as { _readAuthority?: { invalidate?: (h: string) => void } }
+        )._readAuthority?.invalidate?.(id);
+      const st = await writeAcceptance(hs, id, key);
+      const { status } = st;
+      if (id !== boundHolon || key !== hs.currentPubkey) return;
+      writeStanding.set(status);
+      standing.set(st);
+      if (!recheck) scheduleStandingRechecks(id, key);
+      else if (status === "accepted")
+        for (const t of standingTimers) clearTimeout(t);
+      const mark = `${id}|${key}`;
+      if (status === "held" && get(currentUser) && !standingSaid.has(mark)) {
+        standingSaid.add(mark);
+        showNotice(tr("layout.notLinked"), 6000);
+      }
+      // Seated by key in a key-founded hub: make sure the hub has an
+      // accepted profile for this person (one signed before the seat never
+      // counts — see @holons/core/holons). Once per hub and key.
+      const u = get(currentUser);
+      if (
+        status === "accepted" &&
+        u &&
+        get(sessionKeyPub) &&
+        isHolonId(id) &&
+        !profileSaid.has(mark)
+      ) {
+        profileSaid.add(mark);
+        void ensureProfile(hs, id, {
+          first_name: u.first_name,
+          last_name: u.last_name,
+          username: u.username,
+        }).catch(() => {});
+      }
+    } catch {
+      writeStanding.set(null);
+      standing.set(null);
+    }
+  }
+  $: if ($sessionKeyPub !== undefined && boundHolon)
+    void refreshStanding(boundHolon);
 
   // ── Write-echo watchdog ─────────────────────────────────────────────────--
   //
   // A successful LOCAL write must echo back through its lens subscription
-  // within a couple of seconds — same Gun graph, same process. When it
+  // within a couple of seconds — same local store, same process. When it
   // doesn't, the subscription is provably dead (however it died: quarantine,
   // a torn-down listener, a wedged storage adapter …) and every remote update
   // is being silently dropped too — the "writes work but the screen never
@@ -401,6 +599,7 @@
       get(libraryPref) !== "off",
       get(rolesPref) !== "off",
       get(checklistsPref) !== "off",
+      get(stockPref) !== "off",
     );
   }
 
@@ -438,7 +637,8 @@
       lens !== "quests" &&
       lens !== "library" &&
       lens !== "roles" &&
-      lens !== "checklists"
+      lens !== "checklists" &&
+      lens !== "stock"
     )
       return;
     const at = d.at;
@@ -455,44 +655,77 @@
     }, ECHO_GRACE_MS);
   }
 
-  // Pre-name tab-title fallback: the registered label that selected this holon
-  // (URL path first — it wins in holon resolution — then the subdomain),
-  // capitalised for the tab. Empty on unlabelled hosts (localhost, previews).
-  let holonLabel = "";
-  function labelFromUrl(): string {
-    const seg = decodeURIComponent(
-      location.pathname.replace(/^\/+/, "").split("/")[0] ?? "",
-    )
-      .trim()
-      .toLowerCase();
-    const label = SUBDOMAIN_HOLONS[seg] ? seg : subdomainOf(location.host);
-    // An undeclared subdomain can be a bare holon id (see holonForHost); a
-    // string of digits is no kind of tab title, so fall through to "Holons".
-    if (!label || /^\d+$/.test(label)) return "";
-    return label.charAt(0).toUpperCase() + label.slice(1);
-  }
-
   onMount(() => {
-    holonLabel = labelFromUrl();
-    holonIdStore.set(resolveHolonId());
+    const bootHolon = resolveHolonId();
+    holonIdStore.set(bootHolon);
+    // No holon named: the front door is the dock with the earth showing (the
+    // map), not an empty board window. Set before `mounted` so the window
+    // is never painted for a beat first.
+    if (!bootHolon) dockState.set("dock");
+    // A deep-linked tab (`/tasks`, `/liminal/calendar`) opens that view. It
+    // only picks the starting tab — it is not a pin, so a wall display's
+    // rotation and idle snap-back behave exactly as configured. A
+    // content-driven tab (shifts, library…) may not be visible yet while its
+    // data is still streaming in: register the ask so the tab claims the
+    // screen the moment it appears instead of being reset to the fallback.
+    const urlTab = tabForPath(location.pathname);
+    // A deep-linked card (`?task=`, `?event=`, `?thing=`, `?item=`, `?offer=`,
+    // see cardlink.ts) opens that card once its record streams in — and, when
+    // the path names no tab, picks the card's tab as the starting view.
+    const card = bootHolon ? linkedCardFromSearch(location.search) : null;
+    const startTab = urlTab ?? card?.tab ?? null;
+    if (startTab) {
+      activeTab.set(startTab);
+      if (!get(visibleTabs).some((t) => t.id === startTab))
+        requestedTab.set(startTab);
+    }
+    if (card) pendingCard.set(card);
+    lastSyncedTab = get(activeTab);
     scope.set(resolveScope());
     libraryPref.set(resolveLibraryPref());
     rolesPref.set(resolveRolesPref());
     checklistsPref.set(resolveChecklistsPref());
+    shiftsPref.set(resolveShiftsPref());
+    stockPref.set(resolveStockPref());
+    offersPref.set(resolveOffersPref());
     statusEnabled.set(resolveStatusEnabled());
     flowsEnabled.set(resolveFlowsEnabled());
+    tasksEnabled.set(resolveTasksEnabled());
+    calendarEnabled.set(resolveCalendarEnabled());
+    tabOrder.set(resolveTabOrder());
     taskViewMode.set(resolveTaskView());
     taskSort.set(resolveTaskSort());
     libraryViewMode.set(resolveLibraryView());
     rolesViewMode.set(resolveRolesView());
+    flowsViewMode.set(resolveFlowsView());
+    stockViewMode.set(resolveStockView());
+    offersViewMode.set(resolveOffersView());
     calendarMode.set(resolveCalendarView());
     libraryCalendarMode.set(resolveLibraryCalendarView());
-    brandName.set(resolveBrandName() ?? "");
     brandLogo.set(resolveBrandLogo() ?? "");
     accent.set(resolveAccent());
     themeMode.set(resolveThemeMode());
     langMode.set(resolveLangMode());
-    initAuth();
+    // Someone following a link to one card is most likely here to act on it:
+    // with nobody signed in, raise the login sheet over the opened card. It is
+    // an ask, not a gate — closing it leaves the card readable — and it is made
+    // once per boot, so a login that came back around (Telegram returns to the
+    // same URL) or a dismissed ask isn't repeated.
+    // A key remembered on this device (behind a PIN) is offered the same way:
+    // the login sheet opens on its PIN step when no live session key is up.
+    void initAuth().then(() => {
+      if (
+        (card && !get(currentUser)) ||
+        (readRememberedKey() && !get(sessionKeyPub))
+      )
+        loginOpen.set(true);
+    });
+    // Back from Telegram with a hub link out: reopen the settings sheet on
+    // the Telegram step so the wait (and the confirmation) is picked up.
+    if (returningFromBot() && pendingLink()) {
+      telegramLinkOpen.set(true);
+      settingsOpen.set(true);
+    }
     mounted = true;
     window.addEventListener("kiosk:write", onLocalWrite);
     window.addEventListener("kiosk:federation-changed", onFederationChanged);
@@ -502,6 +735,10 @@
       startTheme(),
       startI18n(),
       startSwAutoReload(),
+      startInstallWatcher(),
+      // The Shifts feed follows the holonId store on its own; it reads a
+      // relay, not Holosphere, so it lives outside refresh().
+      startShifts(),
     ];
     return () => {
       window.removeEventListener("kiosk:write", onLocalWrite);
@@ -515,29 +752,305 @@
       librarySub?.unsubscribe();
       rolesSub?.unsubscribe();
       checklistsSub?.unsubscribe();
+      stockSub?.unsubscribe();
       hiddenSub?.unsubscribe();
     };
   });
 
-  // The signing-key vault (routes/key) is a Telegram Mini App — a phone-sized
-  // page with its own life. It must not boot the board: no subscriptions, no
-  // kiosk chrome, just the route.
-  $: isMiniApp = $page.url.pathname.replace(/\/+$/, "") === "/key";
+  // The about page (routes/about): what a hub is and how to start one — the
+  // reading page the map links to. It is a page, not a board: no dock, no
+  // tab chrome, though the Settings/login sheets stay reachable from it.
+  $: isAbout = $page.url.pathname.replace(/\/+$/, "") === "/about";
 
   // No holon resolved and nothing left to wait for → this isn't a board, it's
-  // the front door: show the landing page (HomeView) instead of the kiosk
-  // chrome, with the board-only overlays stood down.
-  $: isHome = !isMiniApp && !booting && !$holonIdStore;
+  // the front door: the dock (the map, by default) with this device's hubs
+  // on it, and the board-only overlays stood down.
+  $: isHome = !isAbout && !booting && !$holonIdStore;
+
+  // The home screen icon belongs to the board on show: named for the hub and
+  // opening on it (lib/manifest.ts), so "Add to Home Screen" — ours in the
+  // user menu or the browser's own — installs THIS hub, not the front door.
+  // The static manifest in app.html stands until a holon is known.
+  $: appName = isHome || isAbout ? "" : $holonName || "";
+  $: if (mounted) {
+    const start = isAbout
+      ? "/"
+      : startPathFor($holonIdStore, {
+          hostname: $page.url.hostname,
+          pathname: $page.url.pathname,
+        });
+    document
+      .querySelector('link[rel="manifest"]')
+      ?.setAttribute("href", manifestHref(start, appName));
+  }
+
+  // The dock/window state follows a CHANGE of holon made outside the morphs:
+  // a board named without one (the about page's paste field, Settings)
+  // brings the window up; losing the holon (unpinning, "show the home page")
+  // drops back to the dock. Keyed on the change, not the value — a docked
+  // board keeps its holon while its circle sits on the dock, and an orb tap
+  // switches the holon mid-"opening", which is the morph's own business.
+  let followedHolon: string | null | undefined;
+  $: if (mounted && $holonIdStore !== followedHolon) {
+    const first = followedHolon === undefined;
+    followedHolon = $holonIdStore;
+    if (!first) {
+      if ($holonIdStore && $dockState === "dock") dockState.set("window");
+      if (!$holonIdStore && $dockState === "window") dockState.set("dock");
+    }
+  }
+
+  // Each shown board brings its federation partners onto the dock (tagged
+  // `via` this board) — the bot's link, an orb tap, the paste field alike.
+  $: if (mounted && $holonIdStore) void dockPartnersOf($holonIdStore);
+
+  // Reflect tab switches in the address bar — shallow, no navigation, so the
+  // showing view is always shareable (`/tasks`, `/liminal/calendar`). Seeded
+  // with the boot-time tab in onMount so merely loading a bare URL doesn't
+  // rewrite it; every later switch (a tap, rotation, a pin snap-back) does.
+  // Gated on the router having finished the initial navigation: a tab reset
+  // can fire during the first flush (a deep-linked content-driven tab isn't
+  // visible yet), and replaceState before router init THROWS — an uncaught
+  // error there freezes the whole board's reactivity.
+  let lastSyncedTab: TabId | null = null;
+  let routerReady = false;
+  afterNavigate(() => (routerReady = true));
+  $: if (routerReady && mounted && !isHome && $activeTab !== lastSyncedTab) {
+    lastSyncedTab = $activeTab;
+    const path = pathForTab(location.pathname, $activeTab);
+    if (path !== location.pathname)
+      replaceState(path + location.search + location.hash, {});
+  }
+
+  // A deep-linked card opens the moment its lens delivers the record — the
+  // quests or library lens may still be streaming in at boot. Reading the raw
+  // stores here re-runs this on every delivery until the card is found; a tap
+  // on any card in the meantime spends the ask (their choice wins).
+  $: if (mounted && $pendingCard && ($rawQuests, $rawLibrary, true)) {
+    const { kind, id } = $pendingCard;
+    const found =
+      kind === "thing"
+        ? openThing(id)
+        : kind === "task" || kind === "event"
+          ? openQuest(id, kind)
+          : // Stock and Offers consume their own param (StockView/OffersView).
+            true;
+    if (found) pendingCard.set(null);
+  }
+  $: if ($selection && $pendingCard) pendingCard.set(null);
+
+  // Reflect the open DetailModal card in the address bar — shallow, like the
+  // tab sync below — so the showing card is always shareable (`?task=<id>`),
+  // and drop the pointer when it closes so a reload shows the plain board.
+  // Same router-ready gate: replaceState before router init throws.
+  // While a linked card is still pending its pointer stays put — the ask is
+  // still live and a reload must repeat it.
+  $: if (routerReady && mounted && !isHome && !$pendingCard) {
+    const card = selectionCard($selection);
+    const search = card
+      ? searchWithCard(location.search, card.param, card.id)
+      : withoutSelectionCard(location.search);
+    if (search !== location.search)
+      replaceState(location.pathname + search + location.hash, {});
+  }
+
+  // ── Board window ↔ dock morph ───────────────────────────────────────────--
+  //
+  // The whole tab interface is a window: closing it shrinks it into its
+  // circle on the dock (DockView), and tapping a circle expands that board
+  // back out. The morph is a clip-path iris centred on the circle's spot,
+  // crossfading into the real circle beneath — pure paint work, no reflow of
+  // the board mid-animation. The circle is measured afresh every frame: the
+  // dock's sky is alive (a just-mounted dock seeds its orbs on a ring and
+  // lets them glide to rest over about the second the morph takes, and even
+  // a settled orb wanders), so an iris aimed once at the spot seen on mount
+  // closes onto empty sky beside its orb. dock.ts owns the state; this
+  // layout owns the two transitional frames ("closing"/"opening"), where
+  // window AND dock are both mounted so one can be measured against the
+  // other. Anywhere the animation can't run (no rAF, no circle to aim at)
+  // the states still settle, so the interface never wedges mid-morph.
+  let windowEl: HTMLDivElement | null = null;
+  let morphBusy = false;
+  const MORPH_MS = 1000; // unhurried — the iris should read as a breath, not a snap
+  const MORPH_FADE = 0.22; // the crossfade's share of the morph
+  const SWITCH_REST_MS = 350; // a board switch rests on the dock before opening the next
+  const morphEase = (x: number) =>
+    x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+
+  function circleRect(id: string): DOMRect | null {
+    const el = document.querySelector(`[data-dock-circle="${CSS.escape(id)}"]`);
+    return el ? el.getBoundingClientRect() : null;
+  }
+
+  /**
+   * The morph target, waiting briefly for it to exist: a just-mounted dock
+   * paints its orbs only once its field has measured itself, so the target
+   * can lag the mount by a beat. Past the timeout the morph just jumps — the
+   * interface never wedges on a missing target.
+   */
+  async function circleRectSoon(
+    id: string,
+    timeoutMs = 800,
+  ): Promise<DOMRect | null> {
+    const t0 = performance.now();
+    for (;;) {
+      const r = circleRect(id);
+      if (r) return r;
+      if (performance.now() - t0 > timeoutMs) return null;
+      await new Promise((res) => setTimeout(res, 50));
+    }
+  }
+
+  /**
+   * Run the iris, following the circle wherever it drifts. `target()` is
+   * asked for the circle's rect on every frame; when it has nothing (the
+   * dock re-rendering mid-morph) the last spot seen holds. Resolves with the
+   * window back on its base style — the callers switch the dock state in the
+   * same microtask checkpoint, so the end frame never shows through.
+   */
+  function irisMorph(
+    target: () => DOMRect | null,
+    first: DOMRect,
+    closing: boolean,
+  ): Promise<void> {
+    const el = windowEl;
+    if (!el || typeof requestAnimationFrame !== "function")
+      return Promise.resolve();
+    let rect = first;
+    const paint = (p: number) => {
+      rect = target() ?? rect;
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const disc = rect.width / 2;
+      const full = Math.hypot(
+        Math.max(cx, window.innerWidth - cx),
+        Math.max(cy, window.innerHeight - cy),
+      );
+      // Closing: iris down onto the circle's spot, then fade to reveal the
+      // real circle exactly beneath. Opening is the same path in reverse.
+      const open = closing
+        ? 1 - Math.min(1, p / (1 - MORPH_FADE))
+        : Math.max(0, (p - MORPH_FADE) / (1 - MORPH_FADE));
+      const alpha = closing
+        ? Math.min(1, (1 - p) / MORPH_FADE)
+        : Math.min(1, p / MORPH_FADE);
+      el.style.clipPath = `circle(${disc + (full - disc) * open}px at ${cx}px ${cy}px)`;
+      el.style.opacity = String(alpha);
+    };
+    return new Promise<void>((resolve) => {
+      let t0 = 0;
+      paint(0);
+      requestAnimationFrame(function frame(t) {
+        if (!t0) t0 = t;
+        const p = morphEase(Math.min(1, (t - t0) / MORPH_MS));
+        paint(p);
+        if (p < 1) requestAnimationFrame(frame);
+        else resolve();
+      });
+    }).finally(() => {
+      el.style.clipPath = "";
+      el.style.opacity = "";
+    });
+  }
+
+  async function morphToDock() {
+    if (morphBusy) return;
+    morphBusy = true;
+    try {
+      await tick(); // the dock is mounted underneath now
+      const id = get(holonIdStore);
+      const r = id ? await circleRectSoon(id) : null;
+      if (id && r) await irisMorph(() => circleRect(id), r, true);
+    } catch {
+      /* no rAF → jump */
+    }
+    dockState.set("dock");
+    morphBusy = false;
+    // A switch (a provenance badge tap) closed this board on its way to
+    // another: rest on the dock long enough to read it, then open the target.
+    const next = get(dockSwitchTarget);
+    if (next) {
+      dockSwitchTarget.set(null);
+      await new Promise((r) => setTimeout(r, SWITCH_REST_MS));
+      requestOpen(next);
+    }
+  }
+
+  async function morphToWindow() {
+    if (morphBusy) return;
+    morphBusy = true;
+    const id = get(dockOpenTarget);
+    dockOpenTarget.set(null);
+    // Measure the tapped circle BEFORE any of the switching below re-renders
+    // the dock, then point the board at it (refresh() rebinds the lenses live).
+    const r = id ? circleRect(id) : null;
+    if (id) {
+      touchBoard(id);
+      if (id !== get(holonIdStore)) {
+        holonIdStore.set(id);
+        syncHolonPath(id);
+      }
+    }
+    try {
+      await tick(); // the window is mounted again — animate it open
+      if (id && r) await irisMorph(() => circleRect(id), r, false);
+    } catch {
+      /* jump */
+    }
+    dockState.set("window");
+    morphBusy = false;
+  }
+
+  $: if (mounted && $dockState === "closing") void morphToDock();
+  $: if (mounted && $dockState === "opening") void morphToWindow();
+
+  // A circle switched the shown holon — reflect it in the address bar the
+  // same shallow way tab switches are, so the URL stays shareable. A `?holon=`
+  // param would override the path on reload, so it is dropped.
+  function syncHolonPath(id: string) {
+    if (!routerReady) return;
+    const path = pathForTab(
+      "/" + encodeURIComponent(segmentFor(id)),
+      get(activeTab),
+    );
+    const params = new URLSearchParams(location.search);
+    params.delete("holon");
+    const q = params.toString();
+    replaceState(path + (q ? `?${q}` : "") + location.hash, {});
+  }
+
+  // Keep the shown board's circle fresh: created on first visit under its
+  // label. The NAME is written only where it is RESOLVED (in the bind below,
+  // which knows the holon it resolved for). Reading `holonName` here would
+  // stamp the previous holon's name on the new board — the id changes a tick
+  // before the async bind clears the name, and a holon that resolves no name
+  // of its own would then keep that borrowed one forever.
+  // Federation requests waiting for this board's admins: followed only while
+  // this key could answer them, so nobody else is shown a badge.
+  $: if (mounted)
+    bindFedRequests(
+      $holonIdStore ?? null,
+      !!$standing && may($standing, "federation"),
+    );
+
+  $: if (mounted && $holonIdStore) {
+    rememberBoard($holonIdStore, "");
+    // …and in the signed-in person's own holon, so it follows them.
+    void recordMyHub($holonIdStore, get(holonName));
+  }
+  // A key login brings the person's hubs onto this device's dock.
+  $: if (mounted && $sessionKeyPub) void loadMyHubs();
 
   // Re-point the live subscriptions when the holon or federated flag changes
   // (CSR-only app, so a reactive statement after mount is safe).
-  $: if (mounted && !isMiniApp)
+  $: if (mounted)
     refresh(
       $holonIdStore,
       $federated,
       $libraryPref !== "off",
       $rolesPref !== "off",
       $checklistsPref !== "off",
+      $stockPref !== "off",
     );
 
   // While awaiting the first reveal, (re)arm the settle timer on every data
@@ -549,19 +1062,61 @@
   }
 
   // Apply the chosen accent as the `--teal` family on :root so every component
-  // (header, views, modals) picks it up. `--teal-deep` is derived a shade darker.
+  // (header, views, modals) picks it up: `--teal-deep` a shade darker,
+  // `--teal-ink` the accent as readable TEXT on the palette that is up (so it
+  // re-derives when day turns to night), `--on-teal` the ink on an accent
+  // ground. See palette.accentFamily.
   $: if (typeof document !== "undefined") {
     const s = document.documentElement.style;
+    const family = accentFamily($accent, $activeTheme);
     s.setProperty("--teal", $accent);
-    s.setProperty("--teal-deep", `color-mix(in srgb, ${$accent} 78%, #000)`);
+    s.setProperty("--teal-deep", family.deep);
+    if (family.ink) s.setProperty("--teal-ink", family.ink);
+    else s.removeProperty("--teal-ink");
+    if (family.on) s.setProperty("--on-teal", family.on);
+    else s.removeProperty("--on-teal");
   }
 
-  // Any pointer/touch/key/scroll counts as someone using the screen → reveal the
-  // chrome and pause the auto-flip. Capture phase so it fires before view
-  // handlers.
+  // The displayed holon's colour — the note its id hashes to, the same
+  // algorithm the post-it cards use, or the caretaker's chosen colour — as
+  // `--holon` on :root: the board card is faintly washed with it (below), and
+  // it is the very colour of this board's orb in the dock and hexagon on the
+  // map. Cleared between boards so the landing page keeps the plain paper.
+  $: if (typeof document !== "undefined") {
+    const s = document.documentElement.style;
+    // As a wash it must stay a ground the ink clears, whatever colour the
+    // caretaker chose and whichever palette is up (palette.washOf).
+    if ($holonIdStore)
+      s.setProperty(
+        "--holon",
+        washOf(holonColor($holonIdStore, $holonColors), $activeTheme),
+      );
+    else s.removeProperty("--holon");
+  }
+
+  // Any pointer/touch/key/scroll counts as someone using the screen → pause
+  // the auto-flip. Capture phase so it fires before view handlers.
   function onActivity() {
     noteInteraction();
   }
+
+  // Android pops its context menu on a touch long-press, which kills every
+  // hold gesture (lift a chip to schedule, hold a slot to draw an event,
+  // hold a note to reorder). Swallow it for touch/pen outside fields — the
+  // decision lives in $lib/holdmenu; the last pointerdown says which kind of
+  // pointer the menu came from.
+  let lastPointerType: string | null = null;
+  function onPointerDown(e: PointerEvent) {
+    lastPointerType = e.pointerType || null;
+    onActivity();
+  }
+  function onContextMenu(e: Event) {
+    if (swallowsContextMenu(lastPointerType, e.target)) e.preventDefault();
+  }
+
+  // No pinch zooms the page, on any view — iOS ignores the viewport meta's
+  // `user-scalable=no`. Views with their own zoom still get the gesture.
+  onMount(() => lockPageZoom(document));
 
   // Mouse movement (no click) also counts as presence, but fires constantly —
   // throttle it so we don't reset the stores on every pixel.
@@ -575,101 +1130,156 @@
 </script>
 
 <svelte:head>
-  <!-- Browser-tab / PWA title: the holon's name (caretaker override first).
-       Until one is known, the subdomain/path label that selected the holon
-       stands in (e.g. armoniaduale.hubs.network → "Armoniaduale") — never
-       the app's own name. The landing page titles itself (HomeView), so stand
-       aside there rather than racing it for the same tag. -->
-  {#if !isHome}
-    <title>{$brandName || $holonName || holonLabel || "Holons"}</title>
+  <!-- Browser-tab / PWA title: the holon's name (caretaker override first,
+       then the settings name); until one is known — or when the holon has
+       none — its id. Never a label guessed from the host: a deploy on
+       kiosk.hubs.network is not a holon called "Kiosk". The landing page
+       titles itself (HomeView), so stand aside there rather than racing it
+       for the same tag. -->
+  {#if isHome}
+    <title>hubs network</title>
+  {:else if !isAbout}
+    <title>{$holonName || $holonIdStore || "Holons"}</title>
   {/if}
+  <!-- iOS labels the home screen icon from this, ahead of the manifest. -->
+  <meta name="apple-mobile-web-app-title" content={appName || "Holons"} />
 </svelte:head>
 
 <svelte:window
-  on:pointerdown|capture={onActivity}
+  on:pointerdown|capture={onPointerDown}
+  on:contextmenu={onContextMenu}
   on:touchstart|capture={onActivity}
   on:keydown|capture={onActivity}
   on:wheel|capture={onActivity}
   on:pointermove|capture={onMove}
 />
 
-{#if isMiniApp}
-  <!-- Telegram Mini App route: no board, no chrome — the page is the app. -->
+{#if isAbout}
+  <!-- The reading page: what a hub is, and the buttons that start one. -->
   <slot />
 {:else}
-  {#if isHome}
-    <!-- Front door: what Holons is, and the button that starts one. -->
-    <HomeView />
-  {:else}
-    <div class="kiosk">
-      <TabBar />
-      <main class="stage">
-        <slot />
-      </main>
+  <!-- The dock sits beneath the board window during the morph frames and
+       alone once the window has fully closed into its circle — and it IS
+       the front door: with no holon named, the map with this device's
+       hubs is what a bare visit shows. -->
+  {#if $dockState !== "window"}
+    <DockView />
+  {/if}
+
+  {#if $dockState !== "dock" && $holonIdStore}
+    <div class="kiosk" bind:this={windowEl}>
+      <!-- The whole tab interface is one card floating in the space — the
+           same sky the dock shows — so closing it into a circle reads as
+           the card shrinking into its place among the others. -->
+      <div class="card">
+        <TabBar />
+        <main class="stage">
+          <slot />
+        </main>
+      </div>
     </div>
 
     <!-- Zoomed detail / edit overlay for the tapped post-it or card. -->
     <DetailModal />
   {/if}
+{/if}
 
-  <!-- Login overlay, raised from the header chip or an "edit" prompt. -->
-  {#if $loginOpen}
-    <Modal on:close={() => loginOpen.set(false)}>
-      <TelegramLogin />
-    </Modal>
-  {/if}
+<!-- Login overlay, raised from the header chip or an "edit" prompt. -->
+{#if $loginOpen}
+  <Modal on:close={() => loginOpen.set(false)}>
+    <LoginCard />
+  </Modal>
+{/if}
 
-  <!-- User menu: identity, federated toggle, dashboard, settings. -->
-  {#if $userMenuOpen}
-    <Modal on:close={() => userMenuOpen.set(false)}>
-      <UserMenu />
-    </Modal>
-  {/if}
+<!-- User menu: identity, federated toggle, dashboard, settings. -->
+{#if $userMenuOpen}
+  <Modal on:close={() => userMenuOpen.set(false)}>
+    <UserMenu />
+  </Modal>
+{/if}
 
-  <!-- Caretaker settings: holon, name, logo, accent. -->
-  {#if $settingsOpen}
-    <Modal on:close={() => settingsOpen.set(false)}>
-      <Settings />
-    </Modal>
-  {/if}
+<!-- Caretaker settings: holon, name, logo, accent. -->
+{#if $settingsOpen}
+  <Modal on:close={() => settingsOpen.set(false)}>
+    <Settings />
+  </Modal>
+{/if}
 
-  <!-- Board-only companions: they all act on the displayed holon, and the
-       landing page has none. -->
-  {#if !isHome}
-    <!-- E2E pairing of the user's Telegram-held signing key (see pairing.ts). -->
-    {#if $keyLinkOpen}
-      <Modal on:close={() => keyLinkOpen.set(false)}>
-        <KeyLinkModal />
-      </Modal>
-    {/if}
+<!-- Board-only companions: they all act on the displayed holon, and the
+     front door and the about page have none. -->
+{#if !isHome && !isAbout}
+  <!-- Participant confirmation before a completion records REA. -->
+  <CompleteConfirm />
+  <!-- "Leave this hub for that one?" before a provenance badge travels. -->
+  <SwitchConfirm />
 
-    <!-- Participant confirmation before a completion records REA. -->
-    <CompleteConfirm />
+  <!-- Push-to-talk voice agent; renders only when a voice server is reachable.
+     Sends the displayed holon + active view + open record as turn context. -->
+  <VoiceWidget />
+  <!-- Changes the voice agent proposed, awaiting the user's Apply. -->
+  <VoiceDrawer />
+{/if}
 
-    <!-- Push-to-talk voice agent; renders only when a voice server is reachable.
-       Sends the displayed holon + active view + open record as turn context. -->
-    <VoiceWidget />
-  {/if}
-
-  <!-- Transient one-line feedback for taps that can't proceed. -->
-  {#if $notice}
-    <div class="notice" role="status">{$notice}</div>
-  {/if}
+<!-- Transient one-line feedback for taps that can't proceed. -->
+{#if $notice}
+  <div class="notice" role="status">{$notice}</div>
 {/if}
 
 <style>
   .kiosk {
+    /* A fixed layer so the close morph can iris it over the dock beneath
+       (DockView is z-index 5). Its background is the SPACE — kept identical
+       to DockView's — and the board itself lives on the .card floating in it. */
+    position: fixed;
+    inset: 0;
+    z-index: 10;
     display: flex;
     flex-direction: column;
     height: 100dvh;
     width: 100vw;
+    background:
+      radial-gradient(
+        90% 70% at 72% 12%,
+        color-mix(in srgb, var(--teal) 8%, transparent),
+        transparent 62%
+      ),
+      radial-gradient(120% 90% at 50% 115%, var(--paper) 0%, transparent 70%),
+      var(--paper-deep);
+    /* The sky around the card, and the frame the surface keeps inside it
+       (used by TabBar and the tab page), are thin — the board is the thing —
+       and on a phone all but gone. */
+    --sky: clamp(0.15rem, 0.5vw, 0.5rem);
+    --frame: clamp(0.15rem, 0.8vw, 0.7rem);
+    padding: calc(env(safe-area-inset-top) + var(--sky))
+      calc(env(safe-area-inset-right) + var(--sky))
+      calc(env(safe-area-inset-bottom) + var(--sky))
+      calc(env(safe-area-inset-left) + var(--sky));
+    overflow: hidden;
+  }
+  @media (max-width: 560px), (max-height: 560px) {
+    .kiosk {
+      --sky: 0.1rem;
+      --frame: 0.1rem;
+    }
+  }
+  .card {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-radius: clamp(6px, 1.2vw, 14px);
+    border: 1px solid var(--line);
+    /* Faintly washed with the holon's own colour (`--holon`, set on :root by
+       the layout) — the note its cards, orb and hexagon share — so each board
+       is recognisably itself. Without a holon the plain paper stays. */
     background: radial-gradient(
       120% 60% at 50% -10%,
-      var(--paper) 40%,
-      var(--paper-deep) 100%
+      color-mix(in srgb, var(--holon, transparent) 24%, var(--paper)) 40%,
+      color-mix(in srgb, var(--holon, transparent) 32%, var(--paper-deep)) 100%
     );
-    padding: env(safe-area-inset-top) env(safe-area-inset-right)
-      env(safe-area-inset-bottom) env(safe-area-inset-left);
+    box-shadow:
+      0 22px 54px rgba(0, 0, 0, 0.3),
+      var(--shadow-soft);
     overflow: hidden;
   }
 

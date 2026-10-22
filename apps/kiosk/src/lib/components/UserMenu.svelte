@@ -1,23 +1,33 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
+  import { shortId } from "@holons/core/identity";
   // The single entry point behind the header account chip: identity, the
   // dashboard link, and Settings — everything that used to clutter the
   // header, now in one menu. (Federated visibility lives in each view's Show
   // pill — see ScopePill.)
-  import { telegramUser, displayName, loginOpen, logout } from "$lib/auth";
+  import { currentUser, displayName, loginOpen, logout } from "$lib/auth";
   import {
+    showNotice,
     holonId,
     holonName,
-    brandName,
     settingsOpen,
     userMenuOpen,
+    writeStanding,
   } from "$lib/stores";
-  import { dashboardUrl, resolveMiniapp } from "$lib/config";
+  import { clearBotHandoff, dashboardUrl } from "$lib/config";
+  import { clearHubClaim } from "$lib/hubclaim";
   import { showHomePage } from "$lib/home";
-  import { keyLinkOpen, sessionKeyPub, dropSessionKey } from "$lib/sessionKey";
-  import { t } from "$lib/i18n";
+  import { goto } from "$app/navigation";
+  import { sessionKeyPub, dropSessionKey } from "$lib/sessionKey";
+  import { forgetRememberedKey } from "$lib/rememberKey";
+  import { installMode, promptInstall } from "$lib/install";
+  import { askToJoin, leave } from "$lib/hubmembers";
+  import { isHolonId, isTelegramChatId } from "@holons/core/protocol";
+  import { t, tr } from "$lib/i18n";
+  import { fedRequests } from "$lib/fedrequests";
 
-  $: who = $brandName || $holonName;
+  $: who = $holonName;
 
   function close() {
     userMenuOpen.set(false);
@@ -33,38 +43,85 @@
   function goHome() {
     void showHomePage();
   }
+  // The signed-in person's own holon IS their id (Telegram id or pubkey hex),
+  // so opening it is the same path the front door's "open the board" field
+  // takes: the URL names it, the store rebinds the layout now. Deliberately
+  // not persisted — the device keeps pointing at its own board.
+  $: myHolonId = $currentUser ? String($currentUser.id) : null;
+  $: onMyHolon = myHolonId != null && $holonId === myHolonId;
+  async function openMyHolon() {
+    if (!myHolonId) return;
+    close();
+    settingsOpen.set(false);
+    clearBotHandoff();
+    clearHubClaim();
+    await goto(`/${encodeURIComponent(myHolonId)}`);
+    holonId.set(myHolonId);
+  }
   function login() {
     close();
     loginOpen.set(true);
   }
-  // The key-link flow only exists when a Mini App is registered (see
-  // resolveMiniapp) — otherwise writes stay signed by the device key.
-  const canLinkKey = resolveMiniapp() != null;
-  function linkKey() {
-    close();
-    keyLinkOpen.set(true);
+  // Hubs with a signed roster take members by key — founded from a screen
+  // or born in Telegram (its bot founds the log): ask to be seated, or say
+  // goodbye. The fuller story, and the same ask, live in Settings.
+  let joinBusy = false;
+  $: keyHub =
+    !!$holonId &&
+    (isHolonId($holonId) || isTelegramChatId($holonId)) &&
+    !!$sessionKeyPub;
+  async function joinHub() {
+    if (!$holonId || !$currentUser || joinBusy) return;
+    joinBusy = true;
+    try {
+      if (await askToJoin($holonId, displayName($currentUser)))
+        showNotice(tr("menu.linkAsked"));
+    } finally {
+      joinBusy = false;
+    }
+  }
+  async function leaveHub() {
+    if (!$holonId || joinBusy) return;
+    joinBusy = true;
+    try {
+      if (await leave($holonId)) showNotice(tr("menu.unlinked"));
+    } finally {
+      joinBusy = false;
+    }
   }
   function unlinkKey() {
+    // Unlinking the key also forgets it on this device, or it would be back
+    // at the next reload.
+    forgetRememberedKey();
     void dropSessionKey();
+  }
+
+  // Add to Home Screen: where the browser lends us its install dialog, the
+  // row IS the button; everywhere else it unfolds the steps in place (iOS has
+  // no API, only Share → "Add to Home Screen").
+  let installSteps = false;
+  function install() {
+    if ($installMode === "prompt") void promptInstall();
+    else installSteps = !installSteps;
   }
 </script>
 
 <div class="menu">
   <div class="id">
-    {#if $telegramUser}
-      {#if $telegramUser.photo_url}
-        <img class="avatar" src={$telegramUser.photo_url} alt="" />
+    {#if $currentUser}
+      {#if $currentUser.photo_url}
+        <img class="avatar" src={$currentUser.photo_url} alt="" />
       {:else}
         <span class="avatar initial"
-          >{$telegramUser.first_name?.[0]?.toUpperCase() ?? "·"}</span
+          >{$currentUser.first_name?.[0]?.toUpperCase() ?? "·"}</span
         >
       {/if}
       <div class="idtext">
-        <span class="name">{displayName($telegramUser)}</span>
+        <span class="name">{displayName($currentUser)}</span>
         {#if who}<span class="sub">{who}</span>{/if}
       </div>
     {:else}
-      <span class="avatar initial">✦</span>
+      <span class="avatar initial"><Icon name="star" /></span>
       <div class="idtext">
         <span class="name">{$t("menu.notSignedIn")}</span>
         {#if who}<span class="sub">{who}</span>{/if}
@@ -72,52 +129,144 @@
     {/if}
   </div>
 
-  <button class="row" on:click={openDashboard} disabled={!$holonId}>
-    <span class="ico">⬡</span>
-    <span class="label">{$t("menu.dashboard")}</span>
-    <span class="chev">↗</span>
+  <!-- The holon's settings sit right under the name: that is where people
+       look for "this board's" controls. -->
+  <button class="row" on:click={openSettings}>
+    <span class="ico"><Icon name="gear" /></span>
+    <span class="label"
+      >{$t("menu.settings")}{#if $fedRequests.length}<span class="hint"
+          >{$t("fed.requestsBadge", { n: $fedRequests.length })}</span
+        >{/if}</span
+    >
+    {#if $fedRequests.length}<span class="count">{$fedRequests.length}</span
+      >{/if}
+    <span class="chev">›</span>
   </button>
 
-  <button class="row" on:click={openSettings}>
-    <span class="ico">⚙</span>
-    <span class="label">{$t("menu.settings")}</span>
-    <span class="chev">›</span>
+  {#if myHolonId}
+    <!-- Your own holon, by its id — distinct from the displayed board. -->
+    <button
+      class="row"
+      on:click={openMyHolon}
+      disabled={onMyHolon}
+      aria-current={onMyHolon ? "page" : undefined}
+    >
+      <span class="ico"><Icon name="person" /></span>
+      <span class="label"
+        >{$t("menu.myHolon")}<span class="hint">{myHolonId}</span></span
+      >
+      <span class="chev">›</span>
+    </button>
+  {/if}
+
+  <button class="row" on:click={openDashboard} disabled={!$holonId}>
+    <span class="ico"><Icon name="hexagon" /></span>
+    <span class="label">{$t("menu.dashboard")}</span>
+    <span class="chev"><Icon name="arrow-up-right" /></span>
   </button>
 
   <!-- Leaving a holon is not logging out — the identity and the holon are
        separate — so this is where people look for the way back out. -->
   <button class="row" on:click={goHome} disabled={!$holonId}>
-    <span class="ico">⌂</span>
+    <span class="ico"><Icon name="home" /></span>
     <span class="label">{$t("menu.homePage")}</span>
     <span class="chev">›</span>
   </button>
 
-  {#if $telegramUser}
-    {#if $sessionKeyPub}
-      <button class="row" on:click={unlinkKey}>
-        <span class="ico">🔑</span>
+  {#if $installMode !== "hidden"}
+    <button
+      class="row"
+      on:click={install}
+      aria-expanded={$installMode === "prompt" ? undefined : installSteps}
+    >
+      <span class="ico"><Icon name="smartphone" /></span>
+      <span class="label">{$t("menu.install")}</span>
+      <span class="chev"
+        >{#if $installMode === "prompt"}<Icon name="plus" />{:else}›{/if}</span
+      >
+    </button>
+    {#if installSteps && $installMode !== "prompt"}
+      <div class="install">
+        <p>{$t("install.hint", { name: who || "Holons" })}</p>
+        {#if $installMode === "ios"}
+          <ol>
+            <li>
+              <span class="step-ico"><Icon name="share" /></span>
+              {$t("install.iosShare")}
+            </li>
+            <li>
+              <span class="step-ico"><Icon name="plus-square" /></span>
+              {$t("install.iosAdd")}
+            </li>
+            <li>
+              <span class="step-ico"><Icon name="check" /></span>
+              {$t("install.iosConfirm")}
+            </li>
+          </ol>
+        {:else}
+          <p>{$t("install.manual")}</p>
+        {/if}
+      </div>
+    {/if}
+  {/if}
+
+  {#if $currentUser}
+    {#if $sessionKeyPub && $currentUser.provider === "telegram"}
+      <!-- The key a Telegram login brings along: it goes with the login. -->
+      <div class="row standing" role="status">
+        <span class="ico"><Icon name="key" /></span>
         <span class="label"
           >{$t("menu.signingAs", {
-            key: `${$sessionKeyPub.slice(0, 8)}…`,
+            key: shortId($sessionKeyPub),
           })}</span
         >
-        <span class="chev">✕</span>
-      </button>
-    {:else if canLinkKey}
-      <button class="row" on:click={linkKey}>
-        <span class="ico">🔑</span>
-        <span class="label">{$t("menu.linkKey")}</span>
-        <span class="chev">›</span>
+      </div>
+    {:else if $sessionKeyPub}
+      <button class="row" on:click={unlinkKey}>
+        <span class="ico"><Icon name="key" /></span>
+        <span class="label"
+          >{$t("menu.signingAs", {
+            key: shortId($sessionKeyPub),
+          })}</span
+        >
+        <span class="chev"><Icon name="close" /></span>
       </button>
     {/if}
+    <!-- Whether this key is linked to the hub: reads are enforced, so a key
+         the hub has not linked writes only for itself. Said here, where the
+         identity is, rather than on every card; Settings → Members has the
+         full story. -->
+    {#if $writeStanding === "held"}
+      <div class="row standing held" role="status">
+        <span class="ico"><Icon name="lock" /></span>
+        <span class="label">{$t("menu.notLinked")}</span>
+      </div>
+      {#if keyHub}
+        <button class="row" disabled={joinBusy} on:click={joinHub}>
+          <span class="ico"><Icon name="key" /></span>
+          <span class="label">{$t("menu.linkMe")}</span>
+        </button>
+      {/if}
+    {:else if $writeStanding === "accepted"}
+      <div class="row standing" role="status">
+        <span class="ico"><Icon name="check" /></span>
+        <span class="label">{$t("menu.linked")}</span>
+      </div>
+      {#if keyHub}
+        <button class="row" disabled={joinBusy} on:click={leaveHub}>
+          <span class="ico"><Icon name="close" /></span>
+          <span class="label">{$t("menu.unlinkMe")}</span>
+        </button>
+      {/if}
+    {/if}
     <button class="row danger" on:click={logout}>
-      <span class="ico">⏻</span>
+      <span class="ico"><Icon name="power" /></span>
       <span class="label">{$t("menu.logout")}</span>
     </button>
   {:else}
     <button class="row primary" on:click={login}>
-      <span class="ico">✦</span>
-      <span class="label">{$t("menu.loginTelegram")}</span>
+      <span class="ico"><Icon name="star" /></span>
+      <span class="label">{$t("menu.login")}</span>
     </button>
   {/if}
 </div>
@@ -145,7 +294,7 @@
     place-items: center;
     object-fit: cover;
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     font-size: 1.1rem;
     font-weight: 800;
   }
@@ -196,27 +345,102 @@
     width: 1.5rem;
     text-align: center;
     font-size: 1.15rem;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .row .label {
     flex: 1;
+    min-width: 0;
     font-weight: 700;
     font-size: 1rem;
+  }
+  .row .count {
+    min-width: 1.5rem;
+    height: 1.5rem;
+    padding: 0 0.4rem;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    font-size: 0.8rem;
+    font-weight: 800;
+    background: var(--caution);
+    color: var(--paper);
   }
   .row .chev {
     color: var(--muted);
     font-weight: 700;
   }
+  .row .label .hint {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .install {
+    padding: 0.2rem 0.9rem 0.6rem;
+    color: var(--ink);
+    font-size: 0.95rem;
+    line-height: 1.35;
+  }
+  .install p {
+    margin: 0 0 0.5rem;
+    color: var(--muted);
+  }
+  .install ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+  .install li {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    font-weight: 600;
+  }
+  .step-ico {
+    flex: 0 0 auto;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 10px;
+    display: grid;
+    place-items: center;
+    background: var(--paper);
+    color: var(--teal-ink);
+    font-size: 1.15rem;
+  }
 
   .row.primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .row.primary .ico {
-    color: #fff;
+    color: var(--on-teal);
+  }
+  .row.standing {
+    cursor: default;
+    opacity: 0.85;
+  }
+  .row.standing .label {
+    font-size: 0.85em;
+    line-height: 1.3;
+    white-space: normal;
+  }
+  .row.standing.held {
+    background: color-mix(in srgb, #b45309 12%, transparent);
+    opacity: 1;
+  }
+  .row.standing.held .ico {
+    color: var(--caution);
   }
   .row.danger .ico {
-    color: #9a3b2f;
+    color: var(--danger);
   }
 </style>

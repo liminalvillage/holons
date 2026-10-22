@@ -79,8 +79,8 @@ export interface Quest {
   _meta?: QuestMeta;
   _deleted?: boolean;
 
-  // Optional pointer to a Canvas record stored at (holonId, 'canvases', canvasId).
-  canvasId?: string;
+  // Whiteboard: an excalidraw.com live room, minted once (see board.ts).
+  boardUrl?: string;
 
   // Open shape so existing call sites that read/write extra fields keep working.
   [key: string]: any;

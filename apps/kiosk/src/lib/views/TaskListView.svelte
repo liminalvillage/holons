@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   // Compact list mode for the Tasks view: one row per backlog task, same data
   // and action handlers as the post-it wall (TasksView owns those — this
   // component only renders). Rows share the wall's drag-to-reorder machinery:
@@ -7,14 +8,23 @@
   // the resulting order persists as each quest's orderIndex.
   import { glide } from "$lib/glide";
   import Avatars, { hideImg } from "$lib/components/Avatars.svelte";
-  import { resolveImage } from "$lib/image";
-  import { telegramUser } from "$lib/auth";
-  import { sameId } from "$lib/personal";
+  import { pictureUrl } from "@holons/core/media";
+  import { currentUser } from "$lib/auth";
+  import { sameId } from "$lib/ids";
   import type { BacklogTask } from "$lib/data";
   import { holoSeed } from "$lib/data";
   import { t } from "$lib/i18n";
+  import { holonId } from "$lib/stores";
+  import { requestSwitch } from "$lib/dock";
+
+  /** A provenance badge tap travels to the holon the card came from. */
+  function jumpToSource(id: string | undefined, name?: string): void {
+    if (id) requestSwitch(id, { name, from: $holonId });
+  }
 
   export let tasks: BacklogTask[];
+  /** Cards sealed on the relays (the lock glyph). */
+  export let lockedIds: Set<string> = new Set();
   export let colorFor: (category: string | undefined) => string;
   export let dueLabel: (t: BacklogTask) => string | null;
   /** Task ids mid-completion (fading out on the wall) — dim their rows too. */
@@ -28,7 +38,7 @@
   /** Id of the row currently lifted as a drag clone; it holds its gap. */
   export let dragId: string | null = null;
 
-  $: uid = $telegramUser?.id;
+  $: uid = $currentUser?.id;
   function amAppreciating(t: BacklogTask): boolean {
     return t.appreciatedBy.some((id) => sameId(id, uid));
   }
@@ -66,7 +76,7 @@
           {#if task.picture}
             <img
               class="row-thumb"
-              src={resolveImage(task.picture)}
+              src={pictureUrl(task.picture)}
               alt=""
               loading="lazy"
               on:error={hideImg}
@@ -75,13 +85,29 @@
           <div class="text">
             <h3>{task.title}</h3>
             <div class="meta">
+              {#if lockedIds.has(String(task.id))}<span
+                  class="locked"
+                  title={$t("tasks.locked")}><Icon name="lock" /></span
+                >{/if}
               {#if task.category}<span class="tag">{task.category}</span>{/if}
-              {#if task.source}<span class="src">⇄ {task.source}</span>{/if}
-              {#if dueLabel(task)}<span class="due">{dueLabel(task)}</span>{/if}
+              {#if task.source}<button
+                  type="button"
+                  class="src"
+                  title={$t("source.open", { name: task.source })}
+                  on:pointerdown|stopPropagation
+                  on:click|stopPropagation={() =>
+                    jumpToSource(task.sourceId, task.source)}
+                  ><Icon name="swap" /> {task.source}</button
+                >{/if}
+              {#if dueLabel(task)}<span class="due"
+                  >{#if task.frequency}<Icon name="repeat" />
+                  {/if}{dueLabel(task)}</span
+                >{/if}
               {#if task.unmetDeps > 0}<span
                   class="waits"
                   title={$t("tasks.waitsTitle", { n: task.unmetDeps })}
-                  >⛓ {$t("tasks.waitsOn", { n: task.unmetDeps })}</span
+                  ><Icon name="link" />
+                  {$t("tasks.waitsOn", { n: task.unmetDeps })}</span
                 >{/if}
             </div>
           </div>
@@ -94,7 +120,7 @@
             aria-pressed={amAppreciating(task)}
             title={$t("tasks.appreciate")}
           >
-            <span class="glyph" aria-hidden="true">♥</span>
+            <span class="glyph" aria-hidden="true"><Icon name="heart" /></span>
             {#if task.appreciation}
               <span class="count">{task.appreciation}</span>
             {/if}
@@ -111,7 +137,7 @@
             aria-label={$t("tasks.markComplete")}
             title={$t("tasks.markComplete")}
           >
-            ✓
+            <Icon name="check" />
           </button>
           <button
             class="tool del"
@@ -120,7 +146,7 @@
             aria-label={$t("tasks.deleteTask")}
             title={$t("tasks.deleteTask")}
           >
-            ✕
+            <Icon name="close" />
           </button>
         </div>
       </li>
@@ -131,6 +157,15 @@
 {/if}
 
 <style>
+  .meta .locked {
+    display: inline-flex;
+    align-items: center;
+    color: var(--ink-soft);
+  }
+  .meta .locked :global(svg) {
+    width: 0.85em;
+    height: 0.85em;
+  }
   .rows {
     list-style: none;
     margin: 0 auto;
@@ -227,7 +262,10 @@
   .src {
     font-size: 0.68rem;
     font-weight: 700;
-    color: var(--glow, var(--teal-deep));
+    /* The source holon's own hue, carried by the ink rather than replacing it:
+       a holon's colour is a ground (a pastel by day, a jewel by night), never
+       something to read on its own. */
+    color: color-mix(in srgb, var(--glow, var(--teal)) 30%, var(--ink));
     background: color-mix(in srgb, var(--glow) 12%, transparent);
     border-radius: 999px;
     padding: 0.05rem 0.45rem;
@@ -261,7 +299,7 @@
     width: 1.9rem;
     height: 1.9rem;
     line-height: 1;
-    color: rgba(154, 59, 47, 0.55);
+    color: var(--heart-quiet);
     touch-action: manipulation;
     transition:
       transform 0.1s ease,
@@ -276,11 +314,10 @@
     transform: translateY(0.1em);
     font-size: 0.6rem;
     font-weight: 800;
-    color: #fff;
-    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+    color: var(--on-heart);
   }
   .heart.on {
-    color: #d4493a;
+    color: var(--heart);
   }
   .heart:active {
     transform: scale(0.88);
@@ -303,20 +340,20 @@
       transform 0.1s ease;
   }
   .tool.check {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .tool.check:active {
     transform: scale(0.88);
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
   }
   .tool.del {
-    color: rgba(154, 59, 47, 0.75);
+    color: var(--danger);
   }
   .tool.del:active {
     transform: scale(0.88);
-    background: #d4493a;
-    color: #fff;
+    background: var(--danger);
+    color: var(--on-danger);
   }
   .empty {
     color: var(--muted);

@@ -208,7 +208,7 @@ export async function resolveHologramDetailed(holoInstance, hologram, options = 
         // cross-holon node) AND ask for tombstones. `includeDeleted: true` is
         // exactly what lets us tell a deletion from a miss — without it `get`
         // would filter a `_deleted: true` target to `null`. `awaitNetwork: true`
-        // skips Gun's cold synchronous `undefined` and waits (up to the read
+        // skips a cold synchronous `undefined` and waits (up to the read
         // deadline) for a peer to answer.
         const originalData = await holoInstance.get(
             soulInfo.holon,

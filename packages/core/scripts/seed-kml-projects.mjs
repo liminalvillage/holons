@@ -25,10 +25,10 @@
  * Resilience
  * ----------
  * Each `holosphere.put` is wrapped in `Promise.race(put, timeout)` because
- * Gun parent-propagation gossip can occasionally stall waiting for an ack —
+ * parent-propagation writes can occasionally stall waiting on a relay —
  * a previous full-batch run wedged at item 125 because the script awaited
  * a put that never resolved. With a per-put timeout (`--timeout-ms`) the
- * stalled write moves on (the local Gun store still has the data; it will
+ * stalled write moves on (the local store still has the data; it will
  * sync over time) and the rest of the batch keeps progressing. A small
  * concurrency pool (`--concurrency`) overlaps network latency so the run
  * finishes in minutes rather than tens of minutes.
@@ -40,9 +40,9 @@
  *     [--concurrency=4] [--timeout-ms=30000] [--no-skip-existing]
  *
  *   Env:
- *     HOLOSPHERE_PRIVATE_KEY  hex-encoded private key (optional — only needed
+ *     HOLOSPHERE_NSEC  Nostr secret key (nsec1… or hex) (optional — only needed
  *                             if you want writes attributable to a specific
- *                             pubkey; cell-based public puts go through GUN
+ *                             pubkey; cell-based public puts are signed by a throwaway key
  *                             without it)
  *     HOLONS_APP              fallback for --app-name (defaults to "HolonsDebug")
  */
@@ -52,6 +52,7 @@ import { resolve } from 'node:path';
 import { argv, exit, env } from 'node:process';
 import * as h3 from 'h3-js';
 import { HoloSphere } from 'holosphere';
+import { resolveRelays } from '../dist/holosphere/relays.js';
 
 const LENS = 'projects';
 const DEFAULT_CONCURRENCY = 4;
@@ -132,7 +133,7 @@ function makeId(name, lat, lng) {
 /**
  * Race `promise` against a timeout. If the timeout fires first, the returned
  * promise rejects with `Error('timeout')` so the caller can log + continue.
- * The underlying Gun write started by `promise` is NOT cancelled — local
+ * The underlying write started by `promise` is NOT cancelled — local
  * state has usually already been written; only the parent-propagation
  * gossip ack is what we're waiving on.
  */
@@ -207,16 +208,20 @@ async function main() {
 		return;
 	}
 
-	const privateKey = env.HOLOSPHERE_PRIVATE_KEY || null;
+	const privateKey = env.HOLOSPHERE_NSEC || null;
 	const appName = flags.appName || env.HOLONS_APP || 'HolonsDebug';
 
 	console.log(
 		`Connecting to HoloSphere appName="${appName}"` +
 			(privateKey ? ' with provided privateKey …' : ' anonymously (no privateKey) …')
 	);
+	// The relays are the wire (HOLOSPHERE_RELAYS, default: production);
+	// the store is in memory for this one-shot process.
 	const holosphere = new HoloSphere({
 		appName,
 		...(privateKey ? { privateKey } : {}),
+		relays: resolveRelays(env.HOLOSPHERE_RELAYS),
+		store: { adapter: 'memory' },
 		logLevel: 'WARN'
 	});
 	await holosphere.ready();
@@ -288,8 +293,9 @@ async function main() {
 	console.log(
 		`\nDone. ok=${ok}, skipped=${skipped}, timeout=${timedOut}, fail=${failed} (of ${total}).`
 	);
-	console.log('Allowing 5s for Gun gossip to settle before exit …');
+	console.log('Allowing 5s for the relay publishes to drain before exit …');
 	await new Promise((r) => setTimeout(r, 5000));
+	await holosphere.close();
 }
 
 main().then(

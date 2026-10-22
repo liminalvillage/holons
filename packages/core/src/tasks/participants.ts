@@ -11,7 +11,7 @@ function sameId(a: QuestParticipant | undefined, b: string | number): boolean {
 /**
  * A quest's people list as an array, tolerating wire-format records where the
  * field is missing (no one has joined yet) or arrives as a JSON string (older
- * bot writes / Gun round-trips). Never throws — a quest fresh off the graph
+ * bot writes / wire round-trips). Never throws — a quest fresh off the graph
  * must be joinable.
  */
 function listOf(value: unknown): QuestParticipant[] {
@@ -88,4 +88,48 @@ export function toggleAppreciation(task: Quest, user: QuestParticipant): Quest {
   return current.some((p: QuestParticipant) => sameId(p, user.id!))
     ? removeAppreciation(cleared, user.id)
     : addAppreciation(cleared, user);
+}
+
+/**
+ * Replace the roster wholesale — the shape an edit form saves: whoever is on
+ * the new list is a participant, whoever isn't is gone. Duplicate ids fold to
+ * the first spelling, and the participate-XOR-appreciate rule still holds:
+ * every member put on the roster leaves the appreciation list.
+ */
+export function setParticipants(task: Quest, participants: QuestParticipant[]): Quest {
+  const seen = new Set<string>();
+  const roster: QuestParticipant[] = [];
+  for (const p of participants) {
+    if (p?.id == null) continue;
+    const key = String(p.id);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    roster.push(p);
+  }
+  const appreciation = listOf(task.appreciation).filter(
+    (p) => p?.id == null || !seen.has(String(p.id))
+  );
+  return { ...task, participants: roster, appreciation };
+}
+
+/** A quest's participants as an array, however the field arrived off the wire. */
+export function participantsOf(task: Pick<Quest, 'participants'> | null | undefined): QuestParticipant[] {
+  return listOf(task?.participants);
+}
+
+/**
+ * Who joined and who left between two rosters, by id. Core mirrors each
+ * change into the person's own holon on the write itself (see
+ * `roster-mirror.ts`); a UI asks only to tell someone they were added.
+ */
+export function rosterDiff(
+  before: QuestParticipant[] | undefined,
+  after: QuestParticipant[] | undefined
+): { joined: QuestParticipant[]; left: QuestParticipant[] } {
+  const was = new Set(listOf(before).map((p) => String(p?.id)));
+  const now = new Set(listOf(after).map((p) => String(p?.id)));
+  return {
+    joined: listOf(after).filter((p) => p?.id != null && !was.has(String(p.id))),
+    left: listOf(before).filter((p) => p?.id != null && !now.has(String(p.id))),
+  };
 }

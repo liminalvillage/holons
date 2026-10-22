@@ -6,9 +6,6 @@
  * adding a key surfaces its writes, removing it hides them. The Nostr follow
  * model: truth is relative to whose keys you read.
  */
-import os from 'node:os';
-import path from 'node:path';
-import fs from 'node:fs';
 import HoloSphere from '../holosphere.js';
 import { generateSecretKey, getPublicKey, buildEvent } from '../nostr-events.js';
 
@@ -18,28 +15,21 @@ const ids = (arr) => arr.map((i) => i.id).sort();
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 describe('authorized read — federation read-list (default)', () => {
-  let sphere, dir, Bsk, Bpub;
+  let sphere, Bsk, Bpub;
 
   // any key writing into the open graph: signed envelope + raw item
   async function writeAs(sk, item) {
     const evt = buildEvent({ holon: HOLON, lens: LENS, item, sk });
-    await new Promise((r) => {
-      let s = false; const d = () => { if (!s) { s = true; r(); } };
-      setTimeout(d, 2000);
-      sphere.gun.get(sphere.appname).get(HOLON).get('_events').get(LENS).get(item.id).get(evt.pubkey)
-        .put(JSON.stringify(evt), () => d());
-    });
-    await sphere.put(HOLON, LENS, item, null, { _skipSign: true, autoPropagate: false });
+    sphere.store.apply(evt, { origin: 'remote' });
   }
 
   beforeAll(async () => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-fed-'));
     Bsk = generateSecretKey();
     Bpub = getPublicKey(Bsk);
     sphere = new HoloSphere({
       appName: 'fed-test',
       privateKey: generateSecretKey(),
-      gunOptions: { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false },
+      store: { adapter: 'memory' },
     });
     await sphere.enableSigning({ relays: [], enforce: true }); // federation mode (default)
 
@@ -52,7 +42,6 @@ describe('authorized read — federation read-list (default)', () => {
   afterAll(async () => {
     try { sphere?.disableSigning(); } catch {}
     try { await sphere?.close?.(); } catch {}
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   }, 15000);
 
   test('by default I read only my own signed writes', async () => {
@@ -88,15 +77,14 @@ describe('authorized read — federation read-list (default)', () => {
 });
 
 describe('read-list IS the saved federation list', () => {
-  let sphere, dir, ownPub, Bpub;
+  let sphere, ownPub, Bpub;
 
   beforeAll(async () => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-fedsave-'));
     Bpub = getPublicKey(generateSecretKey());
     sphere = new HoloSphere({
       appName: 'fedsave-test',
       privateKey: generateSecretKey(),
-      gunOptions: { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false },
+      store: { adapter: 'memory' },
     });
     await sphere.enableSigning({ relays: [], enforce: true });
     ownPub = sphere._signer.pubkey;
@@ -105,7 +93,6 @@ describe('read-list IS the saved federation list', () => {
   afterAll(async () => {
     try { sphere?.disableSigning(); } catch {}
     try { await sphere?.close?.(); } catch {}
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   }, 15000);
 
   test('addReadKey writes through to the saved federation list', async () => {

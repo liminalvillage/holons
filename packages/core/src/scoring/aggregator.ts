@@ -161,6 +161,18 @@ export interface REAEventStoreLike {
 }
 
 /**
+ * An expense event mirroring hours a task completion logged. Newer events
+ * carry `context.fromTimeTracking`; older ones are recognised by the
+ * completion plan's expense id, `<task>_time_<user>`.
+ */
+function isTimeTrackingExpense(e: any): boolean {
+  const context = (e.context ?? {}) as Record<string, unknown>;
+  if (context.fromTimeTracking === true) return true;
+  const expenseId = String(context.expenseId ?? '');
+  return expenseId !== '' && expenseId.endsWith(`_time_${String(e.provider?.id ?? '')}`);
+}
+
+/**
  * REA Aggregator: computes user statistics, currency balances, and
  * leaderboard scores from the REA event stream.
  */
@@ -260,18 +272,25 @@ export class REAAggregator {
   /**
    * Get currency balance for a user.
    * Positive = owed to user; negative = user owes.
+   *
+   * `excludeTimeTracking` leaves out the hour expenses a task completion
+   * writes: those hours are already `quest:time_logged`, and the scorer
+   * counts them from there.
    */
   async getCurrencyBalance(
     holonId: string,
     userId: string,
     currency: string,
+    options: { excludeTimeTracking?: boolean } = {},
   ): Promise<number> {
     const events = await this.eventStore.query(holonId, { resourceType: 'money' });
     const currencyLower = currency.toLowerCase();
     const userIdStr = String(userId);
 
     const currencyEvents = events.filter(
-      (e) => e.resource?.unit?.toLowerCase() === currencyLower,
+      (e) =>
+        e.resource?.unit?.toLowerCase() === currencyLower &&
+        !(options.excludeTimeTracking && isTimeTrackingExpense(e)),
     );
 
     let balance = 0;
@@ -380,18 +399,15 @@ export class REAAggregator {
     equation: ScoreEquation,
   ): Promise<number> {
     const aggregates = await this.getUserAggregates(holonId, userId);
-    let score = calculateUserScore(aggregates, equation);
-
-    if (equation.currencies) {
-      for (const [currency, weight] of Object.entries(equation.currencies)) {
-        if (weight > 0) {
-          const balance = await this.getCurrencyBalance(holonId, userId, currency);
-          score += balance * weight;
-        }
+    const balances: Record<string, number> = {};
+    for (const [currency, weight] of Object.entries(equation.currencies ?? {})) {
+      if (weight > 0) {
+        balances[currency] = await this.getCurrencyBalance(holonId, userId, currency, {
+          excludeTimeTracking: currency === 'hour',
+        });
       }
     }
-
-    return score;
+    return calculateUserScore(aggregates, equation, balances);
   }
 
   /**

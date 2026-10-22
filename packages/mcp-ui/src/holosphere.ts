@@ -1,69 +1,78 @@
-// Namespace + peer are resolved LAZILY (on first getHoloSphere/getApp call),
+// Namespace + relays are resolved LAZILY (on first getHoloSphere/getApp call),
 // never at module load. ES module imports are hoisted, so this module is
 // evaluated before src/index.ts runs its dotenv loader — reading these at the
 // top level would miss the monorepo root .env entirely and always fall back to
 // 'HolonsDebug'. Resolving on demand makes the root .env the single source of
-// truth (HOLONS_APP / HOLONS_PEER, with the legacy APPNAME as a fallback),
-// matching how the bot and web read it.
-import {
-  enableRelayBackup,
-  parseRelayBackupMode,
-  parseRelayList,
-} from '@holons/core/holosphere';
+// truth (HOLONS_APP / HOLOSPHERE_RELAYS, with the legacy APPNAME as a
+// fallback), matching how the bot and web read it.
+import { createHoloSphere, resolveEnforce, resolveRelays } from '@holons/core/holosphere';
+import { generateNsec, nsecToHex, projectionOptionsFor } from '@holons/core/nostr';
+import { membersTrustedAuthors } from '@holons/core/holons';
 
 function resolveApp(): string {
   return process.env.HOLONS_APP || process.env.APPNAME || 'HolonsDebug';
 }
 
-function resolvePeer(): string {
-  return process.env.HOLONS_PEER || 'https://gun.holons.io/gun';
-}
-
-// HOLOSPHERE_RELAYS=wss://… feeds either of two arrangements:
-//   HOLOSPHERE_BACKEND=nostr  → the relay is the WIRE (Gun peerless as a local
-//     cache — see packages/holosphere/relay-transport.js).
-//   HOLOSPHERE_SIGNING=shadow → the gun peer stays the wire and the relay is a
-//     BACKUP: writes are mirrored as signed NIP-01 events.
-// Without either, the classic gun peer path below is used unchanged.
-function resolveRelays(): string[] {
-  return parseRelayList(process.env.HOLOSPHERE_RELAYS);
-}
-
 let hs: any;
 // The app the live instance was built with — frozen at construction so getApp()
-// always agrees with the connected graph even if env changes afterwards.
+// always agrees with the connected store even if env changes afterwards.
 let resolvedApp: string | undefined;
+
+/**
+ * The relays are the wire: every read syncs the touched (holon, lens) from
+ * HOLOSPHERE_RELAYS (default: the production relays) into a local store, and
+ * every write is published back as a signed kind-30078 event.
+ *
+ * The store is in memory by default (a fresh sync per process — right for a
+ * short-lived stdio server). Set HOLOSPHERE_STORE_DIR to a writable directory
+ * to keep a warm file-backed store across restarts; a long-running SSE server
+ * then only catches up from its cursor. Every write is signed and published;
+ * there is no signing mode.
+ */
+let signerSecret: string | null = null;
+
+/** The instance's signing secret (64-hex), once `getHoloSphere` has run. */
+export function getSignerSecret(): string | null {
+  return signerSecret;
+}
 
 export async function getHoloSphere(): Promise<any> {
   if (hs) return hs;
   resolvedApp = resolveApp();
-  const mod: any = await import('holosphere');
-  const HoloSphere = mod.HoloSphere || mod.default;
-  const relays = resolveRelays();
-  if ((process.env.HOLOSPHERE_BACKEND || '').toLowerCase() === 'nostr' && relays.length) {
-    hs = new HoloSphere({
-      appName: resolvedApp,
-      backend: 'nostr',
-      privateKey: process.env.HOLOSPHERE_PRIVATE_KEY || null,
-      nostr: { relays },
-    });
-    await hs.ready();
-  } else {
-    hs = new HoloSphere(resolvedApp, false, null, { peers: [resolvePeer()] });
-    await new Promise((r) => setTimeout(r, 1500));
-    // This constructor takes no key, so signing has no identity of its own —
-    // hand it HOLOSPHERE_PRIVATE_KEY explicitly. Without one the backup stays
-    // off rather than publishing under a throwaway key nobody can verify.
-    const key = process.env.HOLOSPHERE_PRIVATE_KEY;
-    const mode = parseRelayBackupMode(process.env.HOLOSPHERE_SIGNING);
-    if (mode !== 'off' && relays.length && !key) {
-      console.error('[holosphere] HOLOSPHERE_SIGNING set but HOLOSPHERE_PRIVATE_KEY is missing — relay backup off');
-    } else if (
-      await enableRelayBackup(hs, { relays, mode, privateKey: key })
-    ) {
-      console.error(`[holosphere] relay backup on → ${relays.join(', ')}`);
-    }
-  }
+  const dir = (process.env.HOLOSPHERE_STORE_DIR || '').trim();
+  // HOLOSPHERE_NSEC (nsec1… or hex) signs every write; without it a throwaway
+  // key is generated here (rather than inside holosphere) so the standard-kind
+  // projections are addressed to the same pubkey.
+  const privateKey = nsecToHex((process.env.HOLOSPHERE_NSEC || '').trim() || generateNsec());
+  signerSecret = privateKey;
+  hs = await createHoloSphere({
+    appName: resolvedApp,
+    privateKey,
+    relays: resolveRelays(process.env.HOLOSPHERE_RELAYS),
+    store: dir ? { adapter: 'file', dir } : { adapter: 'memory' },
+    // Shifts are carried on their own standard kinds, not the kind-30078
+    // envelope. Registered here for the same reason the kiosk and the bot do
+    // it: `lens_get(holon, 'shifts')` then returns the real schedule, and a
+    // `lens_put` to it is REFUSED rather than writing a 30078 record that no
+    // other surface would ever read.
+    standardWires: {
+      shifts: { coordinatorPubkey: process.env.SHIFTS_COORDINATOR_PUBKEY || undefined },
+      shiftIdentity: {},
+    },
+    // Core registers its append-only logs (fund claims, mints, rights, votes —
+    // kind 1808) itself: `flow_*` tools append to them and fold them;
+    // `lens_put` to one is refused.
+    // Standard-kind projections for every lens (HOLOSPHERE_PROJECTIONS=off opts out).
+    nostr: {
+      ...projectionOptionsFor({ appName: resolvedApp, privateKey, lenses: process.env.HOLOSPHERE_PROJECTIONS }),
+      // A member's kind-0 edit on any Nostr client folds back into their
+      // `users` record here: a holon's seated keys are its trusted authors.
+      trustedAuthors: (holon: string) => (hs ? membersTrustedAuthors(hs)(holon) : Promise.resolve([])),
+    },
+    // Authorized reads (HOLOSPHERE_ENFORCE=off reads the open graph).
+    enforce: resolveEnforce(process.env.HOLOSPHERE_ENFORCE),
+    awaitReady: true,
+  });
   return hs;
 }
 

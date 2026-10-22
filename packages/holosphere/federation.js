@@ -6,6 +6,94 @@
 import * as h3 from 'h3-js';
 import { parseSoulPath } from './hologram.js';
 
+/** Largest scalespace reach: res 15 → res 0 is 15 climbs. */
+export const MAX_HOPS = 15;
+
+/**
+ * Coerce a stored/passed `hops` into `0..MAX_HOPS`. Anything unparseable reads
+ * as 0 — "flat write at the partner", the behaviour every non-cell partner has.
+ */
+export function normalizeHops(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    return Math.min(MAX_HOPS, Math.max(0, Math.floor(n)));
+}
+
+/**
+ * Is `id` an H3 cell, i.e. a holon that HAS a scalespace to climb?
+ *
+ * Deliberately the same shape test `parentHexagonsFor` applies, so a partner
+ * this says yes to is a partner that walk can actually produce parents for.
+ */
+export function isHexHolon(id) {
+    if (!(typeof id === 'string' && /^[8][0-9A-Fa-f]+$/.test(id) && id.length >= 15)) return false;
+    try {
+        const res = h3.getResolution(id);
+        return res >= 0 && res <= MAX_HOPS;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Outbound partners of `fedInfo` that are H3 cells configured to carry `lens`
+ * up the scalespace — the set the automatic home-hex mirror writes to.
+ *
+ * @returns {Array<{cell: string, hops: number}>}
+ */
+export function hexPartnersFor(fedInfo, lens, holon) {
+    if (!fedInfo || !Array.isArray(fedInfo.outbound)) return [];
+    const lensConfig = fedInfo.lensConfig || {};
+    const out = [];
+    for (const space of fedInfo.outbound) {
+        if (String(space) === String(holon)) continue;
+        if (!isHexHolon(space)) continue;
+        const cfg = lensConfig[space];
+        const outbound = Array.isArray(cfg?.outbound) ? cfg.outbound : [];
+        if (!outbound.includes(lens) && !outbound.includes('*')) continue;
+        const hops = normalizeHops(cfg?.hops);
+        if (hops <= 0) continue;
+        out.push({ cell: space, hops });
+    }
+    return out;
+}
+
+// Federation-config read cache. `maybeMirrorToHexPartners` runs after EVERY
+// ordinary put, so it must not cost a store read each time; a short TTL plus
+// explicit invalidation on federate/unfederate keeps it a Map lookup. Only the
+// automatic mirror path reads through this — propagate/getFederated still read
+// live, because they are already per-call and must not act on a stale config.
+const FED_CACHE_TTL_MS = 30_000;
+
+export function invalidateFederationCache(holosphere, spaceId) {
+    const cache = holosphere?._fedConfigCache;
+    if (!cache) return;
+    if (spaceId) cache.delete(String(spaceId));
+    else cache.clear();
+}
+
+async function getFederationCached(holosphere, spaceId) {
+    if (!holosphere._fedConfigCache) holosphere._fedConfigCache = new Map();
+    const cache = holosphere._fedConfigCache;
+    const key = String(spaceId);
+    const hit = cache.get(key);
+    const now = Date.now();
+    if (hit && now - hit.at < FED_CACHE_TTL_MS) return hit.value;
+    let value = null;
+    try {
+        value = await getFederation(holosphere, spaceId);
+    } catch {
+        value = null;
+    }
+    cache.set(key, { value, at: now });
+    // The cache is keyed by holon and only holds federation configs, but an
+    // app writing to thousands of holons should not grow it without bound.
+    if (cache.size > 1000) {
+        for (const [k, v] of cache) { if (now - v.at >= FED_CACHE_TTL_MS) cache.delete(k); }
+    }
+    return value;
+}
+
 /**
  * Look up a holon's display name from its `settings` lens.
  *
@@ -54,6 +142,11 @@ async function getHolonName(holosphere, space) {
  * @param {object} [lensConfig] - Lens-direction config from spaceId1's perspective
  * @param {string[]} [lensConfig.inbound]  - Lenses spaceId1 receives from spaceId2
  * @param {string[]} [lensConfig.outbound] - Lenses spaceId1 sends to spaceId2
+ * @param {number}   [lensConfig.hops]     - Scalespace reach when the partner is an H3
+ *   cell: how many parent levels an outbound write climbs above it. 0/absent = a flat
+ *   write at the partner, which is the behaviour of every non-cell partner. Kept on the
+ *   partner config (not the settings lens) so "which lenses" and "how far up" are read
+ *   together, and mirrored unchanged so both records agree on the reach.
  * @returns {Promise<boolean>} - True if federation was created successfully
  */
 export async function federate(holosphere, spaceId1, spaceId2, password1 = null, password2 = null, bidirectional = true, lensConfig = {}) {
@@ -68,6 +161,7 @@ export async function federate(holosphere, spaceId1, spaceId2, password1 = null,
     if (!Array.isArray(inbound) || !Array.isArray(outbound)) {
         throw new Error('federate: lensConfig.inbound and lensConfig.outbound must be arrays');
     }
+    const hops = normalizeHops(lensConfig.hops);
 
     const applyDirection = (fedInfo, partnerId, partnerInbound, partnerOutbound) => {
         if (!fedInfo.federated) fedInfo.federated = [];
@@ -98,6 +192,9 @@ export async function federate(holosphere, spaceId1, spaceId2, password1 = null,
         fedInfo.lensConfig[partnerId] = {
             inbound:  [...partnerInbound],
             outbound: [...partnerOutbound],
+            // Reach is a property of the RELATIONSHIP, not of a direction, so it
+            // is mirrored as-is rather than inverted with the lens arrays.
+            ...(hops > 0 ? { hops } : {}),
             timestamp: Date.now()
         };
         fedInfo.timestamp = Date.now();
@@ -106,7 +203,7 @@ export async function federate(holosphere, spaceId1, spaceId2, password1 = null,
     try {
         // Space 1: directions as given.
         let fedInfo1 = null;
-        try { fedInfo1 = await holosphere.getGlobal('federation', spaceId1, password1); } catch {}
+        try { fedInfo1 = await federationBase(holosphere, spaceId1, password1); } catch {}
         if (fedInfo1 == null) {
             fedInfo1 = {
                 id: spaceId1, name: spaceId1,
@@ -126,7 +223,7 @@ export async function federate(holosphere, spaceId1, spaceId2, password1 = null,
         // Space 2 (mirrored): directions are inverted from its perspective.
         if (bidirectional) {
             let fedInfo2 = null;
-            try { fedInfo2 = await holosphere.getGlobal('federation', spaceId2, password2); } catch {}
+            try { fedInfo2 = await federationBase(holosphere, spaceId2, password2); } catch {}
             if (fedInfo2 == null) {
                 fedInfo2 = {
                     id: spaceId2, name: spaceId2,
@@ -144,6 +241,8 @@ export async function federate(holosphere, spaceId1, spaceId2, password1 = null,
             } catch {}
         }
 
+        invalidateFederationCache(holosphere, spaceId1);
+        invalidateFederationCache(holosphere, spaceId2);
         return true;
     } catch (error) {
         throw error;
@@ -169,7 +268,7 @@ export async function subscribeFederation(holosphere, spaceId, password = null, 
     const { lenses = ['*'], throttle = 0 } = options;
     
     // Get federation info
-    const fedInfo = await holosphere.getGlobal('federation', spaceId, password);
+    const fedInfo = await getFederation(holosphere, spaceId, password);
     if (!fedInfo) {
         throw new Error('No federation info found for space');
     }
@@ -272,7 +371,43 @@ export async function getFederation(holosphere, spaceId, password = null) {
     if (!spaceId) {
         throw new Error('getFederation: Missing space ID');
     }
-    return await holosphere.getGlobal('federation', spaceId, password);
+    return (await federationStanding(holosphere, spaceId, password)).record;
+}
+
+/**
+ * A holon's federation record, resolved like everything else the holon
+ * owns: under an authorized read it is the newest record an ADMIN of that
+ * holon signed (see capabilities.js — the global `federation` table is keyed
+ * by the holon it describes, so whoever wrote last could otherwise decide
+ * its partners and open its lenses). A holon nobody speaks for, a private
+ * (password) space and an unsigned instance read the plain record.
+ *
+ * Returns `{ record, raw, endorsed }`: `record` is what counts (null when
+ * nothing does), `raw` the plain last-writer-wins record, `endorsed` whether
+ * `record` is an admin's. A raw record no admin ever signed — written before
+ * the rule existed, or by a stranger — is not counted, but the first admin
+ * write starts from it (`federationBase`), so a legacy link survives the
+ * day its admin touches federation.
+ */
+export async function federationStanding(holosphere, spaceId, password = null) {
+    const id = String(spaceId);
+    const raw = await holosphere.getGlobal('federation', id, password);
+    const signer = holosphere._signer;
+    if (!signer?.enforce || password || typeof signer.resolveOwned !== 'function') {
+        return { record: raw ?? null, raw: raw ?? null, endorsed: false };
+    }
+    // The owner's log decides who its admins are: catch it up first, as an
+    // enforced read of the holon itself would.
+    try { await holosphere._relaySync?.(id, '_members', { await: true }); } catch { /* local view */ }
+    const owned = await signer.resolveOwned(holosphere, id, 'federation', id);
+    if (owned === undefined) return { record: raw ?? null, raw: raw ?? null, endorsed: false };   // nobody speaks for this holon: open
+    return { record: owned ?? null, raw: raw ?? null, endorsed: owned != null };
+}
+
+/** The record a federation write starts from: what counts, else what is there to adopt. */
+async function federationBase(holosphere, spaceId, password = null) {
+    const { record, raw } = await federationStanding(holosphere, spaceId, password);
+    return record ?? raw ?? null;
 }
 
 /**
@@ -313,7 +448,7 @@ export async function getFederatedConfig(holosphere, spaceId, targetSpaceId, pas
  * @param {string} [password2] - Optional password for the second space
  * @returns {Promise<boolean>} - True if federation was removed successfully
  */
-export async function unfederate(holosphere, spaceId1, spaceId2, password1 = null, password2 = null) {
+export async function unfederate(holosphere, spaceId1, spaceId2, password1 = null, password2 = null, bidirectional = true) {
     if (!spaceId1 || !spaceId2) {
         throw new Error('unfederate: Missing required space IDs');
     }
@@ -322,7 +457,7 @@ export async function unfederate(holosphere, spaceId1, spaceId2, password1 = nul
         // Get federation info for first space
         let fedInfo1 = null;
         try {
-            fedInfo1 = await holosphere.getGlobal('federation', spaceId1, password1);
+            fedInfo1 = await federationBase(holosphere, spaceId1, password1);
         } catch (error) {
             console.error(`Error getting fedInfo1 for ${spaceId1} during unfederate: ${error.message}`);
             // If we can't get fedInfo1, we can't modify it. Decide if this is a critical failure.
@@ -362,11 +497,13 @@ export async function unfederate(holosphere, spaceId1, spaceId2, password1 = nul
         // sides (even with null passwords), so removal must mirror too or the
         // partner's record keeps pointing back forever. Best-effort: if
         // space2's record is password-protected and we don't hold the
-        // password, the local removal above still stands.
-        {
+        // password, the local removal above still stands. One-sided
+        // (`bidirectional: false`) leaves the partner's record to its own
+        // admins — the federation-request path asks them instead.
+        if (bidirectional) {
             let fedInfo2 = null;
             try {
-                fedInfo2 = await holosphere.getGlobal('federation', spaceId2, password2);
+                fedInfo2 = await federationBase(holosphere, spaceId2, password2);
             } catch (error) {
                 console.error(`Error getting fedInfo2 for ${spaceId2} during unfederate: ${error.message}`);
             }
@@ -414,6 +551,8 @@ export async function unfederate(holosphere, spaceId1, spaceId2, password1 = nul
             console.warn(`Failed to update federationMeta during unfederate: ${error.message}`);
         }
 
+        invalidateFederationCache(holosphere, spaceId1);
+        invalidateFederationCache(holosphere, spaceId2);
         return true;
     } catch (error) {
         // This will catch errors re-thrown from putGlobal or from getGlobal if they occur before specific catches.
@@ -439,7 +578,7 @@ export async function removeNotify(holosphere, spaceId1, spaceId2, password1 = n
     }
 
     try {
-        const fedInfo = await holosphere.getGlobal('federation', spaceId1, password1);
+        const fedInfo = await federationBase(holosphere, spaceId1, password1);
         if (!fedInfo) {
             throw new Error(`No federation info found for ${spaceId1}`);
         }
@@ -506,10 +645,10 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
         // want to surface the failure to the user (e.g. an admin/debug view).
         includeUnresolvedStubs = false,
         // Provenance-annotated dual-source read (signing shadow/enforce only):
-        // surface unsigned/legacy items tagged `_unverified` instead of
-        // dropping them under enforce, so a UI "show all data" toggle can gate
-        // them exactly like the local subscribe path. No-op when signing is
-        // off. Display-only — NEVER trust `_unverified` items for auth.
+        // surface unsigned items tagged `_unverified` instead of dropping them
+        // under enforce, so a UI can gate them exactly like the local
+        // subscribe path. No-op when signing is off. Display-only — NEVER
+        // trust `_unverified` items for auth.
         includeUnverified = false
     } = options;
     
@@ -765,8 +904,8 @@ function isResolved(item) {
     return item._hologram?.isHologram !== false;
 }
 
-// subscribeFederated's federation-config read is a point-in-time gun.once():
-// on a cold graph (fresh page load, empty radisk) it fires with null before
+// subscribeFederated's federation-config read is a point-in-time get():
+// on a cold store (fresh page load, nothing synced) it can resolve null before
 // the relay has synced the config node, and a single failed read would
 // silently attach ZERO partners for the life of the subscription. Retry on
 // this ladder (delays before attempts 2..n) until the config shows up.
@@ -810,7 +949,7 @@ const PROPAGATE_READ_RETRY_MS = [0, 500];
  * `${space} ${id}`).
  *
  * The federation config is read at setup (with a short retry ladder — a cold
- * graph's first `gun.once()` read loses the race against the relay handshake
+ * store's first read loses the race against the relay handshake
  * and returns null; see FEDERATION_CONFIG_RETRY_MS): the local subscription
  * attaches synchronously and partner subscriptions attach after that async read
  * resolves. A federation link added/removed at runtime is still not picked up
@@ -876,6 +1015,12 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
     // identical ids across holons don't collide before dedup.
     const store = new Map();
     const subs = new Map(); // space → unsubscribe()
+    // Live tombstones per `${space} ${id}` key: async seeds (getAll)
+    // resolve AFTER the live subscription attaches, so without this a slow
+    // seed could resurrect an item a live event already deleted. Shared
+    // across spaces (keys embed the space) and kept across removeSpace so a
+    // re-attached partner can't resurrect either.
+    const tombstones = new Set();
     let closed = false;
 
     const emit = () => {
@@ -934,10 +1079,6 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
 
     const addSpace = (space, originName) => {
         if (closed || subs.has(space)) return;
-        // Live tombstones seen for this space. The getAll seed below resolves
-        // AFTER the live subscription attaches, so without this a slow seed
-        // could resurrect an item a live event already deleted.
-        const tombstones = new Set();
         const raw = holosphere.subscribe(space, lens, (data, key) => {
             if (closed) return;
             const id = String((data && (data[idField] ?? key)) ?? key ?? '');
@@ -955,11 +1096,9 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
         subs.set(space, raw && typeof raw.unsubscribe === 'function'
             ? () => raw.unsubscribe()
             : () => {});
-        // Seed with a point-in-time snapshot. Gun does NOT replay the in-memory
-        // graph to a newly attached map().on() listener — only radisk/wire/put
-        // events fire it — so a re-subscribe on a warm instance (page remount,
-        // federation toggle off→on) would start empty and STAY empty until the
-        // next write. getAll reads the graph directly and fills that gap; live
+        // Seed with a point-in-time snapshot as well: getAll awaits the relay
+        // backfill for a (space, lens) the local store has never synced, so a
+        // partner attached cold fills in as soon as its events land. Live
         // events win on overlap (they're newer by construction).
         Promise.resolve()
             .then(() => holosphere.getAll(space, lens))
@@ -1000,7 +1139,7 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
         partnersOn = true;
         const token = ++attachToken;
         try {
-            // Cold-graph resilience: the first gun.once() read of the config
+            // Cold-store resilience: the first read of the config
             // races the relay handshake and can return null even though the
             // holon IS federated — retry before concluding "no partners".
             let fedInfo = await getFederation(holosphere, holon);
@@ -1010,13 +1149,27 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
                 fedInfo = await getFederation(holosphere, holon);
             }
             if (closed || !partnersOn || token !== attachToken) return;
-            if (!fedInfo || !Array.isArray(fedInfo.inbound)) return;
+            if (!fedInfo || !Array.isArray(fedInfo.inbound)) {
+                // The record stopped counting (or was emptied): nobody is received.
+                let dropped = false;
+                for (const space of [...subs.keys()]) {
+                    if (space !== holon) { removeSpace(space); dropped = true; }
+                }
+                if (dropped) emit();
+                return;
+            }
             const lensConfig = fedInfo.lensConfig || {};
             let receiving = fedInfo.inbound.filter(space => {
                 const inb = lensConfig[space] && lensConfig[space].inbound;
                 return Array.isArray(inb) && inb.includes(lens);
             });
             if (maxFederatedSpaces !== -1) receiving = receiving.slice(0, maxFederatedSpaces);
+            // A re-read after the record changed: partners no longer received
+            // leave (their items with them), new ones join below.
+            const keep = new Set(receiving.map(String));
+            for (const space of [...subs.keys()]) {
+                if (space !== holon && !keep.has(space)) removeSpace(space);
+            }
             await Promise.all(receiving.map(async space => {
                 if (closed || !partnersOn || token !== attachToken || space === holon) return;
                 const name = await getHolonName(holosphere, space).catch(() => null);
@@ -1042,6 +1195,25 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
     emit();
     if (includeFederated) attachPartners();
 
+    // Follow the holon's own federation record: a partner linked, unlinked or
+    // re-laned from ANOTHER device re-reads the partner set here, instead of
+    // waiting for a reload. Debounced — one edit can land as several envelopes.
+    let recordTimer = null;
+    let recordSub = null;
+    if (typeof holosphere.subscribeGlobal === 'function') {
+        try {
+            recordSub = holosphere.subscribeGlobal('federation', String(holon), () => {
+                if (closed || !partnersOn) return;
+                if (recordTimer) clearTimeout(recordTimer);
+                recordTimer = setTimeout(() => {
+                    recordTimer = null;
+                    invalidateFederationCache(holosphere, holon);
+                    attachPartners();
+                }, 500);
+            }, { realtimeOnly: true });
+        } catch { /* no live record: the toggle and a reload still re-read */ }
+    }
+
     return {
         /**
          * Fold inbound partners in (`true`) or drop them (`false`) live, WITHOUT
@@ -1055,6 +1227,8 @@ export function subscribeFederated(holosphere, holon, lens, callback, options = 
         },
         unsubscribe() {
             closed = true;
+            if (recordTimer) clearTimeout(recordTimer);
+            try { recordSub?.unsubscribe(); } catch { /* best-effort teardown */ }
             for (const un of subs.values()) {
                 try { un(); } catch { /* best-effort teardown */ }
             }
@@ -1197,16 +1371,38 @@ async function mayPropagateInto(holosphere, targetSpace, lens, id, holon, readTi
  * @returns {Promise<object>} - Result with success/skipped/error counts
  */
 export async function propagateDeletion(holosphere, holon, lens, key = null, options = {}) {
+    // A lens carried on a standard Nostr kind has no fan-out: its `d` tag is
+    // fixed by its own grammar, so N scalespace copies would collide on one
+    // replaceable slot and the last written would evict the original.
+    if (holosphere?.store?.wire?.isStandardPrimary?.(lens)) {
+        return { skipped: 'standard-primary lens', lens, holon };
+    }
     if (!holosphere || !holon || !lens) {
         throw new Error('propagateDeletion: Missing required parameters');
     }
     const {
         propagateToParents = true,
         maxParentLevels = 15,
-        readTimeoutMs = 2000
+        readTimeoutMs = 2000,
+        federateToPartners = true
     } = options;
 
-    const result = { success: 0, errors: 0, skipped: 0, messages: [] };
+    const result = { success: 0, errors: 0, skipped: 0, messages: [], hexPartners: [] };
+
+    // Mirror image of the automatic hex placement on write. This runs BEFORE
+    // the ancestry check below, because the holon doing the deleting is
+    // normally not a cell at all — it is a group whose items were mirrored
+    // onto one. Bailing out on `!isValidH3` first would leave every mirrored
+    // copy stranded on the map.
+    if (federateToPartners) {
+        try {
+            result.hexPartners = await retractFromHexPartners(holosphere, holon, lens, key);
+        } catch (error) {
+            result.errors++;
+            result.messages.push(`Error retracting from hex partners: ${error.message}`);
+        }
+    }
+
     if (!propagateToParents) return result;
 
     const ancestry = parentHexagonsFor(holon, maxParentLevels);
@@ -1273,6 +1469,104 @@ export async function propagateDeletion(holosphere, holon, lens, key = null, opt
 }
 
 /**
+ * The automatic home-hex mirror: place `data` on every H3-cell partner this
+ * holon sends `lens` to, and let each cell carry it `hops` levels further up
+ * the map's scalespace.
+ *
+ * This is the ONE fan-out that happens without the caller asking. Ordinary
+ * partner propagation stays opt-in — turning it on for every write is exactly
+ * the regression `put`'s `autoPropagate` comment warns about — so the target
+ * set is pinned with `targetSpaces` to the configured cells and nothing else.
+ * The cell is a place, not a peer: a caretaker who ticked "quests → my home
+ * hex" means every quest, not every quest someone remembers to publish.
+ *
+ * Cheap by construction: the federation record is read through a short-TTL
+ * cache, so the common answer ("this holon has no hex link") costs a Map
+ * lookup. Returns null when there is nothing to mirror.
+ *
+ * @param {object} holosphere
+ * @param {string} holon
+ * @param {string} lens
+ * @param {object} data
+ * @returns {Promise<object|null>} the propagate result, or null when skipped
+ */
+export async function maybeMirrorToHexPartners(holosphere, holon, lens, data) {
+    if (!holosphere || !holon || !lens || !data || !data.id) return null;
+    // A cell is a holon like any other, but it has no home hex of its own —
+    // its climb is the parent walk, driven from the write that landed on it.
+    if (isHexHolon(holon)) return null;
+    const fedInfo = await getFederationCached(holosphere, holon);
+    const targets = hexPartnersFor(fedInfo, lens, holon);
+    if (targets.length === 0) return null;
+    return propagate(holosphere, holon, lens, data, {
+        useHolograms: true,
+        // The source is not a cell (guarded above), so there is no ancestry to
+        // walk here. Each cell does its own climb when the write lands on it.
+        propagateToParents: false,
+        targetSpaces: targets.map((t) => t.cell)
+    });
+}
+
+/**
+ * Retract `key` from every H3-cell partner this holon mirrors `lens` to,
+ * ancestors included — the mirror image of {@link maybeMirrorToHexPartners}.
+ *
+ * The ancestors have to go first, and they cannot be reached by simply
+ * deleting the cell's copy: that copy is stamped `_federation.origin = holon`,
+ * so `delete` sees a foreign copy, sets `wasPropagatedCopy`, and suppresses its
+ * own cascade — correctly, since a propagated copy must never cascade. Calling
+ * `propagateDeletion` at the cell addresses the ancestors directly (they are
+ * stamped `origin = cell`) without weakening that guard.
+ *
+ * @returns {Promise<string[]>} the cells retracted from
+ */
+export async function retractFromHexPartners(holosphere, holon, lens, key = null) {
+    if (!holosphere || !holon || !lens) return [];
+    if (isHexHolon(holon)) return [];
+    const fedInfo = await getFederationCached(holosphere, holon);
+    const targets = hexPartnersFor(fedInfo, lens, holon);
+    if (targets.length === 0) return [];
+
+    // Raw reads: `resolveHolograms: false` keeps the `soul` and `_federation`
+    // stamp that prove a copy is ours. A resolved read hands back the source
+    // record instead, and the proof is gone.
+    const readOpts = { resolveHolograms: false, _skipAuthorize: true, timeout: 2000 };
+    const retracted = [];
+
+    for (const { cell, hops } of targets) {
+        try {
+            // A lens-wide sweep (key === null) has to find OUR copies at the
+            // cell — everything else there belongs to another holon that shares
+            // the same ground, and deleting it would be data loss.
+            let ids;
+            if (key != null) {
+                ids = [String(key)];
+            } else {
+                const items = await holosphere.getAll(cell, lens, null, readOpts);
+                ids = (items || [])
+                    .filter((it) => it && it.id != null && !it._deleted
+                        && isPropagatedCopyOf(holosphere, it, holon, lens))
+                    .map((it) => String(it.id));
+            }
+
+            for (const id of ids) {
+                // 1. the ancestors the cell planted (stamped `origin = cell`) …
+                await propagateDeletion(holosphere, cell, lens, id, {
+                    maxParentLevels: hops,
+                    federateToPartners: false
+                });
+                // 2. … then the cell's own copy (stamped `origin = holon`).
+                await holosphere.delete(cell, lens, id, null, { autoPropagate: false });
+            }
+            if (ids.length > 0) retracted.push(cell);
+        } catch (error) {
+            console.warn(`[Federation] hex retraction failed at ${cell}/${lens}/${key ?? '*'}: ${error.message}`);
+        }
+    }
+    return retracted;
+}
+
+/**
  * Propagates data to federated spaces
  * @param {object} holosphere - The HoloSphere instance
  * @param {string} holon - The holon identifier
@@ -1284,9 +1578,16 @@ export async function propagateDeletion(holosphere, holon, lens, key = null, opt
  * @param {string} [options.password] - Password for accessing the source holon (if needed)
  * @param {boolean} [options.propagateToParents=true] - Whether to automatically propagate to parent hexagons (default: true)
  * @param {number} [options.maxParentLevels=15] - Maximum number of parent levels to propagate to (default: 15)
+ * @param {boolean} [options.federateToPartners=true] - Set false to climb parents only, skipping the partner fan-out
  * @returns {Promise<object>} - Result with success count and errors
  */
 export async function propagate(holosphere, holon, lens, data, options = {}) {
+    // A lens carried on a standard Nostr kind has no fan-out: its `d` tag is
+    // fixed by its own grammar, so N scalespace copies would collide on one
+    // replaceable slot and the last written would evict the original.
+    if (holosphere?.store?.wire?.isStandardPrimary?.(lens)) {
+        return { skipped: 'standard-primary lens', lens, holon };
+    }
     if (!holosphere || !holon || !lens || !data) {
         throw new Error('propagate: Missing required parameters');
     }
@@ -1320,8 +1621,21 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
         targetSpaces = null, 
         password = null,
         propagateToParents = true,
-        maxParentLevels = 15
+        maxParentLevels = 15,
+        // Set false to run ONLY the parent-hexagon climb and skip the partner
+        // fan-out. Used by the hex-partner upcast below: the cell's own record
+        // is mirrored with `inbound: [source]`, so leaving the federation
+        // section on would bounce the item straight back to the holon it came
+        // from. The parent climb is the only thing a cell hop should do.
+        federateToPartners = true
     } = options;
+
+    // A private scope never leaves as a plaintext copy: a hologram (pointer)
+    // is fine — it resolves only for readers holding a key — but a detached
+    // copy in another holon would be the plaintext.
+    if (useHolograms === false && holosphere.isPrivate?.(holon, lens, data?.id)) {
+        throw new Error(`propagate: ${lens}/${data?.id ?? ''} of ${holon} is private — share it instead of copying it`);
+    }
 
     const result = {
         success: 0,
@@ -1343,7 +1657,7 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
         const fedInfo = await getFederation(holosphere, holon, password);
         
         // Only propagate if we have outbound partners configured.
-        if (fedInfo && fedInfo.outbound && fedInfo.outbound.length > 0) {
+        if (federateToPartners && fedInfo && fedInfo.outbound && fedInfo.outbound.length > 0) {
             // Never propagate back to ourselves. Writing a hologram to the
             // source holon overwrites the original data with a self-
             // referencing pointer, and HoloSphere's get() then auto-deletes
@@ -1451,8 +1765,9 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                             // slot already holds a real (non-hologram, non-deleted)
                             // object, overwriting it with a pointer is exactly what
                             // closes an A↔B cycle: A's source record becomes a pointer
-                            // to B while B points back to A → a circular hologram Gun
-                            // re-emits forever (the map().on() fire-storm). The
+                            // to B while B points back to A → a circular hologram that
+                            // resolution would chase forever (historically a Gun
+                            // map().on() fire-storm). The
                             // federated copy is meant to surface via the read-time
                             // `getFederated` overlay, never by clobbering local storage.
                             // Applies to EVERY propagation, hologram or full copy.
@@ -1472,13 +1787,36 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                                 return true;
                             }
 
-                            // Store in the target space with redirection disabled and no further auto-propagation.
+                            // Store in the target space with redirection disabled.
                             // preserveFederationMeta keeps the `_federation` provenance on the stored
                             // copy — that stamp is what lets propagateDeletion prove the copy is ours.
+                            //
+                            // An H3-cell partner with a configured reach is the one case that
+                            // propagates FURTHER: the cell is a rung on the map's scalespace, and
+                            // an item that stops there is invisible until the viewer zooms all the
+                            // way in. So the cell's own put climbs `hops` parent levels, planting a
+                            // pointer at each coarser hexagon. Awaited so this call's result
+                            // reflects the whole climb; `federateToPartners: false` keeps the hop
+                            // to parents only (the cell mirrors us as an inbound partner, and
+                            // without that flag the item would bounce straight back).
+                            const cellHops = isHexHolon(targetSpace)
+                                ? normalizeHops(fedInfo.lensConfig?.[targetSpace]?.hops)
+                                : 0;
                             await holosphere.put(targetSpace, lens, payloadToPut, null, {
                                 disableHologramRedirection: true,
-                                autoPropagate: false,
-                                preserveFederationMeta: true
+                                preserveFederationMeta: true,
+                                ...(cellHops > 0
+                                    ? {
+                                        autoPropagate: true,
+                                        awaitPropagation: true,
+                                        propagationOptions: {
+                                            useHolograms: true,
+                                            federateToPartners: false,
+                                            propagateToParents: true,
+                                            maxParentLevels: cellHops
+                                        }
+                                    }
+                                    : { autoPropagate: false })
                             });
 
                             result.success++;
@@ -1843,6 +2181,7 @@ export async function resetFederation(holosphere, spaceId, password = null, opti
 
 // Export all federation operations as default
 export default {
+    federationStanding,
     federate,
     subscribeFederation,
     getFederation,
@@ -1852,6 +2191,13 @@ export default {
     getFederated,
     subscribeFederated,
     propagate,
+    propagateDeletion,
+    maybeMirrorToHexPartners,
+    retractFromHexPartners,
+    hexPartnersFor,
+    isHexHolon,
+    normalizeHops,
+    invalidateFederationCache,
     federateMessage,
     getFederatedMessages,
     updateFederatedMessages,

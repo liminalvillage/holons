@@ -15,6 +15,12 @@ export interface ExecuteCompletionOptions {
   recordEvents?: boolean;
   /** Default true. Set false to skip hour-currency expense writes. */
   recordExpenses?: boolean;
+  /**
+   * The lens the completed record lives in; defaults to `quests`. The bot's
+   * events live in `events` — without this the completed event is written to
+   * `quests` as a second copy.
+   */
+  lens?: string;
 }
 
 export interface ExecuteOutcome {
@@ -27,6 +33,7 @@ export interface ExecuteOutcome {
 /** Minimal event-store surface needed to record REA events. */
 interface EventStoreLike {
   put(holonId: string, event: unknown): Promise<unknown>;
+  get?(holonId: string, eventId: string): Promise<unknown>;
 }
 
 export async function executeCompletionPlan(
@@ -44,7 +51,7 @@ export async function executeCompletionPlan(
   };
 
   const holonIdStr = String(holonId);
-  outcome.taskSaved = await saveTaskToHolon(store, holonIdStr, plan.task);
+  outcome.taskSaved = await saveTaskToHolon(store, holonIdStr, plan.task, options.lens);
   if (!outcome.taskSaved) {
     outcome.errors.push({ kind: 'task', message: 'saveTaskToHolon returned false' });
   }
@@ -58,6 +65,13 @@ export async function executeCompletionPlan(
         // produces a sent + received pair); flatten so every event is stored.
         const events = Array.isArray(built) ? built : [built];
         for (const event of events) {
+          // The ledger projection (@holons/core/rea) records the initiative
+          // when the quest is created, dated then; re-emitting it here would
+          // move it to the completion instant. Keep the first record.
+          if (action.type === 'questInitiated' && (await alreadyRecorded(eventStore, holonIdStr, event))) {
+            outcome.savedActions++;
+            continue;
+          }
           await eventStore.put(holonIdStr, event);
           outcome.savedActions++;
         }
@@ -85,6 +99,20 @@ export async function executeCompletionPlan(
   }
 
   return outcome;
+}
+
+async function alreadyRecorded(
+  eventStore: EventStoreLike,
+  holonId: string,
+  event: unknown,
+): Promise<boolean> {
+  const id = (event as { id?: unknown })?.id;
+  if (typeof id !== 'string' || typeof eventStore.get !== 'function') return false;
+  try {
+    return !!(await eventStore.get(holonId, id));
+  } catch {
+    return false;
+  }
 }
 
 function buildEvent(action: any, holonId: string | number): unknown {

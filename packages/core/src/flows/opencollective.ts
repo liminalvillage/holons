@@ -20,10 +20,34 @@
 export const OPENCOLLECTIVE_API_URL = 'https://api.opencollective.com/graphql/v2';
 
 /**
- * Balance and recent movement for one collective.
+ * Expense statuses that are still a claim on the collective: submitted and not
+ * yet paid, rejected or dropped. `ERROR` is a payout that failed and is still
+ * owed. Verified against the live API on 2026-09-07 — note that the enum's
+ * `READY_TO_PAY` is a virtual filter the API refuses inside a list (APPROVED
+ * already covers those expenses), so it is deliberately absent.
+ */
+export const OPEN_EXPENSE_STATUSES = [
+  'PENDING',
+  'UNVERIFIED',
+  'INCOMPLETE',
+  'APPROVED',
+  'PROCESSING',
+  'SCHEDULED_FOR_PAYMENT',
+  'ON_HOLD',
+  'ERROR',
+] as const;
+
+/**
+ * Balance, recent movement and the expense queue for one collective.
  *
- * NOTE: verified against the live API on first use — see the plan. If
- * OpenCollective renames a field, the parser below is what needs updating.
+ * Transactions feed the movement Sankey. Expenses — the things people submit
+ * to be paid, each with a payee and a status — feed fund usage: a PAID expense
+ * is money a rights-holder has already taken out, an open one is money they
+ * have claimed and are waiting on. Both queries share `$limit`.
+ *
+ * Verified against the live API (aliases, status list filter, `amountV2`,
+ * `payee`) on 2026-09-07. If OpenCollective renames a field, the parser below
+ * is what needs updating.
  */
 export const COLLECTIVE_OVERVIEW_QUERY = `
 query HolonCollective($slug: String!, $limit: Int!) {
@@ -63,6 +87,42 @@ query HolonCollective($slug: String!, $limit: Int!) {
       }
     }
   }
+  openExpenses: expenses(
+    account: { slug: $slug }
+    status: [${OPEN_EXPENSE_STATUSES.join(', ')}]
+    limit: $limit
+    orderBy: { field: CREATED_AT, direction: DESC }
+  ) {
+    nodes {
+      ...HolonExpense
+    }
+  }
+  paidExpenses: expenses(
+    account: { slug: $slug }
+    status: [PAID]
+    limit: $limit
+    orderBy: { field: CREATED_AT, direction: DESC }
+  ) {
+    nodes {
+      ...HolonExpense
+    }
+  }
+}
+
+fragment HolonExpense on Expense {
+  id
+  status
+  type
+  createdAt
+  description
+  amountV2 {
+    value
+    currency
+  }
+  payee {
+    slug
+    name
+  }
 }
 `.trim();
 
@@ -81,6 +141,26 @@ export interface OpenCollectiveTransaction {
   toAccount?: string;
 }
 
+/** An expense submitted to the collective — a claim, paid or still open. */
+export interface OpenCollectiveExpense {
+  id: string;
+  /** `paid` has left the collective; `open` is claimed and still owed. */
+  status: 'open' | 'paid';
+  /** The platform's own status word (`PENDING`, `APPROVED`, `PAID`, …). */
+  rawStatus: string;
+  /** INVOICE, RECEIPT, … */
+  type?: string;
+  /** Absolute amount in `currency`, which may differ from the collective's. */
+  amount: number;
+  currency: string;
+  /** Normalized to ms epoch. */
+  createdAt: number;
+  description: string;
+  /** Who gets paid, as the platform names them. */
+  payee?: string;
+  payeeSlug?: string;
+}
+
 export interface OpenCollectiveSnapshot {
   slug: string;
   name: string;
@@ -89,6 +169,8 @@ export interface OpenCollectiveSnapshot {
   totalReceived: number;
   totalSpent: number;
   transactions: OpenCollectiveTransaction[];
+  /** Paid and open expenses, newest first. Empty on snapshots taken before it was queried. */
+  expenses: OpenCollectiveExpense[];
   fetchedAt: number;
 }
 
@@ -192,6 +274,11 @@ export function parseOpenCollectiveResponse(
     });
   }
 
+  const expenses = [
+    ...parseExpenses(data.openExpenses, 'open', currency),
+    ...parseExpenses(data.paidExpenses, 'paid', currency),
+  ];
+
   return {
     slug: str(account.slug) || slug,
     name: str(account.name) || str(account.slug) || slug,
@@ -200,6 +287,53 @@ export function parseOpenCollectiveResponse(
     totalReceived,
     totalSpent,
     transactions,
+    expenses,
     fetchedAt: now,
   };
+}
+
+/**
+ * Read one `expenses` branch. The branch's own status filter decides whether
+ * its rows are open or paid; a row whose status contradicts the branch it
+ * arrived in (a schema drift, a bad cache) still goes by its own word.
+ */
+function parseExpenses(
+  branch: unknown,
+  bucket: 'open' | 'paid',
+  fallbackCurrency: string,
+): OpenCollectiveExpense[] {
+  const rawNodes = (branch as Record<string, unknown> | undefined)?.nodes;
+  const nodes = Array.isArray(rawNodes) ? rawNodes : [];
+  const out: OpenCollectiveExpense[] = [];
+
+  for (const entry of nodes) {
+    const node = (entry ?? {}) as Record<string, unknown>;
+    const amount = money(node.amountV2 ?? node.amount);
+    const magnitude = Math.abs(amount.amount);
+    if (magnitude <= 0) continue;
+
+    const rawStatus = str(node.status).toUpperCase();
+    const isOpen = (OPEN_EXPENSE_STATUSES as readonly string[]).includes(rawStatus);
+    const isPaid = rawStatus === 'PAID';
+    // A rejected or cancelled expense is neither owed nor paid: it never
+    // touched the fund and has no place in usage, whichever branch it came in.
+    if (rawStatus && !isOpen && !isPaid) continue;
+    const status: 'open' | 'paid' = isPaid ? 'paid' : isOpen ? 'open' : bucket;
+
+    const payee = (node.payee ?? {}) as Record<string, unknown>;
+    out.push({
+      id: str(node.id) || `${bucket}-${out.length}`,
+      status,
+      rawStatus,
+      type: str(node.type) || undefined,
+      amount: magnitude,
+      currency: amount.currency || fallbackCurrency,
+      createdAt: timestamp(node.createdAt),
+      description: str(node.description),
+      payee: str(payee.name) || str(payee.slug) || undefined,
+      payeeSlug: str(payee.slug) || undefined,
+    });
+  }
+
+  return out;
 }

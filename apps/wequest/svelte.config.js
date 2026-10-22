@@ -3,7 +3,7 @@ import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
-  // The app runs entirely client-side (Holosphere/Gun are browser-only), but
+  // The app runs entirely client-side (Holosphere lives in the browser), but
   // Telegram login needs a server: the OIDC token exchange uses the
   // client_secret. adapter-netlify serves the CSR shell and the /api/auth/*
   // endpoints as serverless functions on the same site (kiosk pattern).

@@ -48,6 +48,21 @@
         color: string;
         [key: string]: any;
     }> = [];
+    // A span to draw instead of the year, [from, to) in ms — e.g. one
+    // lunation, new moon to new moon. The line then covers exactly that span
+    // and the header names it (`title`) instead of offering year navigation.
+    export let range: { from: number; to: number } | null = null;
+    export let title: string | null = null;
+
+    // The span on the line: the displayed year, or `range`.
+    $: rangeStart = range ? range.from : new Date(currentDate.getFullYear(), 0, 1).getTime();
+    $: rangeEnd = range ? range.to : new Date(currentDate.getFullYear() + 1, 0, 1).getTime();
+    $: dayStr = (ms: number) => {
+        const d = new Date(ms);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+
+    const DAY_MS = 24 * 60 * 60 * 1000;
 
     // Layout constants — keep in sync with the {#each} square-stacking styles below.
     const MIN_HEIGHT_PX = 128; // matches the original h-32
@@ -59,9 +74,8 @@
     // Group external events by day for the current year.
     type ExternalDay = { date: Date; items: Array<{ id: string; event: ExternalCalendarEvent }> };
     $: externalByDay = (() => {
-        const year = currentDate.getFullYear();
-        const yearStart = new Date(year, 0, 1).getTime();
-        const yearEnd = new Date(year + 1, 0, 1).getTime();
+        const yearStart = rangeStart;
+        const yearEnd = rangeEnd;
         const groups = new Map<string, ExternalDay>();
         for (const ev of externalEvents) {
             const start = new Date(ev.start);
@@ -87,9 +101,8 @@
     // Returns an array of { date, items: [{key, task, ...}] } per day that has tasks.
     type TaskDay = { date: Date; items: Array<{ key: string; task: any; status: 'completed' | 'ongoing-future' | 'ongoing-past' }> };
     $: tasksByDay = (() => {
-        const year = currentDate.getFullYear();
-        const yearStart = new Date(year, 0, 1).getTime();
-        const yearEnd = new Date(year + 1, 0, 1).getTime();
+        const yearStart = rangeStart;
+        const yearEnd = rangeEnd;
         const now = Date.now();
         const groups = new Map<string, TaskDay>();
         for (const [key, task] of Object.entries(tasks)) {
@@ -139,21 +152,19 @@
         return Math.max(MIN_HEIGHT_PX, Math.ceil(needed)) + spanLaneCount * 8;
     })();
     
-    // Position of a date as a percentage of the *displayed* year (clamped, so
-    // spans crossing a year boundary pin to the timeline edges).
-    function positionInDisplayedYear(date: Date): number {
-        const yearStart = new Date(currentDate.getFullYear(), 0, 1);
-        const yearEnd = new Date(currentDate.getFullYear() + 1, 0, 1);
-        const pos = ((date.getTime() - yearStart.getTime()) / (yearEnd.getTime() - yearStart.getTime())) * 100;
+    // Position of a date as a percentage of the displayed span (clamped, so
+    // spans crossing its edges pin to the timeline edges). Reactive, not a
+    // function: `$:` blocks only see the variables they name.
+    $: positionInDisplayedYear = (date: Date): number => {
+        const pos = ((date.getTime() - rangeStart) / (rangeEnd - rangeStart)) * 100;
         return Math.min(100, Math.max(0, pos));
-    }
+    };
 
     // Spans visible in the displayed year, with a greedy lane assignment so
     // overlapping periods stack instead of drawing on top of each other.
     $: yearSpans = (() => {
-        const year = currentDate.getFullYear();
-        const yearStartStr = `${year}-01-01`;
-        const yearEndStr = `${year}-12-31`;
+        const yearStartStr = dayStr(rangeStart);
+        const yearEndStr = dayStr(rangeEnd - 1);
         const sorted = spans
             .filter((s) => s.start <= yearEndStr && s.end >= yearStartStr)
             .sort(
@@ -190,9 +201,7 @@
             if (!profile.arrival || !profile.departure) return false;
             const arrival = new Date(profile.arrival);
             const departure = new Date(profile.departure);
-            const yearStart = new Date(currentDate.getFullYear(), 0, 1);
-            const yearEnd = new Date(currentDate.getFullYear(), 11, 31);
-            return arrival <= yearEnd && departure >= yearStart;
+            return arrival.getTime() < rangeEnd && departure.getTime() >= rangeStart;
         })
         .map(([userId, profile]) => ({
             userId,
@@ -212,9 +221,7 @@
         const positionInYear = x / rect.width;
         
         // Calculate the exact date
-        const yearStart = new Date(currentDate.getFullYear(), 0, 1);
-        const yearEnd = new Date(currentDate.getFullYear() + 1, 0, 1);
-        const timestamp = yearStart.getTime() + (yearEnd.getTime() - yearStart.getTime()) * positionInYear;
+        const timestamp = rangeStart + (rangeEnd - rangeStart) * positionInYear;
         const newDate = new Date(timestamp);
         
         // Calculate day of year
@@ -253,23 +260,26 @@
         return '🌘';
     }
 
-    // Calculate marker position as percentage of year
-    $: markerPosition = ((currentDate.getTime() - new Date(currentDate.getFullYear(), 0, 1).getTime()) / 
-        (new Date(currentDate.getFullYear() + 1, 0, 1).getTime() - new Date(currentDate.getFullYear(), 0, 1).getTime())) * 100;
+    // Calculate marker position as percentage of the span (none when the
+    // selected date lies outside it)
+    $: markerPosition =
+        currentDate.getTime() >= rangeStart && currentDate.getTime() < rangeEnd
+            ? ((currentDate.getTime() - rangeStart) / (rangeEnd - rangeStart)) * 100
+            : null;
 
-    function getSolarEvents(year: number) {
-        return {
-            springEquinox: new Date(year, 2, 20),
-            summerSolstice: new Date(year, 5, 21),
-            autumnEquinox: new Date(year, 8, 22),
-            winterSolstice: new Date(year, 11, 21)
-        };
+    function getSolarEvents(year: number): Array<[string, Date]> {
+        return [
+            ['springEquinox', new Date(year, 2, 20)],
+            ['summerSolstice', new Date(year, 5, 21)],
+            ['autumnEquinox', new Date(year, 8, 22)],
+            ['winterSolstice', new Date(year, 11, 21)]
+        ];
     }
 
-    function getMoonPhases(year: number) {
+    function getMoonPhases(from: number, to: number) {
         const phases: Array<{date: Date, isNew: boolean}> = [];
-        const startDate = new Date(year, 0, 1);
-        const endDate = new Date(year + 1, 0, 1);
+        const startDate = new Date(from);
+        const endDate = new Date(to);
         
         let currentDate = new Date(startDate);
         
@@ -295,19 +305,52 @@
         return phases;
     }
 
-    // Calculate phases for current year
-    $: moonPhases = getMoonPhases(currentDate.getFullYear());
-    $: solarEvents = getSolarEvents(currentDate.getFullYear());
+    // Moons for the span. A lunation's edges are its new moons, exactly:
+    // pin them there rather than trusting the scan's 6-hour steps.
+    $: moonPhases = range
+        ? [
+            { date: new Date(rangeStart), isNew: true },
+            ...getMoonPhases(rangeStart + 2 * DAY_MS, rangeEnd - 2 * DAY_MS),
+            { date: new Date(rangeEnd), isNew: true }
+        ]
+        : getMoonPhases(rangeStart, rangeEnd);
+    $: solarEvents = [
+        ...getSolarEvents(new Date(rangeStart).getFullYear()),
+        ...(range ? getSolarEvents(new Date(rangeEnd).getFullYear()) : [])
+    ].filter(([, date]) => date.getTime() >= rangeStart && date.getTime() < rangeEnd);
 
-    // Helper function to calculate position as percentage of year
-    function getPositionInYear(date: Date): number {
-        const yearStart = new Date(date.getFullYear(), 0, 1);
-        const yearEnd = new Date(date.getFullYear() + 1, 0, 1);
-        return ((date.getTime() - yearStart.getTime()) / (yearEnd.getTime() - yearStart.getTime())) * 100;
-    }
+    // Month starts inside the span (plus the month it opens in), for the grid.
+    $: months = (() => {
+        const list: Array<{ date: Date; pos: number }> = [];
+        const first = new Date(rangeStart);
+        const date = new Date(first.getFullYear(), first.getMonth(), 1);
+        while (date.getTime() < rangeEnd) {
+            list.push({ date: new Date(date), pos: positionInDisplayedYear(date) });
+            date.setMonth(date.getMonth() + 1);
+        }
+        return list;
+    })();
+
+    // Day ticks when the span is short enough to tell days apart (a lunation).
+    $: dayTicks = (() => {
+        if (rangeEnd - rangeStart > 62 * DAY_MS) return [];
+        const ticks: Array<{ date: Date; pos: number }> = [];
+        const first = new Date(rangeStart);
+        const cursor = new Date(first.getFullYear(), first.getMonth(), first.getDate() + 1);
+        while (cursor.getTime() < rangeEnd) {
+            if (cursor.getDate() !== 1) ticks.push({ date: new Date(cursor), pos: positionInDisplayedYear(cursor) });
+            cursor.setDate(cursor.getDate() + 1);
+        }
+        return ticks;
+    })();
 </script>
 
 <div class="bg-gray-800 rounded-3xl p-6 mb-6">
+    {#if title}
+    <h3 class="text-base sm:text-lg font-medium text-white mb-4 flex items-center gap-2">
+        <span>🌒</span><span>{title}</span>
+    </h3>
+    {:else}
     <div class="flex justify-between items-center mb-4">
         <button 
             class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
@@ -336,6 +379,7 @@
             </svg>
         </button>
     </div>
+    {/if}
     
     <div
         class="relative select-none"
@@ -350,10 +394,10 @@
         <div class="absolute w-full h-px bg-gray-600 top-1/2"></div>
         
         <!-- Month grid lines -->
-        {#each Array(12) as _, i}
+        {#each months as m (m.date.getTime())}
             <div 
                 class="absolute h-full"
-                style="left: {(i / 12) * 100}%"
+                style="left: {m.pos}%"
             >
                 <div class="h-full w-px bg-gray-700 opacity-50"></div>
                 <div class="absolute -top-1 left-0 w-1 h-2 bg-gray-600"></div>
@@ -362,16 +406,24 @@
                     class="absolute text-xs text-gray-400"
                     style="top: 8px; transform: translateX(-50%)"
                 >
-                    {new Date(currentDate.getFullYear(), i, 1).toLocaleString('default', { month: 'short' })}
+                    {m.date.toLocaleString('default', { month: 'short' })}
                 </div>
             </div>
         {/each}
 
+        <!-- Day ticks (short spans only) -->
+        {#each dayTicks as d (d.date.getTime())}
+            <div class="absolute pointer-events-none" style="left: {d.pos}%; top: 26px;">
+                <div class="w-px h-2 bg-gray-600"></div>
+                <div class="absolute text-[10px] text-gray-500" style="top: 8px; transform: translateX(-50%)">{d.date.getDate()}</div>
+            </div>
+        {/each}
+
         <!-- Solar events -->
-        {#each Object.entries(solarEvents) as [name, date]}
+        {#each solarEvents as [name, date]}
             <div
                 class="absolute top-1/2 transform -translate-y-1/2 group"
-                style="left: {getPositionInYear(date)}%"
+                style="left: {positionInDisplayedYear(date)}%"
             >
                 {#if name === 'summerSolstice'}
                     <!-- Longest day: full bright sun -->
@@ -398,7 +450,7 @@
         {#each moonPhases as { date, isNew }}
             <div 
                 class="absolute top-1/2 transform -translate-y-1/2 group"
-                style="left: {getPositionInYear(date)}%"
+                style="left: {positionInDisplayedYear(date)}%"
             >
                 <div 
                     class="w-2 h-2 rounded-full border border-gray-400"
@@ -416,8 +468,8 @@
         {#each yearStays as stay}
             {@const arrival = new Date(stay.profile.arrival || Date.now())}
             {@const departure = new Date(stay.profile.departure || Date.now())}
-            {@const startPos = Math.max(0, getPositionInYear(arrival))}
-            {@const endPos = Math.min(100, getPositionInYear(departure))}
+            {@const startPos = Math.max(0, positionInDisplayedYear(arrival))}
+            {@const endPos = Math.min(100, positionInDisplayedYear(departure))}
             <div 
                 class="absolute h-1.5 group cursor-pointer transition-all hover:h-2"
                 style="
@@ -467,7 +519,7 @@
         <!-- Task day overlay: dashed vertical line + squares stacked upward
              from the baseline per day, so dense days rise like mountains -->
         {#each tasksByDay as day (day.date.toISOString())}
-            {@const leftPct = getPositionInYear(day.date)}
+            {@const leftPct = positionInDisplayedYear(day.date)}
             <div class="absolute h-full pointer-events-none" style="left: {leftPct}%;">
                 <div class="absolute left-0 w-0 border-l border-dashed border-gray-400/40" style="bottom: 50%; height: {TASK_STACK_BASE_PX + day.items.length * TASK_ROW_PX}px;"></div>
                 {#each day.items as item, i (item.key)}
@@ -493,7 +545,7 @@
 
         <!-- Imported calendar events: stacked squares below the base line, in calendar color -->
         {#each externalByDay as day (day.date.toISOString())}
-            {@const leftPct = getPositionInYear(day.date)}
+            {@const leftPct = positionInDisplayedYear(day.date)}
             <div class="absolute h-full pointer-events-none" style="left: {leftPct}%;">
                 {#each day.items as item, i (item.id)}
                     <div
@@ -514,12 +566,14 @@
         {/each}
 
         <!-- Current date indicator -->
+        {#if markerPosition !== null}
         <div
             class="absolute h-full w-px bg-white top-0 z-10"
             style="left: {markerPosition}%"
         >
             <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full"></div>
         </div>
+        {/if}
     </div>
 </div>
 

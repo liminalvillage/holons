@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   import { get } from "svelte/store";
   import {
     things,
@@ -9,23 +10,21 @@
     holonId,
     showNotice,
     libraryViewMode,
-    scope,
-    now,
   } from "$lib/stores";
-  import { telegramUser, loginOpen } from "$lib/auth";
+  import { requestSwitch } from "$lib/dock";
+
+  /** A provenance badge tap travels to the holon the card came from. */
+  function jumpToSource(id: string | undefined, name?: string): void {
+    if (id) requestSwitch(id, { name, from: $holonId });
+  }
+  import { currentUser, loginOpen } from "$lib/auth";
   import { getLibraryDb } from "$lib/holosphere";
-  import { type Scope } from "$lib/config";
-  import { personalThings } from "$lib/personal";
-  import { t, locale, type MessageKey, type Translator } from "$lib/i18n";
-  import {
-    dueLabelFor,
-    type CalendarEvent,
-    type LibraryThing,
-    holoSeed,
-  } from "$lib/data";
+  import { setLibraryCalendarView, type CalendarMode } from "$lib/config";
+  import { t, type MessageKey, type Translator } from "$lib/i18n";
+  import { type CalendarEvent, type LibraryThing, holoSeed } from "$lib/data";
   import Modal from "$lib/components/Modal.svelte";
   import { hideImg } from "$lib/components/Avatars.svelte";
-  import { resolveImage } from "$lib/image";
+  import { pictureUrl } from "@holons/core/media";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
   import CalendarView from "./CalendarView.svelte";
   import {
@@ -54,37 +53,19 @@
   // Layout is chosen in the shell's global pills band (see GlobalPills);
   // this view only reads the store.
 
-  // Things the logged-in user currently has out (legacy borrow fields are
-  // core-maintained today-mirrors of bookings, so this is "out with me now").
-  $: mine = personalThings($things, $telegramUser?.id);
-  $: shownThings = $scope === "personal" ? mine : $things;
-
   // The Card pager's position; clamped as live updates grow/shrink the set.
   let cardIndex = 0;
-  $: if (cardIndex > shownThings.length - 1)
-    cardIndex = Math.max(0, shownThings.length - 1);
+  $: if (cardIndex > $things.length - 1)
+    cardIndex = Math.max(0, $things.length - 1);
 
-  /**
-   * Status chip text for a row; the Mine scope leads with the return date.
-   * Scope and clock come in as arguments so the template expression re-runs
-   * when either store changes.
-   */
-  function statusLabel(
-    thing: LibraryThing,
-    s: Scope,
-    at: Date,
-    tr: Translator,
-    loc: string,
-  ): string {
+  /** Status chip text for a row (the translator comes in as an argument so
+   *  the template expression re-runs on a language switch). */
+  function statusLabel(thing: LibraryThing, tr: Translator): string {
     if (thing.available) return tr("library.available");
-    if (s === "personal") {
-      const back = thing.returnBy
-        ? dueLabelFor(thing.returnBy, at, tr, loc)
-        : null;
-      return back
-        ? tr("library.returnBy", { when: back })
-        : tr("library.withYou");
-    }
+    if (thing.overdue)
+      return thing.borrower
+        ? tr("library.overdueWith", { who: thing.borrower })
+        : tr("library.overdue");
     return thing.borrower
       ? tr("library.outWith", { who: thing.borrower })
       : tr("library.out");
@@ -121,7 +102,7 @@
   let adding = false;
 
   function openAdd() {
-    if (!get(telegramUser)) {
+    if (!get(currentUser)) {
       loginOpen.set(true);
       return;
     }
@@ -132,7 +113,7 @@
   }
 
   async function addThing() {
-    const user = get(telegramUser);
+    const user = get(currentUser);
     const hid = get(holonId);
     if (!user) {
       loginOpen.set(true);
@@ -177,30 +158,23 @@
          spans. It brings its own header (‹ period ›) and scrolling, so it
          sits beside `.lib` rather than inside it — and the ＋/voice row below
          stays the LIBRARY's (share an item), which is why it renders
-         read-only. The personal scope narrows to the user's own bookings
-         inside CalendarView, so it needs no `shownThings` guard here: a
-         future booking is not a thing that is out today. -->
-    {#if $scope === "personal" && !$telegramUser}
-      <p class="empty">{$t("library.loginPersonal")}</p>
-    {:else}
-      <CalendarView
-        events={$bookingEvents}
-        mode={$libraryCalendarMode}
-        readonly
-        onOpen={openSpan}
-      />
-    {/if}
+         read-only. -->
+    <CalendarView
+      events={$bookingEvents}
+      mode={$libraryCalendarMode}
+      readonly
+      onOpen={openSpan}
+      onModeChange={(m: CalendarMode) => {
+        libraryCalendarMode.set(m);
+        setLibraryCalendarView(m);
+      }}
+    />
   {:else}
     <div class="lib scroll">
-      {#if $scope === "personal" && !$telegramUser}
-        <p class="empty">{$t("library.loginPersonal")}</p>
-      {:else if $scope === "personal" && !shownThings.length}
-        <p class="empty">{$t("library.emptyPersonal")}</p>
-      {:else if $libraryViewMode === "swipe"}
+      {#if $libraryViewMode === "swipe"}
         <!-- One big card at a time — the library's Card layout. -->
-        {#if shownThings.length}
-          {@const thing =
-            shownThings[Math.min(cardIndex, shownThings.length - 1)]}
+        {#if $things.length}
+          {@const thing = $things[Math.min(cardIndex, $things.length - 1)]}
           <div class="pager">
             <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
             <article
@@ -218,7 +192,7 @@
               {#if thing.picture}
                 <img
                   class="shot"
-                  src={resolveImage(thing.picture)}
+                  src={pictureUrl(thing.picture)}
                   alt=""
                   loading="lazy"
                   on:error={hideImg}
@@ -228,9 +202,17 @@
               {/if}
               <h3>{thing.title}</h3>
               <span class="type">{typeName($t, thing.type)}</span>
-              {#if thing.source}<span class="src">⇄ {thing.source}</span>{/if}
+              {#if thing.source}<button
+                  type="button"
+                  class="src"
+                  title={$t("source.open", { name: thing.source })}
+                  on:pointerdown|stopPropagation
+                  on:click|stopPropagation={() =>
+                    jumpToSource(thing.sourceId, thing.source)}
+                  ><Icon name="swap" /> {thing.source}</button
+                >{/if}
               <span class="status" class:available={thing.available}>
-                {statusLabel(thing, $scope, $now, $t, $locale)}
+                {statusLabel(thing, $t)}
               </span>
             </article>
             <div class="pagenav">
@@ -241,13 +223,13 @@
                 aria-label={$t("library.prevItem")}>‹</button
               >
               <span class="count"
-                >{Math.min(cardIndex, shownThings.length - 1) + 1} / {shownThings.length}</span
+                >{Math.min(cardIndex, $things.length - 1) + 1} / {$things.length}</span
               >
               <button
                 class="arrow"
                 on:click={() =>
-                  (cardIndex = Math.min(shownThings.length - 1, cardIndex + 1))}
-                disabled={cardIndex >= shownThings.length - 1}
+                  (cardIndex = Math.min($things.length - 1, cardIndex + 1))}
+                disabled={cardIndex >= $things.length - 1}
                 aria-label={$t("library.nextItem")}>›</button
               >
             </div>
@@ -256,9 +238,9 @@
           <p class="empty">{$t("library.emptyShared")}</p>
         {/if}
       {:else if $libraryViewMode === "cards"}
-        {#if shownThings.length}
+        {#if $things.length}
           <div class="grid">
-            {#each shownThings as thing (thing.id)}
+            {#each $things as thing (thing.id)}
               <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
               <article
                 class="card"
@@ -275,7 +257,7 @@
                 {#if thing.picture}
                   <img
                     class="shot"
-                    src={resolveImage(thing.picture)}
+                    src={pictureUrl(thing.picture)}
                     alt=""
                     loading="lazy"
                     on:error={hideImg}
@@ -285,7 +267,15 @@
                 {/if}
                 <h3>{thing.title}</h3>
                 <span class="type">{typeName($t, thing.type)}</span>
-                {#if thing.source}<span class="src">⇄ {thing.source}</span>{/if}
+                {#if thing.source}<button
+                    type="button"
+                    class="src"
+                    title={$t("source.open", { name: thing.source })}
+                    on:pointerdown|stopPropagation
+                    on:click|stopPropagation={() =>
+                      jumpToSource(thing.sourceId, thing.source)}
+                    ><Icon name="swap" /> {thing.source}</button
+                  >{/if}
                 <span class="status" class:available={thing.available}>
                   {thing.available
                     ? $t("library.available")
@@ -299,14 +289,14 @@
         {:else}
           <p class="empty">{$t("library.emptyShared")}</p>
         {/if}
-      {:else if shownThings.length}
+      {:else if $things.length}
         <!-- Compact rows: the list layout, whatever the scope. -->
         <ul class="rows">
-          {#each shownThings as thing (thing.id)}
+          {#each $things as thing (thing.id)}
             <li>
               <div
                 class="row"
-                class:out={!thing.available && $scope !== "personal"}
+                class:out={!thing.available}
                 class:is-foreign={!!thing.sourceColor}
                 class:holo={!!thing.hologram}
                 style:--holo-seed={holoSeed(thing.id)}
@@ -319,7 +309,7 @@
                 {#if thing.picture}
                   <img
                     class="rthumb"
-                    src={resolveImage(thing.picture)}
+                    src={pictureUrl(thing.picture)}
                     alt=""
                     loading="lazy"
                     on:error={hideImg}
@@ -333,12 +323,19 @@
                   <h3>{thing.title}</h3>
                   <div class="meta">
                     <span class="rtype">{typeName($t, thing.type)}</span>
-                    {#if thing.source}<span class="src">⇄ {thing.source}</span
+                    {#if thing.source}<button
+                        type="button"
+                        class="src"
+                        title={$t("source.open", { name: thing.source })}
+                        on:pointerdown|stopPropagation
+                        on:click|stopPropagation={() =>
+                          jumpToSource(thing.sourceId, thing.source)}
+                        ><Icon name="swap" /> {thing.source}</button
                       >{/if}
                   </div>
                 </div>
                 <span class="status" class:available={thing.available}>
-                  {statusLabel(thing, $scope, $now, $t, $locale)}
+                  {statusLabel(thing, $t)}
                 </span>
               </div>
             </li>
@@ -566,10 +563,13 @@
     font-weight: 700;
   }
   .src {
+    padding: 0;
     font-size: 0.68rem;
     font-weight: 700;
-    /* Tinted with the source holon's own colour (same hue as its glow edge). */
-    color: var(--glow, var(--teal-deep));
+    /* The source holon's own hue, carried by the ink rather than replacing it:
+       a holon's colour is a ground (a pastel by day, a jewel by night), never
+       something to read on its own. */
+    color: color-mix(in srgb, var(--glow, var(--teal)) 30%, var(--ink));
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -586,7 +586,7 @@
   }
   .status.available {
     background: var(--note-mint);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .empty {
     color: var(--muted);
@@ -626,7 +626,7 @@
     border-radius: 50%;
     font-size: 1.7rem;
     line-height: 1;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     background: var(--paper);
     display: grid;
     place-items: center;
@@ -677,7 +677,7 @@
     border-radius: 50%;
     font-size: 2rem;
     line-height: 1;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     box-shadow: 0 10px 24px rgba(14, 107, 102, 0.4);
     display: grid;
@@ -698,7 +698,7 @@
   }
   .form .glyph {
     font-size: 1.8rem;
-    color: var(--teal);
+    color: var(--teal-ink);
     font-weight: 800;
   }
   .form h3 {
@@ -771,7 +771,7 @@
     background: color-mix(in srgb, var(--teal) 12%, var(--card));
   }
   .typechip.on .tl {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .typechip:active {
     transform: scale(0.95);
@@ -793,11 +793,11 @@
   }
   .form .primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .form .ghost {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--ghost);
     color: var(--ink);
   }
   .form .primary:active,

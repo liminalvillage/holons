@@ -10,6 +10,7 @@ export {
   EVENT_KIND_MAPPINGS,
   isVfAction,
   isHolonsResourceKind,
+  isPlanningRecordType,
   mappingForEventKind,
   normalizeAgent,
   normalizeReaEvent,
@@ -21,6 +22,7 @@ export {
 export type {
   VfAction,
   VfActionSpec,
+  VfRecordType,
   VfResourceEffect,
   VfInputOutput,
   VfMeasure,
@@ -32,3 +34,8 @@ export type {
   EconomicEvent,
   EventKindMapping,
 } from './valueflows.js';
+export { planLedger, LEDGER_LENSES, REA_EVENTS_LENS } from './ledger.js';
+export type { LedgerContext, LedgerPlan, LedgerUpsert } from './ledger.js';
+export { attachLedger, hasLedger } from './attach.js';
+export type { AttachLedgerOptions, LedgerHost } from './attach.js';
+export type { FactoryOptions } from './event-factory.js';

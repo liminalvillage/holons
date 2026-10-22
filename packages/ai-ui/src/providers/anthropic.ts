@@ -1,10 +1,13 @@
 // Anthropic (Claude) LLM provider.
 //
-// Normalizes the neutral agent primitives to/from Anthropic's tool_use /
-// tool_result content blocks. System + tools share a single cache_control
-// breakpoint (they don't change across turns), matching the original loop.
+// Normalizes the neutral agent primitives to/from Claude's tool_use /
+// tool_result content blocks. The model call itself is @holons/core/ai's
+// complete() — the same model default, effort, refusal fallback and error
+// mapping every other Holons surface uses. The system prompt is cached, and
+// tools render before it, so one breakpoint caches both across turns.
 
 import Anthropic from '@anthropic-ai/sdk';
+import { AI_DEFAULT_MODEL, complete, type AIEffort } from '@holons/core/ai';
 import type {
   AgentTool,
   HistoryMessage,
@@ -14,13 +17,15 @@ import type {
   TurnOutput,
 } from './types.js';
 
-export const ANTHROPIC_DEFAULT_MODEL = 'claude-sonnet-4-6';
+export const ANTHROPIC_DEFAULT_MODEL = AI_DEFAULT_MODEL;
 
 export interface AnthropicProviderOptions {
   /** Inject a client (tests, custom retry). Otherwise constructed from env. */
   client?: Anthropic;
   model?: string;
   maxTokens?: number;
+  /** How hard the model thinks per turn (voice wants `low` for latency). */
+  effort?: AIEffort;
 }
 
 export class AnthropicProvider implements LLMProvider {
@@ -36,28 +41,25 @@ export class AnthropicProvider implements LLMProvider {
   }): LLMTurnRunner {
     const client = this.opts.client ?? new Anthropic();
     const model = this.opts.model ?? ANTHROPIC_DEFAULT_MODEL;
-    const maxTokens = this.opts.maxTokens ?? 4096;
 
-    const tools: Anthropic.Tool[] = params.tools.map((t) => ({
+    const tools: Anthropic.Beta.BetaTool[] = params.tools.map((t) => ({
       name: t.name,
       description: t.description,
-      input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
+      input_schema: t.inputSchema as Anthropic.Beta.BetaTool.InputSchema,
     }));
 
-    // Render order is tools → system → messages, so one cache_control
-    // breakpoint on system caches both tools and system together.
-    const systemBlocks: Anthropic.TextBlockParam[] = [
-      { type: 'text', text: params.system, cache_control: { type: 'ephemeral' } },
-    ];
-
-    const messages: Anthropic.MessageParam[] = [
+    const messages: Anthropic.Beta.BetaMessageParam[] = [
       ...(params.history ?? []).map(
-        (m): Anthropic.MessageParam => ({ role: m.role, content: m.content }),
+        (m): Anthropic.Beta.BetaMessageParam =>
+          m.role === 'user'
+            ? { role: 'user', content: m.content }
+            : { role: 'assistant', content: m.content },
       ),
       { role: 'user', content: params.userPrompt },
     ];
     let pending: ToolResult[] | null = null;
 
+    const opts = this.opts;
     return {
       transcript: () => messages,
       submitToolResults(results: ToolResult[]) {
@@ -65,10 +67,12 @@ export class AnthropicProvider implements LLMProvider {
       },
       async step(): Promise<TurnOutput> {
         if (pending) {
+          // All results of one turn go back in ONE user message — splitting
+          // them teaches the model to stop calling tools in parallel.
           messages.push({
             role: 'user',
             content: pending.map((r) => ({
-              type: 'tool_result',
+              type: 'tool_result' as const,
               tool_use_id: r.id,
               content: r.content,
               is_error: r.isError,
@@ -77,32 +81,36 @@ export class AnthropicProvider implements LLMProvider {
           pending = null;
         }
 
-        const response = await client.messages.create({
+        const response = await complete({
+          client,
           model,
-          max_tokens: maxTokens,
-          system: systemBlocks,
+          system: params.system,
+          cacheSystem: true,
           tools,
           messages,
+          effort: opts.effort ?? 'medium',
+          maxTokens: opts.maxTokens,
         });
+        // The whole content (thinking included) goes back unchanged: the
+        // history stays append-only, which thinking blocks require.
         messages.push({ role: 'assistant', content: response.content });
 
-        const text = response.content
-          .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-          .map((b) => b.text)
-          .join('');
-
         const toolCalls = response.content
-          .filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
+          .filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === 'tool_use')
           .map((b) => ({
             id: b.id,
             name: b.name,
             input: (b.input ?? {}) as Record<string, unknown>,
           }));
 
-        const done =
-          response.stop_reason === 'end_turn' || toolCalls.length === 0;
+        const done = response.stopReason !== 'tool_use' || toolCalls.length === 0;
 
-        return { text, toolCalls, done, stopReason: response.stop_reason };
+        return {
+          text: response.text,
+          toolCalls,
+          done,
+          stopReason: response.stopReason,
+        };
       },
     };
   }

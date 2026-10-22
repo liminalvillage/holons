@@ -1,0 +1,1926 @@
+<script lang="ts">
+  // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
+  import { nameOf as resolvedName } from "$lib/names";
+  //
+  // The allocation split, editable where it is read — the kiosk's take on the
+  // dashboard's AllocationEditor. Move a slider, place a partner — or a
+  // person — on a ring, point the holon at its OpenCollective collective; each
+  // change saves itself a moment later into the settings lens through core
+  // (`saveAllocationConfig` / `saveCollectiveSlug`), which is exactly what the
+  // Flows board and Flow Management read back.
+  //
+  // Every change is also dispatched as a `draft`, so the board behind the
+  // sheet redraws as the sliders move, before the write lands.
+  //
+  // The write is the settings lens and nothing else: the split lives in one
+  // place and every surface — and the Pot's rights table — reads it there.
+  // Nothing here touches the chain (that is the Pot panel's, at the new moon),
+  // which is why it can save as you go.
+  //
+  // Writes go through `getReaStore`, so the acting identity is the logged-in
+  // user, signed by the device key — the caller gates on login first.
+
+  import { createEventDispatcher, onDestroy } from "svelte";
+  import { t, locale } from "$lib/i18n";
+  import { createAutosave } from "$lib/autosave";
+  import SaveState from "./SaveState.svelte";
+  import { may } from "@holons/core/holosphere";
+  import { standing } from "$lib/stores";
+  import {
+    describeWindow,
+    describeWindowSpan,
+    WINDOW_PRESETS,
+    WINDOW_PRESET_LABELS,
+  } from "$lib/flowswindow";
+  import {
+    DEFAULT_WINDOW_PRESET,
+    formatLocalDate,
+    windowFromChoice,
+    type FlowsWindowChoice,
+    type FlowsWindowPreset,
+  } from "@holons/core/flows";
+  import { getReaStore } from "$lib/holosphere";
+  import {
+    allocate,
+    linkSplitPartner,
+    resolveInteriorMembers,
+    saveAllocationConfig,
+    saveCollectiveSlug,
+    sharesFromMembers,
+    interiorSharePercentages,
+    type AllocationConfig,
+    type AllocationMember,
+    type InboundRight,
+    type Mint,
+    type InteriorMode,
+    type InteriorShares,
+  } from "@holons/core/flows";
+  import type { AllocationDraft } from "$lib/allocation";
+  import {
+    POLICY_ROLES,
+    normalizePolicy,
+    samePolicy,
+    type Policy,
+    type Role,
+  } from "@holons/core/protocol";
+  import SidePanel from "./SidePanel.svelte";
+  import ValueEquation from "./ValueEquation.svelte";
+  import PartyFinder from "./PartyFinder.svelte";
+
+  export let holonId = "";
+  export let config: AllocationConfig;
+  export let zones: Record<string, number> = {};
+  export let partners: { id: string; name: string }[] = [];
+  /** People placed on rings, by user id (settings `allocation.people`). */
+  export let zonePeople: Record<string, number> = {};
+  /** Everyone who could be placed: the holon's roster, the holon itself excluded. */
+  export let candidates: { id: string; name: string }[] = [];
+  /** The equation's split today — the starting point a custom split copies. */
+  export let scored: AllocationMember[] = [];
+  /** The hand-set split as saved (settings `allocation.shares`). */
+  export let shares: InteriorShares = {};
+  export let collectiveSlug = "";
+  /** The units the board can be drawn in (`all` first) and the current one. */
+  export let units: { id: string; label: string }[] = [];
+  export let unit = "all";
+  /** The period the board covers. */
+  export let period: FlowsWindowChoice = { preset: DEFAULT_WINDOW_PRESET };
+  /** The rule in force for the claims log (core's fold of `_policy`). */
+  export let policy: Policy | null = null;
+  /** The logged-in person's role in the signed log, as of now. */
+  export let policyRole: Role | null = null;
+  /** Whether this session can sign a log entry at all. */
+  export let policySignable = false;
+  /** Each partner's published holon key (settings.holonPubkey), when known. */
+  export let partnerKeys: Record<string, string | null> = {};
+  /** What was brought into the fund (core's fold of `flow_mints`), judged. */
+  export let mints: Mint[] = [];
+  /** The units the fund holds anything in, the drawn one first. */
+  export let mintUnits: string[] = [];
+  /** Whether the logged-in person may mint (an attester of the mints log). */
+  export let canMint = false;
+  /** What reaches this fund from upstream holons. */
+  export let inbound: InboundRight[] = [];
+  /** A display name for a holon or person id, when the board knows one. */
+  export let nameOf: (id: string) => string | undefined = () => undefined;
+  /** Records a mint, signed as the logged-in person; throws on failure. */
+  export let onMint:
+    | ((input: {
+        amount: number;
+        unit: string;
+        memo?: string;
+        source?: string;
+      }) => Promise<void>)
+    | null = null;
+
+  let mintAmount = "";
+  let mintUnit = "";
+  let mintMemo = "";
+  let mintSource = "";
+  let mintBusy = false;
+  let mintError = "";
+  let mintNotice = "";
+  $: if (!mintUnit && mintUnits.length) mintUnit = mintUnits[0].toUpperCase();
+  async function submitMint() {
+    if (!onMint || mintBusy) return;
+    const amount = Number(String(mintAmount).replace(",", "."));
+    const unit = mintUnit.trim().toUpperCase();
+    if (!(amount > 0) || !unit) return;
+    mintBusy = true;
+    mintError = "";
+    mintNotice = "";
+    try {
+      await onMint({
+        amount,
+        unit,
+        memo: mintMemo.trim() || undefined,
+        source: mintSource || undefined,
+      });
+      mintNotice = $t("alloc.mintRecorded", { amount: String(amount), unit });
+      mintAmount = "";
+      mintMemo = "";
+    } catch (err: any) {
+      mintError = err?.message ? String(err.message) : String(err);
+    } finally {
+      mintBusy = false;
+    }
+  }
+  $: issuedMints = mints
+    .filter((m) => m.status !== "rejected")
+    .slice(-12)
+    .reverse();
+
+  const dispatch = createEventDispatcher<{
+    close: void;
+    saved: void;
+    draft: AllocationDraft;
+    /** The View tab's choices apply on the tap — they are how the board is
+     *  read, not a setting to save. */
+    unit: string;
+    period: FlowsWindowChoice;
+    /** The Rules tab's word: an admin-signed policy record for the claims log. */
+    policy: Partial<Policy>;
+  }>();
+
+  $: unitLabel =
+    units.find((u) => u.id === unit)?.label ?? $t("flows.trackAll");
+
+  function pickPreset(preset: FlowsWindowPreset) {
+    // Custom starts from the period it replaces, so the dates are a tweak
+    // rather than two blanks.
+    if (preset === "custom" && period.preset !== "custom") {
+      const w = windowFromChoice(period);
+      dispatch("period", {
+        preset,
+        from: w.from == null ? null : formatLocalDate(w.from),
+        to: formatLocalDate(w.to ?? Date.now()),
+      });
+      return;
+    }
+    dispatch("period", { ...period, preset });
+  }
+  function setBound(end: "from" | "to", value: string) {
+    dispatch("period", { ...period, preset: "custom", [end]: value || null });
+  }
+
+  // A draft, so Cancel costs nothing and Save writes once.
+  let interiorPercent = config.interiorPercent;
+  let steepness = config.steepness;
+  let nzones = config.nzones;
+  let zoneOf: Record<string, number> = { ...zones };
+  let personZone: Record<string, number> = { ...zonePeople };
+  let interiorMode: InteriorMode = config.interiorMode ?? "equation";
+  let shareOf: InteriorShares = { ...shares };
+  // What each share BOX shows, kept apart from the number it holds.
+  //
+  // The stored share is the value equation's own figure, in full precision, so
+  // a copied split pays exactly what the equation paid. Rounding that for the
+  // box would change the split; rounding it on every keystroke would fight the
+  // typist. So the box owns a string, the split owns the number, and they part
+  // company only in the digits nobody was going to type.
+  let shareText: Record<string, string> = {};
+  // The custom-split picker's choice.
+  let sharePick = "";
+  // The picker's choice; placing it moves the person into the list below.
+  let pick = "";
+  // Partner holons found with the finder and not yet in the federation
+  // record: seated now, linked on Save (core `linkSplitPartner`), so the
+  // split can name a holon the hub has no relationship with yet.
+  let newPartners: { id: string; name: string }[] = [];
+  // Names for people the finder found who are on no roster handed in.
+  let foundNames: Record<string, string> = {};
+  $: partnersAll = [
+    ...partners,
+    ...newPartners.filter((n) => !partners.some((p) => p.id === n.id)),
+  ];
+  // The value-equation editor is folded away: it is a long list of weights,
+  // and most visits here are about the split, not the scoring behind it.
+  let eqOpen = false;
+
+  // ── Rules (the claims policy) ───────────────────────────────────────────
+  // A draft of the rule in force; "Set the rules" appends it to the policy
+  // log signed as the logged-in person — an admin's entry counts, anyone
+  // else's is recorded and ignored, which the tab says up front.
+  const inForce = () => normalizePolicy(policy);
+  let ruleAuthors: Role[] = inForce().authors;
+  let ruleAttesters: Role[] = inForce().attesters;
+  let ruleQuorum = inForce().quorum;
+  let ruleConflict: Policy["conflict"] = inForce().conflict;
+  let rulePartners: Record<string, string> = { ...inForce().partners };
+  $: ruleDraft = {
+    authors: ruleAuthors,
+    attesters: ruleAttesters,
+    quorum: ruleQuorum,
+    conflict: ruleConflict,
+    partners: rulePartners,
+  } satisfies Partial<Policy>;
+  $: rulesUnchanged = samePolicy(ruleDraft, policy);
+  $: rulesCanSign = policySignable && policyRole === "admin";
+  // The split, like every guarded settings field, counts from an admin's
+  // signature only (`may(standing, 'settings.guarded')`): the Save button
+  // says so instead of saving into silence.
+  $: canEditSplit = may($standing, "settings.guarded");
+  function toggleRole(list: "authors" | "attesters", role: Role) {
+    const cur = list === "authors" ? ruleAuthors : ruleAttesters;
+    const next = cur.includes(role)
+      ? cur.filter((r) => r !== role)
+      : [...cur, role];
+    if (!next.length) return; // a rule with nobody is not a rule
+    if (list === "authors") ruleAuthors = next;
+    else ruleAttesters = next;
+  }
+  function togglePartner(id: string) {
+    const key = partnerKeys[id];
+    if (!key) return;
+    const next = { ...rulePartners };
+    if (next[id]) delete next[id];
+    else next[id] = key;
+    rulePartners = next;
+  }
+  function saveRules() {
+    if (!rulesCanSign || rulesUnchanged) return;
+    error = "";
+    notice = $t("alloc.rulesSaved");
+    dispatch("policy", ruleDraft);
+  }
+
+  // ── Tabs ────────────────────────────────────────────────────────────────
+  // Four questions, one screen each, instead of nine sections in one scroll.
+  // Each tab carries its current value in the strip, so the state of the whole
+  // sheet is readable without opening anything.
+  type TabId = "view" | "split" | "contributors" | "zones" | "fund" | "rules";
+  let tab: TabId = "view";
+  let tabEls: Record<string, HTMLButtonElement | undefined> = {};
+
+  $: tabs = [
+    {
+      id: "view" as const,
+      label: $t("flows.tabView"),
+      summary: `${unitLabel} · ${describeWindow(period, $t, $locale)}`,
+    },
+    {
+      id: "split" as const,
+      label: $t("alloc.tabSplit"),
+      summary: `${interiorPercent}/${exteriorPercent}`,
+    },
+    {
+      id: "contributors" as const,
+      label: $t("alloc.tabContributors"),
+      summary:
+        interiorMode === "custom"
+          ? $t("alloc.splitCustom")
+          : $t("alloc.splitEquation"),
+    },
+    {
+      id: "zones" as const,
+      label: $t("alloc.tabZones"),
+      summary: $t("alloc.tabZonesSummary", { n: String(nzones) }),
+    },
+    {
+      id: "fund" as const,
+      label: $t("alloc.tabFund"),
+      summary: mintUnits.length
+        ? mintUnits.map((u) => u.toUpperCase()).join(" · ")
+        : slug.trim() || $t("alloc.tabFundEmpty"),
+    },
+    {
+      id: "rules" as const,
+      label: $t("alloc.tabRules"),
+      summary: $t("alloc.tabRulesSummary", {
+        quorum: String(inForce().quorum),
+      }),
+    },
+  ];
+
+  /** A tab list is one stop on the Tab key; the arrows move between tabs. */
+  function onTabKey(e: KeyboardEvent) {
+    const order = tabs.map((x) => x.id);
+    const i = order.indexOf(tab);
+    let next = i;
+    if (e.key === "ArrowRight") next = (i + 1) % order.length;
+    else if (e.key === "ArrowLeft")
+      next = (i - 1 + order.length) % order.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = order.length - 1;
+    else return;
+    e.preventDefault();
+    tab = order[next];
+    tabEls[tab]?.focus();
+  }
+
+  /**
+   * Arrow keys inside a ring picker, so a zone can be chosen without a mouse.
+   * `set` receives the ring number, 1-based, exactly as a tap would give it.
+   */
+  function onRingKey(
+    e: KeyboardEvent,
+    current: number,
+    set: (z: number) => void,
+  ) {
+    let next = current;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") next = current + 1;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = current - 1;
+    else if (e.key === "Home") next = 1;
+    else if (e.key === "End") next = nzones;
+    else return;
+    e.preventDefault();
+    set(Math.min(nzones, Math.max(1, next)));
+  }
+  let slug = collectiveSlug;
+  let busy = false;
+  let error = "";
+  let notice = "";
+
+  // The board behind the sheet follows every change.
+  $: dispatch("draft", {
+    config: { interiorPercent, steepness, nzones, interiorMode },
+    zones: zoneOf,
+    people: personZone,
+    shares: shareOf,
+    partners: newPartners,
+  });
+
+  $: exteriorPercent = 100 - interiorPercent;
+  // A partner on a ring the count no longer reaches falls to the outermost.
+  $: for (const id of Object.keys(zoneOf)) {
+    if (zoneOf[id] > nzones) zoneOf[id] = nzones;
+  }
+  $: for (const id of Object.keys(personZone)) {
+    if (personZone[id] > nzones) personZone[id] = nzones;
+  }
+  // One name for an id anywhere on the sheet — a share row, a ring, a bind
+  // row: the board's own answer first (it re-answers as names are learned),
+  // then the rosters handed in, then the kiosk's resolver. A holon holding a
+  // contributor seat is on no roster of people, and must not print as its id.
+  $: nameOfPerson = new Map([
+    ...candidates.map((c) => [c.id, c.name] as const),
+    ...Object.entries(foundNames),
+  ]);
+  $: partyName = (id: string): string =>
+    nameOf(id) ??
+    nameOfPerson.get(id) ??
+    nameOfPartner.get(id) ??
+    scoredOf.get(id)?.name ??
+    $resolvedName(id);
+  // The people on rings; a placed id the roster no longer knows can still be
+  // removed.
+  $: placedPeople = Object.entries(personZone)
+    .filter(([, zone]) => zone >= 1)
+    .map(([id]) => ({ id, name: partyName(id) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  $: unplaced = candidates
+    .filter(
+      (c) =>
+        !(personZone[c.id] >= 1) && !partnersAll.some((p) => p.id === c.id),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name));
+  // What each zone — and each partner in it — actually receives, as a share
+  // of the WHOLE fund: the draft run through the same `allocate()` the Sankey
+  // draws and the Bundle contract pays by. An empty zone next to an occupied
+  // one shows 0%, because that is what the chain would send it; with nobody
+  // placed at all the zones keep their decay shape as a preview.
+  $: draft = allocate({
+    total: null,
+    config: { interiorPercent, steepness, nzones },
+    members: [],
+    zoned: [
+      ...partnersAll.map((p) => ({ ...p, zone: zoneOf[p.id] ?? 0 })),
+      ...placedPeople.map((p) => ({
+        ...p,
+        zone: personZone[p.id],
+        kind: "person" as const,
+      })),
+    ],
+  });
+  $: zoneShares = draft.exterior.map((z) => z.percentage);
+  $: maxZoneShare = Math.max(0, ...zoneShares);
+  $: anyPlaced =
+    partnersAll.some((p) => (zoneOf[p.id] ?? 0) >= 1) ||
+    placedPeople.length > 0;
+  $: partnerShare = (id: string): number =>
+    draft.exterior.flatMap((z) => z.members ?? []).find((m) => m.id === id)
+      ?.percentage ?? 0;
+  $: rings = Array.from({ length: nzones }, (_, i) => i + 1);
+  const pct = (v: number) => `${Math.round(v * 10) / 10}`;
+
+  // The custom split as rows, with the equation's share beside each for
+  // comparison.
+  $: scoredOf = new Map(scored.map((m) => [m.id, m]));
+  // The boxes hold plain numbers — 1/2/1 or 25/50/25, either is a split —
+  // and the percentage each amounts to is worked out beside it.
+  $: shareOfTotal = interiorSharePercentages(shareOf);
+  $: shareRows = Object.keys(shareOf).map((id) => ({
+    id,
+    name: partyName(id),
+    scored: scoredOf.get(id)?.percentage,
+    text: shareText[id] ?? pct(shareOf[id]),
+    ofTotal: shareOfTotal[id] ?? 0,
+  }));
+  $: sharesTotal = Object.values(shareOf).reduce(
+    (s, v) => s + (Number.isFinite(v) && v > 0 ? v : 0),
+    0,
+  );
+  // A partner holon can hold a contributor seat too: a collective whose
+  // contributors are other holons (the trees, the pickers) weights them here,
+  // and the cascade follows each seat into that holon's own split.
+  $: nameOfPartner = new Map(partnersAll.map((p) => [p.id, p.name]));
+  $: shareable = [
+    ...new Map(
+      [
+        ...candidates,
+        ...scored.map((m) => ({ id: m.id, name: m.name })),
+        ...partnersAll.map((p) => ({
+          id: p.id,
+          name: $t("alloc.partnerHolonName", { name: p.name }),
+        })),
+      ].map((p) => [p.id, p]),
+    ).values(),
+  ]
+    .filter((p) => !(p.id in shareOf))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  $: equationShares = sharesFromMembers(scored);
+
+  function setMode(mode: InteriorMode) {
+    interiorMode = mode;
+    // Custom starts from the equation, unless a split was already entered.
+    if (mode === "custom" && Object.keys(shareOf).length === 0) copyEquation();
+  }
+
+  function copyEquation() {
+    shareOf = { ...equationShares };
+    // The boxes show the same rounded figure as the equation hint beside them,
+    // while the split keeps the exact number underneath.
+    shareText = Object.fromEntries(
+      Object.entries(shareOf).map(([id, value]) => [id, pct(value)]),
+    );
+  }
+
+  function setShare(id: string, raw: string) {
+    const value = Number(raw);
+    // The box keeps what was typed; only the split rounds. Without this the
+    // field rewrites itself mid-keystroke.
+    shareText = { ...shareText, [id]: raw };
+    shareOf = {
+      ...shareOf,
+      [id]: Number.isFinite(value) && value >= 0 ? value : 0,
+    };
+  }
+
+  function removeShare(id: string) {
+    const next = { ...shareOf };
+    delete next[id];
+    shareOf = next;
+    const text = { ...shareText };
+    delete text[id];
+    shareText = text;
+  }
+
+  function addShare() {
+    if (!sharePick) return;
+    seatShare(sharePick);
+    sharePick = "";
+  }
+
+  function seatShare(id: string) {
+    if (id in shareOf) return;
+    shareOf = { ...shareOf, [id]: 0 };
+    shareText = { ...shareText, [id]: "0" };
+  }
+
+  /** A holon the finder found: a partner once saved, seated right away. */
+  function addNewPartner(id: string, name: string) {
+    if (partnersAll.some((p) => p.id === id)) return;
+    newPartners = [...newPartners, { id, name }];
+  }
+
+  function found(
+    e: CustomEvent<{ id: string; name: string; kind: "person" | "holon" }>,
+    where: "split" | "zones",
+  ) {
+    const { id, name, kind } = e.detail;
+    if (kind === "holon") addNewPartner(id, name);
+    else foundNames = { ...foundNames, [id]: name };
+    if (where === "split") seatShare(id);
+    else if (kind === "holon")
+      zoneOf = { ...zoneOf, [id]: zoneOf[id] >= 1 ? zoneOf[id] : 1 };
+    else placePerson(id, personZone[id] >= 1 ? personZone[id] : 1);
+  }
+
+  function place(id: string, zone: number) {
+    zoneOf = { ...zoneOf, [id]: zoneOf[id] === zone ? 0 : zone };
+  }
+
+  function placePerson(id: string, zone: number) {
+    personZone = { ...personZone, [id]: zone };
+  }
+
+  function removePerson(id: string) {
+    const next = { ...personZone };
+    delete next[id];
+    personZone = next;
+  }
+
+  /** The picker: choosing someone seats them on the first ring at once. */
+  function addPerson() {
+    if (!pick) return;
+    placePerson(pick, 1);
+    pick = "";
+  }
+
+  function failed(err: any) {
+    const denied =
+      err?.name === "AuthorizationError" ||
+      /denied|unauthori[sz]ed|permission/i.test(String(err?.message ?? ""));
+    error = denied ? $t("alloc.errDenied") : $t("alloc.errSave");
+    if (!denied) console.error("[kiosk] allocation save failed", err);
+  }
+
+  type SplitEdit = {
+    config: AllocationConfig;
+    zones: Record<string, number>;
+    people: Record<string, number>;
+    shares: InteriorShares;
+    partners: { id: string; name: string }[];
+    slug: string;
+  };
+
+  /** Write the split: the settings lens, which every surface reads. */
+  async function save(edit: SplitEdit): Promise<boolean> {
+    busy = true;
+    error = "";
+    try {
+      const store = await getReaStore();
+      // A holon found in the finder is a partner from here on: the record
+      // every reader finds it in is written before the split that seats it.
+      for (const p of edit.partners) {
+        await linkSplitPartner(store, holonId, p.id, p.name);
+      }
+      const linked = new Set(edit.partners.map((p) => p.id));
+      newPartners = newPartners.filter((p) => !linked.has(p.id));
+      await saveAllocationConfig(
+        store,
+        holonId,
+        edit.config,
+        edit.zones,
+        edit.people,
+        edit.shares,
+      );
+      if (edit.slug !== savedSlug) {
+        await saveCollectiveSlug(store, holonId, edit.slug);
+        savedSlug = edit.slug;
+      }
+      dispatch("saved");
+      return true;
+    } catch (err: any) {
+      failed(err);
+      return false;
+    } finally {
+      busy = false;
+    }
+  }
+
+  // Every change saves itself a moment later (admins only — the split is a
+  // guarded setting). The edit is snapshotted when the write falls due.
+  let savedSlug = collectiveSlug;
+  const autosave = createAutosave<SplitEdit>(
+    () =>
+      canEditSplit
+        ? structuredClone({
+            config: { interiorPercent, steepness, nzones, interiorMode },
+            zones: zoneOf,
+            people: personZone,
+            shares: shareOf,
+            partners: newPartners,
+            slug: slug.trim(),
+          })
+        : null,
+    save,
+  );
+  $: autosave.watch(
+    JSON.stringify([
+      interiorPercent,
+      steepness,
+      nzones,
+      interiorMode,
+      zoneOf,
+      personZone,
+      shareOf,
+      newPartners,
+      slug.trim(),
+    ]),
+  );
+  onDestroy(() => void autosave.flush());
+
+  /** Close the panel; a change still waiting is written first. */
+  function close() {
+    void autosave.flush();
+    dispatch("close");
+  }
+</script>
+
+<SidePanel title={$t("flows.settings")} on:close={close}>
+  <svelte:fragment slot="corner">
+    {#if canEditSplit}<SaveState saver={autosave} />{/if}
+  </svelte:fragment>
+  <!-- The four questions this panel answers, each carrying its current value
+       so the whole state reads at a glance without opening anything. -->
+  <div
+    slot="tabs"
+    class="tabs"
+    role="tablist"
+    aria-label={$t("flows.settings")}
+  >
+    {#each tabs as item (item.id)}
+      <button
+        bind:this={tabEls[item.id]}
+        role="tab"
+        id="alloc-tab-{item.id}"
+        aria-selected={tab === item.id}
+        aria-controls="alloc-panel-{item.id}"
+        tabindex={tab === item.id ? 0 : -1}
+        class="tab"
+        class:on={tab === item.id}
+        on:click={() => (tab = item.id)}
+        on:keydown={onTabKey}
+      >
+        <span class="tname">{item.label}</span>
+        <span class="tsum">{item.summary}</span>
+      </button>
+    {/each}
+  </div>
+
+  <div
+    role="tabpanel"
+    id="alloc-panel-{tab}"
+    aria-labelledby="alloc-tab-{tab}"
+    tabindex="0"
+    class="tabpanel"
+  >
+    {#if tab === "view"}
+      <!-- ── What the board shows: one unit, one period ─────────────────── -->
+      <div class="control">
+        <span class="k" id="alloc-unit-label">{$t("flows.trackLabel")}</span>
+        <div
+          class="chips"
+          role="radiogroup"
+          tabindex="-1"
+          aria-labelledby="alloc-unit-label"
+        >
+          {#each units as u (u.id)}
+            <button
+              type="button"
+              role="radio"
+              class="chip"
+              class:on={unit === u.id}
+              aria-checked={unit === u.id}
+              on:click={() => dispatch("unit", u.id)}>{u.label}</button
+            >
+          {/each}
+        </div>
+        <p class="sub">{$t("flows.unitAbout")}</p>
+      </div>
+
+      <div class="control">
+        <span class="k" id="alloc-period-label">
+          {$t("flows.windowLabel")}
+          <span class="value">{describeWindowSpan(period, $t)}</span>
+        </span>
+        <div
+          class="chips"
+          role="radiogroup"
+          tabindex="-1"
+          aria-labelledby="alloc-period-label"
+        >
+          {#each WINDOW_PRESETS as p (p)}
+            <button
+              type="button"
+              role="radio"
+              class="chip"
+              class:on={period.preset === p}
+              aria-checked={period.preset === p}
+              on:click={() => pickPreset(p)}
+              >{$t(WINDOW_PRESET_LABELS[p])}</button
+            >
+          {/each}
+        </div>
+        {#if period.preset === "custom"}
+          <div class="dates">
+            <label class="date">
+              <span>{$t("flows.windowFrom")}</span>
+              <input
+                type="date"
+                value={period.from ?? ""}
+                max={period.to ?? undefined}
+                on:change={(e) => setBound("from", e.currentTarget.value)}
+              />
+            </label>
+            <label class="date">
+              <span>{$t("flows.windowTo")}</span>
+              <input
+                type="date"
+                value={period.to ?? ""}
+                min={period.from ?? undefined}
+                on:change={(e) => setBound("to", e.currentTarget.value)}
+              />
+            </label>
+          </div>
+        {/if}
+        <p class="sub">
+          {describeWindow(period, $t, $locale)} — {$t("flows.windowAbout")}
+        </p>
+      </div>
+    {:else if tab === "split"}
+      <!-- ── How much goes to each side ─────────────────────────────────── -->
+      <div class="control">
+        <label for="alloc-interior" class="k">
+          {$t("alloc.interior")}
+          <span class="value">{interiorPercent}% / {exteriorPercent}%</span>
+        </label>
+        <input
+          id="alloc-interior"
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          bind:value={interiorPercent}
+        />
+        <div class="ends">
+          <span>{$t("alloc.allExterior")}</span>
+          <span>{$t("alloc.allInterior")}</span>
+        </div>
+        <p class="sub">{$t("alloc.splitAbout")}</p>
+      </div>
+
+      <!-- What each half does next, and the way to go and change it. -->
+      <button class="jump" on:click={() => (tab = "contributors")}>
+        <span class="jl">{$t("alloc.tabContributors")}</span>
+        <span class="jv"
+          >{interiorMode === "custom"
+            ? $t("alloc.splitCustom")
+            : $t("alloc.splitEquation")}</span
+        >
+        <span class="chev" aria-hidden="true">›</span>
+      </button>
+      <button class="jump" on:click={() => (tab = "zones")}>
+        <span class="jl">{$t("alloc.tabZones")}</span>
+        <span class="jv"
+          >{$t("alloc.tabZonesSummary", { n: String(nzones) })}</span
+        >
+        <span class="chev" aria-hidden="true">›</span>
+      </button>
+    {:else if tab === "contributors"}
+      <!-- ── How the contributors' share is divided ─────────────────────── -->
+      <div class="control">
+        <div class="k" id="alloc-mode-label">{$t("alloc.split")}</div>
+        <div class="mode" role="radiogroup" aria-labelledby="alloc-mode-label">
+          <button
+            role="radio"
+            aria-checked={interiorMode === "equation"}
+            class="seg"
+            class:on={interiorMode === "equation"}
+            on:click={() => setMode("equation")}
+            >{$t("alloc.splitEquation")}</button
+          >
+          <button
+            role="radio"
+            aria-checked={interiorMode === "custom"}
+            class="seg"
+            class:on={interiorMode === "custom"}
+            on:click={() => setMode("custom")}>{$t("alloc.splitCustom")}</button
+          >
+        </div>
+        <p class="sub">
+          {interiorMode === "custom"
+            ? $t("alloc.splitCustomAbout")
+            : $t("alloc.splitEquationAbout")}
+        </p>
+      </div>
+
+      {#if interiorMode === "custom"}
+        {#if shareRows.length}
+          <ul class="parties shares">
+            {#each shareRows as row (row.id)}
+              <li>
+                <div class="pline">
+                  <span class="pname">{row.name}</span>
+                  {#if row.scored != null}
+                    <span class="pshare"
+                      >{$t("alloc.splitScored", { pct: pct(row.scored) })}</span
+                    >
+                  {/if}
+                </div>
+                <div class="sharebox">
+                  <input
+                    type="number"
+                    inputmode="decimal"
+                    min="0"
+                    step="any"
+                    value={row.text}
+                    on:input={(e) => setShare(row.id, e.currentTarget.value)}
+                    aria-label={row.name}
+                  />
+                  <span class="unit ofTotal"
+                    >{$t("alloc.zoneShare", { pct: pct(row.ofTotal) })}</span
+                  >
+                  <button
+                    class="drop"
+                    on:click={() => removeShare(row.id)}
+                    aria-label={$t("alloc.removePerson", { name: row.name })}
+                    ><Icon name="close" /></button
+                  >
+                </div>
+              </li>
+            {/each}
+          </ul>
+          <div class="totalrow">
+            <span>{$t("alloc.splitTotal")}</span>
+            <span class="sum"
+              >{pct(sharesTotal)}
+              <span class="unit ofTotal"
+                >{$t("alloc.zoneShare", {
+                  pct: sharesTotal > 0 ? 100 : 0,
+                })}</span
+              ></span
+            >
+          </div>
+        {:else}
+          <p class="sub">{$t("alloc.splitEmpty")}</p>
+        {/if}
+        <div class="rowactions">
+          {#if shareable.length}
+            <div class="picker">
+              <select bind:value={sharePick} aria-label={$t("alloc.addPerson")}>
+                <option value="">{$t("alloc.addPerson")}</option>
+                {#each shareable as c (c.id)}
+                  <option value={c.id}>{c.name}</option>
+                {/each}
+              </select>
+              <button class="add" disabled={!sharePick} on:click={addShare}
+                >＋</button
+              >
+            </div>
+          {/if}
+          <button
+            class="wide-ghost"
+            disabled={!Object.keys(equationShares).length}
+            on:click={copyEquation}>{$t("alloc.splitCopy")}</button
+          >
+        </div>
+        <!-- Anyone else: a person or a holon by name or id. A holon becomes
+             a federation partner on Save; a person is seated by their id. -->
+        <PartyFinder
+          exclude={Object.keys(shareOf)}
+          on:pick={(e) => found(e, "split")}
+        />
+      {/if}
+
+      <!-- The weights behind the equation split. Under "by value equation"
+           they ARE the split; under a custom split they still drive the hint
+           beside each share and what Copy hands over. -->
+      <button
+        class="disclose"
+        on:click={() => (eqOpen = !eqOpen)}
+        aria-expanded={eqOpen}
+      >
+        <span>{$t("settings.valueEquation")}</span>
+        <span class="chev" aria-hidden="true"
+          >{#if eqOpen}<Icon name="chevron-down" />{:else}<Icon
+              name="chevron-right"
+            />{/if}</span
+        >
+      </button>
+      {#if eqOpen}
+        <div class="eqbox"><ValueEquation holon={holonId} /></div>
+      {/if}
+    {:else if tab === "zones"}
+      <!-- ── Who is on which ring ───────────────────────────────────────── -->
+      <div class="control">
+        <label for="alloc-steep" class="k">
+          {$t("alloc.sharing")}
+          <span class="value">{steepness}%</span>
+        </label>
+        <input
+          id="alloc-steep"
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          bind:value={steepness}
+        />
+        <div class="ends">
+          <span>{$t("alloc.steep")}</span>
+          <span>{$t("alloc.even")}</span>
+        </div>
+      </div>
+
+      <div class="control">
+        <div class="k">
+          {$t("alloc.zones")}
+          <span class="value">{nzones}</span>
+        </div>
+        <p class="sub">
+          {anyPlaced ? $t("alloc.zonesAbout") : $t("alloc.zonesPreview")}
+        </p>
+        <div class="stepper">
+          <button
+            on:click={() => (nzones = Math.max(1, nzones - 1))}
+            disabled={nzones <= 1}
+            aria-label={$t("alloc.fewer")}>−</button
+          >
+          <div class="rings">
+            {#each zoneShares as share, i (i)}
+              <div
+                class="ring"
+                class:empty={share <= 0}
+                title={$t("alloc.zoneShareFund", { pct: pct(share) })}
+              >
+                <span class="rs">{pct(share)}%</span>
+                <div
+                  class="fill"
+                  style="height: {maxZoneShare > 0
+                    ? Math.max(4, (share / maxZoneShare) * 100)
+                    : 4}%"
+                ></div>
+                <span class="rn">{i + 1}</span>
+              </div>
+            {/each}
+          </div>
+          <button
+            on:click={() => (nzones = Math.min(10, nzones + 1))}
+            disabled={nzones >= 10}
+            aria-label={$t("alloc.more")}>+</button
+          >
+        </div>
+      </div>
+
+      <div class="control">
+        <div class="k">{$t("alloc.partners")}</div>
+        {#if partnersAll.length}
+          <p class="sub">{$t("alloc.partnersAbout")}</p>
+          <ul class="parties">
+            {#each partnersAll as p (p.id)}
+              <li>
+                <div class="pline">
+                  <span class="pname">{p.name}</span>
+                  {#if newPartners.some((n) => n.id === p.id)}
+                    <span class="unplaced">{$t("alloc.newPartner")}</span>
+                  {:else if (zoneOf[p.id] ?? 0) >= 1}
+                    <span class="pshare"
+                      >{$t("alloc.zoneShare", {
+                        pct: pct(partnerShare(p.id)),
+                      })}</span
+                    >
+                  {:else}
+                    <span class="unplaced">{$t("alloc.unplaced")}</span>
+                  {/if}
+                </div>
+                <div
+                  class="ringpick"
+                  role="radiogroup"
+                  tabindex="-1"
+                  aria-label={p.name}
+                  on:keydown={(e) =>
+                    onRingKey(e, zoneOf[p.id] ?? 0, (z) =>
+                      place(p.id, zoneOf[p.id] === z ? 0 : z),
+                    )}
+                >
+                  {#each rings as z (z)}
+                    <button
+                      role="radio"
+                      aria-checked={(zoneOf[p.id] ?? 0) === z}
+                      tabindex={(zoneOf[p.id] ?? 0) === z ||
+                      (!(zoneOf[p.id] >= 1) && z === 1)
+                        ? 0
+                        : -1}
+                      class="rp"
+                      class:on={(zoneOf[p.id] ?? 0) === z}
+                      on:click={() => place(p.id, z)}
+                      title="{$t('flows.tipZoneN', { n: String(z) })} · {$t(
+                        'alloc.zoneShareFund',
+                        { pct: pct(zoneShares[z - 1] ?? 0) },
+                      )}">{z}</button
+                    >
+                  {/each}
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="sub">{$t("alloc.noPartners")}</p>
+        {/if}
+      </div>
+
+      <div class="control">
+        <div class="k">{$t("alloc.people")}</div>
+        <p class="sub">{$t("alloc.peopleAbout")}</p>
+        {#if placedPeople.length}
+          <ul class="parties">
+            {#each placedPeople as p (p.id)}
+              <li>
+                <div class="pline">
+                  <span class="pname">{p.name}</span>
+                  <span class="pshare"
+                    >{$t("alloc.zoneShare", {
+                      pct: pct(partnerShare(p.id)),
+                    })}</span
+                  >
+                </div>
+                <div
+                  class="ringpick"
+                  role="radiogroup"
+                  tabindex="-1"
+                  aria-label={p.name}
+                  on:keydown={(e) =>
+                    onRingKey(e, personZone[p.id] ?? 1, (z) =>
+                      placePerson(p.id, z),
+                    )}
+                >
+                  {#each rings as z (z)}
+                    <button
+                      role="radio"
+                      aria-checked={personZone[p.id] === z}
+                      tabindex={personZone[p.id] === z ? 0 : -1}
+                      class="rp"
+                      class:on={personZone[p.id] === z}
+                      on:click={() => placePerson(p.id, z)}
+                      title="{$t('flows.tipZoneN', { n: String(z) })} · {$t(
+                        'alloc.zoneShareFund',
+                        { pct: pct(zoneShares[z - 1] ?? 0) },
+                      )}">{z}</button
+                    >
+                  {/each}
+                  <button
+                    class="rp drop"
+                    on:click={() => removePerson(p.id)}
+                    aria-label={$t("alloc.removePerson", { name: p.name })}
+                    ><Icon name="close" /></button
+                  >
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        {#if unplaced.length}
+          <div class="picker">
+            <select bind:value={pick} aria-label={$t("alloc.addPerson")}>
+              <option value="">{$t("alloc.addPerson")}</option>
+              {#each unplaced as c (c.id)}
+                <option value={c.id}>{c.name}</option>
+              {/each}
+            </select>
+            <button class="add" disabled={!pick} on:click={addPerson}>＋</button
+            >
+          </div>
+        {:else if !placedPeople.length}
+          <p class="sub">{$t("alloc.noPeople")}</p>
+        {/if}
+        <!-- Anyone else, or another holon: found by name or id, seated on
+             the first ring at once. A holon is linked as a partner on Save. -->
+        <PartyFinder
+          exclude={[
+            ...partnersAll.map((p) => p.id),
+            ...placedPeople.map((p) => p.id),
+          ]}
+          on:pick={(e) => found(e, "zones")}
+        />
+      </div>
+    {:else if tab === "rules"}
+      <!-- ── The claims policy ─────────────────────────────────────────── -->
+      <p class="sub">{$t("alloc.rulesAbout")}</p>
+      {#if !policySignable}
+        <p class="sub warn">{$t("alloc.rulesNoSigner")}</p>
+      {:else if policyRole !== "admin"}
+        <p class="sub warn">{$t("alloc.rulesNotAdmin")}</p>
+      {/if}
+
+      <div class="control">
+        <div class="k">{$t("alloc.rulesAuthors")}</div>
+        <div class="roles" role="group" aria-label={$t("alloc.rulesAuthors")}>
+          {#each POLICY_ROLES as r (r)}
+            <button
+              type="button"
+              class="rp wide"
+              class:on={ruleAuthors.includes(r)}
+              aria-pressed={ruleAuthors.includes(r)}
+              disabled={!rulesCanSign}
+              on:click={() => toggleRole("authors", r)}
+              >{$t(`alloc.rulesRole.${r}`)}</button
+            >
+          {/each}
+        </div>
+      </div>
+      <div class="control">
+        <div class="k">{$t("alloc.rulesAttesters")}</div>
+        <div class="roles" role="group" aria-label={$t("alloc.rulesAttesters")}>
+          {#each POLICY_ROLES as r (r)}
+            <button
+              type="button"
+              class="rp wide"
+              class:on={ruleAttesters.includes(r)}
+              aria-pressed={ruleAttesters.includes(r)}
+              disabled={!rulesCanSign}
+              on:click={() => toggleRole("attesters", r)}
+              >{$t(`alloc.rulesRole.${r}`)}</button
+            >
+          {/each}
+        </div>
+      </div>
+      <label class="field">
+        <span class="k">{$t("alloc.rulesQuorum")}</span>
+        <input
+          type="number"
+          min="0"
+          max="9"
+          step="1"
+          inputmode="numeric"
+          disabled={!rulesCanSign}
+          bind:value={ruleQuorum}
+        />
+      </label>
+      <div class="control">
+        <div class="k">{$t("alloc.rulesConflict")}</div>
+        <div
+          class="roles"
+          role="radiogroup"
+          aria-label={$t("alloc.rulesConflict")}
+        >
+          <button
+            type="button"
+            role="radio"
+            class="rp wide"
+            class:on={ruleConflict === "earliest"}
+            aria-checked={ruleConflict === "earliest"}
+            disabled={!rulesCanSign}
+            on:click={() => (ruleConflict = "earliest")}
+            >{$t("alloc.rulesConflictEarliest")}</button
+          >
+          <button
+            type="button"
+            role="radio"
+            class="rp wide"
+            class:on={ruleConflict === "quorum"}
+            aria-checked={ruleConflict === "quorum"}
+            disabled={!rulesCanSign}
+            on:click={() => (ruleConflict = "quorum")}
+            >{$t("alloc.rulesConflictQuorum")}</button
+          >
+        </div>
+      </div>
+
+      <div class="control">
+        <div class="k">{$t("alloc.rulesPartners")}</div>
+        <p class="sub">{$t("alloc.rulesPartnersAbout")}</p>
+        {#if partners.length}
+          <ul class="parties">
+            {#each partners as p (p.id)}
+              <li>
+                <div class="pline">
+                  <span class="pname">{p.name}</span>
+                  <span class="pshare"
+                    >{rulePartners[p.id]
+                      ? $t("alloc.rulesPartnerPinned")
+                      : partnerKeys[p.id]
+                        ? ""
+                        : $t("alloc.rulesPartnerNoKey")}</span
+                  >
+                </div>
+                <div class="roles">
+                  <button
+                    type="button"
+                    class="rp wide"
+                    class:on={!!rulePartners[p.id]}
+                    aria-pressed={!!rulePartners[p.id]}
+                    disabled={!rulesCanSign || !partnerKeys[p.id]}
+                    on:click={() => togglePartner(p.id)}
+                    >{rulePartners[p.id]
+                      ? $t("alloc.rulesPartnerPinned")
+                      : $t("alloc.rulesPin")}</button
+                  >
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="sub">{$t("alloc.noPartners")}</p>
+        {/if}
+      </div>
+    {:else}
+      <!-- ── What the fund holds ────────────────────────────────────────── -->
+      <div class="control">
+        <div class="k">{$t("alloc.mintTitle")}</div>
+        <p class="sub">{$t("alloc.mintAbout")}</p>
+        {#if inbound.length}
+          <ul class="parties mints">
+            {#each inbound as r (r.from + r.unit)}
+              <li>
+                <div class="pline">
+                  <span class="pname"
+                    >{$t("alloc.inboundFrom", {
+                      name: partyName(r.from),
+                    })}</span
+                  >
+                  <span class="pshare">{r.right} {r.unit.toUpperCase()}</span>
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        {#if issuedMints.length}
+          <ul class="parties mints">
+            {#each issuedMints as m (m.id)}
+              <li>
+                <div class="pline">
+                  <span class="pname"
+                    >{m.amount}
+                    {m.unit}{m.memo ? ` — ${m.memo}` : ""}{m.source
+                      ? ` · ${partyName(m.source)}`
+                      : ""}</span
+                  >
+                  <span class="pshare" class:warn={m.status !== "issued"}
+                    >{$t(`alloc.mintStatus.${m.status}`)}</span
+                  >
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {:else if !inbound.length}
+          <p class="sub">{$t("alloc.mintNone")}</p>
+        {/if}
+        {#if !policySignable}
+          <p class="sub warn">{$t("alloc.mintNoSigner")}</p>
+        {:else if !canMint}
+          <p class="sub warn">{$t("alloc.mintNotAttester")}</p>
+        {:else}
+          <form class="mint-form" on:submit|preventDefault={submitMint}>
+            <label class="field">
+              <span class="k">{$t("alloc.mintAmount")}</span>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                inputmode="decimal"
+                bind:value={mintAmount}
+                required
+              />
+            </label>
+            <label class="field">
+              <span class="k">{$t("alloc.mintUnit")}</span>
+              <input
+                type="text"
+                autocapitalize="characters"
+                maxlength="5"
+                placeholder="L"
+                bind:value={mintUnit}
+                required
+              />
+            </label>
+            <label class="field">
+              <span class="k">{$t("alloc.mintMemo")}</span>
+              <input type="text" maxlength="140" bind:value={mintMemo} />
+            </label>
+            {#if partners.length}
+              <label class="field">
+                <span class="k">{$t("alloc.mintSource")}</span>
+                <select bind:value={mintSource}>
+                  <option value="">{$t("alloc.mintSourceNone")}</option>
+                  {#each partners as p (p.id)}
+                    <option value={p.id}>{p.name}</option>
+                  {/each}
+                </select>
+              </label>
+            {/if}
+            <button class="primary" type="submit" disabled={mintBusy}
+              >{$t("alloc.mintRecord")}</button
+            >
+          </form>
+          {#if mintError}
+            <p class="sub warn">{mintError}</p>
+          {:else if mintNotice}
+            <p class="sub">{mintNotice}</p>
+          {/if}
+        {/if}
+      </div>
+
+      <!-- ── Where the money is ─────────────────────────────────────────── -->
+      <label class="field">
+        <span class="k">{$t("alloc.collective")}</span>
+        <input
+          type="text"
+          autocapitalize="none"
+          placeholder={$t("alloc.collectiveHint")}
+          bind:value={slug}
+        />
+      </label>
+    {/if}
+  </div>
+
+  <svelte:fragment slot="footer">
+    {#if error}<p class="error" role="alert">{error}</p>{/if}
+    {#if notice}<p class="notice" role="status">{notice}</p>{/if}
+    <div class="actions">
+      {#if tab === "view"}
+        <!-- The View tab applied on the tap; there is nothing to save. -->
+        <button class="primary" on:click={close}>{$t("common.close")}</button>
+      {:else if tab === "rules"}
+        <!-- The rules are a signed log entry, not a settings write: their
+             own button, gated on the signature that would count. -->
+        <button class="ghost" on:click={close}>{$t("common.cancel")}</button>
+        <button
+          class="primary"
+          disabled={!rulesCanSign || rulesUnchanged}
+          title={rulesUnchanged ? $t("alloc.rulesUnchanged") : ""}
+          on:click={saveRules}
+        >
+          {$t("alloc.rulesSave")}
+        </button>
+      {:else}
+        {#if !canEditSplit}
+          <span class="sub warn foot-note">{$t("alloc.splitNotAdmin")}</span>
+        {/if}
+        <button class="primary" on:click={close}>{$t("common.done")}</button>
+      {/if}
+    </div>
+  </svelte:fragment>
+</SidePanel>
+
+<style>
+  /* ── Tab strip ──────────────────────────────────────────────────────────
+     Four equal tabs, each showing its own current value so the state of the
+     whole panel reads without opening a thing. */
+  .tabs {
+    display: flex;
+    gap: 2px;
+    padding: 0 0.7rem 0.6rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .tab {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 52px;
+    padding: 0.35rem 0.3rem;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--muted);
+    text-align: center;
+    touch-action: manipulation;
+  }
+  .tab.on {
+    background: var(--paper);
+    color: var(--ink);
+  }
+  .tname {
+    display: block;
+    font-size: 0.82rem;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tsum {
+    display: block;
+    font-size: 0.68rem;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tab.on .tsum {
+    color: var(--teal-ink);
+  }
+  .tabpanel:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 4px;
+    border-radius: 10px;
+  }
+
+  /* ── Shared blocks ──────────────────────────────────────────────────── */
+  .k {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.6rem;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .value {
+    font-size: 0.95rem;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ink);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .sub {
+    margin: 0.3rem 0 0.4rem;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    color: var(--muted);
+  }
+  .control {
+    margin-top: 1.2rem;
+  }
+  .foot-note {
+    flex: 1 1 100%;
+    margin: 0 0 0.4rem;
+  }
+  .sub.warn {
+    color: var(--ink);
+  }
+  .roles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+  }
+  .rp.wide {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 44px;
+    padding: 0 0.9rem;
+  }
+  .control:first-child {
+    margin-top: 0.6rem;
+  }
+  .field {
+    display: block;
+    margin: 0.6rem 0 0;
+  }
+  .field input {
+    display: block;
+    width: 100%;
+    margin-top: 0.35rem;
+    padding: 0.75rem 0.8rem;
+    font-size: 1rem;
+    font-family: inherit;
+    color: var(--ink);
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: 12px;
+    min-height: 48px;
+  }
+  .field input:focus {
+    outline: none;
+    border-color: var(--teal);
+  }
+  input[type="range"] {
+    width: 100%;
+    margin: 0.6rem 0 0.1rem;
+    accent-color: var(--teal);
+    /* Absolute, not rem: the kiosk shrinks its root size on a phone, and a
+       rem-sized track quietly drops under the 44px a thumb needs. */
+    height: 44px;
+  }
+  .ends {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  /* ── Jump rows on the Split tab ─────────────────────────────────────── */
+  .jump {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    width: 100%;
+    min-height: 56px;
+    margin-top: 0.5rem;
+    padding: 0.6rem 0.7rem;
+    border-radius: 14px;
+    background: var(--paper);
+    text-align: left;
+    touch-action: manipulation;
+  }
+  .jl {
+    flex: 1;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .jv {
+    color: var(--teal-ink);
+    font-size: 0.85rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 45%;
+  }
+  .chev {
+    color: var(--muted);
+    flex: 0 0 auto;
+  }
+
+  /* ── Mode switch ────────────────────────────────────────────────────── */
+  .mode {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+  }
+  .seg {
+    flex: 1;
+    min-height: 52px;
+    border-radius: 14px;
+    background: var(--paper);
+    color: var(--ink-soft);
+    font-weight: 700;
+    touch-action: manipulation;
+  }
+  .seg.on {
+    background: var(--teal);
+    color: var(--on-teal);
+  }
+
+  /* ── Party rows ──────────────────────────────────────────────────────
+     The name gets a line of its own and the ring picker the full width
+     below it, so a long name simply clips instead of squeezing the rings
+     into something no finger can hit. */
+  .parties {
+    list-style: none;
+    margin: 0.4rem 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.9rem;
+  }
+  .parties li {
+    min-width: 0;
+  }
+  .pline {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+    min-width: 0;
+    margin-bottom: 0.35rem;
+  }
+  .pname {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-weight: 700;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pshare {
+    flex: 0 0 auto;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--teal-ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .unplaced {
+    flex: 0 0 auto;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .ringpick {
+    display: flex;
+    gap: 6px;
+    min-width: 0;
+    overflow-x: auto; /* only ever needed at the extreme zone counts */
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .ringpick::-webkit-scrollbar {
+    display: none;
+  }
+  .rp {
+    flex: 1 1 0;
+    min-width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--paper);
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+    font-weight: 700;
+    touch-action: manipulation;
+  }
+  .rp.on {
+    background: var(--teal);
+    color: var(--on-teal);
+  }
+  .rp.drop {
+    flex: 0 0 44px;
+    color: var(--muted);
+  }
+
+  /* ── Custom split rows ──────────────────────────────────────────────── */
+  .sharebox {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .sharebox input {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 48px;
+    padding: 0.4rem 0.6rem;
+    font: inherit;
+    font-weight: 700;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: 12px;
+  }
+  .sharebox input:focus {
+    outline: none;
+    border-color: var(--teal);
+  }
+  .unit {
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .ofTotal {
+    flex: 0 0 auto;
+    min-width: 3.6rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .drop {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--paper);
+    color: var(--muted);
+    touch-action: manipulation;
+  }
+  .totalrow {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-top: 0.7rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--line);
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .sum {
+    color: var(--teal-ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .rowactions {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: 0.8rem;
+  }
+
+  /* ── Pickers, disclosure, zone bars ─────────────────────────────────── */
+  .mint-form {
+    display: grid;
+    gap: 0.6rem;
+    margin-top: 0.6rem;
+  }
+  .mint-form .primary {
+    justify-self: start;
+    min-height: 44px;
+  }
+  .pshare.warn {
+    color: var(--caution);
+  }
+
+  .picker {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+  .picker select {
+    flex: 1;
+    min-width: 0;
+    min-height: 48px;
+    padding: 0.4rem 0.7rem;
+    font: inherit;
+    color: var(--ink);
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: 12px;
+  }
+  .picker .add {
+    flex: 0 0 48px;
+    min-height: 48px;
+    border-radius: 12px;
+    background: var(--teal);
+    color: var(--on-teal);
+    font-size: 1.2rem;
+    touch-action: manipulation;
+  }
+  .picker .add:disabled {
+    opacity: 0.4;
+  }
+  .wide-ghost {
+    width: 100%;
+    min-height: 48px;
+    padding: 0 0.9rem;
+    border-radius: 14px;
+    background: var(--paper);
+    color: var(--ink);
+    font-weight: 700;
+    touch-action: manipulation;
+  }
+  .wide-ghost:disabled {
+    opacity: 0.45;
+  }
+  .disclose {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    width: 100%;
+    min-height: 52px;
+    margin-top: 1.2rem;
+    padding: 0.6rem 0.2rem;
+    font: inherit;
+    font-weight: 700;
+    color: var(--ink);
+    border-top: 1px solid var(--line);
+    touch-action: manipulation;
+  }
+  .eqbox {
+    margin-bottom: 0.4rem;
+  }
+  .stepper {
+    display: flex;
+    align-items: stretch;
+    gap: 0.5rem;
+    margin-top: 0.4rem;
+  }
+  .stepper > button {
+    flex: 0 0 52px;
+    min-height: 52px;
+    border-radius: 14px;
+    background: var(--paper);
+    color: var(--ink);
+    font-size: 1.3rem;
+    font-weight: 700;
+    touch-action: manipulation;
+  }
+  .stepper > button:disabled {
+    opacity: 0.4;
+  }
+  .rings {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 74px;
+    padding: 0.3rem 0.4rem 0;
+    border-radius: 14px;
+    background: var(--paper);
+  }
+  .ring {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    height: 100%;
+  }
+  .rs {
+    font-size: 0.6rem;
+    color: var(--teal-ink);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .ring.empty .rs {
+    color: var(--muted);
+  }
+  .fill {
+    width: 100%;
+    border-radius: 4px 4px 0 0;
+    background: var(--teal);
+    min-height: 3px;
+  }
+  .ring.empty .fill {
+    background: var(--line);
+  }
+  .rn {
+    font-size: 0.62rem;
+    color: var(--muted);
+  }
+
+  /* ── Footer ─────────────────────────────────────────────────────────── */
+  /* ── View tab: unit and period chips ──────────────────────────────── */
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+  }
+  .chip {
+    min-height: 44px;
+    padding: 0 0.95rem;
+    border-radius: 999px;
+    background: var(--paper);
+    color: var(--ink-soft);
+    font-size: 0.86rem;
+    font-weight: 700;
+    touch-action: manipulation;
+  }
+  .chip.on {
+    background: var(--teal);
+    color: var(--on-teal);
+    box-shadow: var(--shadow-soft);
+  }
+  .dates {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 0.7rem;
+  }
+  .date {
+    flex: 1 1 10rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .date input {
+    min-height: 44px;
+    padding: 0 0.7rem;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 0.95rem;
+  }
+
+  .actions {
+    display: flex;
+    gap: 0.6rem;
+  }
+  .primary,
+  .ghost {
+    flex: 1;
+    min-height: 52px;
+    border-radius: 14px;
+    font-size: 1rem;
+    font-weight: 700;
+    transition: transform 0.1s ease;
+  }
+  .primary {
+    background: var(--teal);
+    color: var(--on-teal);
+    box-shadow: var(--shadow-soft);
+  }
+  .ghost {
+    background: var(--paper);
+    color: var(--ink);
+  }
+  .primary:active,
+  .ghost:active {
+    transform: scale(0.97);
+  }
+  .primary:disabled {
+    opacity: 0.6;
+  }
+  .error {
+    color: var(--danger);
+    font-size: 0.88rem;
+    margin: 0 0 0.6rem;
+  }
+  .notice {
+    color: var(--teal-ink);
+    font-size: 0.88rem;
+    margin: 0 0 0.6rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .primary,
+    .ghost {
+      transition: none;
+    }
+  }
+</style>

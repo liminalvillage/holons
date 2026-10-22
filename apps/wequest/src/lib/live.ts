@@ -78,6 +78,7 @@ import {
   retractFromFederation,
   setFederationPartner,
   removeFederationPartner,
+  type FederationLinkOutcome,
 } from "@holons/core/federation";
 import {
   computeUserCurrencyBalance,
@@ -1282,8 +1283,9 @@ export async function addPartner(partnerId: string): Promise<boolean> {
   } catch {
     /* unnamed is fine */
   }
+  let outcome: FederationLinkOutcome;
   try {
-    await setFederationPartner(hs, holon, target, {
+    outcome = await setFederationPartner(hs, holon, target, {
       inbound: ["quests"],
       outbound: ["quests"],
       partnerName,
@@ -1296,10 +1298,17 @@ export async function addPartner(partnerId: string): Promise<boolean> {
     );
     return false;
   }
+  if (outcome.self === "held") {
+    flash("Only an admin of this holon can change its federation.");
+    return false;
+  }
   await refreshPartners(hs, holon);
   bounceFederation();
+  const who = partnerName || target.slice(0, 8) + "…";
   flash(
-    `Federated with ${partnerName || target.slice(0, 8) + "…"} — needs flow both ways.`,
+    outcome.partner === "requested"
+      ? `Linked on this side — ${who}'s admins were asked to accept.`
+      : `Federated with ${who} — needs flow both ways.`,
   );
   return true;
 }
@@ -1310,8 +1319,9 @@ export async function removePartner(partnerId: string): Promise<void> {
   const target = String(partnerId ?? "").trim();
   if (!holon || !target) return;
   const hs = await getHolosphere();
+  let outcome: FederationLinkOutcome;
   try {
-    await removeFederationPartner(hs, holon, target);
+    outcome = await removeFederationPartner(hs, holon, target);
   } catch (err: any) {
     flash(
       err?.name === "AuthorizationError"
@@ -1320,9 +1330,17 @@ export async function removePartner(partnerId: string): Promise<void> {
     );
     return;
   }
+  if (outcome.self === "held") {
+    flash("Only an admin of this holon can change its federation.");
+    return;
+  }
   await refreshPartners(hs, holon);
   bounceFederation();
-  flash("Unlinked — their needs no longer flow here.");
+  flash(
+    outcome.partner === "requested"
+      ? "Unlinked here — their admins were asked to drop their side too."
+      : "Unlinked — their needs no longer flow here.",
+  );
 }
 
 /**

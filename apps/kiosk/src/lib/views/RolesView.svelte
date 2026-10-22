@@ -1,5 +1,8 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
+  import { nameFor } from "$lib/names";
+  import { userName } from "@holons/core/identity";
   //
   // The optional Roles board. Two views, switched like the dashboard:
   //   • Cards — one card per role, featuring TODAY's holder (the kiosk shows the
@@ -8,6 +11,7 @@
   // A role can also have a *fixed* holder (set from a card's edit sheet) who holds
   // it every day. All scheduling meaning lives in @holons/core/roles (wire-shapes
   // shared with the dashboard); this view only reads and writes.
+  import { onDestroy } from "svelte";
   import { get } from "svelte/store";
   import {
     roleCards,
@@ -16,12 +20,12 @@
     now,
     showNotice,
     rolesViewMode,
-    scope,
   } from "$lib/stores";
-  import { isLoggedIn, loginOpen, telegramUser } from "$lib/auth";
+  import { isLoggedIn, loginOpen, currentUser } from "$lib/auth";
   import { getWriter, getHolosphere } from "$lib/holosphere";
   import { t, locale } from "$lib/i18n";
-  import { sameId } from "$lib/personal";
+  import { createAutosave } from "$lib/autosave";
+  import SaveState from "$lib/components/SaveState.svelte";
   import {
     noteColor,
     noteTilt,
@@ -61,7 +65,7 @@
 
   // Source records keyed for writes; the cards list is display-only.
   $: byId = new Map($rawRoles.map((r) => [String(r.id ?? r.title), r]));
-  $: myId = $telegramUser?.id ?? null;
+  $: myId = $currentUser?.id ?? null;
 
   // "Today" as the week-day cell matching the local date, so the card and the
   // week grid always agree on which day (and key) "today" is. Updates only when
@@ -96,20 +100,6 @@
     weekKey = weekKeyOf(base);
   }
 
-  // "My roles": fixed holder, holding a day of the shown week, or listed as a
-  // participant. Depends on `days` so navigating weeks re-filters.
-  $: mineCards = $roleCards.filter((c) => {
-    if (myId == null) return false;
-    const raw = byId.get(c.id);
-    if (!raw) return false;
-    return (
-      isPermanentHolder(raw, myId) ||
-      days.some((d) => isHolderOnDate(raw, d, myId)) ||
-      c.people.some((p) => sameId(p.id, myId))
-    );
-  });
-  // Under the Mine scope the week nav still applies: "my roles this week".
-  $: shownCards = $scope === "personal" ? mineCards : $roleCards;
   function goToday() {
     weekKey = weekKeyOf(todayCell);
   }
@@ -119,17 +109,16 @@
   // ── Identity helpers ────────────────────────────────────────────────────────
   function holderName(p: RoleParticipant | ScheduledUser | null): string {
     if (!p) return "";
-    const full = [
-      (p as RoleParticipant).first_name,
-      (p as RoleParticipant).last_name,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .trim();
-    return full || (p.username ? String(p.username) : `#${p.id}`);
+    return (
+      userName(p as never, {
+        lastName: "initial",
+        idFallback: false,
+        unknown: "",
+      }) || nameFor(p.id)
+    );
   }
   function meScheduled(): ScheduledUser {
-    const u = get(telegramUser)!;
+    const u = get(currentUser)!;
     const name =
       [u.first_name, u.last_name].filter(Boolean).join(" ").trim() ||
       (u.username ?? String(u.id));
@@ -141,7 +130,7 @@
     };
   }
   function meParticipant(): RoleParticipant {
-    const u = get(telegramUser)!;
+    const u = get(currentUser)!;
     return {
       id: u.id,
       username: u.username ?? null,
@@ -161,7 +150,7 @@
   }
 
   async function takeDay(card: RoleCard, raw: Role, day: Date, token: string) {
-    if (!get(telegramUser)) {
+    if (!get(currentUser)) {
       loginOpen.set(true);
       return;
     }
@@ -198,7 +187,7 @@
   let adding = false;
 
   function openAdd() {
-    if (!get(telegramUser)) {
+    if (!get(currentUser)) {
       loginOpen.set(true);
       return;
     }
@@ -208,7 +197,7 @@
   }
 
   async function addRole() {
-    const user = get(telegramUser);
+    const user = get(currentUser);
     if (!user) {
       loginOpen.set(true);
       return;
@@ -235,46 +224,59 @@
   let editCard: RoleCard | null = null;
   let editTitle = "";
   let editDesc = "";
-  let savingEdit = false;
   let deleting = false;
   let fixedBusy = false;
   $: editRaw = editCard ? (byId.get(editCard.id) ?? null) : null;
+  // The role the form is editing, kept past the modal's close so a write that
+  // is still waiting lands on it.
+  let editBase: Role | null = null;
+  $: if (editRaw) editBase = editRaw;
 
   function openEdit(card: RoleCard) {
-    if (!get(telegramUser)) {
+    if (!get(currentUser)) {
       loginOpen.set(true);
       return;
     }
+    editBase = null;
     editCard = card;
     editTitle = card.title;
     editDesc = card.description ?? "";
   }
 
-  async function saveEdit() {
-    if (!editCard || !editRaw) return;
+  /** The role with the form's fields on it (its id/key stay put on rename). */
+  function withForm(raw: Role): Role {
     const title = editTitle.trim();
-    if (!title) return;
-    savingEdit = true;
-    try {
-      // Keep the role's id/key stable on rename; only display fields change.
-      await persist({ ...editRaw, title, description: editDesc.trim() });
-      editCard = null;
-    } catch (err) {
-      console.error("[kiosk] edit role failed", err);
-    } finally {
-      savingEdit = false;
-    }
+    return title ? { ...raw, title, description: editDesc.trim() } : raw;
+  }
+
+  // The form saves itself as you type; a blank title is not written.
+  const autosave = createAutosave<Role>(
+    () => (editBase && editTitle.trim() ? withForm(editBase) : null),
+    async (role) => {
+      const hid = get(holonId);
+      if (!hid) return false;
+      const writer = await getWriter(hid, (m) => showNotice(m));
+      return writer.put("roles", role);
+    },
+  );
+  $: autosave.watch(editCard ? JSON.stringify([editTitle, editDesc]) : null);
+  onDestroy(() => void autosave.flush());
+
+  function closeEdit() {
+    void autosave.flush();
+    editCard = null;
   }
 
   async function makeFixed() {
     if (!editRaw) return;
-    if (!get(telegramUser)) {
+    if (!get(currentUser)) {
       loginOpen.set(true);
       return;
     }
     fixedBusy = true;
     try {
-      await persist(setPermanent(editRaw, meParticipant()));
+      autosave.cancel(); // this write carries the form too
+      await persist(setPermanent(withForm(editRaw), meParticipant()));
       editCard = null;
     } catch (err) {
       console.error("[kiosk] make fixed failed", err);
@@ -287,7 +289,8 @@
     if (!editRaw) return;
     fixedBusy = true;
     try {
-      await persist(clearPermanent(editRaw));
+      autosave.cancel();
+      await persist(clearPermanent(withForm(editRaw)));
       editCard = null;
     } catch (err) {
       console.error("[kiosk] clear fixed failed", err);
@@ -300,6 +303,7 @@
     const hid = get(holonId);
     if (!hid || !editCard) return;
     const raw = editRaw;
+    autosave.cancel(); // a late edit must not bring it back
     deleting = true;
     try {
       const hs = await getHolosphere();
@@ -345,18 +349,12 @@
   {/if}
 
   <div class="scrollarea scroll" class:clear={$rolesViewMode !== "week"}>
-    {#if $scope === "personal" && !$telegramUser}
-      <p class="empty">{$t("rolesv.loginPersonal")}</p>
-    {:else if !shownCards.length}
-      <p class="empty">
-        {$scope === "personal"
-          ? $t("rolesv.emptyPersonal")
-          : $t("rolesv.empty")}
-      </p>
+    {#if !$roleCards.length}
+      <p class="empty">{$t("rolesv.empty")}</p>
     {:else if $rolesViewMode === "list"}
       <!-- ── List: compact rows, today's holder at a glance ─────────────── -->
       <ul class="rows">
-        {#each shownCards as card (card.id)}
+        {#each $roleCards as card (card.id)}
           {@const raw = byId.get(card.id)}
           {#if raw}
             {@const fixed = hasPermanent(raw)}
@@ -400,7 +398,7 @@
                     <span class="hname">{holderName(holder).split(" ")[0]}</span
                     >
                     {#if fixed}<span class="lock" title={$t("rolesv.fixedRole")}
-                        >🔒</span
+                        ><Icon name="lock" /></span
                       >{/if}
                   {:else}
                     <span class="open">{$t("rolesv.open")}</span>
@@ -423,9 +421,10 @@
                     on:click={() => takeDay(card, raw, todayCell, card.id)}
                     disabled={busy === card.id}
                     aria-pressed={mineToday}
-                    >{mineToday
-                      ? `✓ ${$t("rolesv.drop")}`
-                      : $t("rolesv.takeToday")}</button
+                    >{#if mineToday}<Icon name="check" />
+                      {$t("rolesv.drop")}{:else}{$t(
+                        "rolesv.takeToday",
+                      )}{/if}</button
                   >
                 {/if}
                 {#if $isLoggedIn}
@@ -433,7 +432,7 @@
                     class="tool rowtool"
                     on:click={() => openEdit(card)}
                     aria-label={$t("rolesv.editAria")}
-                    title={$t("rolesv.edit")}>✎</button
+                    title={$t("rolesv.edit")}><Icon name="pencil" /></button
                   >
                 {/if}
               </div>
@@ -444,7 +443,7 @@
     {:else if $rolesViewMode === "cards"}
       <!-- ── Cards: today's holder per role ─────────────────────────────── -->
       <div class="wall">
-        {#each shownCards as card (card.id)}
+        {#each $roleCards as card (card.id)}
           {@const raw = byId.get(card.id)}
           {#if raw}
             {@const fixed = hasPermanent(raw)}
@@ -471,7 +470,7 @@
                     class="tool"
                     on:click={() => openEdit(card)}
                     aria-label={$t("rolesv.editAria")}
-                    title={$t("rolesv.edit")}>✎</button
+                    title={$t("rolesv.edit")}><Icon name="pencil" /></button
                   >
                 {/if}
                 <h3>{card.title}</h3>
@@ -502,7 +501,8 @@
                       >
                       {#if fixed}<span
                           class="lock"
-                          title={$t("rolesv.fixedRole")}>🔒</span
+                          title={$t("rolesv.fixedRole")}
+                          ><Icon name="lock" /></span
                         >{/if}
                     </span>
                   {:else}
@@ -518,7 +518,7 @@
                         on:click={() => releaseFixed(card, raw)}
                         disabled={busy === `fix:${card.id}`}
                         title={$t("rolesv.releaseFixed")}
-                        >🔒 {$t("rolesv.release")}</button
+                        ><Icon name="lock" /> {$t("rolesv.release")}</button
                       >
                     {:else}
                       <span class="fixednote">{$t("rolesv.fixedRole")}</span>
@@ -530,9 +530,10 @@
                       on:click={() => takeDay(card, raw, todayCell, card.id)}
                       disabled={busy === card.id}
                       aria-pressed={mineToday}
-                      >{mineToday
-                        ? `✓ ${$t("rolesv.todayDrop")}`
-                        : $t("rolesv.takeToday")}</button
+                      >{#if mineToday}<Icon name="check" />
+                        {$t("rolesv.todayDrop")}{:else}{$t(
+                          "rolesv.takeToday",
+                        )}{/if}</button
                     >
                   {/if}
                 </div>
@@ -555,7 +556,7 @@
         {/each}
       </div>
 
-      {#each shownCards as card (card.id)}
+      {#each $roleCards as card (card.id)}
         {@const raw = byId.get(card.id)}
         {#if raw}
           {@const fixed = hasPermanent(raw)}
@@ -563,7 +564,7 @@
             <div class="wtitle" title={card.title}>
               <span class="wtitle-text">{card.title}</span>
               {#if fixed}<span class="lock" title={$t("rolesv.fixedRole")}
-                  >🔒</span
+                  ><Icon name="lock" /></span
                 >{/if}
             </div>
             {#each days as d (isoDateOf(d))}
@@ -650,16 +651,17 @@
 {/if}
 
 {#if editCard}
-  <Modal on:close={() => (editCard = null)}>
+  <Modal on:close={closeEdit}>
+    <SaveState slot="corner" saver={autosave} />
     <div class="form">
-      <div class="glyph" aria-hidden="true">✎</div>
+      <div class="glyph" aria-hidden="true"><Icon name="pencil" /></div>
       <h3>{$t("rolesv.editAria")}</h3>
       <input
         class="line"
         bind:value={editTitle}
         placeholder={$t("rolesv.titlePlaceholder")}
         maxlength="60"
-        on:keydown={(e) => e.key === "Enter" && saveEdit()}
+        on:keydown={(e) => e.key === "Enter" && closeEdit()}
       />
       <textarea
         bind:value={editDesc}
@@ -672,7 +674,8 @@
         {#if editRaw && hasPermanent(editRaw)}
           <div class="fixrow">
             <span class="fxname"
-              >🔒 {holderName(permanentHolders(editRaw)[0])}</span
+              ><Icon name="lock" />
+              {holderName(permanentHolders(editRaw)[0])}</span
             >
             <button class="linkbtn" on:click={clearFixed} disabled={fixedBusy}
               >{$t("rolesv.clearFixed")}</button
@@ -686,14 +689,7 @@
       </div>
 
       <div class="actions">
-        <button
-          class="primary"
-          on:click={saveEdit}
-          disabled={savingEdit || !editTitle.trim()}
-          >{savingEdit ? $t("rolesv.saving") : $t("rolesv.save")}</button
-        >
-        <button class="ghost" on:click={() => (editCard = null)}
-          >{$t("common.cancel")}</button
+        <button class="primary" on:click={closeEdit}>{$t("common.done")}</button
         >
       </div>
       <button class="danger" on:click={deleteRole} disabled={deleting}
@@ -734,7 +730,7 @@
     border-radius: 50%;
     font-size: 1.3rem;
     line-height: 1;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     background: var(--paper);
     display: grid;
     place-items: center;
@@ -752,7 +748,7 @@
   .todaybtn {
     font-size: 0.8rem;
     font-weight: 700;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     text-decoration: underline;
   }
 
@@ -815,14 +811,14 @@
     font-size: 0.9rem;
     font-weight: 800;
     color: var(--ink-soft);
-    background: rgba(255, 255, 255, 0.65);
+    background: var(--glass);
     box-shadow: var(--shadow-soft);
     transition: transform 0.1s ease;
   }
   .tool:active {
     transform: scale(0.88);
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
   }
 
   /* ── List rows (compact layout) ─────────────────────────────────────── */
@@ -902,7 +898,7 @@
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: rgba(32, 48, 47, 0.5);
+    color: var(--ink-soft);
   }
   .holder {
     display: inline-flex;
@@ -948,7 +944,7 @@
   .open {
     font-size: 0.85rem;
     font-weight: 700;
-    color: rgba(32, 48, 47, 0.4);
+    color: var(--ink-soft);
   }
 
   .cardfoot {
@@ -959,7 +955,7 @@
   .fixednote {
     font-size: 0.78rem;
     font-weight: 700;
-    color: rgba(32, 48, 47, 0.5);
+    color: var(--ink-soft);
   }
   .take {
     flex: 0 0 auto;
@@ -968,7 +964,7 @@
     border-radius: 999px;
     font-size: 0.85rem;
     font-weight: 800;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     box-shadow: var(--shadow-soft);
     transition:
@@ -982,8 +978,8 @@
     opacity: 0.6;
   }
   .take.in {
-    color: var(--teal-deep);
-    background: rgba(255, 255, 255, 0.7);
+    color: var(--teal-ink);
+    background: var(--glass);
   }
 
   /* ── Week ──────────────────────────────────────────────────────────────── */
@@ -1030,7 +1026,7 @@
     color: var(--muted);
   }
   .leg-cell.today .dow {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .dnum {
     font-size: 0.86rem;
@@ -1086,7 +1082,7 @@
   .wdot {
     font-size: 1.1rem;
     font-weight: 700;
-    color: rgba(32, 48, 47, 0.28);
+    color: var(--muted);
   }
   .wav {
     position: relative;
@@ -1134,7 +1130,7 @@
     border-radius: 50%;
     font-size: 2rem;
     line-height: 1;
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     box-shadow: 0 10px 24px rgba(14, 107, 102, 0.4);
     display: grid;
@@ -1155,7 +1151,7 @@
   }
   .form .glyph {
     font-size: 1.8rem;
-    color: var(--teal);
+    color: var(--teal-ink);
     font-weight: 800;
   }
   .form h3 {
@@ -1222,7 +1218,7 @@
   .linkbtn {
     font-size: 0.85rem;
     font-weight: 700;
-    color: #9a3b2f;
+    color: var(--danger);
     text-decoration: underline;
   }
 
@@ -1249,11 +1245,11 @@
   }
   .form .primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .form .ghost {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--ghost);
     color: var(--ink);
   }
   .form .primary:active,
@@ -1271,7 +1267,7 @@
     border-radius: 12px;
     font-size: 0.9rem;
     font-weight: 700;
-    color: #9a3b2f;
+    color: var(--danger);
     background: rgba(154, 59, 47, 0.08);
     transition: transform 0.1s ease;
   }

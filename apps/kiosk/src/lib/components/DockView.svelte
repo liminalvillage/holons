@@ -1,0 +1,2048 @@
+<script lang="ts" context="module">
+  // SPDX-License-Identifier: AGPL-3.0-or-later
+  import type { OrbSim } from "$lib/dock";
+
+  // The sky outlives the dock. The layout mounts DockView only while the
+  // board's window is closed or morphing, and a sim seeded on every mount
+  // had the orbs gliding in from the ring each time the dock opened — under
+  // the closing window's iris, and into a different sky each visit. Kept
+  // here, a returning orb is already where it was left.
+  let keptSim: OrbSim | null = null;
+</script>
+
+<script lang="ts">
+  import Icon from "$lib/components/Icon.svelte";
+  import Identicon from "$lib/components/Identicon.svelte";
+  // The dock: the space the board's card floats in. Each board this device
+  // has opened is a circle in a little gravity field (see orbLayout): every
+  // orb repels every other, federation links pull their orbs together, so
+  // federated boards gather into constellations — each wrapped in a soft
+  // hull, its holographic bound. Tap a circle to expand it back into the
+  // window, long-press for edit mode (every circle grows a ✕), and the "+"
+  // in the tray adds a hub from an id, a registered label, an identity
+  // (npub, Ethereum address), a pasted link, or any bare name
+  // (parseHolonAdd accepts anything people actually copy or type).
+  import { onMount, tick } from "svelte";
+  import { goto } from "$app/navigation";
+  import {
+    holonColor,
+    holonColors,
+    inkOn,
+    learnHolonColor,
+    type HolonColors,
+  } from "$lib/palette";
+  import {
+    beaconPath,
+    beaconTangents,
+    boundsPath,
+    broughtInBy,
+    dockEntries,
+    dockView,
+    forgetBoard,
+    labelFor,
+    linksAmong,
+    liquidPath,
+    matchesDock,
+    nameBoard,
+    orbClusters,
+    orbLayout,
+    orbPositions,
+    orbUnder,
+    pairFlows,
+    rememberBoard,
+    requestOpen,
+    setDockView,
+    stepOrbs,
+    syncOrbs,
+    type LensDirections,
+    type Vec,
+  } from "$lib/dock";
+  import { getHolosphere, getWriter } from "$lib/holosphere";
+  import {
+    isShortName,
+    nameOf as resolvedName,
+    resolveNames,
+  } from "$lib/names";
+  import { dockPartnersOf } from "$lib/dockfed";
+  import { clearBotHandoff, returningFromBot } from "$lib/config";
+  import { clearHubClaim, pendingClaim } from "$lib/hubclaim";
+  import { showNotice } from "$lib/stores";
+  import { currentUser, loginOpen } from "$lib/auth";
+  import { getFederationSnapshot } from "@holons/core/federation";
+  import { isValidCell } from "h3-js";
+  import { canAddToCell, newLensItem, type LensId } from "$lib/maplens";
+  import LensForm from "./LensForm.svelte";
+  import { t, tr, type MessageKey } from "$lib/i18n";
+  import Modal from "./Modal.svelte";
+  import AddHubSheet from "./AddHubSheet.svelte";
+  import FederationLens from "./FederationLens.svelte";
+  import DockMap from "./DockMap.svelte";
+  import PeopleView from "./PeopleView.svelte";
+  import MapSearch from "./MapSearch.svelte";
+  import { loadDockPeople } from "$lib/dockpeople";
+  import type { PlaceHit } from "$lib/placesearch";
+  import { showHomePage } from "$lib/home";
+  import { holonId } from "$lib/stores";
+
+  /**
+   * An orb's paint as inline custom properties: `--c`, the holon's colour,
+   * and — only for a caretaker's literal colour, which the palette's ink was
+   * never tuned against — `--on-c`, the ink that reads on it.
+   */
+  function paintOf(id: string, colors: HolonColors): string {
+    const c = holonColor(id, colors);
+    const ink = inkOn(c);
+    return ink ? `--c: ${c}; --on-c: ${ink}` : `--c: ${c}`;
+  }
+
+  // The earth, when it's showing beneath the sky — the bar's search docks
+  // hubs onto it and flies it to places, its My-location button asks it to
+  // locate, and every frame the sky asks it where each placed board's
+  // hexagon sits.
+  let dockMap: DockMap | undefined;
+  let locating = false;
+  // The earth is up for the list too: the list is the earth's pane turned
+  // over, and what it lists is what the map beneath is looking at.
+  $: mapOn = $dockView === "map" || $dockView === "list";
+  // The people have a view of their own: no earth, and the sky's orbs stand
+  // aside for it (PeopleView draws the hubs its own way).
+  $: peopleOn = $dockView === "people";
+  $: listOn = $dockView === "list";
+
+  /**
+   * What the earth has selected, when it is showing: the tapped cell and the
+   * chosen lens. It is what turns the tray's "+" from "add a hub" into "add
+   * one of these, here" — see `addHub`.
+   */
+  let mapSel: { cell: string; lens: LensId | null } | null = null;
+  /** The cell an add would land in, or null when the earth is off/unselected
+   *  — or turned over into the list, where no cell is there to be seen. */
+  $: addCell = mapOn && !listOn ? (mapSel?.cell ?? null) : null;
+  /**
+   * The lens an add would write into that cell. The `holons` lens is NOT one
+   * of these: adding a holon is adding a hub, and the cell becomes its home
+   * (see `addHub`), which is what puts it on the map in the first place.
+   */
+  $: addLens =
+    addCell &&
+    mapSel?.lens &&
+    mapSel.lens !== "holons" &&
+    canAddToCell(mapSel.lens)
+      ? mapSel.lens
+      : null;
+  const lensName = (id: LensId) => $t(`lens.${id}` as MessageKey);
+
+  // ── Anchors + beacons ───────────────────────────────────────────────────--
+  //
+  // With the earth on, an orb whose holon has claimed a place hovers HOVER
+  // above its hexagon (the anchor the physics pulls it to) and is tied to
+  // the hexagon's centre (the ground point) by a beacon cone in its own
+  // colour. Both are re-read from the map every frame, so the orbs follow a
+  // pan or a fly with a balloon's lag and the cones always land true. With
+  // the earth off there are no anchors and the sky is just the sky.
+  const HOVER_REM = 8;
+  $: HOVER = (HOVER_REM / ORB_REM) * ORB; // scales with the root font like ORB
+  let mapTick = 0; // bumped by the earth when it settles (reduced-motion relayout)
+  let grounds: ReadonlyMap<string, Vec> = new Map();
+  let anchors: ReadonlyMap<string, Vec> = new Map();
+
+  function readAnchors() {
+    const g = mapOn ? dockMap?.projectBoards() : null;
+    if (!g) {
+      if (grounds.size) grounds = anchors = new Map();
+      return;
+    }
+    const a = new Map<string, Vec>();
+    for (const [id, pt] of g) a.set(id, { x: pt.x, y: pt.y - HOVER });
+    grounds = g;
+    anchors = a;
+  }
+
+  /** Is this ground point near enough to draw a beacon to? A place far
+   *  outside the view would draw as a hair-thin sliver across the sky; the
+   *  orb parked at the edge nearest it already says "that way". */
+  const nearField = (g: Vec) =>
+    g.x > -fieldW && g.x < 2 * fieldW && g.y > -fieldH && g.y < 2 * fieldH;
+
+  /** A gradient id the SVG will accept, unique per holon. */
+  const gradId = (id: string) => "beacon-" + id.replace(/[^\w-]/g, "_");
+
+  // The orb is sized in rem so it scales with the kiosk's fluid root font
+  // (app.css clamps it 14–22px by viewport width). The physics, the vesica,
+  // the hit math, and the bounds all run in px, so measure the diameter
+  // from the live root size rather than assuming 16px — a fixed 104 drew
+  // the lens for a circle the screen never showed. Re-read on every field
+  // resize: the root size is viewport-driven, so it moves with the window.
+  const ORB_REM = 4.75;
+  let ORB = ORB_REM * 16; // px diameter — remeasured below once the field mounts
+  function orbPx(): number {
+    if (typeof document === "undefined") return ORB_REM * 16;
+    const root = parseFloat(
+      getComputedStyle(document.documentElement).fontSize,
+    );
+    return ORB_REM * (Number.isFinite(root) && root > 0 ? root : 16);
+  }
+  const BOUND_PAD = 30; // air between an orb and its holographic bound
+
+  // One pointer, three gestures: a TAP opens the board, a stationary
+  // LONG-PRESS toggles edit mode (mirroring the tab-pin gesture), and a DRAG
+  // lifts the orb — carried by the finger through the gravity field — so
+  // dropping it onto another orb federates the two boards. Long-press and
+  // drag both swallow the click that follows them.
+  const LONG_PRESS_MS = 480;
+  const DRAG_START_PX = 10; // movement past this turns the press into a drag
+  let editing = false;
+  let pressTimer: ReturnType<typeof setTimeout> | null = null;
+  let longPressed = false;
+
+  let dragId: string | null = null; // orb under the finger (pressed)
+  let dragging = false; // moved past the threshold
+  let dragMoved = false; // swallow the click after a drag
+  let dragPos: Vec | null = null; // pointer in field coordinates
+  let dropTarget: string | null = null;
+  let pressAt: Vec = { x: 0, y: 0 };
+  let fieldEl: HTMLDivElement;
+
+  /** The two boards being federated by a drop — drives the config popup. */
+  let fedPair: { home: string; partner: string } | null = null;
+  /** A drop on a hexagon, waiting to be confirmed as that board's new home. */
+  let homeDrop: { holon: string; hex: string } | null = null;
+  /**
+   * The ✕ tapped in edit mode on a hub whose federation brought other hubs
+   * onto this dock: the sheet asks whether those go too. A hub that brought
+   * nothing in is simply removed — there is nothing to ask.
+   */
+  let forgetTarget: string | null = null;
+  $: forgetRetinue = forgetTarget
+    ? broughtInBy($dockEntries, forgetTarget)
+    : [];
+
+  function askForget(id: string) {
+    if (broughtInBy($dockEntries, id).length === 0) {
+      forget(id, false);
+      return;
+    }
+    forgetTarget = id;
+  }
+  function confirmForget(id: string, withDependents: boolean) {
+    forgetTarget = null;
+    forget(id, withDependents);
+  }
+  /**
+   * Remove a circle for good. The board the screen is SHOWING (its id is
+   * remembered, and in the address) is also let go of — else the next load
+   * would open it again and dock it straight back.
+   */
+  function forget(id: string, withDependents: boolean) {
+    forgetBoard(id, { withDependents });
+    if (id === $holonId) void showHomePage();
+  }
+
+  /**
+   * Take the confirm sheet's answer. The cell and the board come in as
+   * ARGUMENTS, read while the sheet is still up: `{@const}` is lazy in Svelte
+   * 5, so a handler that closed the sheet first and then reached back into it
+   * would find nothing there and quietly move nothing.
+   */
+  function confirmHome(holon: string, hex: string) {
+    homeDrop = null;
+    void claimHome(holon, hex);
+  }
+
+  function fieldPoint(e: PointerEvent): Vec {
+    const r = fieldEl.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  function onOrbDown(e: PointerEvent, id: string) {
+    if (e.button != null && e.button !== 0) return;
+    longPressed = false;
+    dragMoved = false;
+    cancelPress();
+    dragId = id;
+    dragging = false;
+    pressAt = fieldPoint(e);
+    // Capture so the whole drag reaches this orb, even off its own pixels.
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    pressTimer = setTimeout(() => {
+      longPressed = true;
+      editing = !editing;
+      try {
+        navigator.vibrate?.(15);
+      } catch {
+        /* haptics are best-effort */
+      }
+    }, LONG_PRESS_MS);
+  }
+  function onOrbMove(e: PointerEvent) {
+    if (!dragId || longPressed) return;
+    const p = fieldPoint(e);
+    if (!dragging) {
+      if (Math.hypot(p.x - pressAt.x, p.y - pressAt.y) < DRAG_START_PX) return;
+      dragging = true;
+      cancelPress(); // a drag is not a long-press
+    }
+    dragPos = p;
+    dropTarget = findDropTarget(p, dragId);
+  }
+  function onOrbUp() {
+    cancelPress();
+    if (dragging && dragId) {
+      dragMoved = true; // the click that follows must not open the board
+      if (dropTarget && dropTarget !== dragId) {
+        // Another ORB: federate the two holons. A hexagon — any hexagon,
+        // another board's included: that cell becomes the carried board's
+        // HOME. Places never federate; only holons do.
+        if ($dockEntries.some((e) => e.id === dropTarget))
+          fedPair = { home: dragId, partner: dropTarget };
+        else if (isValidCell(dropTarget))
+          // Moving a holon's home is not something a slip of the finger
+          // should do: ask first, and keep the cell lit while it asks.
+          homeDrop = { holon: dragId, hex: dropTarget };
+      }
+    }
+    dragId = null;
+    dragging = false;
+    dragPos = null;
+    dropTarget = null;
+  }
+  function onOrbLeave() {
+    if (!dragging) cancelPress(); // capture keeps a real drag alive
+  }
+  function cancelPress() {
+    if (pressTimer) clearTimeout(pressTimer);
+    pressTimer = null;
+  }
+  function onOrbClick(e: MouseEvent, id: string) {
+    if (longPressed || dragMoved) {
+      longPressed = false; // this click closes out the long-press or drag
+      dragMoved = false;
+      return;
+    }
+    if (editing) return; // in edit mode a tap is not an open
+    // The overlap of two federated circles is under their liquid (below),
+    // which catches that tap itself; a tap that reaches the orb opens it.
+    void e;
+    requestOpen(id);
+  }
+
+  // ── The liquid between a pair ───────────────────────────────────────────--
+  //
+  // Each federated pair is joined by a glassy liquid (`liquidPath`) in a
+  // gradient of the two orbs' colours. Tapping it opens the pair's flows;
+  // hovering (a pointer that can hover) names them in a chip over the neck.
+  /** The pair a pointer is resting on, and where its chip goes. */
+  let hoverLink: { a: string; b: string; x: number; y: number } | null = null;
+
+  function openPair(a: string, b: string) {
+    hoverLink = null;
+    fedPair =
+      b === $holonId ? { home: b, partner: a } : { home: a, partner: b };
+  }
+  function onLiquidEnter(e: PointerEvent, a: string, b: string) {
+    if (e.pointerType !== "mouse") return; // a finger taps; it never hovers
+    const pa = positions.get(a);
+    const pb = positions.get(b);
+    if (!pa || !pb) return;
+    hoverLink = { a, b, x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 };
+  }
+  function onLiquidKey(e: KeyboardEvent, a: string, b: string) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    openPair(a, b);
+  }
+
+  // What the chip (and the liquid's accessible name) says: who is joined,
+  // then each direction's lenses — the kiosk's tab names where it has them.
+  const LENS_LABEL_KEYS: Record<string, MessageKey> = {
+    quests: "tabs.tasks",
+    library: "tabs.library",
+    roles: "tabs.roles",
+    checklists: "tabs.checklists",
+    stock: "tabs.stock",
+  };
+  const lensLabel = (lens: string) =>
+    LENS_LABEL_KEYS[lens] ? $t(LENS_LABEL_KEYS[lens]) : lens;
+  /** Up to three lines: the pair, then one per direction with flows. */
+  function describePair(a: string, b: string): string[] {
+    const { ab, ba } = pairFlows(a, b, fedConfigs);
+    const lines = [$t("dock.flows", { a: nameOf(a), b: nameOf(b) })];
+    if (ab.length)
+      lines.push(
+        $t("dock.flowsTo", {
+          a: nameOf(a),
+          b: nameOf(b),
+          lenses: ab.map(lensLabel).join(", "),
+        }),
+      );
+    if (ba.length)
+      lines.push(
+        $t("dock.flowsTo", {
+          a: nameOf(b),
+          b: nameOf(a),
+          lenses: ba.map(lensLabel).join(", "),
+        }),
+      );
+    if (lines.length === 1) lines.push($t("dock.noFlows"));
+    return lines;
+  }
+  /** A gradient id the SVG will accept, unique per pair. */
+  const liquidId = (a: string, b: string) =>
+    "liquid-" + `${a}-${b}`.replace(/[^\w-]/g, "_");
+
+  /**
+   * What the pointer is over: another board's ORB, when the finger is INSIDE
+   * it — the only thing a drop can federate with — else, with the earth on,
+   * the bare grid hexagon under the finger, which a drop claims as the
+   * carried board's home. Being inside the target is what lets a federated
+   * orb reach the ground at all: its partner trails the finger for the whole
+   * drag, so anything looser matches the partner and never the hexagon.
+   *
+   * Hexagons are deliberately NOT boards here. A place is somewhere a holon
+   * lives, not someone it federates with, so the map's painted cells and
+   * neighbourhoods are just ground to drop on.
+   */
+  function findDropTarget(p: Vec, self: string): string | null {
+    const orb = orbUnder(positions, p, self, ORB / 2);
+    if (orb || !mapOn) return orb;
+    return dockMap?.cellAt(p.x, p.y) ?? null;
+  }
+
+  /** A partner's display name — always another docked board's. */
+  const partnerLabel = (id: string) =>
+    $dockEntries.find((e) => e.id === id)?.name ?? $resolvedName(id);
+
+  /**
+   * Make `hex` the board's home — `settings.hex`, exactly what Settings →
+   * Set location writes (merged over the existing settings doc, through the
+   * identity-aware writer), announced the same way so the beacon moves at
+   * once. A drop on the cell it already lives in changes nothing.
+   *
+   * The move is announced BEFORE the write: reading the settings doc and
+   * getting a signed put acknowledged takes a relay round trip, and until it
+   * came back the orb sprang home to its old place and only then flew to the
+   * new one. The hexagon and the beacon land where the finger let go, and a
+   * write that fails puts them back.
+   */
+  async function claimHome(
+    holon: string,
+    hex: string,
+    opts: { onlyWhenHomeless?: boolean } = {},
+  ): Promise<boolean> {
+    const announce = (cell: string | null) =>
+      window.dispatchEvent(
+        new CustomEvent("kiosk:hex-changed", {
+          detail: { holon, hex: cell ?? undefined },
+        }),
+      );
+    const previous = dockMap?.hexOf(holon) ?? null;
+    // A drop follows the finger, so it announces first and puts the orb back
+    // if the write is refused. A hub added on the map has no orb in the sky
+    // yet and must not move a holon that already lives somewhere, so it waits
+    // for the settings read before saying anything.
+    if (!opts.onlyWhenHomeless) announce(hex);
+    try {
+      const hs = await getHolosphere();
+      let existing: any = {};
+      try {
+        const raw = await (hs as any).get(holon, "settings", holon);
+        if (raw && typeof raw === "object" && !Array.isArray(raw))
+          existing = raw;
+      } catch {
+        /* fresh settings */
+      }
+      if (existing.hex === hex) return true; // already home here — nothing to write
+      // Already living elsewhere: only a deliberate drag moves a home. Say so
+      // — the orb is about to land somewhere other than the selected cell.
+      if (opts.onlyWhenHomeless && existing.hex) {
+        showNotice(tr("dock.addHereTaken"));
+        return false;
+      }
+      if (opts.onlyWhenHomeless) announce(hex);
+      const writer = await getWriter(holon, (msg) => showNotice(msg));
+      const ok = await writer.put("settings", { ...existing, id: holon, hex });
+      if (ok) showNotice(tr("hex.claimed"));
+      else {
+        announce(existing.hex ?? previous); // refused — put it back
+        showNotice(tr("hex.saveError"));
+      }
+      return ok;
+    } catch (err) {
+      console.error("[kiosk] dock: failed to set home", err);
+      announce(previous);
+      showNotice(tr("hex.saveError"));
+      return false;
+    }
+  }
+
+  const nameOf = (id: string) =>
+    $dockEntries.find((e) => e.id === id)?.name ?? $resolvedName(id);
+
+  // ── Federation ties ─────────────────────────────────────────────────────--
+  // Each docked board's partner list, fetched once and cached for the dock's
+  // lifetime. Until (or unless) it arrives, the orbs float unlinked.
+  let partnerMap = new Map<string, readonly string[]>();
+  /** Each board's per-partner lens directions — what its liquids describe. */
+  let fedConfigs = new Map<string, Record<string, LensDirections>>();
+  const fetching = new Set<string>();
+
+  $: ids = $dockEntries.map((e) => e.id);
+  $: void loadPartners(ids);
+
+  async function loadPartners(list: string[]) {
+    const missing = list.filter(
+      (id) => !partnerMap.has(id) && !fetching.has(id),
+    );
+    if (!missing.length) return;
+    for (const id of missing) fetching.add(id);
+    try {
+      const hs = await getHolosphere();
+      await Promise.all(
+        missing.map(async (id) => {
+          try {
+            const snap = await getFederationSnapshot(hs, id);
+            partnerMap.set(id, snap.federated);
+            fedConfigs.set(id, snap.lensConfig);
+          } catch {
+            partnerMap.set(id, []);
+          }
+        }),
+      );
+      partnerMap = partnerMap; // reassign → recompute links below
+      fedConfigs = fedConfigs;
+    } catch {
+      /* can't connect — the constellation just shows no ties */
+    }
+  }
+
+  // ── The gravity field ───────────────────────────────────────────────────--
+  //
+  // The physics runs LIVE: a rAF loop steps the simulation every frame, so
+  // the orbs visibly glide from the seed ring into their constellations and
+  // keep a gentle wander afterwards — the sky breathes. Someone who prefers
+  // reduced motion gets the same layout settled in one deterministic go.
+  let fieldW = 0;
+  let fieldH = 0;
+  $: ORB = fieldW ? orbPx() : ORB; // the root size is viewport-driven
+  let positions: ReadonlyMap<string, Vec> = new Map();
+  let sim: OrbSim | null = keptSim;
+  let simKey = "";
+
+  const reducedMotion =
+    typeof matchMedia !== "undefined" &&
+    matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  $: links = linksAmong(ids, partnerMap);
+
+  // ── People ──────────────────────────────────────────────────────────────--
+  //
+  // The People view (PeopleView): the dock's hubs gathered by the people
+  // they share, with everyone in them. The rosters are only read while it
+  // is up, and again when the cast changes.
+  let peopleView: PeopleView | undefined;
+  $: if (peopleOn) void loadDockPeople(ids);
+
+  // ── The search box as a filter ──────────────────────────────────────────--
+  //
+  // Whatever is typed in the search narrows the sky to the orbs that answer
+  // it: the rest fade out, and with them every tie, lens, hull and beacon
+  // that has a faded end. The physics keeps running on all of them, so the
+  // survivors stay put and the others come back where they were when the
+  // box empties. `matchesDock` (lib/dock) is the one rule for what answers.
+  let searchQuery = "";
+  $: filtering = searchQuery.trim() !== "";
+  $: shown = new Set(
+    $dockEntries.filter((e) => matchesDock(e, searchQuery)).map((e) => e.id),
+  );
+  $: shownLinks = filtering
+    ? links.filter(([a, b]) => shown.has(a) && shown.has(b))
+    : links;
+  $: if (reducedMotion) {
+    void mapTick; // the earth settled somewhere new: the places moved
+    void mapOn;
+    readAnchors();
+    const settled = orbLayout(ids, links, fieldW, fieldH, ORB / 2, anchors);
+    // Even a parked sky lets a dragged orb follow the finger.
+    if (dragging && dragId && dragPos) settled.set(dragId, dragPos);
+    positions = settled;
+  }
+
+  // Each docked board's caretaker colour (settings `color`), so an orb wears
+  // the same colour as the board behind it. Best-effort and de-duplicated.
+  $: void learnDockColors($dockEntries);
+  async function learnDockColors(entries: { id: string }[]) {
+    if (typeof window === "undefined" || entries.length === 0) return;
+    try {
+      const hs = await getHolosphere();
+      for (const e of entries) void learnHolonColor(hs, e.id);
+    } catch {
+      /* the hash applies */
+    }
+  }
+
+  // Each docked board's own name, refreshed while the dock is up — so a board
+  // is named by ITS holon or not at all. A holon that resolves no name falls
+  // back to its id/label, which also heals circles stamped with another
+  // board's name. Once per id per mount: `nameBoard` writes `$dockEntries`,
+  // which is this statement's own dependency.
+  const namedIds = new Set<string>();
+  $: void learnDockNames($dockEntries);
+  async function learnDockNames(entries: { id: string }[]) {
+    if (typeof window === "undefined" || entries.length === 0) return;
+    const pending = entries.filter((e) => !namedIds.has(e.id));
+    if (pending.length === 0) return;
+    for (const e of pending) namedIds.add(e.id);
+    let hs: Awaited<ReturnType<typeof getHolosphere>>;
+    try {
+      hs = await getHolosphere();
+    } catch {
+      return; // offline — the stored labels stand
+    }
+    for (const e of pending)
+      void resolveNames([e.id]).then(
+        (m) => {
+          const n = m.get(e.id) ?? "";
+          if (!isShortName(n, e.id)) nameBoard(e.id, n);
+        },
+        () => {},
+      );
+  }
+
+  onMount(() => {
+    // A federation change (this popup's writes included) redraws the ties:
+    // flush the partner cache and refetch, and the orbs pull together live.
+    const onFedChanged = () => {
+      partnerMap = new Map();
+      fedConfigs = new Map();
+      fetching.clear();
+      void loadPartners(ids);
+    };
+    window.addEventListener("kiosk:federation-changed", onFedChanged);
+    // Dev/test hook, like window.__dockMap: lets a headless run read where
+    // the orbs and their places are without scraping the DOM. DEV only.
+    if (import.meta.env.DEV)
+      (window as any).__dock = {
+        positions: () => positions,
+        grounds: () => grounds,
+      };
+
+    let raf = 0;
+    if (!reducedMotion)
+      raf = requestAnimationFrame(function frame(t) {
+        if (fieldEl && fieldW && fieldH && ids.length) {
+          // Re-seat the sim when the cast or the field changes; retained orbs
+          // keep their place and momentum, newcomers glide in from the ring.
+          const key = `${ids.join("\n")}|${fieldW}x${fieldH}`;
+          if (!sim || key !== simKey) {
+            sim = keptSim = syncOrbs(sim, ids, fieldW, fieldH);
+            simKey = key;
+          }
+          const lifted = dragging && dragId ? dragId : undefined;
+          // Where the places are THIS frame — the earth may be mid-fly.
+          readAnchors();
+          stepOrbs(sim, links, fieldW, fieldH, ORB / 2, t, lifted, anchors);
+          // A dragged orb is kinematic: lifted out of the physics (see
+          // stepOrbs) and pinned under the finger.
+          if (dragging && dragId && dragPos) {
+            const i = sim.ids.indexOf(dragId);
+            if (i >= 0) {
+              sim.px[i] = Math.min(fieldW, Math.max(0, dragPos.x));
+              sim.py[i] = Math.min(fieldH, Math.max(0, dragPos.y));
+              sim.vx[i] = 0;
+              sim.vy[i] = 0;
+            }
+          }
+          positions = orbPositions(sim);
+        }
+        raf = requestAnimationFrame(frame);
+      });
+    return () => {
+      window.removeEventListener("kiosk:federation-changed", onFedChanged);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  });
+  $: bounds = orbClusters(
+    filtering ? ids.filter((id) => shown.has(id)) : ids,
+    shownLinks,
+  )
+    .filter((c) => c.length > 1)
+    .map((c) => ({
+      key: c.join("|"),
+      d: boundsPath(
+        c.map((id) => positions.get(id)).filter((p): p is Vec => !!p),
+        ORB / 2 + BOUND_PAD,
+      ),
+    }))
+    .filter((b) => b.d);
+
+  // The "+" flips into a small add form in place. What the line becomes
+  // depends on what the earth has selected: with a cell AND an addable lens
+  // in hand it is a record written into that pair; otherwise it names a hub,
+  // and a selected cell becomes that hub's home.
+  /** The add-a-hub sheet, when open, and the step it is on. */
+  let addSheet: { step: "choose" | "existing" | "here" | "new" } | null = null;
+  $: adding = addSheet !== null;
+  $: addLabel = addLens
+    ? $t("dock.addTo", { lens: lensName(addLens) })
+    : addCell
+      ? $t("dock.addHere")
+      : $t("dock.add");
+
+  /** The cell + lens the add form is open on. */
+  let formFor: { cell: string; lens: LensId } | null = null;
+
+  async function startAdd() {
+    // With a cell and a lens both in hand, the "+" opens that lens's own
+    // form — the schema knows far more about the record than one line can.
+    if (addCell && addLens) {
+      if (!$currentUser) {
+        loginOpen.set(true);
+        return;
+      }
+      formFor = { cell: addCell, lens: addLens };
+      return;
+    }
+    // A wait already pending on this device (they left for Telegram and
+    // came back) resumes on the Telegram step; otherwise ask which way in.
+    addSheet = { step: pendingClaim() ? "new" : "choose" };
+  }
+  /**
+   * The sheet named a hub — pasted, or claimed back from the bot — or the
+   * map's search box picked one (`stay`: the hub is docked onto the map and
+   * flown to, the board's window is not opened over it).
+   */
+  async function addHub(
+    hub: { id: string; name?: string },
+    opts: { stay?: boolean } = {},
+  ) {
+    const cell = addCell;
+    const id = hub.id;
+    addSheet = null;
+    // Whichever way it came, the round trip is over.
+    clearHubClaim();
+    clearBotHandoff();
+    // The circle must exist before the open morph can animate from it.
+    rememberBoard(id, hub.name?.trim() || labelFor(id));
+    if (cell) {
+      // Added while a cell was selected: that cell is where this hub lives.
+      // The map keeps the sky, so the new orb is seen landing on its hexagon
+      // instead of the board's window opening over it.
+      if (await claimHome(id, cell, { onlyWhenHomeless: true }))
+        void noteHolonInCell(cell, id);
+      // Docked without opening, so the layout's on-show hook never runs:
+      // bring its federation along from here.
+      void dockPartnersOf(id);
+      return;
+    }
+    if (opts.stay) {
+      void dockPartnersOf(id);
+      void dockMap?.showBoard(id);
+      return;
+    }
+    await tick();
+    requestOpen(id);
+  }
+
+  /** The search box picked a hub: dock it, or open it if it is here. */
+  function pickHub(hit: { id: string; name: string; docked: boolean }) {
+    if (!hit.docked)
+      void addHub({ id: hit.id, name: hit.name }, { stay: true });
+    else requestOpen(hit.id); // its orb is already in the sky: open it
+  }
+  /** The search box picked a place: the earth flies there. */
+  function pickPlace(place: PlaceHit) {
+    dockMap?.showPlace(place);
+  }
+
+  // Back from Telegram: with a claim token out, the Telegram step picks the
+  // wait back up (the bot's answer docks the hub by itself). With nothing
+  // docked and no token — an older link — the bot's reply is in their
+  // clipboard, so open the paste line instead of making them find the "+".
+  onMount(() => {
+    if (!returningFromBot()) return;
+    if (pendingClaim()) addSheet = { step: "new" };
+    else if ($dockEntries.length === 0) addSheet = { step: "existing" };
+  });
+
+  /**
+   * Say in the cell itself that this holon lives here: a record under the
+   * cell's `holons` lens, which is what lights the cell for that lens and
+   * lists the hub in its panel — the settings.hex write alone is only known
+   * to the holon.
+   */
+  async function noteHolonInCell(cell: string, holon: string) {
+    try {
+      const name =
+        $dockEntries.find((e) => e.id === holon)?.name ?? labelFor(holon);
+      const item = newLensItem("holons", name, holon);
+      if (!item) return;
+      const writer = await getWriter(cell, (msg) => showNotice(msg));
+      await writer.put("holons", item);
+      dockMap?.reloadPanel();
+    } catch (err) {
+      console.error("[kiosk] dock: failed to note the hub in its cell", err);
+    }
+  }
+
+  function cancelAdd() {
+    addSheet = null;
+  }
+
+  // A tap on empty space stands down edit mode and the add form. The field
+  // lets taps through (the earth beneath pans and selects), so the map
+  // asks first via `standDown`; with the earth off the sky itself is tapped.
+  function standDown(): boolean {
+    const had = editing || adding;
+    editing = false;
+    cancelAdd();
+    // Not `||`: the card must be stood down even when the others were up.
+    const hadCard = peopleView?.close() ?? false;
+    return had || hadCard;
+  }
+  function onBackdrop(e: Event) {
+    if (e.target !== e.currentTarget) return;
+    standDown();
+  }
+</script>
+
+<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+<div class="dock" class:onmap={mapOn} on:click={onBackdrop}>
+  <!-- The sky: one box the earth, the beacons and the gravity field all
+       fill edge to edge, so a point the map projects is a point in the
+       field. Bottom to top: the earth (when on), the beacon cones, the
+       orbs. The field lets pointer events through everywhere but its orbs,
+       so a drag on bare sky pans the earth beneath. -->
+  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+  <div class="sky" on:click={onBackdrop}>
+    {#if mapOn}
+      <DockMap
+        bind:this={dockMap}
+        bind:locating
+        listOpen={listOn}
+        onshowmap={() => setDockView("map")}
+        bind:selection={mapSel}
+        onbackdrop={standDown}
+        onmove={() => (mapTick += 1)}
+        highlight={dragging ? dropTarget : (homeDrop?.hex ?? null)}
+        carrying={dragging ? dragId : (homeDrop?.holon ?? null)}
+      />
+    {/if}
+
+    {#if mapOn && fieldW && fieldH}
+      <!-- Each placed orb's beacon: a cone in the orb's colour, orb-wide at
+           the orb and converging on its hexagon's centre, fading toward the
+           ground where a small pulse marks the landing. Read `positions` and
+           `grounds` inline — a helper closure would hide the dependency from
+           the compiler and freeze the cones in place. -->
+      <svg class="beacons" viewBox="0 0 {fieldW} {fieldH}" aria-hidden="true">
+        {#each $dockEntries as e, i (e.id)}
+          {@const p = positions.get(e.id)}
+          {@const g = grounds.get(e.id)}
+          {#if p && g && nearField(g) && (!filtering || shown.has(e.id))}
+            {@const tan = beaconTangents(p, g, ORB / 2)}
+            {#if tan}
+              {@const gid = gradId(e.id)}
+              <!-- A beam, not a drawn triangle: the fill runs ACROSS the
+                   cone (bright on the centre line, nothing at either
+                   shoulder) and a mask fades it ALONG the way down, so it
+                   has no edge anywhere — it just dissolves. -->
+              <g
+                class="beacon"
+                style="--c: {holonColor(e.id, $holonColors)}; --i: {i}"
+              >
+                <linearGradient
+                  id="{gid}-across"
+                  gradientUnits="userSpaceOnUse"
+                  x1={tan[0].x}
+                  y1={tan[0].y}
+                  x2={tan[1].x}
+                  y2={tan[1].y}
+                >
+                  <stop class="beam-stop" offset="0" stop-opacity="0" />
+                  <stop class="beam-stop" offset="0.3" stop-opacity="0.85" />
+                  <stop class="beam-stop" offset="0.7" stop-opacity="0.85" />
+                  <stop class="beam-stop" offset="1" stop-opacity="0" />
+                </linearGradient>
+                <linearGradient
+                  id="{gid}-along"
+                  gradientUnits="userSpaceOnUse"
+                  x1={p.x}
+                  y1={p.y}
+                  x2={g.x}
+                  y2={g.y}
+                >
+                  <stop offset="0" stop-color="#fff" />
+                  <stop offset="1" stop-color="#fff" stop-opacity="0.2" />
+                </linearGradient>
+                <mask
+                  id="{gid}-mask"
+                  maskUnits="userSpaceOnUse"
+                  x="0"
+                  y="0"
+                  width={fieldW}
+                  height={fieldH}
+                >
+                  <rect
+                    x="0"
+                    y="0"
+                    width={fieldW}
+                    height={fieldH}
+                    fill="url(#{gid}-along)"
+                  />
+                </mask>
+                <path
+                  class="cone"
+                  d={beaconPath(p, g, ORB / 2)}
+                  fill="url(#{gid}-across)"
+                  mask="url(#{gid}-mask)"
+                />
+                <circle class="landing-pulse" cx={g.x} cy={g.y} r="7" />
+                <circle
+                  class="landing"
+                  class:target={dropTarget === e.id}
+                  cx={g.x}
+                  cy={g.y}
+                  r={dropTarget === e.id ? 9 : 4}
+                />
+              </g>
+            {/if}
+          {/if}
+        {/each}
+      </svg>
+    {/if}
+
+    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+    <div
+      class="field"
+      class:away={peopleOn}
+      role="list"
+      aria-label={$t("dock.boards")}
+      bind:this={fieldEl}
+      bind:clientWidth={fieldW}
+      bind:clientHeight={fieldH}
+      style="--orb: {ORB_REM}rem"
+    >
+      {#if fieldW && fieldH}
+        <!-- Ties + holographic bounds, drawn beneath the orbs. -->
+        <svg class="web" viewBox="0 0 {fieldW} {fieldH}" aria-hidden="true">
+          {#each bounds as b (b.key)}
+            <path class="bound" d={b.d} />
+          {/each}
+          {#each shownLinks as l (l[0] + "|" + l[1])}
+            <!-- Read `positions` directly: a helper closure would hide the
+               dependency from the compiler and freeze the orbs in place. -->
+            {@const pa = positions.get(l[0])}
+            {@const pb = positions.get(l[1])}
+            {#if pa && pb}
+              <line class="tie" x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} />
+            {/if}
+          {/each}
+        </svg>
+
+        <!-- The liquids, drawn ABOVE the orbs (they are opaque): each
+           federated pair joined by a neck of glass in a gradient of their
+           two colours — filling their overlap, or a thread across the gap
+           the earth holds open. Tap it (or Enter on it) for the pair's
+           flows; hover names them. Read `positions` inline. -->
+        <svg class="overlaps" viewBox="0 0 {fieldW} {fieldH}">
+          <defs>
+            {#each shownLinks as l (l[0] + "|" + l[1])}
+              {@const pa = positions.get(l[0])}
+              {@const pb = positions.get(l[1])}
+              {#if pa && pb}
+                <linearGradient
+                  id={liquidId(l[0], l[1])}
+                  gradientUnits="userSpaceOnUse"
+                  x1={pa.x}
+                  y1={pa.y}
+                  x2={pb.x}
+                  y2={pb.y}
+                >
+                  <stop
+                    offset="0"
+                    stop-color={holonColor(l[0], $holonColors)}
+                  />
+                  <stop
+                    offset="1"
+                    stop-color={holonColor(l[1], $holonColors)}
+                  />
+                </linearGradient>
+                <!-- The rim: the same run, in each orb's rim ink (.rim-stop). -->
+                <linearGradient
+                  id={liquidId(l[0], l[1]) + "-rim"}
+                  gradientUnits="userSpaceOnUse"
+                  x1={pa.x}
+                  y1={pa.y}
+                  x2={pb.x}
+                  y2={pb.y}
+                >
+                  <stop
+                    class="rim-stop"
+                    offset="0"
+                    style="--c: {holonColor(l[0], $holonColors)}"
+                  />
+                  <stop
+                    class="rim-stop"
+                    offset="1"
+                    style="--c: {holonColor(l[1], $holonColors)}"
+                  />
+                </linearGradient>
+              {/if}
+            {/each}
+          </defs>
+          {#each shownLinks as l (l[0] + "|" + l[1])}
+            {@const pa = positions.get(l[0])}
+            {@const pb = positions.get(l[1])}
+            {#if pa && pb}
+              {@const d = liquidPath(pa, pb, ORB / 2)}
+              {#if d}
+                <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+                <path
+                  class="liquid"
+                  class:lit={hoverLink?.a === l[0] && hoverLink?.b === l[1]}
+                  {d}
+                  style="--grad: url(#{liquidId(
+                    l[0],
+                    l[1],
+                  )}); --rim: url(#{liquidId(l[0], l[1])}-rim)"
+                  role="button"
+                  tabindex="0"
+                  aria-label={describePair(l[0], l[1]).join(". ")}
+                  on:click={() => openPair(l[0], l[1])}
+                  on:keydown={(e) => onLiquidKey(e, l[0], l[1])}
+                  on:pointerenter={(e) => onLiquidEnter(e, l[0], l[1])}
+                  on:pointerleave={() => (hoverLink = null)}
+                />
+              {/if}
+            {/if}
+          {/each}
+        </svg>
+
+        {#each $dockEntries as e, i (e.id)}
+          {@const p = positions.get(e.id)}
+          {#if p}
+            <div
+              class="slot"
+              class:front={dragId === e.id}
+              class:faded={filtering && !shown.has(e.id)}
+              role="listitem"
+              style="{paintOf(
+                e.id,
+                $holonColors,
+              )}; --i: {i}; left: {p.x}px; top: {p.y}px"
+            >
+              <button
+                class="orb"
+                class:lifted={dragging && dragId === e.id}
+                class:target={dropTarget === e.id}
+                data-dock-circle={e.id}
+                aria-label={$t("dock.open", { name: e.name })}
+                on:click={(ev) => onOrbClick(ev, e.id)}
+                on:pointerdown={(ev) => onOrbDown(ev, e.id)}
+                on:pointermove={onOrbMove}
+                on:pointerup={onOrbUp}
+                on:pointerleave={onOrbLeave}
+                on:pointercancel={onOrbUp}
+              >
+                <Identicon class="mark" seed={e.id} />
+              </button>
+              {#if editing}
+                <button
+                  class="forget"
+                  aria-label={$t("dock.delete", { name: e.name })}
+                  title={$t("dock.delete", { name: e.name })}
+                  on:click|stopPropagation={() => askForget(e.id)}
+                  >&times;</button
+                >
+              {/if}
+            </div>
+          {/if}
+        {/each}
+
+        <!-- The names, in a layer of their own ABOVE every orb: inside its
+             slot a name was painted over by whichever neighbour came later
+             in the list, and federated orbs overlap by design. Read
+             `positions` inline, like the slots do. -->
+        {#each $dockEntries as e (e.id)}
+          {@const p = positions.get(e.id)}
+          {#if p}
+            <span
+              class="name"
+              class:front={dragId === e.id}
+              class:faded={filtering && !shown.has(e.id)}
+              aria-hidden="true"
+              style="left: {p.x}px; top: {p.y}px">{e.name}</span
+            >
+          {/if}
+        {/each}
+
+        <!-- The hover chip: what flows across the liquid the pointer rests
+           on, hung just above its neck. Last in the layer, over the names. -->
+        {#if hoverLink}
+          <div
+            class="liquid-tip"
+            role="tooltip"
+            style="left: {hoverLink.x}px; top: {hoverLink.y}px"
+          >
+            {#each describePair(hoverLink.a, hoverLink.b) as line, i (i)}
+              <span class:head={i === 0}>{line}</span>
+            {/each}
+          </div>
+        {/if}
+      {/if}
+    </div>
+    {#if peopleOn}
+      <PeopleView
+        bind:this={peopleView}
+        hubs={filtering
+          ? $dockEntries.filter((e) => shown.has(e.id))
+          : $dockEntries}
+        onopen={requestOpen}
+      />
+    {/if}
+    {#if $dockEntries.length === 0 && !adding}
+      <!-- A bare sky: nothing docked yet. Say what this is and where to
+           start; the "+" in the tray is the other way in. -->
+      <div class="empty" role="note">
+        <h2>{$t("dock.emptyTitle")}</h2>
+        <p>{$t("dock.emptyBody")}</p>
+        <a class="start" href="/about">{$t("dock.emptyStart")}</a>
+      </div>
+    {/if}
+  </div>
+
+  <!-- The top bar hovers over the sky, in three slots: the sky/earth/list
+       switch always in the middle; with the earth on, the search (hubs and
+       places) to its left and the My-location button at the right edge —
+       all inside the earth's pane. -->
+  <div class="topbar" class:onmap={mapOn}>
+    <div class="topbar__left">
+      <!-- In every sky: finds hubs to dock, and narrows the orbs on screen
+           to the ones that answer what is typed. Places only with the earth
+           up — there is nothing to fly without it. -->
+      <MapSearch
+        bind:query={searchQuery}
+        places={mapOn}
+        onpick={pickHub}
+        onplace={pickPlace}
+        near={() => dockMap?.center() ?? null}
+      />
+    </div>
+    <div class="viewtoggle" role="radiogroup" aria-label={$t("dock.boards")}>
+      <button
+        type="button"
+        class="viewopt"
+        class:on={$dockView === "deck"}
+        role="radio"
+        aria-checked={$dockView === "deck"}
+        on:click={() => setDockView("deck")}
+      >
+        <span aria-hidden="true"><Icon name="disc" /></span>{$t("dock.deck")}
+      </button>
+      <button
+        type="button"
+        class="viewopt"
+        class:on={$dockView === "map"}
+        role="radio"
+        aria-checked={$dockView === "map"}
+        on:click={() => setDockView("map")}
+      >
+        <span aria-hidden="true"><Icon name="hexagon" /></span>{$t("dock.map")}
+      </button>
+      <button
+        type="button"
+        class="viewopt"
+        class:on={$dockView === "list"}
+        role="radio"
+        aria-checked={$dockView === "list"}
+        on:click={() => setDockView("list")}
+      >
+        <span aria-hidden="true"><Icon name="list" /></span>{$t("dock.list")}
+      </button>
+      <button
+        type="button"
+        class="viewopt"
+        class:on={$dockView === "people"}
+        role="radio"
+        aria-checked={$dockView === "people"}
+        on:click={() => setDockView("people")}
+      >
+        <span aria-hidden="true"><Icon name="users" /></span>{$t("dock.people")}
+      </button>
+    </div>
+    <div class="topbar__right">
+      {#if mapOn}
+        <button
+          type="button"
+          class="locate"
+          class:working={locating}
+          on:click={() => dockMap?.locate()}
+          disabled={locating}
+          aria-label={locating ? $t("hex.locating") : $t("hex.myLocation")}
+          title={locating ? $t("hex.locating") : $t("hex.myLocation")}
+        >
+          <Icon name="locate" />
+        </button>
+      {/if}
+      <!-- The reading page: what a hub is and how to start one. -->
+      <button
+        type="button"
+        class="locate about"
+        on:click={() => goto("/about")}
+        aria-label={$t("dock.about")}
+        title={$t("dock.about")}
+      >
+        <Icon name="info" />
+      </button>
+    </div>
+  </div>
+
+  <div class="tray" class:onmap={mapOn}>
+    <button class="plus" class:here={!!addCell} on:click={startAdd}>
+      <span class="plus__sign">+</span>{addLabel}
+    </button>
+    {#if !mapOn && !peopleOn}
+      <p class="hint">{$t("dock.hint")}</p>
+    {/if}
+  </div>
+</div>
+
+<!-- The intersection popup: dropping one circle onto another, or tapping the
+     overlap they already share, opens just that pair's flows. Federation is
+     between HOLONS — a hexagon is only ever a home, never a partner. Opening
+     the popup federates nothing: the pair stays unlinked until an arrow is
+     tapped, and unlinking closes it, since the intersection it edited no
+     longer exists. -->
+<!-- Adding to the earth: a cell and a lens are both chosen, so the "+"
+     brought up that lens's own form (its schema's fields, with everything the
+     moment already knows filled in). Saving lands the record in the cell and
+     the panel listing it reloads. -->
+{#if formFor}
+  <Modal on:close={() => (formFor = null)}>
+    <LensForm
+      cell={formFor.cell}
+      lens={formFor.lens}
+      on:saved={() => dockMap?.reloadPanel()}
+      on:close={() => (formFor = null)}
+    />
+  </Modal>
+{/if}
+
+<!-- Adding a hub: which way in — paste one they already have, or start a
+     new one through Telegram and let the bot's answer dock it here by
+     itself. The sheet names the hub; `addHub` does the docking. -->
+{#if addSheet}
+  <Modal on:close={cancelAdd}>
+    <AddHubSheet
+      step={addSheet.step}
+      cell={addCell}
+      on:add={(e) => addHub(e.detail)}
+      on:close={cancelAdd}
+    />
+  </Modal>
+{/if}
+
+{#if fedPair}
+  <Modal on:close={() => (fedPair = null)}>
+    <FederationLens
+      holon={fedPair.home}
+      partner={fedPair.partner}
+      holonName={nameOf(fedPair.home)}
+      partnerName={partnerLabel(fedPair.partner)}
+      on:unlinked={(e) => {
+        fedPair = null;
+        if (e.detail?.notice) showNotice(e.detail.notice, 6000);
+      }}
+    />
+  </Modal>
+{/if}
+
+<!-- Dropping a circle on a hexagon asks before it moves that holon's home:
+     the cell stays lit underneath, so the confirm is read against the place
+     it is about to claim. Dismissing the sheet leaves the home where it is. -->
+{#if homeDrop}
+  {@const drop = homeDrop}
+  <Modal on:close={() => (homeDrop = null)}>
+    <div class="home-confirm">
+      <span
+        class="orb-chip"
+        style={paintOf(drop.holon, $holonColors)}
+        aria-hidden="true"><Icon name="hexagon" /></span
+      >
+      <h3>{$t("hex.moveTitle", { name: nameOf(drop.holon) })}</h3>
+      <p>{$t("hex.moveBody")}</p>
+      <code>{drop.hex}</code>
+      <div class="acts">
+        <button type="button" class="ghost" on:click={() => (homeDrop = null)}>
+          {$t("common.cancel")}
+        </button>
+        <button
+          type="button"
+          class="go"
+          on:click={() => confirmHome(drop.holon, drop.hex)}
+        >
+          {$t("hex.moveConfirm")}
+        </button>
+      </div>
+    </div>
+  </Modal>
+{/if}
+
+<!-- Removing a hub that brought its federation partners onto this dock:
+     the partners the person never opened can go with it, or stay. Local
+     either way — the holon and its links on the network are untouched. -->
+{#if forgetTarget}
+  {@const target = forgetTarget}
+  <Modal on:close={() => (forgetTarget = null)}>
+    <div class="home-confirm">
+      <span
+        class="orb-chip"
+        style={paintOf(target, $holonColors)}
+        aria-hidden="true"><Identicon seed={target} /></span
+      >
+      <h3>{$t("dock.removeTitle", { name: nameOf(target) })}</h3>
+      <p>{$t("dock.removeBody", { n: forgetRetinue.length })}</p>
+      <code>{forgetRetinue.map((e) => e.name).join(" · ")}</code>
+      <div class="acts acts--stack">
+        <button
+          type="button"
+          class="go"
+          on:click={() => confirmForget(target, true)}
+        >
+          {$t("dock.removeWith", { n: forgetRetinue.length })}
+        </button>
+        <button
+          type="button"
+          class="ghost"
+          on:click={() => confirmForget(target, false)}
+        >
+          {$t("dock.removeOnly")}
+        </button>
+        <button
+          type="button"
+          class="ghost"
+          on:click={() => (forgetTarget = null)}
+        >
+          {$t("common.cancel")}
+        </button>
+      </div>
+    </div>
+  </Modal>
+{/if}
+
+<style>
+  .dock {
+    position: fixed;
+    inset: 0;
+    z-index: 5; /* beneath the board window (z 10), which morphs over it */
+    /* The floating tray's zone — the field, the beacons and the map's cell
+       panel all keep clear of it. It carries the bottom safe area itself
+       (see .tray) so the sky, and with it the earth, runs to the true
+       bottom edge of the screen rather than stopping on a paper margin. */
+    --dock-lens: 0rem;
+    --dock-tray: calc(6.6rem + env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0
+      env(safe-area-inset-left);
+    /* The space — deeper than the card, shared with the window layer so the
+       card visibly floats in the same sky it shrinks into. */
+    background:
+      radial-gradient(
+        90% 70% at 72% 12%,
+        color-mix(in srgb, var(--teal) 8%, transparent),
+        transparent 62%
+      ),
+      radial-gradient(120% 90% at 50% 115%, var(--paper) 0%, transparent 70%),
+      var(--paper-deep);
+  }
+
+  /* With the earth up the lens chips take the bottom row and the tray — now
+     just the add button — stacks above them. --dock-lens is the room the
+     chips occupy: DockMap sits them 0.9rem off the bottom and they stand
+     ~2.5rem tall, so the two numbers must move together. Both rows live
+     inside --dock-tray, so everything that already cleared the tray (the
+     field, the beacons, the cell panel) clears the chips too. */
+  .dock.onmap {
+    --dock-lens: 3.4rem;
+    --dock-tray: calc(4.4rem + var(--dock-lens) + env(safe-area-inset-bottom));
+    /* The margin of paper the earth's pane keeps from the screen edge
+       (DockMap .mapwrap reads it): the bar sits inside it, on the map. */
+    --frame: clamp(0.4rem, 2vw, 1.4rem);
+  }
+
+  /* The sky's box: earth, beacons and field all fill it edge to edge. */
+  .sky {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* The field rides above the earth (and the map's own vignette, z 1) but
+     below the map's chips and panel (z 4+). It is transparent to the
+     pointer: only its orbs (.slot) catch taps and drags, so a finger on
+     bare sky pans the earth beneath. It stops short of the tray floating
+     along the bottom, so no orb ever parks under it; the earth carries on
+     beneath. The beacons share the field's box exactly — their viewBox is
+     the field's size, so any other box would scale them. */
+  .field,
+  .beacons {
+    position: absolute;
+    inset: 0 0 var(--dock-tray) 0;
+    pointer-events: none;
+  }
+  .field {
+    z-index: 2;
+  }
+  /* The People view is up: the orbs stand aside (still simulated, so they
+     are where they were on the way back) and nothing of them takes a tap. */
+  .field.away {
+    visibility: hidden;
+  }
+  .beacons {
+    width: 100%;
+    height: calc(100% - var(--dock-tray));
+    z-index: 1;
+    overflow: visible;
+  }
+  /* The cone is not animated at all: it is redrawn every frame from the orb
+     and its place, so it simply follows the orb. A pop-in replayed itself
+     every time a place panned back into view, which read as the beacon
+     twitching rather than pointing. */
+  /* The beam wears the orb's own note, unmixed: lifting it toward white
+     shifted the hue (a deep blue read lavender), so the cone no longer
+     matched the orb it pointed from. Brightness comes from the stop
+     opacities and the blur below, not from the colour. */
+  .beam-stop {
+    stop-color: var(--c, var(--teal));
+  }
+  /* The cross-fade already leaves the beam edgeless; a little blur melts
+     the last of the geometry into the light. */
+  .cone {
+    filter: blur(3px);
+  }
+  .landing {
+    fill: var(--c, var(--teal));
+    stroke: #fff;
+    stroke-width: 1.5;
+    transition: r 0.15s ease;
+  }
+  /* A federated place's landing opens that federation (change or unlink). */
+  /* A carried orb hovering this place: the landing swells and wears the
+     same dashed teal halo as an orb about to be federated. */
+  .landing.target {
+    stroke: var(--teal);
+    stroke-width: 2;
+    stroke-dasharray: 3 3;
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--teal) 70%, #fff));
+  }
+  /* The landing pulse: a ring in the orb's colour swelling out of the spot
+     and fading, phased per orb like the pop. */
+  .landing-pulse {
+    fill: none;
+    stroke: var(--c, var(--teal));
+    stroke-width: 2;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: beacon-pulse 2.2s ease-out infinite;
+    animation-delay: calc(var(--i, 0) * 300ms);
+  }
+  @keyframes beacon-pulse {
+    from {
+      transform: scale(0.6);
+      opacity: 0.9;
+    }
+    to {
+      transform: scale(2.6);
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .landing-pulse {
+      animation: none;
+      opacity: 0.6;
+    }
+  }
+
+  .web {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  /* The holographic bound: a soft dashed hull slowly drifting around its
+     constellation, with the faintest interior glow. */
+  .bound {
+    fill: color-mix(in srgb, var(--teal) 6%, transparent);
+    stroke: color-mix(in srgb, var(--teal) 45%, transparent);
+    stroke-width: 1.5;
+    stroke-dasharray: 8 8;
+    animation: bound-drift 40s linear infinite;
+  }
+  @keyframes bound-drift {
+    to {
+      stroke-dashoffset: -320;
+    }
+  }
+  .tie {
+    stroke: color-mix(in srgb, var(--teal) 35%, var(--line));
+    stroke-width: 1.5;
+    stroke-dasharray: 2 7;
+    stroke-linecap: round;
+  }
+
+  /* The liquid layer rides above the (opaque) orbs: each federated pair is
+     joined by a neck of glass in the gradient of its two colours, the fill
+     a wash so the orbs show through it, the rim the same gradient drawn
+     firmer. Only the liquid itself takes the pointer — the layer lets a
+     finger through to the earth. A thin thread is still a 44px-wide target
+     thanks to the stroke the hit test counts (visible stroke stays slim:
+     paint-order puts the fill over most of it). */
+  .overlaps {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 2; /* over resting orbs, under a carried one (.slot.front, z 3) */
+  }
+  .liquid {
+    pointer-events: auto;
+    cursor: pointer;
+    fill: var(--grad);
+    fill-opacity: 0.6;
+    stroke: var(--rim);
+    stroke-opacity: 0.85;
+    stroke-width: 2;
+    stroke-linejoin: round;
+    transition:
+      fill-opacity 0.2s ease,
+      stroke-opacity 0.2s ease;
+  }
+  .liquid.lit,
+  .liquid:hover {
+    fill-opacity: 0.85;
+    stroke-opacity: 1;
+  }
+  /* Each rim stop is its orb's colour pulled toward the ink, like the orb's
+     own border — a colour the gradient attribute can't mix, CSS can. */
+  .rim-stop {
+    stop-color: color-mix(in srgb, var(--c, var(--teal)) 70%, var(--ink));
+  }
+  .liquid:focus-visible {
+    outline: none;
+    stroke: var(--teal);
+    stroke-width: 3;
+  }
+  /* What flows across the liquid under the pointer: a card like the name
+     chips, hung above the neck, over everything but a carried orb. */
+  .liquid-tip {
+    position: absolute;
+    z-index: 3;
+    transform: translate(-50%, calc(-100% - 0.9rem));
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    max-width: 18rem;
+    padding: 0.4rem 0.7rem;
+    border-radius: 0.7rem;
+    background: color-mix(in srgb, var(--card) 94%, transparent);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(6px);
+    font-size: 0.78rem;
+    color: var(--ink);
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .liquid-tip .head {
+    font-weight: 700;
+    color: var(--teal-ink);
+  }
+  .liquid-tip span:not(.head) {
+    color: var(--ink-soft);
+  }
+
+  .slot {
+    position: absolute;
+    pointer-events: auto; /* the one thing in the field that catches a finger */
+    /* Anchor the ORB's centre (not the column's) on the physics position:
+       shift up by half the orb so the vesica, ties, and hit math all line up
+       with the visible circle; the name hangs below it, in the names layer. */
+    transform: translate(-50%, calc(var(--orb) / -2));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    width: 8rem;
+    /* No left/top transition: the live simulation moves the orbs itself,
+       frame by frame — easing on top would just smear it. */
+  }
+  .slot.front {
+    z-index: 3; /* the carried orb rides above the rest of the sky */
+  }
+  /* Filtered out by the search: still in the physics, gone from the eye and
+     from under the finger. */
+  .slot,
+  .name {
+    transition: opacity 0.25s ease;
+  }
+  .slot.faded,
+  .name.faded {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .orb {
+    width: var(--orb);
+    height: var(--orb);
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    /* Translucent tinted glass with a firm rim: overlapping circles stack
+       their fills, so the intersection deepens naturally under the vesica.
+       `--c` is the holon's colour — the same note its cards and board wear
+       (lib/palette) — so the rim is that note pulled toward the ink, which
+       reads on both the day and the night palette. */
+    background: color-mix(in srgb, var(--c, var(--teal)) 62%, transparent);
+    border: 3px solid color-mix(in srgb, var(--c, var(--teal)) 70%, var(--ink));
+    box-shadow: var(--shadow-soft);
+    animation: dock-pop 0.35s ease both;
+    animation-delay: calc(var(--i, 0) * 40ms);
+    transition: transform 0.15s ease;
+    /* The browser must not turn a touch-drag into a scroll/zoom gesture. */
+    touch-action: none;
+  }
+  .orb:active {
+    transform: scale(0.93);
+  }
+  /* Carried by the finger: bigger, floating shadow (wins over :active). */
+  .orb.lifted {
+    transform: scale(1.08);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28);
+  }
+  /* The orb the carried one hovers: a halo says "drop here to federate". */
+  .orb.target {
+    border-style: dashed;
+    border-color: var(--teal);
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--teal) 22%, transparent);
+  }
+  /* The move-home confirm: the carried board's colour, the cell it would
+     claim, and the two ways out. */
+  .home-confirm {
+    min-width: min(22rem, 82vw);
+    text-transform: none;
+    letter-spacing: 0;
+    text-align: center;
+  }
+  .home-confirm .orb-chip {
+    display: grid;
+    place-items: center;
+    width: 3rem;
+    height: 3rem;
+    margin: 0 auto 0.5rem;
+    border-radius: 50%;
+    font-size: 1.3rem;
+    background: color-mix(in srgb, var(--c, var(--teal)) 55%, transparent);
+    border: 3px solid color-mix(in srgb, var(--c, var(--teal)) 70%, var(--ink));
+    color: var(--on-c, var(--ink));
+  }
+  .home-confirm h3 {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: var(--ink);
+  }
+  .home-confirm p {
+    margin: 0.35rem 0 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .home-confirm code {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--muted);
+    word-break: break-all;
+  }
+  .home-confirm .acts {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.9rem;
+  }
+  .home-confirm .acts button {
+    flex: 1;
+    min-height: 46px;
+    border-radius: 12px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    padding: 0 0.8rem;
+  }
+  .home-confirm .ghost {
+    background: var(--ghost);
+    color: var(--ink-soft);
+  }
+  .home-confirm .go {
+    background: var(--teal);
+    color: var(--on-teal);
+  }
+  .home-confirm .acts--stack {
+    flex-direction: column;
+  }
+
+  /* The bare sky's note: a small card mid-field, above the earth, saying
+     what this is and where to start. Clears the tray like everything else. */
+  .empty {
+    position: absolute;
+    left: 50%;
+    top: calc((100% - var(--dock-tray)) / 2);
+    transform: translate(-50%, -50%);
+    z-index: 3;
+    width: min(22rem, 84vw);
+    padding: 1.3rem 1.4rem;
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--card) 92%, transparent);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(8px);
+    text-align: center;
+    text-transform: none;
+    letter-spacing: 0;
+    pointer-events: auto;
+    animation: dock-pop 0.4s ease both;
+  }
+  .empty h2 {
+    margin: 0 0 0.4rem;
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--ink);
+  }
+  .empty p {
+    margin: 0 0 0.9rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    font-weight: 500;
+    color: var(--ink-soft);
+  }
+  .empty .start {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 46px;
+    padding: 0 1.2rem;
+    border-radius: 12px;
+    background: var(--teal);
+    color: var(--on-teal);
+    font-weight: 700;
+    font-size: 0.95rem;
+    text-decoration: none;
+  }
+
+  @keyframes dock-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.7);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  /* The holon's mark (its identicon), in the ink that reads on its colour:
+     half the orb wide, so the rim and the glass still frame it. */
+  .orb :global(.mark) {
+    font-size: calc(var(--orb) / 2);
+    color: var(--on-c, var(--ink));
+  }
+
+  /* A name is a small card of its own, hung just under its orb. It has to
+     carry its own ground: beneath it is satellite imagery at any brightness
+     (the day palette's ink vanished into it), a neighbour's orb, or the
+     paper sky — and the theme's ink only reads on the theme's card. */
+  .name {
+    position: absolute;
+    z-index: 2; /* over the orbs and the vesicas, under a carried orb */
+    transform: translate(-50%, calc(var(--orb) / 2 + 0.3rem));
+    max-width: 8.5rem;
+    padding: 0.14rem 0.55rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--card) 90%, transparent);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(6px);
+    font-size: 0.88rem;
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--ink);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none; /* a tap goes to the orb or the earth beneath */
+  }
+  .name.front {
+    z-index: 4; /* the carried orb's name rides with it */
+  }
+
+  /* Edit mode ✕ — oversized for kiosk fingers, riding the circle's shoulder. */
+  .forget {
+    position: absolute;
+    top: -0.35rem;
+    right: 0.55rem;
+    width: 1.9rem;
+    height: 1.9rem;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 1.25rem;
+    line-height: 1;
+    background: var(--ink);
+    color: var(--paper);
+    box-shadow: var(--shadow-soft);
+    animation: dock-pop 0.15s ease both;
+  }
+  .forget:active {
+    transform: scale(0.9);
+  }
+
+  /* Bottom tray — add a board, and the one-line hint — floating over the
+     sky's foot (the earth runs on beneath it), on a soft gradient so the
+     hint reads over the map. Only its controls catch the pointer. */
+  .tray {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 6;
+    height: var(--dock-tray);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.4rem 1.4rem
+      calc(1.2rem + var(--dock-lens) + env(safe-area-inset-bottom));
+    background: linear-gradient(
+      to top,
+      var(--paper-deep) 45%,
+      color-mix(in srgb, var(--paper-deep) 70%, transparent) 80%,
+      transparent
+    );
+    pointer-events: none;
+  }
+  /* Over the earth the tray is no floor and no scrim either: the ground
+     reads all the way down, and the add pill carries its own card. */
+  .tray.onmap {
+    background: none;
+  }
+  .tray > * {
+    pointer-events: auto;
+  }
+
+  /* Floating top bar: three slots — search | view switch | my-location —
+     hovering over the field / the map, never in-flow. The switch stays
+     centred whatever the side slots hold. The bar (and its empty slots) let
+     taps through to whatever is beneath; only the controls catch them. */
+  .topbar {
+    position: absolute;
+    top: calc(env(safe-area-inset-top) + 0.8rem);
+    left: calc(env(safe-area-inset-left) + 0.8rem);
+    right: calc(env(safe-area-inset-right) + 0.8rem);
+    z-index: 6; /* above the map (and its overlays) and the gravity field */
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 0.5rem;
+    pointer-events: none;
+  }
+  /* With the earth on, the bar sits INSIDE the earth's pane — in from the
+     frame the pane keeps from the screen edge, then the same breathing room
+     the map's lens chips keep (DockMap .lensbar). */
+  .topbar.onmap {
+    top: calc(env(safe-area-inset-top) + var(--frame) + 0.8rem);
+    left: calc(env(safe-area-inset-left) + var(--frame) + 0.9rem);
+    right: calc(env(safe-area-inset-right) + var(--frame) + 0.9rem);
+  }
+  .topbar__left,
+  .topbar__right {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+  .topbar__right {
+    justify-content: flex-end;
+  }
+  /* Too narrow for three abreast: the switch keeps the top line, and the
+     search + locate share a second line beneath it, the search taking the
+     width the button leaves (all of it, in the bare sky). */
+  @media (max-width: 40rem) {
+    .topbar {
+      grid-template-columns: 1fr auto;
+      grid-template-areas:
+        "toggle toggle"
+        "left right";
+      row-gap: 0.45rem;
+    }
+    .topbar .viewtoggle {
+      grid-area: toggle;
+      justify-self: center;
+    }
+    .topbar .topbar__left {
+      grid-area: left;
+    }
+    .topbar .topbar__right {
+      grid-area: right;
+    }
+    .topbar :global(.mapsearch) {
+      flex: 1 1 auto;
+    }
+  }
+  .topbar :global(.viewtoggle),
+  .topbar :global(.mapsearch),
+  .topbar :global(.locate) {
+    pointer-events: auto;
+  }
+  .topbar :global(.mapsearch) {
+    flex: 0 1 24rem;
+  }
+  .locate {
+    flex: none;
+    width: 2.6rem;
+    height: 2.6rem;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 1.3rem;
+    background: color-mix(in srgb, var(--card) 88%, transparent);
+    border: 1.5px solid var(--line);
+    color: var(--ink-soft);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(6px);
+  }
+  .locate:active {
+    transform: scale(0.92);
+  }
+  .locate.about {
+    margin-left: 0.5rem;
+    font-size: 1.15rem;
+  }
+  .locate:disabled {
+    opacity: 0.6;
+  }
+  /* A fix can take a few seconds (or a permission prompt): show the button is
+     still on it, so nobody reads the disabled state as a dead button. */
+  .locate.working {
+    animation: locate-pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes locate-pulse {
+    50% {
+      opacity: 1;
+      color: var(--ink);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .locate.working {
+      animation: none;
+    }
+  }
+  .viewtoggle {
+    flex: 0 0 auto;
+    display: inline-flex;
+    padding: 0.2rem;
+    border-radius: 999px;
+    border: 1.5px solid var(--line);
+    background: color-mix(in srgb, var(--card) 82%, transparent);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(6px);
+  }
+  .viewopt {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem 1rem;
+    border-radius: 999px;
+    /* Not the quietest ink: the switch is glass over the earth, and what
+       shows through it is satellite imagery at any brightness. */
+    color: var(--ink-soft);
+    font-size: 0.88rem;
+    font-weight: 700;
+    transition:
+      color 0.15s ease,
+      background 0.15s ease;
+  }
+  .viewopt.on {
+    background: var(--card);
+    color: var(--teal-ink);
+    box-shadow: var(--shadow-soft);
+  }
+  .viewopt:active {
+    transform: scale(0.96);
+  }
+  /* The add pill. A solid card-coloured lozenge with a shadow, because it
+     floats over whatever is beneath it — satellite imagery, at any
+     brightness — and a dashed outline in --muted disappeared into it. */
+  .plus {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem 1.2rem 0.55rem 0.6rem;
+    border-radius: 999px;
+    border: 1.5px solid var(--line);
+    color: var(--ink);
+    font-size: 0.95rem;
+    font-weight: 700;
+    background: var(--card);
+    box-shadow: var(--shadow-note);
+    /* At rest the pill steps back — the earth behind it is the thing being
+       looked at. Reaching for it (hover, focus, or the touch itself) brings
+       it back to full. This holds in every state, the loaded
+       add-a-lens-here one included: it is the same button, and it should
+       not start shouting because a cell got picked. It never steps back so
+       far that its label stops clearing the pill. */
+    opacity: 0.7;
+    transition:
+      opacity 160ms ease,
+      transform 120ms ease;
+  }
+  .plus:hover,
+  .plus:focus-visible,
+  .plus:active {
+    opacity: 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .plus {
+      transition: none;
+    }
+  }
+  /* With a cell and a lens in hand the pill is the action, not an offer:
+     it wears the kiosk's action colour so it reads at arm's length. */
+  .plus.here {
+    color: var(--on-teal);
+    background: var(--teal);
+    border-color: var(--teal-deep);
+  }
+  .plus:active {
+    transform: scale(0.96);
+  }
+  .plus__sign {
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    border: 1.5px solid currentColor;
+    font-size: 1.15rem;
+    line-height: 1;
+  }
+  .plus.here .plus__sign {
+    background: color-mix(in srgb, var(--paper) 22%, transparent);
+    border-color: color-mix(in srgb, var(--paper) 55%, transparent);
+  }
+
+  .hint {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+    text-align: center;
+  }
+</style>

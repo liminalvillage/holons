@@ -19,8 +19,10 @@ import {
 import {
   removeFederationPartner,
   setFederationPartner,
+  type FederationLinkOutcome,
 } from '@holons/core/federation';
 import type { ToolDeps } from './index.js';
+import { gate } from './standing.js';
 
 // --- helpers -------------------------------------------------------------
 
@@ -62,6 +64,21 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
 }
 
 // --- registration --------------------------------------------------------
+
+
+/** One sentence on what a link edit did to each half. */
+function linkNote(o: FederationLinkOutcome): string {
+  if (o.self === 'held') return 'Nothing written: this key is not an admin of the holon, so its federation record would not count.';
+  const own = o.self === 'removed' ? 'This holon no longer links the partner.' : 'This holon\'s half of the link is saved.';
+  const partner = {
+    linked: 'The partner\'s half was written too (this key is also its admin).',
+    removed: 'The partner\'s half was removed too (this key is also its admin).',
+    requested: 'The partner\'s admins were asked to match it; until they accept, their half is unchanged.',
+    unchanged: 'The partner\'s half already matches.',
+    skipped: '',
+  }[o.partner];
+  return `${own} ${partner}`.trim();
+}
 
 export function registerSettingsTools(server: McpServer, deps: ToolDeps): void {
   // settings_load --------------------------------------------------------
@@ -138,7 +155,7 @@ export function registerSettingsTools(server: McpServer, deps: ToolDeps): void {
     'federation_link_add',
     {
       description:
-        'Link (or update) a federation partner on the native federation record — the single federation store, honored by federated reads and publishing — via @holons/core/federation setFederationPartner. The `target` JSON must include { targetId }; optional { targetName, inbound, outbound } set the display name and the FULL directional lens arrays (defaults: no lenses flowing yet).',
+        'Link (or update) a federation partner on the native federation record — the single federation store, honored by federated reads and publishing — via @holons/core/federation setFederationPartner. Writes THIS holon\'s half; the partner\'s half is written too only when this key is also its admin, otherwise the partner\'s admins are sent a federation request (outcome.partner = "requested"; see federation_requests). The `target` JSON must include { targetId }; optional { targetName, inbound, outbound } set the display name and the FULL directional lens arrays (defaults: no lenses flowing yet).',
       inputSchema: {
         holon: z.string(),
         target: z
@@ -163,12 +180,14 @@ export function registerSettingsTools(server: McpServer, deps: ToolDeps): void {
         }
 
         const hs = await deps.getHoloSphere();
-        await setFederationPartner(hs, args.holon, targetId, {
+        const g = await gate(hs, args.holon, 'federation');
+        if (g.refusal) return fail(g.refusal, { standing: g.standing });
+        const outcome = await setFederationPartner(hs, args.holon, targetId, {
           inbound: Array.isArray(inbound) ? inbound : [],
           outbound: Array.isArray(outbound) ? outbound : [],
           ...(typeof targetName === 'string' && targetName ? { partnerName: targetName } : {}),
         });
-        return ok({ success: true, holon: args.holon, targetId });
+        return ok({ success: outcome.self !== 'held', holon: args.holon, targetId, outcome, note: linkNote(outcome) });
       } catch (err) {
         return fail((err as Error).message);
       }
@@ -180,7 +199,7 @@ export function registerSettingsTools(server: McpServer, deps: ToolDeps): void {
     'federation_link_remove',
     {
       description:
-        'Unlink a federation partner from the holon’s native federation record via @holons/core/federation removeFederationPartner.',
+        'Unlink a federation partner from the holon’s native federation record via @holons/core/federation removeFederationPartner. Drops this holon\'s half; the partner\'s admins are asked to drop theirs unless this key speaks for the partner too.',
       inputSchema: {
         holon: z.string(),
         target: z.string().describe('Target holon id to unlink.'),
@@ -190,8 +209,10 @@ export function registerSettingsTools(server: McpServer, deps: ToolDeps): void {
       try {
         if (!args.target) return fail("'target' is required.");
         const hs = await deps.getHoloSphere();
-        await removeFederationPartner(hs, args.holon, args.target);
-        return ok({ success: true, holon: args.holon, removedTarget: args.target });
+        const g = await gate(hs, args.holon, 'federation');
+        if (g.refusal) return fail(g.refusal, { standing: g.standing });
+        const outcome = await removeFederationPartner(hs, args.holon, args.target);
+        return ok({ success: outcome.self !== 'held', holon: args.holon, removedTarget: args.target, outcome, note: linkNote(outcome) });
       } catch (err) {
         return fail((err as Error).message);
       }
@@ -222,6 +243,8 @@ export function registerSettingsTools(server: McpServer, deps: ToolDeps): void {
         if (!equation) return fail("'equation' must be a JSON-encoded object.");
 
         const hs = await deps.getHoloSphere();
+        const g = await gate(hs, args.holon, 'settings.guarded');
+        if (g.refusal) return fail(g.refusal, { standing: g.standing });
         const existing = (await loadSettings(hs, args.holon)) ?? {};
         const updated = {
           ...(existing as Record<string, unknown>),

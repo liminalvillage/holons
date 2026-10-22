@@ -3,7 +3,14 @@
 //
 // @holons/core/tags — Holosphere persistence helpers.
 
-import { TAGS_LENS, addTagEntry, tagEntries } from './operations.js';
+import {
+  CARDS_TAG,
+  TAGS_LENS,
+  addTagEntry,
+  cardEntry,
+  tagEntries,
+  type CardInput,
+} from './operations.js';
 import type { TagEntry, TagObject, TagsDB } from './types.js';
 
 /** Fetch a tag object by keyword, or null. */
@@ -35,6 +42,15 @@ export async function tagMessage(
   const updated = addTagEntry(existing, tagName, entry);
   await saveTag(db, holonId, updated);
   return updated;
+}
+
+/** File a photographed card under the `cards` keyword. */
+export async function tagCard(
+  db: TagsDB,
+  holonId: string | number,
+  card: Omit<CardInput, 'holonId'>
+): Promise<TagObject> {
+  return tagMessage(db, holonId, CARDS_TAG, cardEntry({ ...card, holonId }));
 }
 
 /** List the entries stored under a tag keyword. */

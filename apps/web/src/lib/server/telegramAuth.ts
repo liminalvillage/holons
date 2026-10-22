@@ -23,10 +23,7 @@
 // client — the client secret and other secrets stay server-side.
 
 import { env } from "$env/dynamic/private";
-import { schnorr } from "@noble/curves/secp256k1";
-import { hmac } from "@noble/hashes/hmac";
-import { sha256 } from "@noble/hashes/sha256";
-import { bytesToHex } from "@noble/hashes/utils";
+import { deriveTelegramNostrKey } from "@holons/core/auth";
 import { createHash, randomBytes } from "node:crypto";
 import { SignJWT, jwtVerify, createRemoteJWKSet } from "jose";
 
@@ -210,21 +207,9 @@ export function deriveNostrKey(
   telegramId: string | number,
   derivationSecret: string,
 ): { privateKey: string; publicKey: string } {
-  if (!derivationSecret)
-    throw new Error("NOSTR_DERIVATION_SECRET is not configured");
-  const secretBytes = enc.encode(derivationSecret);
-
-  for (let i = 0; i < 1000; i++) {
-    const msg = `telegram:${telegramId}` + (i ? `:${i}` : "");
-    const candidate = hmac(sha256, secretBytes, enc.encode(msg));
-    try {
-      const publicKey = bytesToHex(schnorr.getPublicKey(candidate));
-      return { privateKey: bytesToHex(candidate), publicKey };
-    } catch {
-      // out-of-range scalar — try next counter
-    }
-  }
-  throw new Error("failed to derive a valid Nostr key");
+  // Shared with the Telegram bot via @holons/core/auth so both sign under
+  // the same per-user pubkey.
+  return deriveTelegramNostrKey(telegramId, derivationSecret);
 }
 
 // ---------------------------------------------------------------------------

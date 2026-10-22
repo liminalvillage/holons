@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   // Claim-your-cell overlay on the real map, ported from wequest's HexPicker.
   // Mapbox basemap (shared root-.env VITE_MAPBOX_TOKEN), H3 grid overlay that
   // follows the zoom, tap to pick the cell — persisted as the holon's
@@ -10,12 +11,15 @@
     isValidCell,
     latLngToCell,
     cellToLatLng,
-    cellToBoundary,
     getResolution,
     polygonToCells,
   } from "h3-js";
+  import { cellRing } from "$lib/maplens";
   import { showNotice } from "$lib/stores";
   import { getHolosphere, getWriter } from "$lib/holosphere";
+  import { setGeo } from "$lib/config";
+  import { geoMessage, requestPosition } from "$lib/geolocate";
+  import { searchPlaces as geocode, type PlaceHit } from "$lib/placesearch";
   import { t, tr } from "$lib/i18n";
 
   /** The holon whose `settings.hex` is being claimed. */
@@ -82,7 +86,8 @@
   onMount(() => {
     selected = current && isValidCell(current) ? current : null;
     if (selected) resolution = getResolution(selected);
-    else locate();
+    // No auto-locate: the geolocation permission prompt fires only when the
+    // "My location" button below is tapped, never on merely opening the map.
     if (MAPBOX_TOKEN) void initMap();
   });
 
@@ -188,14 +193,6 @@
     return { type: "FeatureCollection", features: [] };
   }
 
-  function cellRing(cell: string): number[][] {
-    const ring = (cellToBoundary(cell, true) as Array<[number, number]>).map(
-      ([lng, lat]) => [lng, lat],
-    );
-    ring.push(ring[0]);
-    return ring;
-  }
-
   function rebuildHighlight() {
     if (!map || !mapReady) return;
     const src = map.getSource("kiosk-selected");
@@ -256,11 +253,6 @@
   }
 
   // ── address search (Mapbox Geocoding API, same token as the basemap) ──
-  interface PlaceHit {
-    label: string;
-    lat: number;
-    lng: number;
-  }
   let searchQuery = "";
   let searchHits: PlaceHit[] = [];
   let searching = false;
@@ -280,16 +272,12 @@
     if (!MAPBOX_TOKEN) return;
     searching = true;
     try {
-      const res = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${MAPBOX_TOKEN}&limit=5&types=address,poi,place,locality,neighborhood`,
-      );
-      const data = await res.json();
+      // A claimed cell is a doorstep: nothing coarser than a neighbourhood.
+      const found = await geocode(q, MAPBOX_TOKEN, {
+        types: "address,poi,place,locality,neighborhood",
+      });
       if (searchQuery.trim() !== q) return; // stale response
-      searchHits = (data?.features ?? []).map((f: any) => ({
-        label: f.place_name as string,
-        lng: f.center?.[0],
-        lat: f.center?.[1],
-      }));
+      searchHits = found;
     } catch {
       searchHits = [];
     } finally {
@@ -311,32 +299,42 @@
     rebuildHighlight();
   }
 
-  function locate() {
-    if (!navigator.geolocation) {
-      showNotice(tr("hex.noGeo"));
-      return;
-    }
+  async function locate() {
+    if (locating) return;
     locating = true;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        locating = false;
-        const { latitude: lat, longitude: lng } = pos.coords;
-        selected = latLngToCell(lat, lng, resolution);
-        if (map) {
-          map.flyTo({
-            center: [lng, lat],
-            zoom: resolutionToZoom(resolution),
-            essential: true,
-          });
-        }
-        rebuildHighlight();
-      },
-      () => {
-        locating = false;
-        showNotice(tr("hex.denied"));
-      },
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
+    try {
+      const res = await requestPosition();
+      if (!res.ok) {
+        console.warn("[kiosk] hex: no location fix", res.reason, res.detail);
+        showNotice(tr(geoMessage(res.reason)));
+        return;
+      }
+      const { lat, lng } = res.fix;
+      setGeo({ lat, lng }); // the sunset theme reads this cache — see theme.ts
+      // A network-derived fix is a town, and a claimed cell is a doorstep:
+      // fly there, but let the person pick the hexagon themselves rather than
+      // claiming a block this fix never actually knew.
+      if (res.approximate) {
+        map?.flyTo({
+          center: [lng, lat],
+          zoom: resolutionToZoom(5),
+          essential: true,
+        });
+        showNotice(tr("hex.approxGeo"));
+        return;
+      }
+      selected = latLngToCell(lat, lng, resolution);
+      if (map) {
+        map.flyTo({
+          center: [lng, lat],
+          zoom: resolutionToZoom(resolution),
+          essential: true,
+        });
+      }
+      rebuildHighlight();
+    } finally {
+      locating = false;
+    }
   }
 
   function useManual() {
@@ -385,6 +383,13 @@
       if (ok) {
         showNotice(tr("hex.claimed"));
         dispatch("saved", selected);
+        // The dock's earth (DockMap) lands this board's beacon on the new
+        // place at once, instead of on its next look-up.
+        window.dispatchEvent(
+          new CustomEvent("kiosk:hex-changed", {
+            detail: { holon: holonId, hex: selected },
+          }),
+        );
         dispatch("close");
       }
     } catch (err) {
@@ -427,7 +432,7 @@
       on:click={() => dispatch("close")}
       aria-label={$t("common.close")}
     >
-      ✕
+      <Icon name="close" />
     </button>
   </header>
   <p class="hint">{$t("hex.hint")}</p>
@@ -463,7 +468,8 @@
 
   <div class="row">
     <button type="button" class="chip" on:click={locate} disabled={locating}>
-      {locating ? $t("hex.locating") : `◎ ${$t("hex.myLocation")}`}
+      {#if locating}{$t("hex.locating")}{:else}<Icon name="locate" />
+        {$t("hex.myLocation")}{/if}
     </button>
     <div class="readout">
       {selected ? `${selected} · res ${resolution}` : $t("hex.nothingSelected")}
@@ -518,7 +524,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.16em;
-    color: var(--teal);
+    color: var(--teal-ink);
   }
   h3 {
     margin: 0.2rem 0 0;
@@ -661,7 +667,7 @@
     min-height: 52px;
     border-radius: 14px;
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     font-size: 1rem;
     font-weight: 700;
     box-shadow: var(--shadow-soft);

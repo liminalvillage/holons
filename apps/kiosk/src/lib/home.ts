@@ -24,6 +24,11 @@ export async function showHomePage(): Promise<void> {
   holonId.set(null);
   settingsOpen.set(false);
   userMenuOpen.set(false);
-  if (typeof location !== "undefined" && location.pathname !== "/")
-    await goto("/");
+  if (typeof location === "undefined") return;
+  // A `?holon=` in the address is persisted again on every load, so it has
+  // to go the same way as the path.
+  const named =
+    location.pathname !== "/" ||
+    new URLSearchParams(location.search).has("holon");
+  if (named) await goto("/");
 }

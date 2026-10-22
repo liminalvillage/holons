@@ -26,7 +26,7 @@ describe('Meta Field Stripping Tests', () => {
             // Ignore cleanup errors
         }
         
-        // Small wait for Gun to settle
+        // Small wait for the store to settle
         await new Promise(resolve => setTimeout(resolve, 100));
     }, 30000);
 
@@ -52,7 +52,7 @@ describe('Meta Field Stripping Tests', () => {
             // Store the data (should strip _meta)
             await holoSphere.put(testHolon, testLens, testData);
             
-            // Wait for Gun to settle
+            // Wait for the store to settle
             await new Promise(resolve => setTimeout(resolve, 500));
 
             // Retrieve the data
@@ -76,7 +76,7 @@ describe('Meta Field Stripping Tests', () => {
             // Store the data
             await holoSphere.put(testHolon, testLens, testData);
             
-            // Wait for Gun to settle
+            // Wait for the store to settle
             await new Promise(resolve => setTimeout(resolve, 500));
 
             // Retrieve the data
@@ -104,7 +104,7 @@ describe('Meta Field Stripping Tests', () => {
             // Store the global data (should strip _meta)
             await holoSphere.putGlobal(testGlobalTable, testData);
             
-            // Wait for Gun to settle
+            // Wait for the store to settle
             await new Promise(resolve => setTimeout(resolve, 500));
 
             // Retrieve the data
@@ -128,7 +128,7 @@ describe('Meta Field Stripping Tests', () => {
             // Store the global data
             await holoSphere.putGlobal(testGlobalTable, testData);
             
-            // Wait for Gun to settle
+            // Wait for the store to settle
             await new Promise(resolve => setTimeout(resolve, 500));
 
             // Retrieve the data

@@ -3,8 +3,8 @@
  * @module src/H3
  */
 
-import 'gun/lib/then.js';
 import { publishToFederation } from '@holons/core/federation';
+import { linkHolons } from './federationLinks.js';
 
 // WRAPPER CLASS FOR HOLOSPHERE
 class H3 {
@@ -60,10 +60,6 @@ class H3 {
       const node = await this.db.getNode(holonId, 'quests', messageId);
       console.log(node);
 
-      // if (!node) {
-      //     node = await this.db.gun.get(holonId + '/' + messageId).put({ id: holonId + '/' + messageId, content: messageContent })
-      // }
-
       //for (let tag of tags) {
 
       await this.db.upcast(id, 'quests', node);
@@ -97,47 +93,17 @@ class H3 {
           return ctx.reply('No quest found for this message.');
         }
 
-        // Setup federation with the hex target
-        let fedInfo = null;
-        try {
-          fedInfo = await this.db.getGlobal('federation', holonId);
-        } catch (error) {
-          // Federation info doesn't exist, create new one
-        }
-
-        if (!fedInfo) {
-          fedInfo = {
-            id: holonId,
-            name: holonId,
-            inbound: [],
-            outbound: [],
-            lensConfig: {},
-            timestamp: Date.now(),
-          };
-        }
-
-        // Ensure arrays exist
-        if (!fedInfo.inbound) fedInfo.inbound = [];
-        if (!fedInfo.outbound) fedInfo.outbound = [];
-        if (!fedInfo.lensConfig) fedInfo.lensConfig = {};
-
-        // Add hex to federation if not already present
-        if (!fedInfo.inbound.includes(hex)) {
-          fedInfo.inbound.push(hex);
-        }
-        if (!fedInfo.outbound.includes(hex)) {
-          fedInfo.outbound.push(hex);
-        }
-
-        // Configure lens settings for the hex
-        fedInfo.lensConfig[hex] = {
-          inbound: ['quests', 'events'],
-          outbound: ['quests', 'events'],
-          timestamp: Date.now(),
-        };
-
-        // Save the federation configuration
-        await this.db.putGlobal('federation', fedInfo);
+        // Federate the chat's holon with the hex cell through the one
+        // write path: the record counts because the bot's key is the
+        // holon's anchor (an admin, see @holons/core/holosphere CAPABILITIES).
+        // A hex cell is open (nobody speaks for it): both halves are written.
+        await linkHolons(this.db, holonId, hex, {
+          lensConfig: {
+            inbound: ['quests', 'events'],
+            outbound: ['quests', 'events'],
+          },
+          askPartner: false,
+        });
 
         const outcome = await publishToFederation(
           {
@@ -162,46 +128,6 @@ class H3 {
         ctx.reply('Error publishing quest');
       }
     });
-  }
-
-  reconstructNodeRef(soul) {
-    const parts = soul.split('/');
-    let ref = this.db.gun;
-    parts.forEach(part => {
-      ref = ref.get(part);
-    });
-    return ref;
-  }
-
-  findSoul(gunRef) {
-    // // Method 1: Direct soul
-    // if (gunRef._ && gunRef._['#']) {
-    //     console.log('soul found 1: ', gunRef._['#'])
-    //     return gunRef._['#']
-    // }
-
-    // // Method 2: Back reference
-    // if (gunRef._.back && gunRef._.back.link) {
-    //     console.log('soul found 2: ', gunRef._.back.link)
-    //     return gunRef._.back.link;
-    // }
-
-    // Method 4: Check back chain
-    let back = gunRef._.back;
-    let backChain = [];
-    while (back) {
-      if (back.get) backChain.push(back.get);
-      //if (back.link) backChain.push(back.link);
-      back = back.back;
-    }
-    if (backChain.length > 0) {
-      //reverse the backchain
-      backChain = backChain.reverse();
-      //chain the backchain into a string
-      let soul = backChain.join('/');
-      soul += '/' + gunRef._.get;
-      return soul;
-    } else return null;
   }
 }
 

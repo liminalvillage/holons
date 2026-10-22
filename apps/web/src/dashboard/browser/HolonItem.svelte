@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { nameMap, resolvedName } from '$lib/stores/nameResolver';
+	import { shortId } from '@holons/core/identity';
 	import { createEventDispatcher } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { goto } from '$app/navigation';
@@ -247,7 +249,7 @@
 
 	$: initials = isHome ? '' : getInitials(name);
 	$: avatarColor = getAvatarColor(id);
-	$: shortId = `${id.slice(0, 6)}...${id.slice(-4)}`;
+	$: idLabel = shortId(id);
 	$: isPending = federationStatus === 'pending_outgoing' || federationStatus === 'pending_incoming';
 	$: isFederated = federationStatus === 'accepted';
 </script>
@@ -287,7 +289,7 @@
 		<!-- Content -->
 		<div class="holon-item__content">
 			<span class="holon-item__name" title={name}>
-				{name || `Holon ${id.slice(0, 8)}...`}
+				{name || resolvedName(id, $nameMap)}
 				{#if accessBadge && isFederated}
 					<span
 						class="holon-item__access-badge"
@@ -299,7 +301,7 @@
 				{/if}
 			</span>
 			<span class="holon-item__id">
-				{shortId}
+				{idLabel}
 				{#if isPending}
 					<span class="holon-item__status holon-item__status--pending">
 						{federationStatus === 'pending_outgoing' ? 'Pending...' : 'Incoming'}

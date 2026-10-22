@@ -3,6 +3,7 @@
 // federation-links.ts and the FlowSettings class can both build on them
 // without importing each other (flow-settings → federation-links → here).
 
+import { readHolonColor } from './color.js';
 import type { HoloSphere } from 'holosphere';
 import type { HolonSettings } from './flow-settings.js';
 
@@ -55,6 +56,11 @@ export function parseHolonSettings(data: any): HolonSettings {
     theme: data.theme || 'dark',
     hex: data.hex || '',
     maxTasks: data.maxTasks || 10,
+    // Identity colour override — only a valid hex colour survives the parse.
+    ...(readHolonColor(data) ? { color: readHolonColor(data) } : {}),
+    ...(Array.isArray(data.nostrTrustedPubkeys)
+      ? { nostrTrustedPubkeys: data.nostrTrustedPubkeys.filter((k: unknown) => typeof k === 'string' && /^[0-9a-f]{64}$/i.test(k)) }
+      : {}),
     // Legacy `federation[]` / `lensConfig` settings-lens fields are NOT parsed
     // — the native federation record is the single store (see
     // migrateLegacyFederationLinks in @holons/core/federation).
@@ -112,6 +118,7 @@ const SETTINGS_MARKERS = [
   'maxTasks',
   'hex',
   'admin',
+  'nostrTrustedPubkeys',
 ] as const;
 
 /** How many settings-ish fields a record carries. */
@@ -128,7 +135,7 @@ function settingsAffinity(record: unknown): number {
  * Read a holon's settings document, safely.
  *
  * Prefer this over `getAll(holonId, 'settings')[0]`. That idiom is common in
- * this repo and it is a bug: Gun's map iteration has no defined order, so index
+ * this repo and it is a bug: record enumeration has no defined order, so index
  * 0 is whichever record happened to arrive first. On a holon that has imported
  * a calendar, index 0 can be the `imported_calendars` record — and a caller
  * that then spreads it and saves it back copies calendar data into the holon's

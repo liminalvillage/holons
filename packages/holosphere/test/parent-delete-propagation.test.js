@@ -20,7 +20,7 @@ describe('parent-hexagon deletion propagation', () => {
   let sphere;
 
   // One sphere for the whole file: every test uses its own record ids, and a
-  // fresh Gun instance per test would multiply radisk handles for no isolation
+  // fresh instance per test would multiply relay/store handles for no isolation
   // gain (cross-holon behaviour lives inside ONE graph — see testenv.js).
   beforeAll(async () => {
     sphere = await testSphere(APP);
@@ -123,7 +123,7 @@ describe('parent-hexagon deletion propagation', () => {
     expect(await idsAt(PARENTS[0])).toContain('q4');
   }, 60000);
 
-  // `needs/publish` (and `needs/settle`, `tasks/join-reflect`) propagate to the
+  // `needs/publish` (and `needs/settle`, `tasks/roster-mirror`) propagate to the
   // parent hexagons with `useHolograms: true`, so the copy stored at each parent
   // is a bare `{ id, soul, _federation }` pointer rather than a full record. The
   // retraction sweep has to see those pointers AS STORED — resolving them would

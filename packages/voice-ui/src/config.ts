@@ -7,6 +7,7 @@
 
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { aiModel } from '@holons/core/ai';
 
 export type Leg = 'api' | 'local';
 
@@ -174,7 +175,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): VoiceConfig {
     tts: leg(env, 'TTS_PROVIDER', master),
 
     anthropicApiKey: env.ANTHROPIC_API_KEY,
-    anthropicModel: env.HOLONS_AI_MODEL?.trim() || 'claude-sonnet-4-6',
+    anthropicModel: aiModel(env),
     openaiApiKey: env.OPENAI_API_KEY,
 
     llmBaseUrl: env.LLM_BASE_URL?.trim() || 'http://localhost:1234/v1',

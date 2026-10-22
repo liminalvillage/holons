@@ -3,9 +3,6 @@
  * as one signed record per actor — so it stacks, shows latest-per-actor, is
  * forge-proof (signer == owner), and is filtered by your read-list.
  */
-import os from 'node:os';
-import path from 'node:path';
-import fs from 'node:fs';
 import HoloSphere from '../holosphere.js';
 import { generateSecretKey, getPublicKey, buildEvent } from '../nostr-events.js';
 
@@ -18,24 +15,20 @@ const owners = (recs) => recs.map((r) => r._owner).sort();
 const ins = (recs) => recs.filter((r) => r.status === 'in').map((r) => r.user).sort();
 
 describe('per-author aggregate (signed, filterable collaborative state)', () => {
-  let sphere, dir, Ask, Bsk, Csk, Apub, Bpub, Cpub;
+  let sphere, Ask, Bsk, Csk, Apub, Bpub, Cpub;
 
   // a client writing its own signed per-actor record (envelope only)
   async function writeAs(sk, item, at) {
     const evt = buildEvent({ holon: HOLON, lens: LENS, item, sk, created_at: at });
-    await new Promise((r) => { let s = false; const d = () => { if (!s) { s = true; r(); } };
-      setTimeout(d, 2000);
-      sphere.gun.get(sphere.appname).get(HOLON).get('_events').get(LENS).get(item.id).get(evt.pubkey)
-        .put(JSON.stringify(evt), () => d()); });
+    sphere.store.apply(evt, { origin: 'remote' });
   }
 
   beforeAll(async () => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-agg-'));
     Ask = generateSecretKey(); Apub = getPublicKey(Ask);
     Bsk = generateSecretKey(); Bpub = getPublicKey(Bsk);
     Csk = generateSecretKey(); Cpub = getPublicKey(Csk);
     sphere = new HoloSphere({ appName: 'agg-test', privateKey: Ask,
-      gunOptions: { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false } });
+      store: { adapter: 'memory' } });
     await sphere.enableSigning({ relays: [], enforce: true, perActorLenses: [LENS] });
     await sphere.addReadKey(Bpub); // I trust B, but NOT C
 
@@ -49,7 +42,6 @@ describe('per-author aggregate (signed, filterable collaborative state)', () => 
   afterAll(async () => {
     try { sphere?.disableSigning(); } catch {}
     try { await sphere?.close?.(); } catch {}
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   }, 15000);
 
   test('concurrent participants both stack (no clobber), untrusted excluded', async () => {

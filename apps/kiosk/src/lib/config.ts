@@ -10,21 +10,23 @@
 //
 // The kiosk reads PRODUCTION by default: the app namespace falls back to
 // "Holons" (not the shared dev `HOLONS_APP`, which the web/bot point at
-// HolonsDebug), and the Gun peer falls back to the production relay. Override
-// only via the kiosk-specific `VITE_KIOSK_APP` / `VITE_KIOSK_PEER`.
-//
-// The wire itself is selectable too: `VITE_KIOSK_BACKEND=nostr` plus
-// `VITE_KIOSK_RELAYS=wss://…` moves reads and writes onto a Nostr relay
-// instead of the Gun peer (see `resolveBackend`).
+// HolonsDebug), and the relays fall back to the production relay set. Override
+// only via the kiosk-specific `VITE_KIOSK_APP` / `VITE_KIOSK_RELAYS`.
 //
 // The query-param overrides are persisted to localStorage so a one-time setup
 // URL survives reloads and power-cycles of the entrance display.
 
 import { holonForHost, holonForPath } from "./holons";
+import {
+  DEFAULT_WINDOW_PRESET,
+  isWindowPreset,
+  type FlowsWindowChoice,
+} from "@holons/core/flows";
+import {
+  resolveEnforce,
+  resolveRelays as coreResolveRelays,
+} from "@holons/core/holosphere";
 import type { TaskSort } from "./data";
-
-/** Production Gun relay the entrance display reads from by default. */
-export const PRODUCTION_PEER = "https://gun.holons.io/gun";
 
 const HOLON_KEY = "kiosk_holon";
 const APP_KEY = "kiosk_app";
@@ -32,10 +34,15 @@ const FEDERATED_KEY = "kiosk_federated";
 const LIBRARY_KEY = "kiosk_library";
 const ROLES_KEY = "kiosk_roles";
 const CHECKLISTS_KEY = "kiosk_checklists";
+const SHIFTS_KEY = "kiosk_shifts";
+const STOCK_KEY = "kiosk_stock";
+const OFFERS_KEY = "kiosk_offers";
 const STATUS_KEY = "kiosk_status";
 const FLOWS_KEY = "kiosk_flows";
+const TASKS_KEY = "kiosk_tasks";
+const CALENDAR_KEY = "kiosk_calendar";
 const PINNED_KEY = "kiosk_pinned";
-const BRAND_NAME_KEY = "kiosk_brand_name";
+const TAB_ORDER_KEY = "kiosk_tab_order";
 const BRAND_LOGO_KEY = "kiosk_brand_logo";
 const ACCENT_KEY = "kiosk_accent";
 const THEME_KEY = "kiosk_theme";
@@ -45,6 +52,12 @@ const TASK_VIEW_KEY = "kiosk_task_view";
 const TASK_SORT_KEY = "kiosk_task_sort";
 const LIBRARY_VIEW_KEY = "kiosk_library_view";
 const ROLES_VIEW_KEY = "kiosk_roles_view";
+const FLOWS_VIEW_KEY = "kiosk_flows_view";
+const FLOWS_UNIT_KEY = "kiosk_flows_unit";
+const FLOWS_WINDOW_KEY = "kiosk_flows_window";
+const STOCK_VIEW_KEY = "kiosk_stock_view";
+const OFFERS_VIEW_KEY = "kiosk_offers_view";
+const OFFERS_SCALE_KEY = "kiosk_offers_scale";
 const CAL_VIEW_KEY = "kiosk_cal_view";
 const LIBRARY_CAL_VIEW_KEY = "kiosk_library_cal_view";
 const VOICE_KEY_KEY = "kiosk_voice_key";
@@ -80,14 +93,17 @@ export const COMMUNITY_URL = "https://t.me/HolonicDAO";
 export const SOURCE_URL = "https://github.com/HolonicLabs/holons";
 
 /**
- * The Telegram bot a holon is started with. Public by design (it ends up in
- * every deep link on the landing page); override per-deploy with
- * `VITE_TELEGRAM_BOT_USERNAME` when a fork runs its own bot.
+ * The Telegram bot a hub is started with — @HubsNetwork_bot, the hubs
+ * network's own. Public by design (it ends up in every deep link on the
+ * about page); override per-deploy with `VITE_TELEGRAM_BOT_USERNAME` when a
+ * fork runs its own bot.
  */
+export const DEFAULT_BOT_USERNAME = "HubsNetwork_bot";
+
 export function resolveBotUsername(): string {
   const env = import.meta.env.VITE_TELEGRAM_BOT_USERNAME as string | undefined;
   const v = (env && String(env).trim().replace(/^@/, "")) || "";
-  return /^[A-Za-z0-9_]{3,}$/.test(v) ? v : "HolonsBot";
+  return /^[A-Za-z0-9_]{3,}$/.test(v) ? v : DEFAULT_BOT_USERNAME;
 }
 
 /**
@@ -147,6 +163,24 @@ function forget(key: string): void {
 // making them find it again. The note expires so a screen someone poked at
 // last month doesn't greet the next visitor with it.
 
+// ── First-visit hint for the strip's "+" ──────────────────────────────────
+// The "+" at the end of the tab strip is where a hub adds its community
+// tools, and nothing else on the board says so. The first time a device shows
+// a board, a small callout points at it; one tap anywhere and it never comes
+// back on that device.
+
+const ADD_TIP_KEY = "kiosk_add_tip";
+
+/** Has this device already been shown the "+" callout? */
+export function resolveAddTipSeen(): boolean {
+  return persisted(ADD_TIP_KEY) === "1";
+}
+
+/** Record that the "+" callout has been shown and dismissed here. */
+export function markAddTipSeen(): void {
+  persist(ADD_TIP_KEY, "1");
+}
+
 const BOT_HANDOFF_KEY = "kiosk_bot_handoff_at";
 const BOT_HANDOFF_TTL_MS = 6 * 60 * 60 * 1000;
 
@@ -179,76 +213,25 @@ export function resolveAppName(): string {
   return fromParam || persisted(APP_KEY) || (env && String(env)) || "Holons";
 }
 
-/** Gun peer(s) the kiosk reads from — the production relay unless overridden. */
-export function resolvePeers(): string[] {
-  const env = import.meta.env.VITE_KIOSK_PEER as string | undefined;
-  const peer = (env && String(env).trim()) || PRODUCTION_PEER;
-  return [peer];
-}
-
 /**
- * Relay URL(s) the kiosk syncs over on the `nostr` backend. Kiosk-scoped
+ * Relay URL(s) the kiosk syncs over — the wire. Kiosk-scoped
  * `VITE_KIOSK_RELAYS` wins so a single screen can be flipped without moving
  * the whole monorepo; `VITE_HOLOSPHERE_RELAYS` (the name the web app reads)
- * is honoured as the shared fallback. Empty → no relays configured.
+ * is honoured as the shared fallback; unset → the production relay set.
  */
+/** Authorized reads: on unless VITE_HOLOSPHERE_ENFORCE says `off`. */
+export function resolveEnforceReads(): boolean {
+  return resolveEnforce(
+    import.meta.env.VITE_HOLOSPHERE_ENFORCE as string | undefined,
+  );
+}
+
 export function resolveRelays(): string[] {
   const env =
     (import.meta.env.VITE_KIOSK_RELAYS as string | undefined) ||
     (import.meta.env.VITE_HOLOSPHERE_RELAYS as string | undefined) ||
     "";
-  return String(env)
-    .split(",")
-    .map((r) => r.trim())
-    .filter(Boolean);
-}
-
-/**
- * Which Holosphere backend carries the wire: "gun" (default — the production
- * Gun peer) or "nostr" (the relay is the wire and Gun runs peerless as the
- * local cache). Selecting `nostr` without any relay would make holosphere fall
- * back to Gun anyway, so an unconfigured relay list keeps us on "gun".
- */
-export function resolveBackend(): "gun" | "nostr" {
-  const env =
-    (import.meta.env.VITE_KIOSK_BACKEND as string | undefined) ||
-    (import.meta.env.VITE_HOLOSPHERE_BACKEND as string | undefined) ||
-    "gun";
-  const want = String(env).trim().toLowerCase();
-  return want === "nostr" && resolveRelays().length ? "nostr" : "gun";
-}
-
-/**
- * Signing mode for the `gun` backend: "off" (default), "shadow" or "enforce".
- *
- * On the gun backend the SIGNER is the publisher — with relays configured,
- * `shadow` keeps Gun as the wire (so the kiosk still sees everything on
- * gun.holons.io) while every write is additionally published to the relay as a
- * signed NIP-01 event. `enforce` additionally narrows reads to trusted keys,
- * which is not what a public entrance display wants — keep it for testing.
- *
- * Ignored on the `nostr` backend, where the relay transport owns publishing and
- * the signer is created envelope-only during init.
- */
-export function resolveSigningMode(): "off" | "shadow" | "enforce" {
-  const env =
-    (import.meta.env.VITE_KIOSK_SIGNING as string | undefined) ||
-    (import.meta.env.VITE_HOLOSPHERE_SIGNING as string | undefined) ||
-    "off";
-  const want = String(env).trim().toLowerCase();
-  return want === "shadow" || want === "enforce" ? want : "off";
-}
-
-/**
- * The Telegram Mini App serving the signing-key vault (routes/key), as
- * "<botUsername>/<appShortName>" — e.g. "HolonsBot/keys", registered in
- * BotFather. Unset → the key-link flow is hidden and writes stay signed by
- * the device key alone.
- */
-export function resolveMiniapp(): string | null {
-  const env = import.meta.env.VITE_KIOSK_MINIAPP as string | undefined;
-  const v = (env && String(env).trim().replace(/^@/, "")) || "";
-  return /^[A-Za-z0-9_]+\/[A-Za-z0-9_]+$/.test(v) ? v : null;
+  return coreResolveRelays(String(env));
 }
 
 /** Resolve the holon id this kiosk displays, or null if not configured. */
@@ -293,37 +276,27 @@ export function clearHolonId(): void {
 }
 
 /**
- * Whose items every content view shows — the "Show" pill:
- * `personal` (only items involving the logged-in user), `all` (everything in
- * this holon), or `networked` (this holon plus its federation partners).
- * One device-wide choice shared by every view.
+ * What every content view shows — the "Show federated" switch: `all` (this
+ * holon's own items) or `networked` (this holon plus its federation
+ * partners). One device-wide choice shared by every view.
  */
-export type Scope = "personal" | "all" | "networked";
+export type Scope = "all" | "networked";
 
 const SCOPE_KEY = "kiosk_scope";
 
 /**
- * Derive the scope from what's on disk, honouring pre-scope-pill devices.
- * Priority: an explicit `kiosk_scope` wins; else a legacy per-view "personal"
- * mode (the deliberate phone-in-hand choice — migrating it to all/networked
- * would suddenly show everyone's items); else the legacy federated toggle;
- * else `all`. Pure so the matrix is testable.
+ * Derive the scope from what's on disk, honouring pre-switch devices.
+ * Priority: an explicit `kiosk_scope` wins — the retired `personal` value
+ * (the old Show pill's me-filter) reads as `all`, the holon's own items being
+ * the nearest thing; else the legacy federated toggle; else `all`. Pure so
+ * the matrix is testable.
  */
 export function scopeFromLegacy(v: {
   scope: string | null;
   federated: string | null;
-  taskView: string | null;
-  libraryView: string | null;
-  rolesView: string | null;
 }): Scope {
-  if (v.scope === "personal" || v.scope === "all" || v.scope === "networked")
-    return v.scope;
-  if (
-    v.taskView === "personal" ||
-    v.libraryView === "personal" ||
-    v.rolesView === "personal"
-  )
-    return "personal";
+  if (v.scope === "all" || v.scope === "networked") return v.scope;
+  if (v.scope === "personal") return "all";
   if (v.federated === "1") return "networked";
   return "all";
 }
@@ -333,13 +306,10 @@ export function resolveScope(): Scope {
   return scopeFromLegacy({
     scope: persisted(SCOPE_KEY),
     federated: persisted(FEDERATED_KEY),
-    taskView: persisted(TASK_VIEW_KEY),
-    libraryView: persisted(LIBRARY_VIEW_KEY),
-    rolesView: persisted(ROLES_VIEW_KEY),
   });
 }
 
-/** Persist the scope chosen from a view's Show pill. */
+/** Persist the scope chosen from the Show federated switch. */
 export function setScope(scope: Scope): void {
   persist(SCOPE_KEY, scope);
 }
@@ -392,6 +362,66 @@ export function setChecklistsPref(pref: TabPref): void {
   setTabPref(CHECKLISTS_KEY, pref);
 }
 
+/** The Shifts tab preference — same tri-state as Library/Roles/Lists. */
+export function resolveShiftsPref(): TabPref {
+  return resolveTabPref(SHIFTS_KEY);
+}
+
+/** Persist the Shifts-tab preference (`auto` clears the stored choice). */
+export function setShiftsPref(pref: TabPref): void {
+  setTabPref(SHIFTS_KEY, pref);
+}
+
+/** The Stock tab preference — same tri-state as Library/Roles/Lists. */
+export function resolveStockPref(): TabPref {
+  return resolveTabPref(STOCK_KEY);
+}
+
+/** Persist the Stock-tab preference (`auto` clears the stored choice). */
+export function setStockPref(pref: TabPref): void {
+  setTabPref(STOCK_KEY, pref);
+}
+
+/** The Offers tab preference — same tri-state; `auto` shows it once the holon has an offer or a need. */
+export function resolveOffersPref(): TabPref {
+  return resolveTabPref(OFFERS_KEY);
+}
+
+/** Persist the Offers-tab preference (`auto` clears the stored choice). */
+export function setOffersPref(pref: TabPref): void {
+  setTabPref(OFFERS_KEY, pref);
+}
+
+/**
+ * Relay(s) the Shifts board reads Elinor-format occurrences from
+ * (docs/shifts-elinor.md). Kiosk-scoped `VITE_KIOSK_SHIFT_RELAYS` wins;
+ * the default is the Commons Hub relay Elinor itself publishes to — the
+ * schedule only shows for holons that actually have shifts there, so a
+ * kiosk with no shifts costs one empty query per refresh.
+ */
+export function resolveShiftRelays(): string[] {
+  const env =
+    (import.meta.env.VITE_KIOSK_SHIFT_RELAYS as string | undefined) ||
+    "wss://relay.commonshub.dev";
+  return String(env)
+    .split(",")
+    .map((r) => r.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Coordinator pubkey (hex) whose kind-31923 occurrences are trusted. Unset →
+ * any author's occurrences are shown (fine for development; set it on a
+ * production deploy so a stranger can't inject shifts onto the screen).
+ */
+export function resolveShiftCoordinator(): string | null {
+  const env = import.meta.env.VITE_KIOSK_SHIFT_COORDINATOR as
+    | string
+    | undefined;
+  const v = (env && String(env).trim().toLowerCase()) || "";
+  return /^[0-9a-f]{64}$/.test(v) ? v : null;
+}
+
 /**
  * Whether the optional Status tab (a ranked contribution leaderboard) is shown.
  * Off by default — a caretaker opts in from Settings, since not every hub wants
@@ -421,6 +451,51 @@ export function setFlowsEnabled(on: boolean): void {
 }
 
 /**
+ * Whether the Tasks board is shown. On by default — it is the kiosk's home
+ * view — but a hub that runs on the calendar or the library alone can take
+ * the task list off the screen from Settings.
+ */
+export function resolveTasksEnabled(): boolean {
+  return persisted(TASKS_KEY) !== "0";
+}
+
+/** Persist the Tasks-tab toggle. */
+export function setTasksEnabled(on: boolean): void {
+  persist(TASKS_KEY, on ? "1" : "0");
+}
+
+/** Whether the Calendar is shown — on by default, a caretaker opt-out. */
+export function resolveCalendarEnabled(): boolean {
+  return persisted(CALENDAR_KEY) !== "0";
+}
+
+/** Persist the Calendar-tab toggle. */
+export function setCalendarEnabled(on: boolean): void {
+  persist(CALENDAR_KEY, on ? "1" : "0");
+}
+
+/**
+ * The order the tabs sit in on the strip (a caretaker drags them), as a list
+ * of tab ids — empty when never rearranged, so the default order applies.
+ * Ids that no longer exist are tolerated by the reader (`$lib/taborder`).
+ */
+export function resolveTabOrder(): string[] {
+  const v = persisted(TAB_ORDER_KEY);
+  return v
+    ? v
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+}
+
+/** Persist the tab order (an empty list clears it, back to the default). */
+export function setTabOrder(ids: readonly string[]): void {
+  if (ids.length) persist(TAB_ORDER_KEY, ids.join(","));
+  else forget(TAB_ORDER_KEY);
+}
+
+/**
  * The tab the kiosk is pinned to, or null to auto-rotate. Pinning lets a
  * caretaker park the screen on one view (e.g. always the Calendar). Persisted so
  * it survives a power-cycle. The id is validated against live tabs by the caller.
@@ -433,21 +508,6 @@ export function resolvePinnedTab(): string | null {
 export function setPinnedTab(id: string | null): void {
   if (id) persist(PINNED_KEY, id);
   else forget(PINNED_KEY);
-}
-
-/**
- * The kiosk's display name, shown in the header beside the logo. A caretaker can
- * override the holon's own name here; null means "use the holon's name".
- */
-export function resolveBrandName(): string | null {
-  return persisted(BRAND_NAME_KEY);
-}
-
-/** Persist (or clear, when blank) the custom display name. */
-export function setBrandName(name: string): void {
-  const trimmed = name.trim();
-  if (trimmed) persist(BRAND_NAME_KEY, trimmed);
-  else forget(BRAND_NAME_KEY);
 }
 
 /**
@@ -466,17 +526,14 @@ export function setBrandLogo(value: string | null): void {
 
 /**
  * OpenAI API key for the serverless "direct" voice mode. Settings no longer
- * offers a field for it — a deploy holds its key server-side (/api/ai/voice,
- * /api/ai/breakdown) instead — but a key an earlier build stored on THIS
- * device is still honoured, so a kiosk already set up that way keeps speaking.
- * The VITE_OPENAI_API_KEY env var remains as a dev/self-hosted fallback;
- * anything baked that way is readable by whoever can load the site.
+ * offers a field for it — a deploy holds its key server-side (/api/ai/voice)
+ * instead — but a key an earlier build stored on THIS device is still
+ * honoured, so a kiosk already set up that way keeps speaking. There is no
+ * build-time key: anything baked into the bundle is readable by whoever can
+ * load the site.
  */
 export function resolveVoiceKey(): string | null {
-  const device = deviceVoiceKey();
-  if (device) return device;
-  const env = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
-  return env && env.trim() ? env.trim() : null;
+  return deviceVoiceKey();
 }
 
 /**
@@ -574,7 +631,7 @@ export function isPhoneDisplay(): boolean {
 export function resolveTaskView(): TaskViewMode {
   const v = persisted(TASK_VIEW_KEY);
   if (v === "cards" || v === "list" || v === "swipe" || v === "graph") return v;
-  // Legacy "personal" mode rendered the list; the me-filter lives in the scope now.
+  // Legacy "personal" mode rendered the list (its me-filter is retired).
   if (v === "personal") return "list";
   const mobile =
     typeof window !== "undefined" &&
@@ -643,15 +700,122 @@ export function setRolesView(mode: RolesViewMode): void {
 }
 
 /**
- * The Calendar's time window (its Layout pill): one day, the week, or the
- * month grid. Same per-device stickiness as the other views' layout choices.
+ * How the Flows board reads the ledger: the Sankeys (movement + allocation),
+ * or the balances — the mutual credit behind the shared expenses. Same
+ * Layout pill as the other views; the choice sticks per device.
  */
-export type CalendarMode = "day" | "week" | "month";
+export type FlowsViewMode = "mine" | "balances" | "graph";
+
+/**
+ * Resolve the Flows view mode: the viewer's own balance, everyone's
+ * balances, or the graph. The graph is the default — it needs no login.
+ */
+export function resolveFlowsView(): FlowsViewMode {
+  const v = persisted(FLOWS_VIEW_KEY);
+  return v === "balances" || v === "mine" ? v : "graph";
+}
+
+/** Persist the Flows view mode. */
+export function setFlowsView(mode: FlowsViewMode): void {
+  persist(FLOWS_VIEW_KEY, mode);
+}
+
+/**
+ * The unit the Flows charts are drawn in: `all` (every unit, one chart
+ * each) or a track key such as `money:eur`. Picked in the Flows settings
+ * drawer; sticks per device.
+ */
+export function resolveFlowsUnit(): string {
+  return persisted(FLOWS_UNIT_KEY) || "all";
+}
+
+/** Persist the Flows unit. */
+export function setFlowsUnit(id: string): void {
+  persist(FLOWS_UNIT_KEY, id);
+}
+
+/**
+ * The period the Flows board covers — a named preset, or custom bounds as
+ * local dates. Picked in the Flows settings drawer; sticks per device.
+ */
+export function resolveFlowsWindow(): FlowsWindowChoice {
+  const raw = persisted(FLOWS_WINDOW_KEY);
+  if (raw) {
+    try {
+      const v = JSON.parse(raw) as Partial<FlowsWindowChoice> | null;
+      if (v && isWindowPreset(v.preset))
+        return {
+          preset: v.preset,
+          from: typeof v.from === "string" ? v.from : null,
+          to: typeof v.to === "string" ? v.to : null,
+        };
+    } catch {
+      /* a stale or hand-edited value: fall back to the default */
+    }
+  }
+  return { preset: DEFAULT_WINDOW_PRESET };
+}
+
+/** Persist the Flows period. */
+export function setFlowsWindow(choice: FlowsWindowChoice): void {
+  persist(FLOWS_WINDOW_KEY, JSON.stringify(choice));
+}
+
+/**
+ * How the Stock board reads the shelves: the shelf itself (what is on hand,
+ * item by item), the reorder (what to buy to reach the targets), or the
+ * moves (what the federation could shift from surplus to shortage). Same
+ * Layout pill as the other views; the choice sticks per device.
+ */
+export type StockViewMode = "shelf" | "reorder" | "moves";
+
+/** Resolve the Stock view mode; the shelf is the default. */
+export function resolveStockView(): StockViewMode {
+  const v = persisted(STOCK_VIEW_KEY);
+  return v === "reorder" || v === "moves" ? v : "shelf";
+}
+
+/** Persist the Stock view mode. */
+export function setStockView(mode: StockViewMode): void {
+  persist(STOCK_VIEW_KEY, mode);
+}
+
+/**
+ * The Offers board's lanes (its Layout pill): supply (what is on the
+ * table), matches (who could serve whom), demand (the needs). Sticks per
+ * device like the other layouts.
+ */
+export type OffersViewMode = "supply" | "matches" | "demand";
+
+export function resolveOffersView(): OffersViewMode {
+  const v = persisted(OFFERS_VIEW_KEY);
+  return v === "supply" || v === "matches" ? v : "demand";
+}
+
+export function setOffersView(mode: OffersViewMode): void {
+  persist(OFFERS_VIEW_KEY, mode);
+}
+
+/** The Offers board's scale pill (this holon / partners / a cell level), per device. */
+export function resolveOffersScale(): string {
+  return persisted(OFFERS_SCALE_KEY) ?? "partners";
+}
+
+export function setOffersScale(id: string): void {
+  persist(OFFERS_SCALE_KEY, id);
+}
+
+/**
+ * The Calendar's time window (its Layout pill): one day, the week, the
+ * month grid, or the whole year as a lunar timeline. Same per-device
+ * stickiness as the other views' layout choices.
+ */
+export type CalendarMode = "day" | "week" | "month" | "year";
 
 /** Resolve the Calendar mode; the single day is the default. */
 export function resolveCalendarView(): CalendarMode {
   const v = persisted(CAL_VIEW_KEY);
-  return v === "week" || v === "month" ? v : "day";
+  return v === "week" || v === "month" || v === "year" ? v : "day";
 }
 
 /** Persist the Calendar mode. */
@@ -668,7 +832,7 @@ export function setCalendarView(mode: CalendarMode): void {
  */
 export function resolveLibraryCalendarView(): CalendarMode {
   const v = persisted(LIBRARY_CAL_VIEW_KEY);
-  return v === "day" || v === "week" ? v : "month";
+  return v === "day" || v === "week" || v === "year" ? v : "month";
 }
 
 /** Persist the Library booking calendar's window. */
@@ -715,10 +879,3 @@ export const FLIP_INTERVAL_MS = 16_000;
  * from zero when the page becomes visible again.
  */
 export const RESUME_AFTER_IDLE_MS = 300_000;
-
-/**
- * Idle grace after the last touch before the header chrome (brand, search,
- * account, clock, tabs) fades away for an unobstructed, immersive board. Any
- * interaction brings it straight back.
- */
-export const IDLE_HIDE_MS = 12_000;

@@ -108,7 +108,7 @@ describe('Subscription Tests', () => {
     expect(holosphere.subscriptions[subscriptionId].holon).toBe(testHolon);
     expect(holosphere.subscriptions[subscriptionId].lens).toBe(testLens);
     expect(holosphere.subscriptions[subscriptionId].callback).toBe(mockCallback);
-    expect(holosphere.subscriptions[subscriptionId].mapChain).toBeDefined();
+    expect(typeof holosphere.subscriptions[subscriptionId].off).toBe('function');
     
     // Now unsubscribe
     await subscription.unsubscribe();

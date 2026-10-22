@@ -2,10 +2,10 @@
 //
 // Sourced from packages/telegram-ui/src/Expenses.js (authoritative shape) and
 // apps/web/src/utils/expenseCalculations.ts. Both bot and web persist expenses
-// under HoloSphere/Gun, so IDs may arrive as number or string. We normalize at
+// under HoloSphere, so IDs may arrive as number or string. We normalize at
 // the edges (storage) but accept loose input here.
 
-/** A user/holon ID as it appears on the wire (Gun stores numbers and strings). */
+/** A user/holon ID as it appears on the wire (records carry numbers and strings). */
 export type AgentId = string | number;
 
 /** A monetary expense within a holon, split among participants. */
@@ -20,17 +20,26 @@ export interface Expense {
   currency: string;
   /** Free-form description provided by the payer. */
   description: string;
-  /** ID of the user (or holon) who paid. */
+  /** ID of the agent who paid. */
   paidBy: AgentId;
   /**
-   * IDs of agents that share the cost. May contain the holonId itself when
-   * "this holon" is treated as a single participant (legacy bot behaviour).
-   * May arrive as a non-array from older records; consumers should normalize
-   * via `coerceSplitWith`.
+   * IDs of the people who share the cost. Empty means the expense is for the
+   * entire group: every member shares it, the payer included. A UI's
+   * "everyone" shortcut may spell the members out or leave the list empty;
+   * both read the same through `expenseSharers`. May arrive as a non-array
+   * from older records; consumers should normalize via `coerceSplitWith`.
    */
   splitWith: AgentId[];
   /** Optional Telegram file_id for an attached receipt. */
   picture?: string | null;
+  /**
+   * What the record is. Absent (or `'expense'`) for an ordinary shared cost;
+   * `'settlement'` for a repayment recorded through `createSettlement` — the
+   * same shape, so every reader of the lens nets it without knowing.
+   */
+  kind?: 'expense' | 'settlement';
+  /** Legacy: older time-tracking records carried the unit here, not in `currency`. */
+  unit?: string;
 }
 
 /** Minimal user shape used for balance display. */

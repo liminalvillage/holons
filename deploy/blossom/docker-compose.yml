@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# blossom.holons.io — run next to the relays, behind the same TLS proxy:
+#   docker compose up -d        (from this directory)
+# then route https://blossom.holons.io → 127.0.0.1:3000. See README.md.
+
+volumes:
+  blossom-data: {}
+
+services:
+  blossom:
+    # Built straight from upstream; pin a commit (#<sha>) once it runs well.
+    build: https://github.com/hzrd149/blossom-server.git#master
+    environment:
+      # Refuse to boot with open defaults if config.yml is missing or invalid.
+      BLOSSOM_REQUIRE_CONFIG: "1"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - blossom-data:/app/data
+      - ./config.yml:/app/config.yml:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 3s
+      retries: 5
+      start_period: 15s

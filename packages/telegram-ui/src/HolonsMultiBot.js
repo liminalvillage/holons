@@ -8,7 +8,6 @@ import MultiBot from './MultiBot.js';
 import createHoloSphere from "./createHoloSphere.js";
 import UI from './UI.js';
 import H3 from './H3.js';
-import Holons from './Holons.js';
 import Quests from './Quests.js';
 import Shopping from './Shopping.js';
 import Lunation from "./Lunation.js";
@@ -17,10 +16,13 @@ import Expenses from "./Expenses.js";
 import Settings from './Settings.js';
 import Bigtalk from './Bigtalk.js';
 import Library from './Library.js';
+import Stock from './Stock.js';
 import Users from './Users.js';
 import Tags from './Tags.js';
 import Participation from './RSVP.js';
 import Roles from './Roles.js';
+import FundClaims from './FundClaims.js';
+import GovernanceVotes from './GovernanceVotes.js';
 
 // Delete lock file if it exists
 if (fs.existsSync('./orbitdb/repo.lock')) {
@@ -42,7 +44,6 @@ if (fs.existsSync('./orbitdb/repo.lock')) {
  * @property {Quests} quests - Quest management
  * @property {Expenses} expenses - Expense tracking
  * @property {Users} users - User management
- * @property {Holons} holons - Blockchain integration
  * @property {Library} library - Library system
  * @property {Roles} roles - Role management
  *
@@ -61,14 +62,15 @@ class HolonsBot {
     this.quests = null;
     this.bigtalk = null;
     this.library = null;
+    this.stock = null;
     this.users = null;
     this.expenses = null;
     this.onboarding = null;
-    this.holons = null;
     this.h3 = null;
     this.tags = null;
     this.participation = null;
     this.roles = null;
+    this.fundClaims = null;
   }
 
   async init(appname = 'Holons', telegramToken = null, discordToken = null, mattermostToken = null) {
@@ -110,15 +112,17 @@ class HolonsBot {
     this.shopping = new Shopping(this.bot, this.db, this.settings);
 
     this.bigtalk = new Bigtalk(this.bot);
-    this.library = new Library(this.bot, this.db);
+    this.library = new Library(this.bot, this.db, this.settings);
+    this.stock = new Stock(this.bot, this.db, this.settings);
     this.users = new Users(this.bot, this.db);
     this.expenses = new Expenses(this.bot, this.db, this.ui, this.settings);
     this.onboarding = new Onboarding(this.bot, this.db);
-    this.holons = new Holons(this.bot, this.db, this.settings);
     this.h3 = new H3(this.bot, this.db);
     this.tags = new Tags(this.bot, this.db);
     this.participation = new Participation(this.bot, this.db);
     this.roles = new Roles(this.bot, this.db, this.ui, this.settings);
+    this.fundClaims = new FundClaims(this.bot, this.db);
+    this.governanceVotes = new GovernanceVotes(this.bot, this.db);
     this.quests = new Quests(this.bot, this.db, this.users, this.settings);
     this.settings.setQuestsInstance(this.quests);
   }
@@ -163,6 +167,12 @@ class HolonsBot {
         console.log('[HolonsMultiBot] Library not initialized yet');
       }
 
+      // A /card waiting for this user's photo
+      if (self.tags && self.tags.isWaitingForCard(ctx.chat.id, ctx.from.id)) {
+        await self.tags.handleCardPhoto(ctx);
+        return;
+      }
+
       // Handle photo captions for other modules
       if (ctx.message.caption) {
         const command = ctx.message.caption.split(' ')[0];
@@ -175,6 +185,9 @@ class HolonsBot {
         } else if (['/spent', '/expense', '/speso'].includes(command)) {
           ctx.message.text = ctx.message.caption;
           if (self.expenses) self.expenses.spent(ctx);
+          return;
+        } else if (command.split('@')[0] === '/card') {
+          if (self.tags) await self.tags.handleCardPhoto(ctx);
           return;
         }
       }

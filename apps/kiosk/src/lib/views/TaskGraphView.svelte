@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   // Graph mode for the Tasks view: the backlog as its dependency DAG, arranged
   // automatically — predecessors above, the tasks that wait on them below, one
   // arrow per still-open dependency. Same data and open handler as the wall
@@ -88,13 +89,18 @@
   const EDGE_SPEED = 16;
 
   // ── Arrangement ────────────────────────────────────────────────────────────
+  // The layout is a pure function of the data, in a data-derived order: goals
+  // oldest-left (`created`, then id — `created` is 0 for an unparsable date,
+  // so the id settles those), each task's dependencies in its own
+  // `dependencies` order. The wall's Sort pill never touches the board, and
+  // moving one branch leaves every other branch where it was.
   $: edges = tasks.flatMap((task) =>
     task.dependencies.map((dep) => ({ from: dep, to: task.id })),
   );
-  $: dag = layoutDag(
-    tasks.map((task) => task.id),
-    edges,
-  );
+  $: stableIds = [...tasks]
+    .sort((a, b) => a.created - b.created || a.id.localeCompare(b.id))
+    .map((task) => task.id);
+  $: dag = layoutDag(stableIds, edges);
   $: placed = placeDag(dag, {
     nodeW: NODE_W,
     nodeH: NODE_H,
@@ -109,10 +115,9 @@
     .flat()
     .map((id) => ({ task: byId.get(id)!, box: placed.nodes.get(id)! }))
     .filter((n) => n.task && n.box);
-  /** The unlinked tasks — the drawer's contents, off the canvas. */
-  $: loose = dag.free
-    .map((id) => byId.get(id)!)
-    .filter((task): task is BacklogTask => task != null);
+  /** The unlinked tasks — the drawer's contents, off the canvas, in the
+   *  wall's order (the board's own order is by age, see above). */
+  $: loose = tasks.filter((task) => !placed.nodes.has(task.id));
   /** Nothing waits on anything — say so rather than showing a bare tray. */
   $: noEdges = dag.edges.length === 0;
   /**
@@ -155,7 +160,44 @@
   };
   $: view = userView ?? fitted;
 
+  // ── Keep the drop target still ─────────────────────────────────────────────
+  // A drop re-lays the board: the new branch appears above the target and its
+  // neighbours slide over. The target itself must not move under the finger,
+  // so the drop remembers where ON SCREEN it was and, as the layout updates,
+  // re-solves the pan to keep it there (at the same scale — auto-fit is
+  // released, exactly as a pan releases it). The anchor is a screen point,
+  // not a canvas delta, because the fit itself changes with the extent and a
+  // new top row shifts every node's y. It stays armed across the move's
+  // several writes and until the next gesture, with a timeout so a drop that
+  // never landed can't hold the fit hostage.
+  const PIN_MS = 2500;
+  let pin: { id: string; sx: number; sy: number; s: number } | null = null;
+  let pinTimer = 0;
+  $: if (pin) {
+    const b = placed.nodes.get(pin.id);
+    if (b)
+      userView = {
+        s: pin.s,
+        tx: pin.sx - b.x * pin.s,
+        ty: pin.sy - b.y * pin.s,
+      };
+  }
+  function pinTarget(id: string) {
+    const b = placed.nodes.get(id);
+    if (!b) return; // not on the board (a chip) — let the fit handle it
+    const v = view;
+    pin = { id, sx: b.x * v.s + v.tx, sy: b.y * v.s + v.ty, s: v.s };
+    clearTimeout(pinTimer);
+    pinTimer = window.setTimeout(unpin, PIN_MS);
+  }
+  function unpin() {
+    pin = null;
+    clearTimeout(pinTimer);
+    pinTimer = 0;
+  }
+
   function refit() {
+    unpin();
     userView = null;
   }
 
@@ -305,7 +347,9 @@
   }
 
   onDestroy(() => {
+    unlistenChip();
     if (edgeRaf) cancelAnimationFrame(edgeRaf);
+    clearTimeout(pinTimer);
   });
 
   function local(e: PointerEvent): { x: number; y: number } {
@@ -344,6 +388,7 @@
     if (e.button != null && e.button > 0) return;
     const p = local(e);
     points.set(e.pointerId, p);
+    unpin(); // a new gesture takes over the view
     // NOT captured here: while a pointer is captured the browser retargets the
     // compatibility `click` at the capturing element, so capturing on the way
     // down would swallow every tap on a node. Capture starts once the gesture
@@ -441,7 +486,10 @@
     // underneath comes to wait on the dragged one); over the drawer it cuts
     // the card loose. Anything else puts it back where the layout wants it.
     if (link?.overDrawer) onDetach(link.task);
-    else if (link?.over && link.ok) onLink(link.over, link.task);
+    else if (link?.over && link.ok) {
+      pinTarget(link.over.id);
+      onLink(link.over, link.task);
+    }
     link = null;
     grab = null;
     dragClient = null;
@@ -451,6 +499,7 @@
 
   function onWheel(e: WheelEvent) {
     e.preventDefault();
+    unpin();
     const r = vp?.getBoundingClientRect();
     // Trackpad pinch arrives as ctrl+wheel; both zoom, the gesture just scales
     // faster than a mouse notch.
@@ -483,6 +532,7 @@
   // ghost follows the pointer (the drawer scrolls, so the chip can't travel).
   let chip: {
     task: BacklogTask;
+    pointerId: number;
     /** Ghost position, in viewport-independent page coordinates. */
     x: number;
     y: number;
@@ -491,10 +541,17 @@
     ok: boolean;
   } | null = null;
 
+  // The gesture is followed on the WINDOW, not on the chip: a live update
+  // that reorders the drawer moves the chip's node, and moving a node drops
+  // its pointer capture — the release then lands elsewhere, the chip never
+  // hears it, and the drag stays live with nothing to end it (chip greyed
+  // out and ungrabbable, "Drop … on the task" stuck on screen).
   function onChipDown(e: PointerEvent, task: BacklogTask) {
     if (e.button != null && e.button > 0) return;
+    if (chip) return; // a second finger doesn't restart the carry
     chip = {
       task,
+      pointerId: e.pointerId,
       x: e.clientX,
       y: e.clientY,
       travelled: 0,
@@ -502,10 +559,19 @@
       ok: false,
     };
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    window.addEventListener("pointermove", onChipMove);
+    window.addEventListener("pointerup", onChipUp);
+    window.addEventListener("pointercancel", onChipUp);
+  }
+
+  function unlistenChip() {
+    window.removeEventListener("pointermove", onChipMove);
+    window.removeEventListener("pointerup", onChipUp);
+    window.removeEventListener("pointercancel", onChipUp);
   }
 
   function onChipMove(e: PointerEvent) {
-    if (!chip) return;
+    if (!chip || e.pointerId !== chip.pointerId) return;
     const travelled =
       chip.travelled + Math.hypot(e.clientX - chip.x, e.clientY - chip.y);
     if (travelled > TAP_SLOP) {
@@ -523,15 +589,31 @@
     };
   }
 
+  // The chip a finished press counts as a tap on, until its click arrives.
+  let tappedChip: string | null = null;
+
   function onChipUp(e: PointerEvent) {
-    if (!chip) return;
-    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+    if (!chip || e.pointerId !== chip.pointerId) return;
+    unlistenChip(); // capture itself ends with the pointer
     const dropped = chip;
     chip = null;
     dragClient = null;
-    if (dropped.travelled <= TAP_SLOP)
-      onOpen(dropped.task.id); // a tap opens
-    else if (dropped.over && dropped.ok) onLink(dropped.over, dropped.task);
+    tappedChip = null;
+    if (e.type === "pointercancel") return; // the browser took the gesture
+    if (dropped.travelled <= TAP_SLOP) tappedChip = dropped.task.id;
+    else if (dropped.over && dropped.ok) {
+      pinTarget(dropped.over.id);
+      onLink(dropped.over, dropped.task);
+    }
+  }
+
+  // A tap opens — on the CLICK, not on pointerup: a finger's click is
+  // hit-tested after pointerup, so a card opened there already had its
+  // buttons under the finger and the same tap pressed one (Delete included).
+  function onChipClick(id: string) {
+    const tapped = tappedChip === id;
+    tappedChip = null;
+    if (tapped) onOpen(id);
   }
 </script>
 
@@ -640,13 +722,16 @@
                   class="waits"
                   title={$t("tasks.waitsTitle", {
                     n: task.unmetDeps,
-                  })}>⛓ {task.unmetDeps}</span
+                  })}><Icon name="link" /> {task.unmetDeps}</span
                 >
               {/if}
-              {#if dueLabel(task)}<span class="due">{dueLabel(task)}</span>{/if}
+              {#if dueLabel(task)}<span class="due"
+                  >{#if task.frequency}<Icon name="repeat" />
+                  {/if}{dueLabel(task)}</span
+                >{/if}
               {#if task.appreciation}
                 <span class="heart" aria-hidden="true"
-                  >♥ {task.appreciation}</span
+                  ><Icon name="heart" /> {task.appreciation}</span
                 >
               {/if}
               {#if task.people.length}
@@ -683,7 +768,7 @@
         aria-label={$t("tasks.graphFit")}
         title={$t("tasks.graphFit")}
       >
-        ⤢
+        <Icon name="expand" />
       </button>
     {/if}
   </div>
@@ -723,9 +808,7 @@
             tabindex="0"
             title={task.title}
             on:pointerdown={(e) => onChipDown(e, task)}
-            on:pointermove={onChipMove}
-            on:pointerup={onChipUp}
-            on:pointercancel={onChipUp}
+            on:click={() => onChipClick(task.id)}
             on:keydown={(e) => e.key === "Enter" && onOpen(task.id)}
             >{task.title}</span
           >
@@ -848,7 +931,7 @@
     stroke-dasharray: none;
     stroke-width: 3;
     animation: none;
-    color: var(--teal);
+    color: var(--teal-ink);
   }
 
   .node {
@@ -930,13 +1013,13 @@
   .foot .waits,
   .foot .due {
     color: var(--ink-soft);
-    background: rgba(255, 255, 255, 0.55);
+    background: var(--glass);
     border-radius: 999px;
     padding: 0.05rem 0.4rem;
     white-space: nowrap;
   }
   .foot .heart {
-    color: #d4493a;
+    color: var(--heart);
   }
   .foot .who {
     display: inline-flex;
@@ -1067,7 +1150,7 @@
     box-shadow: var(--shadow-soft);
   }
   .hint.drag.armed {
-    color: #fff;
+    color: var(--on-teal);
     background: var(--teal);
     border-color: var(--teal);
   }
@@ -1083,7 +1166,7 @@
     display: grid;
     place-items: center;
     font-size: 1.2rem;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     background: var(--card);
     border: 1.5px solid var(--line);
     box-shadow: var(--shadow-soft);

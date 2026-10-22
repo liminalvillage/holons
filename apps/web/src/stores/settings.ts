@@ -100,7 +100,7 @@ export const settingsHelpers = {
       if (!holosphere || !holonId) return;
 
       // Not `getAll(...)[0]`: the lens can hold several records (imported
-      // calendars, legacy id-less writes) and Gun's map order is undefined.
+      // calendars, legacy id-less writes) and the lens has no defined order.
       const data = await readHolonSettings(holosphere, holonId);
 
       if (data) {

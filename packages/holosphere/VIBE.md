@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-You are working on **Holosphere** - a distributed coordination infrastructure enabling agent-centric collaboration without centralized platforms. The project uses Gun distributed database with geospatial indexing (H3) for local-first, federated data management.
+You are working on **Holosphere** - a distributed coordination infrastructure enabling agent-centric collaboration without centralized platforms. The project uses signed Nostr events on relays, mirrored into a local event-sourced store, with geospatial indexing (H3) for local-first, federated data management.
 
 **Current Version:** 1.1.10  
 **License:** GPL-3.0-or-later  
@@ -60,10 +60,10 @@ You are working on **Holosphere** - a distributed coordination infrastructure en
 - **Version control:** Semantic versioning (currently 1.1.10)
 - **Dependencies:**
   - h3-js (geospatial indexing)
-  - gun (distributed storage)
+  - nostr-tools (relay transport, signing, NIP-44)
   - ajv (schema validation)
   - openai (optional AI features)
-- **Security:** Validate inputs, use Gun SEA for auth, run npm audit
+- **Security:** Validate inputs, sign every write, run npm audit
 - **License:** GPL-3.0-or-later
 - **Code review:** All PRs reviewed before merge
 - **Release checklist:** Tests pass, docs updated, version bumped
@@ -90,7 +90,7 @@ Before planning implementation:
 
 ### Phase 3: TECHNICAL PLAN (`/speckit.plan`)
 Create implementation plan adhering to Constitution:
-- **Tech stack:** JavaScript ES6+, Gun, H3-js, Ajv
+- **Tech stack:** JavaScript ES6+, nostr-tools, H3-js, Ajv
 - Architecture decisions following modularity standards
 - Data models with type definitions
 - Component breakdown respecting existing structure

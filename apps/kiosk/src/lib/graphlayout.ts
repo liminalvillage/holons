@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Auto-arranged layered layout for the Tasks dependency graph — a small
-// Sugiyama-style pipeline (layer by longest path to a goal, then reduce edge
-// crossings with barycenter sweeps). Pure geometry over ids: which edges exist
-// and what they *mean* is decided upstream (core's dependency helpers); this
-// module only decides where each node sits. Sized for a kiosk backlog (tens of
-// nodes), not for thousands.
+// Auto-arranged layout for the Tasks dependency graph: rows by longest path
+// down to a goal, columns by a tidy-tree placement over each goal's branch.
+// Pure geometry over ids: which edges exist and what they *mean* is decided
+// upstream (core's dependency helpers); this module only decides where each
+// node sits. Sized for a kiosk backlog (tens of nodes), not for thousands.
+//
+// The arrangement is deliberately STABLE — nothing here depends on anything
+// but the ids' order and the edges' order, so the same data draws the same
+// board on every kiosk, and editing one branch leaves every other branch
+// where it was (its neighbours slide over to make room, they don't reshuffle).
 
 export interface DagEdge {
   /** Predecessor (the dependency — must happen first; drawn above). */
@@ -17,7 +21,8 @@ export interface DagEdge {
 export interface DagLayout {
   /**
    * Linked nodes, top→bottom: the LAST layer holds the goals (nothing waits on
-   * them), each earlier layer the work that feeds the one below it.
+   * them), each earlier layer the work that feeds the one below it. Within a
+   * row the order is the drawing order, left→right.
    */
   layers: string[][];
   /** Per linked node: its layer and its column within that layer. */
@@ -26,10 +31,21 @@ export interface DagLayout {
   free: string[];
   /** The edges actually laid out (normalized; cycle-closing edges dropped). */
   edges: DagEdge[];
+  /** The goals (bottom row), in input order — each is the root of a branch. */
+  roots: string[];
+  /**
+   * Each node's PRIMARY dependent — the branch it is drawn in. A card several
+   * tasks wait on lives under the one listed first in the input (its other
+   * edges are still drawn); goals have none.
+   */
+  parent: Map<string, string | null>;
+  /**
+   * Each node's primary predecessors, in edge order — for a task that is the
+   * order of its `dependencies`, so a newly wired card lands to the right of
+   * the ones already there.
+   */
+  children: Map<string, string[]>;
 }
-
-/** How many alternating down/up barycenter passes to run. */
-const ORDER_PASSES = 4;
 
 /**
  * Arrange a dependency DAG for top→bottom rendering. Tolerates dirty input —
@@ -85,10 +101,10 @@ export function layoutDag(ids: string[], edges: DagEdge[]): DagLayout {
   // Rows are counted UP FROM THE GOALS: a node's height is the longest path
   // from it down to a sink, and it renders that many rows above the bottom.
   // Every edge still points strictly down (a predecessor is always taller than
-  // its successor), but the alignment is what makes a breakdown read as one
-  // move: all the steps feeding a task sit together on the row directly above
-  // it, at every level. Aligning from the roots instead would drop whichever
-  // steps happen to be simple onto the top row and strand their siblings.
+  // its successor), and for a plain tree it puts every dependency on the row
+  // directly above the task it feeds, at every level. Aligning from the roots
+  // instead would drop whichever steps happen to be simple onto the top row
+  // and strand their siblings.
   const heightOf = new Map<string, number>();
   const height = (id: string): number => {
     const known = heightOf.get(id);
@@ -106,44 +122,45 @@ export function layoutDag(ids: string[], edges: DagEdge[]): DagLayout {
   const layerOf = new Map(
     linked.map((id) => [id, layerCount - 1 - heightOf.get(id)!] as const),
   );
-  const layers: string[][] = Array.from({ length: layerCount }, () => []);
-  for (const id of linked) layers[layerOf.get(id)!].push(id);
 
-  // Barycenter ordering: sweep down then up, sorting each layer by the mean
-  // column of its neighbours in the already-ordered adjacent layer. Nodes
-  // with no neighbour there keep their current column.
-  const colOf = new Map<string, number>();
-  const reindex = (layer: string[]) =>
-    layer.forEach((id, i) => colOf.set(id, i));
-  layers.forEach(reindex);
-  const sortLayer = (layer: string[], over: (id: string) => string[]) => {
-    const bary = new Map<string, number>();
-    for (const id of layer) {
-      const ns = over(id);
-      bary.set(
-        id,
-        ns.length
-          ? ns.reduce((s, n) => s + colOf.get(n)!, 0) / ns.length
-          : colOf.get(id)!,
-      );
+  // The branches: every node hangs under ONE dependent — the first listed in
+  // the input among those waiting on it — so a shared card only changes
+  // branch when its own dependents change, never because some other branch
+  // was edited. Children keep edge order (= the task's `dependencies` order).
+  const index = new Map(ids.map((id, i) => [id, i] as const));
+  const parent = new Map<string, string | null>();
+  const children = new Map<string, string[]>(linked.map((id) => [id, []]));
+  const roots: string[] = [];
+  for (const id of linked) {
+    const ns = nexts.get(id)!;
+    if (!ns.length) {
+      parent.set(id, null);
+      roots.push(id);
+      continue;
     }
-    layer.sort(
-      (a, b) => bary.get(a)! - bary.get(b)! || colOf.get(a)! - colOf.get(b)!,
-    );
-    reindex(layer);
-  };
-  for (let pass = 0; pass < ORDER_PASSES; pass++) {
-    for (let i = 1; i < layers.length; i++)
-      sortLayer(layers[i], (id) => preds.get(id) ?? []);
-    for (let i = layers.length - 2; i >= 0; i--)
-      sortLayer(layers[i], (id) => nexts.get(id) ?? []);
+    let best = ns[0];
+    for (const n of ns) if (index.get(n)! < index.get(best)!) best = n;
+    parent.set(id, best);
   }
+  for (const id of linked)
+    for (const p of preds.get(id)!)
+      if (parent.get(p) === id) children.get(id)!.push(p);
+
+  // Rows filled in pre-order over the branches, which is the drawing order:
+  // a branch's subtrees are placed strictly left→right, so a row's DOM order
+  // matches what the eye follows (and so does tab order).
+  const layers: string[][] = Array.from({ length: layerCount }, () => []);
+  const place = (id: string) => {
+    layers[layerOf.get(id)!].push(id);
+    for (const c of children.get(id)!) place(c);
+  };
+  for (const r of roots) place(r);
 
   const pos = new Map<string, { layer: number; col: number }>();
   layers.forEach((layer, l) =>
     layer.forEach((id, c) => pos.set(id, { layer: l, col: c })),
   );
-  return { layers, pos, free, edges: kept };
+  return { layers, pos, free, edges: kept, roots, parent, children };
 }
 
 /** Where one node's box sits on the canvas (top-left corner, px). */
@@ -164,79 +181,180 @@ export interface DagPlacement {
 export interface PlaceOptions {
   nodeW: number;
   nodeH: number;
-  /** Horizontal gap between siblings in a layer. */
+  /** Horizontal gap between siblings — cards that feed the same task. */
   colGap: number;
   /** Vertical gap between layers — the room the edges are drawn through. */
   rowGap: number;
   /**
-   * Horizontal gap between CLUSTERS: adjacent cards in a layer that feed no
-   * task in common (different breakdowns sharing the row). Defaults to
-   * `colGap`, which keeps every gap uniform.
+   * Horizontal gap between cards on one row that feed DIFFERENT tasks, and
+   * between the goals themselves. Defaults to `colGap`, which keeps every gap
+   * uniform.
    */
   clusterGap?: number;
 }
 
 /**
- * Turn a layered layout into pixel boxes: layers stack top→bottom, each
- * centred on the canvas. A row shared by several breakdowns opens the wider
- * `clusterGap` at each cluster boundary, so a long full row spreads out and
- * each task's steps read as their own group. Unlinked nodes are deliberately
- * NOT placed — they live in the view's drawer, off the canvas, so they
- * neither stretch the extent nor shrink the fit. Pure geometry: the caller
- * supplies the node size and gaps and applies its own fit/zoom transform to
- * the result.
+ * A subtree's horizontal footprint, per absolute row: the left edge of its
+ * leftmost box and the right edge of its rightmost one, plus which node sits
+ * there (so a gap can tell siblings from cousins). Rows the subtree doesn't
+ * touch are `undefined`.
+ */
+interface Contour {
+  left: (number | undefined)[];
+  right: (number | undefined)[];
+  leftId: (string | undefined)[];
+  rightId: (string | undefined)[];
+}
+
+/**
+ * Turn a layered layout into pixel boxes with a tidy-tree placement: every
+ * task is centred over its dependencies, which sit side by side on the row
+ * above it, and each branch keeps its own horizontal span — branches are
+ * merged left→right by their outlines, never interleaved. Cards that feed the
+ * same task sit a `colGap` apart; anything else sharing a row opens the wider
+ * `clusterGap`. A long edge (a card pulled higher by a second dependent)
+ * reserves the rows it crosses so nothing is drawn under it.
+ *
+ * Unlinked nodes are deliberately NOT placed — they live in the view's
+ * drawer, off the canvas, so they neither stretch the extent nor shrink the
+ * fit. Pure geometry: the caller supplies the node size and gaps and applies
+ * its own fit/zoom transform to the result.
  */
 export function placeDag(
   layout: DagLayout,
   { nodeW, nodeH, colGap, rowGap, clusterGap = colGap }: PlaceOptions,
 ): DagPlacement {
-  const { layers } = layout;
+  const { layers, pos, roots, parent, children } = layout;
+  const rows = layers.length;
+  const xs = new Map<string, number>();
+  const rowOf = (id: string) => pos.get(id)!.layer;
 
-  // Same cluster = the two cards feed at least one task in common. Sinks
-  // (the bottom row's goals) share nothing, so unrelated goals also sit a
-  // cluster gap apart.
-  const nexts = new Map<string, Set<string>>();
-  for (const e of layout.edges) {
-    let s = nexts.get(e.from);
-    if (!s) nexts.set(e.from, (s = new Set()));
-    s.add(e.to);
-  }
-  const sameCluster = (a: string, b: string): boolean => {
-    const sb = nexts.get(b);
-    if (!sb) return false;
-    for (const t of nexts.get(a) ?? []) if (sb.has(t)) return true;
-    return false;
+  const empty = (): Contour => ({
+    left: new Array(rows),
+    right: new Array(rows),
+    leftId: new Array(rows),
+    rightId: new Array(rows),
+  });
+  /** Widen `c` at `row` to include [l, r], attributed to `id`. */
+  const cover = (c: Contour, row: number, l: number, r: number, id: string) => {
+    if (c.left[row] == null || l < c.left[row]!) {
+      c.left[row] = l;
+      c.leftId[row] = id;
+    }
+    if (c.right[row] == null || r > c.right[row]!) {
+      c.right[row] = r;
+      c.rightId[row] = id;
+    }
+  };
+  /** Siblings (same task waits on both) sit close; anything else, apart. */
+  const gapBetween = (a: string | undefined, b: string | undefined) => {
+    const pa = a ? parent.get(a) : null;
+    const pb = b ? parent.get(b) : null;
+    return pa != null && pa === pb ? colGap : clusterGap;
+  };
+  const shift = (c: Contour, dx: number) => {
+    for (let r = 0; r < rows; r++) {
+      if (c.left[r] != null) c.left[r]! += dx;
+      if (c.right[r] != null) c.right[r]! += dx;
+    }
+  };
+  /** Slide `sub` right until it clears `acc` on every row they share. */
+  const merge = (acc: Contour, sub: Contour, ids: string[]) => {
+    let dx = -Infinity;
+    let shared = false;
+    for (let r = 0; r < rows; r++) {
+      if (acc.right[r] == null || sub.left[r] == null) continue;
+      shared = true;
+      const need =
+        acc.right[r]! +
+        gapBetween(acc.rightId[r], sub.leftId[r]) -
+        sub.left[r]!;
+      if (need > dx) dx = need;
+    }
+    if (!shared) {
+      // No row in common: still keep it to the right of everything so far.
+      const accRight = Math.max(...acc.right.filter((v) => v != null));
+      const subLeft = Math.min(...sub.left.filter((v) => v != null));
+      dx = accRight + clusterGap - subLeft;
+    }
+    if (!Number.isFinite(dx)) dx = 0;
+    for (const id of ids) xs.set(id, xs.get(id)! + dx);
+    shift(sub, dx);
+    for (let r = 0; r < rows; r++) {
+      if (sub.left[r] == null) continue;
+      cover(acc, r, sub.left[r]!, sub.right[r]!, sub.leftId[r]!);
+      // `cover` picks the outer edge; the right edge's owner is sub's own.
+      if (acc.right[r] === sub.right[r]) acc.rightId[r] = sub.rightId[r];
+    }
   };
 
-  // Per-layer x offsets, gap by gap — rows are no longer a uniform grid.
-  const xs = layers.map((layer) => {
-    const offs: number[] = [];
-    let x = 0;
-    layer.forEach((id, i) => {
-      if (i > 0)
-        x += nodeW + (sameCluster(layer[i - 1], id) ? colGap : clusterGap);
-      offs.push(x);
-    });
-    return offs;
-  });
-  const rowWidth = (l: number) =>
-    xs[l].length ? xs[l][xs[l].length - 1] + nodeW : 0;
+  /** Lay out the branch rooted at `id`; returns its outline and members. */
+  const build = (id: string): { contour: Contour; ids: string[] } => {
+    const row = rowOf(id);
+    const kids = children.get(id) ?? [];
+    if (!kids.length) {
+      xs.set(id, 0);
+      const contour = empty();
+      cover(contour, row, 0, nodeW, id);
+      return { contour, ids: [id] };
+    }
+    const acc = empty();
+    const members: string[] = [];
+    let first = true;
+    for (const kid of kids) {
+      const sub = build(kid);
+      // A dependency more than one row up trails an edge through the rows
+      // between: reserve its column there so no sibling sits under the line.
+      for (let r = rowOf(kid) + 1; r < row; r++)
+        cover(sub.contour, r, xs.get(kid)!, xs.get(kid)! + nodeW, kid);
+      if (first) {
+        for (let r = 0; r < rows; r++) {
+          acc.left[r] = sub.contour.left[r];
+          acc.right[r] = sub.contour.right[r];
+          acc.leftId[r] = sub.contour.leftId[r];
+          acc.rightId[r] = sub.contour.rightId[r];
+        }
+        first = false;
+      } else merge(acc, sub.contour, sub.ids);
+      members.push(...sub.ids);
+    }
+    // The task sits centred over its dependencies' span.
+    const x = (xs.get(kids[0])! + xs.get(kids[kids.length - 1])!) / 2;
+    xs.set(id, x);
+    cover(acc, row, x, x + nodeW, id);
+    // ...and the span of any long edge into it is kept clear of cousins too.
+    for (const kid of kids) {
+      const kx = xs.get(kid)!;
+      for (let r = rowOf(kid) + 1; r < row; r++)
+        cover(acc, r, Math.min(kx, x), Math.max(kx, x) + nodeW, kid);
+    }
+    members.push(id);
+    return { contour: acc, ids: members };
+  };
 
-  const width = layers.reduce((w, _, l) => Math.max(w, rowWidth(l)), 0);
-  const height = layers.length
-    ? layers.length * nodeH + (layers.length - 1) * rowGap
-    : 0;
+  const all = empty();
+  let first = true;
+  for (const root of roots) {
+    const sub = build(root);
+    if (first) {
+      for (let r = 0; r < rows; r++) {
+        all.left[r] = sub.contour.left[r];
+        all.right[r] = sub.contour.right[r];
+        all.leftId[r] = sub.contour.leftId[r];
+        all.rightId[r] = sub.contour.rightId[r];
+      }
+      first = false;
+    } else merge(all, sub.contour, sub.ids);
+  }
+
+  const lefts = all.left.filter((v): v is number => v != null);
+  const rights = all.right.filter((v): v is number => v != null);
+  const minX = lefts.length ? Math.min(...lefts) : 0;
+  const width = rights.length ? Math.max(...rights) - minX : 0;
+  const height = rows ? rows * nodeH + (rows - 1) * rowGap : 0;
 
   const nodes = new Map<string, NodeBox>();
-  layers.forEach((layer, l) => {
-    const left = (width - rowWidth(l)) / 2;
-    layer.forEach((id, c) =>
-      nodes.set(id, {
-        id,
-        x: left + xs[l][c],
-        y: l * (nodeH + rowGap),
-      }),
-    );
-  });
+  for (const [id, x] of xs)
+    nodes.set(id, { id, x: x - minX, y: rowOf(id) * (nodeH + rowGap) });
   return { nodes, width, height };
 }

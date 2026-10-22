@@ -92,7 +92,7 @@
 		if (browser && !currentPath.startsWith(`/${id}`)) {
 			const pathParts = currentPath.split('/');
 			let subPath = pathParts[pathParts.length - 1];
-			const protectedRoutes = ['video', 'map', 'settings', 'roles', 'offers', 'tasks', 'calendar', 'shopping', 'checklists', 'status', 'federation', 'dashboard', 'db', 'flow'];
+			const protectedRoutes = ['video', 'map', 'settings', 'roles', 'offers', 'tasks', 'calendar', 'shopping', 'checklists', 'status', 'federation', 'dashboard', 'db'];
 
 			if ((pathParts.length === 2 || subPath === holonID) && !protectedRoutes.includes(subPath)) {
 				subPath = 'dashboard';

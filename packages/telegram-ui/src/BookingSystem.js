@@ -15,9 +15,102 @@ import SectionScene from '../utils/SectionScene.js';
 import DatePickerScene from '../utils/DatePickerScene.js';
 import InputScene from '../utils/InputScene.js';
 import NotificationService from '../utils/NotificationService.js';
+import { publishProfile } from './dna.js';
+import { normaliseLinkedin } from '../scenes/ikigaiScenes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const isEmpty = v =>
+  Array.isArray(v) ? v.length === 0 : String(v ?? '').trim() === '';
+
+/**
+ * Does a `showIf` condition hold for the answers so far? A condition is
+ * - `{ field, in: [...] }`    — the answer (or any of a multi choice) is one of these
+ * - `{ field, notIn: [...] }` — the answer is none of these
+ * - `{ allEmpty: [...] }`     — every one of these fields is unanswered
+ * - `{ anyFilled: [...] }`    — at least one of these fields is answered
+ * - an array of conditions    — all of them hold
+ * An unknown condition holds (the question is asked rather than lost).
+ * @param {Object|Object[]} cond
+ * @param {Object} data - answers keyed by storageKey
+ * @returns {boolean}
+ */
+export function conditionHolds(cond, data = {}) {
+  if (!cond) return true;
+  if (Array.isArray(cond)) return cond.every(c => conditionHolds(c, data));
+  if (Array.isArray(cond.allEmpty)) {
+    return cond.allEmpty.every(key => isEmpty(data[key]));
+  }
+  if (Array.isArray(cond.anyFilled)) {
+    return cond.anyFilled.some(key => !isEmpty(data[key]));
+  }
+  if (cond.field) {
+    const v = data[cond.field];
+    const values = Array.isArray(v) ? v : [v];
+    if (Array.isArray(cond.in)) return values.some(x => cond.in.includes(x));
+    if (Array.isArray(cond.notIn)) {
+      return !values.some(x => cond.notIn.includes(x));
+    }
+  }
+  console.warn('BookingSystem: unknown showIf condition', cond);
+  return true;
+}
+
+/**
+ * The answers that go on the applicant's public profile, per the form's
+ * `settings.profile` (`{ consent, fields }`): only when the `consent`
+ * question was answered "yes", only the answered `fields`, LinkedIn as a
+ * canonical profile URL (dropped when it is not one). Null when nothing goes.
+ * @param {{ consent: string, fields: string[] }|undefined} profile
+ * @param {Object} data - answers keyed by storageKey
+ * @returns {Object|null}
+ */
+export function profileFields(profile, data = {}) {
+  if (!profile?.consent || data[profile.consent] !== 'yes') return null;
+  const out = {};
+  for (const key of profile.fields ?? []) {
+    let v = typeof data[key] === 'string' ? data[key].trim() : '';
+    if (key === 'linkedin') v = normaliseLinkedin(v) ?? '';
+    if (v) out[key] = v;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/** Is this field asked, given the answers so far? */
+export function fieldApplies(field, data = {}) {
+  return conditionHolds(field?.showIf, data);
+}
+
+/**
+ * A select scene's result as stored: `value` is the option value (a string
+ * for a single choice, a list for a multi choice, with `other` among them
+ * when Other was chosen) and `other` is Other's free text, if any.
+ * SingleSelectScene answers `{ value }` or `{ value: 'other', customValue }`;
+ * MultiSelectScene answers values with `other:<text>` for each Other entry.
+ * @param {'single_select'|'multi_select'} type
+ * @param {any} result
+ * @returns {{ value: string|string[], other?: string }}
+ */
+export function selectionToData(type, result) {
+  if (type === 'multi_select') {
+    const list = Array.isArray(result) ? result.map(String) : [];
+    const others = list
+      .filter(v => v.startsWith('other:'))
+      .map(v => v.slice('other:'.length).trim())
+      .filter(Boolean);
+    const value = list.filter(v => !v.startsWith('other:'));
+    if (others.length && !value.includes('other')) value.push('other');
+    return others.length ? { value, other: others.join('; ') } : { value };
+  }
+  const value =
+    result && typeof result === 'object' ? result.value : (result ?? '');
+  const other =
+    result && typeof result === 'object' && result.customValue != null
+      ? String(result.customValue).trim()
+      : '';
+  return other ? { value: String(value), other } : { value: String(value) };
+}
 
 /**
  * JSON-configurable booking/application system.
@@ -27,7 +120,7 @@ const __dirname = path.dirname(__filename);
  * Generates scenes dynamically and handles navigation, data storage, and admin notifications.
  *
  * @property {Object} bot - Telegraf bot instance
- * @property {Object} db - Database instance (Gun)
+ * @property {Object} db - Database instance (HoloSphere)
  * @property {Object} config - Loaded booking configuration from JSON
  * @property {Array} scenes - Generated Telegraf scenes
  * @property {NotificationService} notificationService - Admin notification handler
@@ -49,6 +142,7 @@ export default class BookingSystem {
     this.config = null;
     this.scenes = [];
     this.sceneMap = new Map();
+    this.fieldMap = new Map(); // scene id → field config
 
     // Initialize primitive scene utilities (they register themselves)
     this.initializePrimitives();
@@ -121,6 +215,7 @@ export default class BookingSystem {
       if (scene) {
         this.scenes.push(scene);
         this.sceneMap.set(field.id, scene);
+        this.fieldMap.set(`booking_${field.id}`, field);
       }
     });
 
@@ -148,7 +243,7 @@ export default class BookingSystem {
         ctx.session.bookingSequence = this.config.sections.map(
           s => `booking_${s.id}`
         );
-        ctx.session.bookingStage = 0;
+        ctx.session.bookingStage = -1;
 
         // Send welcome message
         const { title, description } = this.config.metadata || {};
@@ -170,8 +265,8 @@ export default class BookingSystem {
           );
         }
 
-        // Move to first field
-        return ctx.scene.enter(ctx.session.bookingSequence[0]);
+        // Move to the first field that applies
+        return this.advanceToNextField(ctx);
       } catch (error) {
         console.error('BookingSystem entry error:', error);
         await ctx.reply('An error occurred. Please try again with /apply');
@@ -326,11 +421,7 @@ export default class BookingSystem {
         infoDescriptions: field.infoButtons?.descriptions,
         showCancelButton: !field.required,
         onComplete: async (selectCtx, result) => {
-          await this.saveFieldData(
-            selectCtx,
-            field.storageKey || field.id,
-            result
-          );
+          await this.saveSelection(selectCtx, field, result);
           this.advanceToNextField(selectCtx);
         },
         onCancel: async selectCtx => {
@@ -363,11 +454,7 @@ export default class BookingSystem {
         maxSelections: field.maxSelections,
         showCancelButton: !field.required,
         onComplete: async (selectCtx, selectedValues) => {
-          await this.saveFieldData(
-            selectCtx,
-            field.storageKey || field.id,
-            selectedValues
-          );
+          await this.saveSelection(selectCtx, field, selectedValues);
           this.advanceToNextField(selectCtx);
         },
         onCancel: async selectCtx => {
@@ -419,6 +506,15 @@ export default class BookingSystem {
         // Save complete application to database
         await this.saveApplication(ctx, applicationData);
 
+        // What they agreed to show goes on their public profile (DNA)
+        const profile = profileFields(
+          this.config.settings?.profile,
+          applicationData
+        );
+        if (profile && ctx.session.db) {
+          await publishProfile(ctx.session.db, ctx.from.id, profile);
+        }
+
         // Send admin notification
         await this.notificationService.notifyAdmins(
           'application_submitted',
@@ -459,15 +555,42 @@ export default class BookingSystem {
    * @param {Object} ctx - Telegraf context
    */
   advanceToNextField(ctx) {
-    ctx.session.bookingStage += 1;
+    const sequence = ctx.session.bookingSequence;
+    const data = ctx.session.booking?.data ?? {};
+    let stage = ctx.session.bookingStage + 1;
 
-    if (ctx.session.bookingStage >= ctx.session.bookingSequence.length) {
+    // Skip the fields whose showIf does not hold, and forget any answer
+    // they had: a skipped question is neither asked nor stored.
+    while (stage < sequence.length) {
+      const field = this.fieldMap.get(sequence[stage]);
+      if (!field || fieldApplies(field, data)) break;
+      const key = field.storageKey || field.id;
+      delete data[key];
+      delete data[`${key}_other`];
+      stage += 1;
+    }
+    ctx.session.bookingStage = stage;
+
+    if (stage >= sequence.length) {
       return ctx.scene.enter('booking_complete');
     }
 
-    return ctx.scene.enter(
-      ctx.session.bookingSequence[ctx.session.bookingStage]
-    );
+    return ctx.scene.enter(sequence[stage]);
+  }
+
+  /**
+   * Save a select answer: values in `data[key]`, Other's text in
+   * `data[key + '_other']` (removed when Other is not chosen).
+   * @param {Object} ctx - Telegraf context
+   * @param {Object} field - Field configuration
+   * @param {any} result - What the select scene answered
+   */
+  async saveSelection(ctx, field, result) {
+    const key = field.storageKey || field.id;
+    const { value, other } = selectionToData(field.type, result);
+    await this.saveFieldData(ctx, key, value);
+    if (other) ctx.session.booking.data[`${key}_other`] = other;
+    else delete ctx.session.booking.data[`${key}_other`];
   }
 
   /**

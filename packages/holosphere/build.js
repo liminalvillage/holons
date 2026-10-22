@@ -8,6 +8,11 @@ const version = packageJson.version;
 
 console.log(`🏗️  Building HoloSphere v${version} bundle...`);
 
+// `ws` is only reached when there is no global WebSocket (never in a
+// browser); the Node file adapter is behind an opaque dynamic import in
+// store/index.js, so it is never bundled here.
+const NODE_ONLY = ['ws'];
+
 // Create bundled version with all dependencies
 try {
   await build({
@@ -25,15 +30,15 @@ try {
  * Holonic Geospatial Communication Infrastructure
  * 
  * Includes:
- * - HoloSphere core
- * - Gun.js (real-time database)
- * - H3.js (geospatial indexing) 
+ * - HoloSphere core + local store (IndexedDB in the browser)
+ * - nostr-tools (signed events, relay transport)
+ * - H3.js (geospatial indexing)
  * - Ajv (JSON schema validation)
  * 
  * Usage:
  * <script src="https://unpkg.com/holosphere@${version}/holosphere-bundle.js"></script>
  * <script>
- *   const hs = new HoloSphere('myapp');
+ *   const hs = new HoloSphere({ appName: 'myapp', relays: ['wss://relay.holons.io'] });
  * </script>
  * 
  * @author Roberto Valenti
@@ -54,7 +59,7 @@ if (typeof global !== 'undefined') {
     define: {
       'process.env.NODE_ENV': '"production"'
     },
-    external: [], // Bundle everything
+    external: NODE_ONLY,
   });
 
   console.log('✅ Bundle created: holosphere-bundle.js');
@@ -78,7 +83,7 @@ if (typeof global !== 'undefined') {
     define: {
       'process.env.NODE_ENV': '"production"'
     },
-    external: [],
+    external: NODE_ONLY,
   });
 
   console.log('✅ Minified bundle created: holosphere-bundle.min.js');
@@ -99,13 +104,13 @@ if (typeof global !== 'undefined') {
  * 
  * Usage:
  * import HoloSphere from 'https://unpkg.com/holosphere@${version}/holosphere-bundle.esm.js';
- * const hs = new HoloSphere('myapp');
+ * const hs = new HoloSphere({ appName: 'myapp', relays: ['wss://relay.holons.io'] });
  */`
     },
     define: {
       'process.env.NODE_ENV': '"production"'
     },
-    external: [],
+    external: NODE_ONLY,
   });
 
   console.log('✅ ESM bundle created: holosphere-bundle.esm.js');

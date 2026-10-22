@@ -92,6 +92,25 @@ describe('buildLedger', () => {
     expect(owed.every((e) => e.amount === 30)).toBe(true);
   });
 
+  it('shares an expense with no split among every member', () => {
+    const { entries } = ledger({
+      expenses: [expense({ splitWith: [] })],
+      members: ['ana', 'ben', 'cyd'],
+    });
+    const paid = entries.find((e) => e.direction === 'in')!;
+    expect(paid.amount).toBe(90);
+    expect(paid.participants).toEqual(['ana', 'ben', 'cyd']);
+    const owed = entries.filter((e) => e.direction === 'out');
+    expect(owed.map((e) => e.party)).toEqual(['ben', 'cyd']);
+    expect(owed.every((e) => e.amount === 30)).toBe(true);
+  });
+
+  it('has nobody owing an unsplit expense when no roster is given', () => {
+    const { entries } = ledger({ expenses: [expense({ splitWith: [] })] });
+    expect(entries.filter((e) => e.direction === 'out')).toHaveLength(0);
+    expect(entries.find((e) => e.direction === 'in')!.amount).toBe(90);
+  });
+
   it('gives every row a unique id', () => {
     const { entries } = ledger({
       expenses: [expense(), expense({ id: 'e2', description: 'Fuel' })],
@@ -105,6 +124,16 @@ describe('buildLedger', () => {
       collective,
     });
     expect(new Set(entries.map((e) => e.id)).size).toBe(entries.length);
+  });
+
+  it('lists no kudos for starting or finishing a task — nobody gave them', () => {
+    const { entries } = ledger({
+      events: [
+        event({ eventType: 'quest:initiated', resource: { type: 'appreciation', quantity: 1, unit: 'initiative' }, provider: { id: 'ana' } }),
+        event({ id: 'c', eventType: 'quest:completed', resource: { type: 'appreciation', quantity: 3, unit: 'completion' }, provider: { id: 'ana' } }),
+      ],
+    });
+    expect(entries.filter((e) => e.track === 'appreciation')).toHaveLength(0);
   });
 
   it('carries the OpenCollective counterparty and description', () => {
@@ -153,6 +182,21 @@ describe('buildLedger', () => {
     expect(to).toBe(NOW);
   });
 
+  it('takes an explicit window over windowDays, both ends inclusive', () => {
+    const { entries, from, to } = ledger({
+      windowDays: 30,
+      window: { from: NOW - 250 * DAY, to: NOW - 100 * DAY },
+      expenses: [
+        expense({ id: 'recent' }),
+        expense({ id: 'old', created: new Date(NOW - 200 * DAY).toISOString() }),
+        expense({ id: 'edge', created: new Date(NOW - 100 * DAY).toISOString() }),
+      ],
+    });
+    expect(new Set(entries.map((e) => e.reference))).toEqual(new Set(['old', 'edge']));
+    expect(from).toBe(NOW - 250 * DAY);
+    expect(to).toBe(NOW - 100 * DAY);
+  });
+
   it('does not double-count an expense that also exists as REA events', () => {
     const { entries } = ledger({
       expenses: [expense()],
@@ -182,6 +226,17 @@ describe('buildLedger', () => {
     });
     const keys = new Set(entries.map(ledgerTrackKey));
     expect([...keys].sort()).toEqual(['money:usd', 'time:hours']);
+  });
+
+  it('labels a repayment as a settlement, not a cost', () => {
+    const { entries } = ledger({
+      expenses: [
+        expense({ id: 's1', kind: 'settlement', amount: 30, paidBy: 'ben', splitWith: ['ana'] }),
+      ],
+    });
+    expect(entries).toHaveLength(2);
+    expect(entries.every((e) => e.kind === 'settlement')).toBe(true);
+    expect(entries.map((e) => e.direction).sort()).toEqual(['in', 'out']);
   });
 });
 

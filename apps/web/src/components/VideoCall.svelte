@@ -464,8 +464,8 @@
     log('Announced presence');
 
     // Tear down any prior room subscriptions before re-subscribing so a
-    // repeated joinRoom() (e.g. reopening the video window) can't stack Gun
-    // `.map().on()` listeners that are never removed.
+    // repeated joinRoom() (e.g. reopening the video window) can't stack store
+    // listeners that are never removed.
     if (unsubscribeUsers) { unsubscribeUsers(); unsubscribeUsers = null; }
     if (unsubscribeSignals) { unsubscribeSignals(); unsubscribeSignals = null; }
 

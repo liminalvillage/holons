@@ -33,6 +33,11 @@ export interface UserProfile {
   values: string[];
   needs: string[];
   participated: Record<string, unknown>;
+  /**
+   * Keys the person holds BESIDES their derived one (64-hex), linked after
+   * proof of control — see `keys.ts`. Canonical on the personal-holon record.
+   */
+  linkedKeys?: string[];
   // Aggregates may be merged in by callers; keep open for forward-compat.
   [key: string]: unknown;
 }
@@ -48,3 +53,32 @@ export {
 export { addUserValues, addUserNeeds } from './values-needs.js';
 
 export { joinHolon, leaveHolon, type JoinResult } from './membership.js';
+
+export {
+  normalizePubkey,
+  linkedKeysOf,
+  personalHolonOf,
+  getLinkedKeys,
+  linkUserKey,
+  unlinkUserKey,
+  buildKeyLinkChallenge,
+  keyLinkProofFilter,
+  verifyKeyLinkProof,
+  buildKeyLinkOffer,
+  keyLinkProofTemplate,
+  keyLinkDeepLinkPayload,
+  parseKeyLinkPayload,
+  keyLinkProofByCodeFilter,
+  keyLinkProofPubkey,
+  createLinkedKeysResolver,
+  KEY_LINK_CODE_PREFIX,
+  KEY_LINK_DEEPLINK_PREFIX,
+  KEY_LINK_TAG,
+  KEY_LINK_TTL_SEC,
+  type KeyLinkOffer,
+  type TaggedProofEventLike,
+  type LinkKeyOptions,
+  type KeyLinkChallenge,
+  type ProofEventLike,
+  type LinkedKeysResolverOptions,
+} from './keys.js';

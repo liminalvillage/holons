@@ -27,11 +27,12 @@ import {
     toggleParticipant,
     toggleAppreciation,
     toggleStopper,
-    reflectJoin,
-    reflectLeave,
     type Quest as CoreQuest,
 } from '@holons/core/tasks';
 import { DEFAULT_EQUATION } from '@holons/core/scoring';
+import { createOffer, publishOfferNearby } from '@holons/core/offers';
+import { parseOfferText } from './Offers.js';
+import { hostTelegramPicture } from './Pictures.js';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
@@ -346,7 +347,7 @@ export default class Quests {
         const pictureIsDocument = !ctx.message.photo && !!picture;
         
         if (!title) {
-            return ctx.reply(i18next.t('usage', { type, lng: language }));
+            return ctx.reply(i18next.t(type === 'offer' ? 'offerusage' : 'usage', { type, lng: language }));
         }
         
         // Task limit check
@@ -369,15 +370,37 @@ export default class Quests {
             }
         }
         
+        // The record keeps a hosted URL every bot and surface can open; the
+        // reply below still sends this bot's own file_id.
+        const stored = await hostTelegramPicture(ctx.telegram, picture);
+
         // Create the record via the shared core/tasks factories so the bot and
         // the web app produce the same shape. Offers/requests are marketplace
         // items (carry exchange_type); everything else is a plain task/quest.
         const messageThreadId = ctx.message?.is_topic_message ? ctx.message.message_thread_id : null;
         const category = this.getCategory(ctx);
+        // An offer is a resource with a quantity (@holons/core/offers): the
+        // command line carries the mode, the amount, a #category and a price
+        // — see Offers.ts — so the matcher can set it against needs.
+        const parsedOffer = type === 'offer' ? parseOfferText(title) : null;
         const quest =
-            type === 'offer' || type === 'request'
-                ? createMarketItem({ holonId, initiator: sender, kind: type, title, category, picture, messageThreadId })
-                : createTask({ holonId, initiator: sender, title, type, category, picture, messageThreadId });
+            type === 'offer' && parsedOffer
+                ? createOffer({
+                      holonId,
+                      initiator: sender,
+                      title: parsedOffer.title,
+                      category: parsedOffer.category ?? category ?? undefined,
+                      supply: { quantity: parsedOffer.quantity, unit: parsedOffer.unit },
+                      mode: parsedOffer.mode,
+                      price: parsedOffer.price,
+                      currency: parsedOffer.currency,
+                      itemType: parsedOffer.itemType,
+                      picture: stored,
+                  })
+                : type === 'offer' || type === 'request'
+                  ? createMarketItem({ holonId, initiator: sender, kind: type, title, category, picture: stored, messageThreadId })
+                  : createTask({ holonId, initiator: sender, title, type, category, picture: stored, messageThreadId });
+        if (type === 'offer' && messageThreadId != null) quest.message_thread_id = messageThreadId;
         
         // Send message and save quest
         const showAsImage = this.shouldShowQuestsAsImages();
@@ -421,8 +444,8 @@ export default class Quests {
         // Persist via @holons/core/tasks so the bot, web and any future UIs
         // share one persistence path. saveTasksToHolon returns the count of
         // successful saves (best-effort; logs failures internally).
-        // `holosphere.put` awaits Gun's local ack, so by the time this
-        // resolves the record is on disk.
+        // `holosphere.put` resolves once the record is in the local store
+        // (and queued for the relays).
         await saveTasksToHolon(holonDB, holonId.toString(), [quest as CoreQuest]);
 
         // Update buttons and pin message
@@ -438,6 +461,17 @@ export default class Quests {
         // Generate quest image if image mode enabled (picture will be embedded in generated image)
         if (showAsImage) {
             this.regenerateQuestImageBackground(ctx, quest, questHolon, quest.id, this.markup(quest, language));
+        }
+
+        // An offer travels: partner copies and the map's Offers layer at the
+        // holon's hex (skipped with a message, not a throw, when there is no
+        // hex). Best-effort — the record is already on the holon either way.
+        if (type === 'offer' && parsedOffer) {
+            publishOfferNearby(this.db as never, String(holonId), quest as never, { toPartners: true, toHex: true })
+                .then(out => {
+                    if (out.errors.length) log.warn('offer publish partial', { holonId, offerId: quest.id, errors: out.errors });
+                })
+                .catch(err => log.warn('offer publish failed', { holonId, offerId: quest.id, error: String(err) }));
         }
 
         return quest;
@@ -493,30 +527,16 @@ export default class Quests {
             quest.participants = toggled.participants;
             quest.appreciation = toggled.appreciation;
 
-            // Mirror a quest join/leave into the member's personal holon as a
-            // {id,soul} hologram (holograms are opt-in) so the joined quest
-            // surfaces under "my holon" across UIs. Appreciation never mirrors.
+            // Core mirrors a join/leave into the member's personal holon as a
+            // {id,soul} hologram when the quest is saved below (the roster
+            // mirror on every put), so the joined quest surfaces under "my
+            // holon" across UIs. Here only the DM: drop it on leave.
             let joined = false;
             if (action === 'join') {
                 joined = (quest.participants || []).some(
                     (p) => String(p?.id) === String(sender.id)
                 );
-                const reflectCtx = {
-                    holosphere: holonDB,
-                    homeHolonId: holonId,
-                    quest: { id: String(quest.id ?? messageId) },
-                    user: sender,
-                };
-                try {
-                    if (joined) {
-                        await reflectJoin(reflectCtx);
-                    } else {
-                        await reflectLeave(reflectCtx);
-                        await this.removeTelegramHologramMessage(ctx, quest, sender.id);
-                    }
-                } catch (err) {
-                    log.warn(`reflect membership failed: ${err?.message || err}`);
-                }
+                if (!joined) await this.removeTelegramHologramMessage(ctx, quest, sender.id);
             }
 
             // Unified save and update — only (re)send the personal DM when they

@@ -28,7 +28,13 @@ export interface ResolvedFile {
 }
 
 function botTokens(): string[] {
-  const raw = [env.BOT_TOKEN, env.TELEGRAM, env.VITE_TELEGRAM_BOT_TOKEN];
+  // BOT_TOKENS lists every other bot whose file_ids are in the graph.
+  const raw = [
+    env.BOT_TOKEN,
+    env.TELEGRAM,
+    env.VITE_TELEGRAM_BOT_TOKEN,
+    ...(env.BOT_TOKENS ?? "").split(","),
+  ];
   // The .env values have been seen carrying stray control characters —
   // strip anything a real token can't contain, and dedupe.
   const cleaned = raw
@@ -400,4 +406,30 @@ export async function avatarFromBotCache(
 /** Drop a cached resolution (after a failed fetch — the path expired). */
 export function forgetResolved(kind: "file" | "avatar", id: string): void {
   cache.delete(`${kind}:${id}`);
+}
+
+/**
+ * A picture file_id through the community bot server's /getfile, which tries
+ * every bot token that server holds (its BOT_TOKENS) — the last resort for
+ * file_ids from a bot whose token no deploy has. /getfile 404s honestly, and
+ * only a real image body is accepted.
+ */
+export async function imageFromBotServer(
+  fileId: string,
+  cacheControl: string,
+): Promise<Response | null> {
+  const base = botServerBase();
+  if (!base) return null;
+  try {
+    const resp = await fetch(
+      `${base}/getfile?file_id=${encodeURIComponent(fileId)}&file_name=image`,
+    );
+    if (!resp.ok) return null;
+    const bytes = new Uint8Array(await resp.arrayBuffer());
+    return bytes.length > 0 && sniffImageMime(bytes)
+      ? imageResponse(bytes, "image", cacheControl)
+      : null;
+  } catch {
+    return null; // bot server unreachable — the caller 404s
+  }
 }

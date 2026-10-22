@@ -29,19 +29,19 @@ type TelebotLike = Telegraf<Context> & {
 /** Minimal shape used when interacting with the database service in this module. */
 interface DatabaseLike {
   appname?: string;
-  gun?: GunLike;
-  getGun?: () => GunLike | undefined;
-}
-
-/** The slice of the Gun.js API that this module touches. */
-interface GunLike {
-  get(key: string): { once(cb: () => void): unknown };
+  ready?: () => Promise<unknown>;
 }
 
 /** The slice of the Library service that this module touches. */
 interface LibraryLike {
   isWaitingForPhoto(chatId: number | string): boolean;
   handlePhotoUpload(ctx: Context): Promise<boolean> | boolean;
+}
+
+/** The slice of the Tags service that this module touches. */
+interface TagsLike {
+  isWaitingForCard(chatId: number | string, userId: number | string): boolean;
+  handleCardPhoto(ctx: Context): unknown;
 }
 
 /** The slice of the Quests service that this module touches. */
@@ -128,17 +128,14 @@ class HolonsBot {
       // Setup process event handlers
       this.setupProcessHandlers();
 
-      // Warm up GunDB cache — subscribe to known data so peer sync starts early
+      // Wait for the local store to open and the relay transport to come up
+      // so the first Telegram update reads a hydrated store, not an empty one.
       try {
         const db = await this.container.get<DatabaseLike>('database');
-        const gun = db.gun || db.getGun?.();
-        if (gun) {
-          // Touch the top-level app node to trigger sync from peers
-          gun.get(db.appname || 'Holons').once(() => {});
-          log.info('GunDB warmup: subscribed to peer data');
-        }
+        await db.ready?.();
+        log.info('Holosphere ready: local store open, relay sync up');
       } catch (e) {
-        log.warn('GunDB warmup failed (non-fatal)', { error: errorMessage(e) });
+        log.warn('Holosphere warmup failed (non-fatal)', { error: errorMessage(e) });
       }
 
       // Launch the Telegram bot now that everything is initialized
@@ -373,6 +370,7 @@ class HolonsBot {
       const quests = await this.container.get<QuestsLike>('quests');
       const expenses = await this.container.get<ExpensesLike>('expenses');
       const library = await this.container.get<LibraryLike | null>('library');
+      const tags = await this.container.get<TagsLike>('tags');
 
       // Debug: Log all messages to see what's coming through
       telebot.on('message', (ctx, next) => {
@@ -405,6 +403,12 @@ class HolonsBot {
           console.log('[HolonsBotCore] Library not available');
         }
 
+        // A /card waiting for this user's photo
+        if (ctx.from && tags.isWaitingForCard(ctx.chat!.id, ctx.from.id)) {
+          await tags.handleCardPhoto(ctx);
+          return;
+        }
+
         const message = ctx.message as { caption?: string; text?: string } | undefined;
         if (message?.caption) {
           const command = message.caption.split(' ')[0];
@@ -419,6 +423,9 @@ class HolonsBot {
           } else if (['/spent', '/expense', '/speso'].includes(command)) {
             message.text = message.caption;
             expenses.spent(ctx);
+            return; // Exit early to avoid QR processing
+          } else if (command.split('@')[0] === '/card') {
+            await tags.handleCardPhoto(ctx);
             return; // Exit early to avoid QR processing
           }
         }

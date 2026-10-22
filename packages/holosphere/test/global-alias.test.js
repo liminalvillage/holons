@@ -16,7 +16,7 @@ describe('global = get/put without a holon', () => {
   beforeAll(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'holo-global-'));
     sphere = new HoloSphere({ appName: 'global-test', privateKey: undefined,
-      gunOptions: { peers: [], axe: false, multicast: false, radisk: true, file: path.join(dir, 'radata'), localStorage: false } });
+      store: { adapter: 'memory' } });
   });
 
   afterAll(async () => {

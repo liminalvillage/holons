@@ -82,3 +82,72 @@ export function deriveNostrKeyFromEntropy(entropy: Uint8Array, context: string):
 export function entropyFromBytes(bytes: Uint8Array): Uint8Array {
   return sha256(bytes);
 }
+
+/**
+ * Context for the service-level identity-provider key — the author of
+ * kind-31926 identity attestations (Elinor's Telegram↔npub directory).
+ * Frozen: changing it rotates the provider pubkey, which orphans every
+ * attestation we ever published (a provider may only replace its own).
+ */
+export const IDENTITY_PROVIDER_CONTEXT = 'service:identity-provider';
+
+/**
+ * Derive the stable identity-provider keypair from the server-held
+ * `NOSTR_DERIVATION_SECRET`. Every surface holding the secret (bot, kiosk
+ * server, web server) derives the SAME provider key, so their kind-31926
+ * republishes replace each other instead of duplicating.
+ *
+ * Domain-separated from all user keys: member keys are
+ * HMAC(secret, "telegram:<id>") with no prefix, and passkey/eth keys are
+ * derived from user-supplied entropy — never from this secret.
+ */
+export function deriveIdentityProviderKey(derivationSecret: string): DerivedNostrKey {
+  if (!derivationSecret) throw new Error('NOSTR_DERIVATION_SECRET is not configured');
+  return deriveNostrKeyFromEntropy(enc.encode(derivationSecret), IDENTITY_PROVIDER_CONTEXT);
+}
+
+/**
+ * Context for the service-level shift-coordinator key — the author of
+ * kind-31923 shift occurrences a Holons surface publishes (Elinor's
+ * "coordinator" role). Frozen: rotating it orphans every occurrence and the
+ * RSVPs addressed to them, and a deployment pins this pubkey as
+ * `SHIFTS_COORDINATOR_PUBKEY`.
+ */
+export const SHIFT_COORDINATOR_CONTEXT = 'service:shift-coordinator';
+
+/**
+ * Derive the stable shift-coordinator keypair from `NOSTR_DERIVATION_SECRET`.
+ * Every surface holding the secret derives the same key, so a kiosk, the bot
+ * and the web publish the same coordinator's schedule (addressable events
+ * replace each other instead of forking). Domain-separated from the
+ * identity-provider key by context.
+ */
+export function deriveShiftCoordinatorKey(derivationSecret: string): DerivedNostrKey {
+  if (!derivationSecret) throw new Error('NOSTR_DERIVATION_SECRET is not configured');
+  return deriveNostrKeyFromEntropy(enc.encode(derivationSecret), SHIFT_COORDINATOR_CONTEXT);
+}
+
+/**
+ * Derive the Nostr keypair for a Telegram user from the server-held
+ * `NOSTR_DERIVATION_SECRET`. This is the SAME rule the web login uses, so the
+ * bot can sign on a member's behalf under the pubkey they get when they log
+ * into the dashboard.
+ *
+ * key = HMAC-SHA256(secret, "telegram:<id>"), re-hashed with a counter on the
+ * (astronomically unlikely) out-of-range scalar. Frozen — see prefix note.
+ */
+export function deriveTelegramNostrKey(telegramId: string | number, derivationSecret: string): DerivedNostrKey {
+  if (!derivationSecret) throw new Error('NOSTR_DERIVATION_SECRET is not configured');
+  const secretBytes = enc.encode(derivationSecret);
+  for (let i = 0; i < 1000; i++) {
+    const msg = `telegram:${telegramId}` + (i ? `:${i}` : '');
+    const candidate = hmac(sha256, secretBytes, enc.encode(msg));
+    try {
+      const publicKey = bytesToHex(schnorr.getPublicKey(candidate));
+      return { privateKey: bytesToHex(candidate), publicKey };
+    } catch {
+      // out-of-range scalar — try the next counter
+    }
+  }
+  throw new Error('failed to derive a valid Nostr key');
+}

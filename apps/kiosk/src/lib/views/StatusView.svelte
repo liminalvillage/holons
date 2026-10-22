@@ -1,5 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
+  import { nameFor } from "$lib/names";
   //
   // The optional Status board: a simplified, read-only contribution leaderboard.
   // A trimmed cousin of the web dashboard's Status view — same numbers (it scores
@@ -11,11 +13,11 @@
   // Self-contained and scoped to the kiosk's own holon (federation is out of
   // scope). It reads `rea_events` with a one-shot `getAll` (retried for the
   // replication race) and refreshes on an interval — deliberately NOT a live
-  // subscription: a `map().on()` on that large lens triggers a Gun fire-storm.
+  // subscription: a live watch on that large lens re-renders on every event.
   // Those events feed an in-memory store so all scoring runs offline/locally.
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { get } from "svelte/store";
-  import { holonId, rawQuests, rotationHold } from "$lib/stores";
+  import { holonId, rawQuests, rotationHold, offerSettings } from "$lib/stores";
   import { t, locale, type MessageKey, type Translator } from "$lib/i18n";
   import {
     getHolosphere,
@@ -27,10 +29,7 @@
   import {
     REAAggregator,
     computeHolonUserScores,
-    loadEquation,
     extractReaUsers,
-    DEFAULT_EQUATION,
-    type ScoreEquation,
     type ReaUser,
     type UserAggregates,
     type ScoreBreakdown,
@@ -44,6 +43,7 @@
   } from "$lib/components/Avatars.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import ValueEquation from "$lib/components/ValueEquation.svelte";
+  import { bindEquation, equation as equationStore } from "$lib/equation";
 
   type Row = {
     id: string;
@@ -60,6 +60,8 @@
   let loading = true;
   // The row whose score breakdown / ledger is open in the modal, or null.
   let selected: Row | null = null;
+  // The leaderboard is holon-only: the Show federated switch changes nothing
+  // here, federation is out of scope.
 
   // Per-holon scoring state. Rebound whenever the kiosk's holon changes.
   let hid: string | null = null;
@@ -70,7 +72,9 @@
   let events: any[] = [];
   // Starts as the canonical default so scoring never blocks on the settings
   // read; the holon's real equation is loaded off the critical path (see bind).
-  let equation: ScoreEquation = DEFAULT_EQUATION;
+  // The weights come from the one shared store, so an edit made here, in
+  // Settings, or in the Flows settings sheet re-ranks this board at once.
+  $: equation = $equationStore;
   // The `users` lens, when populated — used for richer display names/avatars.
   // It is NOT the roster source: many holons never write profiles here, so the
   // roster is derived from REA activity (see `buildRoster`) and merely enriched
@@ -307,7 +311,7 @@
     rows = scored
       .map((s) => ({
         id: s.userId,
-        name: nameById.get(s.userId) ?? `#${s.userId}`,
+        name: nameById.get(s.userId) ?? nameFor(s.userId),
         score: s.score,
         percentage: s.percentage,
         aggregates: s.aggregates,
@@ -324,7 +328,7 @@
     teardown();
     hid = holon;
     aggregator = null;
-    equation = DEFAULT_EQUATION;
+    bindEquation(holon);
     usersById = {};
     rows = [];
     loading = true;
@@ -351,23 +355,11 @@
 
     // Score against an IN-MEMORY view of the events (the `events` array), not a
     // live store: each per-user aggregate query reads the cached array instead
-    // of hitting Gun, and we never open a `map().on()` on the huge rea_events
+    // of hitting the store, and we never open a live watch on the huge rea_events
     // lens (which storms). `getAll` here returns whatever we've loaded so far.
     aggregator = new REAAggregator(
       new REAEventStore({ getAll: async () => events } as any),
     );
-
-    // Load the holon's value equation OFF the critical path — scoring starts on
-    // the default weights and re-scores when the real equation lands.
-    void loadEquation(hs, holon)
-      .then((eq) => {
-        if (hid !== holon) return;
-        equation = eq;
-        scheduleRescore();
-      })
-      .catch((err) =>
-        console.warn("[kiosk] status: equation load failed", err),
-      );
 
     // Live membership (small lens) for richer names; safe to subscribe.
     usersSub = subscribeLens(hs, holon, "users", (items) => {
@@ -417,11 +409,42 @@
   // Quest data is the name source; re-score when it streams in or changes so the
   // board upgrades usernames to real names without waiting for the 30s refresh.
   $: if ($rawQuests) scheduleRescore();
+  // Re-rank the moment the weights move — the editor writes to the same store.
+  $: if ($equationStore) scheduleRescore();
 
   /** The framing sheet the footer opens: the disclaimer in full, plus the
    * equation that produced the numbers — readable and editable by whoever is
    * standing at the board. */
   let framingOpen = false;
+  /**
+   * The sheet opens at the top from the footer — the framing is meant to be
+   * read — but the gear (in the pills band, offered while this board is
+   * mounted) is a settings button, so it lands on the weights.
+   */
+  let framingFocus: "top" | "equation" = "top";
+  function openSettings() {
+    framingFocus = "equation";
+    framingOpen = true;
+  }
+  onDestroy(
+    offerSettings({ labelKey: "status.settingsAria", open: openSettings }),
+  );
+  function openFraming() {
+    framingFocus = "top";
+    framingOpen = true;
+  }
+  /** Bring the equation into view when the sheet was opened by the gear. */
+  function focusEquation(node: HTMLElement) {
+    if (framingFocus !== "equation") return;
+    // The sheet's scroll container has nothing to scroll until the weights
+    // below have rendered, so jump on the next frame.
+    requestAnimationFrame(() => {
+      const box = node.closest<HTMLElement>(".scroll");
+      if (!box) return;
+      box.scrollTop +=
+        node.getBoundingClientRect().top - box.getBoundingClientRect().top - 12;
+    });
+  }
 
   // Suspend the kiosk's auto-rotation while a modal is open so the screen
   // can't flip away mid-read.
@@ -450,7 +473,8 @@
       <p class="empty">{$t("status.noActivity")}</p>
     {:else}
       <ol class="ranks">
-        {#each rows as row, i (row.id)}
+        {#each rows as row (row.id)}
+          {@const i = rows.indexOf(row)}
           <li>
             <button
               class="rank"
@@ -459,8 +483,13 @@
               title={$t("status.seeScore", { name: row.name })}
             >
               <span class="place">
-                {#if i === 0}🏆{:else if i === 1}🥈{:else if i === 2}🥉{:else}{i +
-                    1}{/if}
+                {#if i === 0}<Icon name="trophy" />{:else if i === 1}<Icon
+                    name="medal"
+                    class="silver"
+                  />{:else if i === 2}<Icon
+                    name="medal"
+                    class="bronze"
+                  />{:else}{i + 1}{/if}
               </span>
               <span class="av">
                 <span class="ini">{avatarInitial(row.name)}</span>
@@ -491,9 +520,11 @@
     scrolled away; tapping it opens the whole thing — and the equation the
     numbers came from.
   -->
-  <button class="disclaimer" on:click={() => (framingOpen = true)}>
+  <button class="disclaimer" on:click={openFraming}>
     <strong>{$t("status.disclaimerLead")}</strong>
-    <span class="more">{$t("status.disclaimerMore")} ›</span>
+    <span class="more">{$t("status.disclaimerMore")}</span>
+    <span class="dot" aria-hidden="true">·</span>
+    <span class="more">{$t("status.disclaimerEquationLink")} ›</span>
   </button>
 </div>
 
@@ -505,7 +536,7 @@
       <p>{$t("status.disclaimerUse")}</p>
       <p>{$t("status.disclaimerEquation")}</p>
       {#if hid}
-        <h4>{$t("settings.valueEquation")}</h4>
+        <h4 use:focusEquation>{$t("settings.valueEquation")}</h4>
         <ValueEquation holon={hid} />
       {/if}
     </div>
@@ -582,7 +613,9 @@
             {#each ledger as e (e.id)}
               <li class="lrow">
                 <span class="licon" class:in={e.incoming}
-                  >{e.incoming ? "↓" : "↑"}</span
+                  >{#if e.incoming}<Icon name="arrow-down" />{:else}<Icon
+                      name="arrow-up"
+                    />{/if}</span
                 >
                 <span class="ltext">
                   <span class="llabel">{e.label}</span>
@@ -614,7 +647,7 @@
   .scrollarea {
     flex: 1;
     min-height: 0;
-    padding: 0.9rem 1.4rem 1.6rem;
+    padding: 0.6rem 1.4rem 1.6rem;
   }
 
   .ranks {
@@ -658,6 +691,26 @@
     font-weight: 800;
     text-align: center;
     color: var(--ink-soft);
+  }
+  /* The podium: gold for the trophy, then the two medals in their metals. */
+  .rank.top .place {
+    color: #8f6a00;
+  }
+  .place :global(.silver) {
+    color: #6b7682;
+  }
+  .place :global(.bronze) {
+    color: #96602f;
+  }
+  /* By night the metals are lit rather than deep, to stand off the slate. */
+  :global(:root[data-theme="dark"]) .rank.top .place {
+    color: #e0b23c;
+  }
+  :global(:root[data-theme="dark"]) .place :global(.silver) {
+    color: #aab4be;
+  }
+  :global(:root[data-theme="dark"]) .place :global(.bronze) {
+    color: #d09a62;
   }
 
   .av {
@@ -713,10 +766,14 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
+  /* The podium row is a post-it: the quiet ink doesn't clear it. */
+  .rank.top .pct {
+    color: var(--ink-soft);
+  }
   .score {
     font-size: 0.95rem;
     font-weight: 800;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
@@ -748,9 +805,12 @@
     font-weight: 700;
   }
   .disclaimer .more {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-weight: 700;
     text-decoration: underline;
+  }
+  .disclaimer .dot {
+    color: var(--muted);
   }
   .disclaimer:active {
     opacity: 0.7;
@@ -780,14 +840,15 @@
     color: var(--muted);
   }
 
-  /* Narrow portrait screens: drop the share bar + percentage, keep the score. */
+  /* Narrow portrait screens: drop the share bar, but keep the percentage next
+     to the score — the share is what the row is about, and a number reads on a
+     phone where a 4rem bar doesn't. */
   @media (max-width: 560px) {
     .rank {
-      grid-template-columns: 2rem 2.2rem 1fr 3rem;
+      grid-template-columns: 2rem 2.2rem 1fr 3.4rem 3rem;
       gap: 0.6rem;
     }
-    .bar,
-    .pct {
+    .bar {
       display: none;
     }
   }
@@ -837,7 +898,7 @@
     color: var(--muted);
   }
   .dsub strong {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
 
   .dsec {
@@ -892,7 +953,7 @@
   }
   .eq .p {
     font-weight: 800;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .eq tfoot td {
     border-top: 2px solid var(--line);
@@ -907,7 +968,7 @@
     color: var(--muted);
   }
   .eq tfoot .p {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
 
   .ledger {
@@ -935,7 +996,7 @@
     place-items: center;
     font-weight: 800;
     font-size: 0.85rem;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     background: color-mix(in srgb, var(--teal) 16%, transparent);
   }
   .licon.in {

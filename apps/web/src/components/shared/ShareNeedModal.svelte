@@ -3,9 +3,10 @@
 	// SPDX-License-Identifier: AGPL-3.0-or-later
 	//
 	// Consent dialog for publishing a shopping-list item as a geolocated need
-	// (see @holons/core/needs). Nothing leaves the holon until the user
-	// confirms; the public-map option is only offered when the holon has a
-	// valid hex address in Settings.
+	// (see @holons/core/needs) — or, with `kind="offer"`, an offer
+	// (@holons/core/offers): the same two legs, partners and the public map.
+	// Nothing leaves the holon until the user confirms; the public-map option
+	// is only offered when the holon has a valid hex address in Settings.
 
 	import { createEventDispatcher, getContext } from 'svelte';
 	import type { HoloSphere } from 'holosphere';
@@ -15,6 +16,8 @@
 	export let open: boolean = false;
 	export let holonId: string = '';
 	export let itemText: string = '';
+	/** Which side of the market is being shared; sets the copy and the map layer. */
+	export let kind: 'need' | 'offer' = 'need';
 	/** External busy/status display while the parent runs the publish. */
 	export let busy: boolean = false;
 	export let status: string = '';
@@ -61,11 +64,16 @@
 	}
 </script>
 
-<Modal {open} title="Share as need nearby" size="sm" on:close={() => dispatch('close')}>
+<Modal {open} title={kind === 'offer' ? 'Share offer nearby' : 'Share as need nearby'} size="sm" on:close={() => dispatch('close')}>
 	<div class="space-y-4">
 		<p class="text-sm text-gray-300">
-			Publish <span class="font-semibold text-white">“{itemText}”</span> as a need —
-			a commitment to buy at market price that nearby providers can respond to.
+			{#if kind === 'offer'}
+				Publish <span class="font-semibold text-white">“{itemText}”</span> as an offer —
+				a resource nearby needs can be matched to.
+			{:else}
+				Publish <span class="font-semibold text-white">“{itemText}”</span> as a need —
+				a commitment to buy at market price that nearby providers can respond to.
+			{/if}
 		</p>
 
 		<label class="share-option" class:share-option--active={toPartners}>
@@ -95,7 +103,7 @@
 				<span class="share-option__title">Public map (your hex)</span>
 				<span class="share-option__hint">
 					{settingsHex
-						? `Lights the “Local Needs” layer at ${settingsHex.slice(0, 10)}…`
+						? `Lights the “${kind === 'offer' ? 'Offers' : 'Local Needs'}” layer at ${settingsHex.slice(0, 10)}…`
 						: 'Set your hex address in Settings to enable'}
 				</span>
 			</span>
@@ -115,7 +123,7 @@
 				on:click={confirm}
 				disabled={busy || (!toPartners && !toHex)}
 			>
-				{busy ? 'Publishing…' : 'Share need'}
+				{busy ? 'Publishing…' : kind === 'offer' ? 'Share offer' : 'Share need'}
 			</button>
 		</div>
 	</div>

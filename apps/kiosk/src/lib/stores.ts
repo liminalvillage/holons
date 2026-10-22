@@ -6,9 +6,11 @@
 
 import { writable, derived, get, type Readable } from "svelte/store";
 import type { Quest } from "@holons/core/tasks";
+import type { WriteStanding } from "@holons/core/holosphere";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
 import type { Checklist } from "@holons/core/checklists";
+import type { ShiftOccurrence, ShiftRsvp } from "@holons/core/shifts";
 import {
   toEvents,
   toBacklog,
@@ -18,25 +20,43 @@ import {
   toChecklists,
   toSuggestions,
   filterBySearch,
-  categoryColorMap,
 } from "./data";
 import type { SearchSuggestions, TaskSort } from "./data";
+import type { LinkedCard } from "./cardlink";
+import type { DeckState } from "./deck";
 import {
   FLIP_INTERVAL_MS,
   RESUME_AFTER_IDLE_MS,
-  IDLE_HIDE_MS,
   isPhoneDisplay,
   setPinnedTab,
   resolvePinnedTab,
+  setTabOrder,
+  setLibraryPref,
+  setRolesPref,
+  setChecklistsPref,
+  setShiftsPref,
+  setStockPref,
+  setOffersPref,
+  setStatusEnabled,
+  setFlowsEnabled,
+  setTasksEnabled,
+  setCalendarEnabled,
   type Scope,
   type TaskViewMode,
   type LibraryViewMode,
   type RolesViewMode,
+  type FlowsViewMode,
+  type StockViewMode,
+  type OffersViewMode,
   type CalendarMode,
   type TabPref,
 } from "./config";
 import { scopeLocal } from "./scope";
+import { shelfCategories, splitSpecs } from "./stock";
+import { applyTabOrder, mergeTabOrder } from "./taborder";
+import { holonColors } from "./palette";
 import { t, type MessageKey } from "./i18n";
+import type { IconName } from "./icons";
 
 // ── Connection / source data ───────────────────────────────────────────────
 
@@ -44,19 +64,31 @@ export const holonName = writable<string>("");
 export const connected = writable<boolean>(false);
 /** The holon this kiosk displays — chosen on boot or from Settings. */
 export const holonId = writable<string | null>(null);
+/**
+ * Where this screen's signing key stands with the displayed holon (see
+ * `writeAcceptance` in @holons/core/holosphere): `accepted` counts, `held`
+ * means the hub has an authority and it is not this key — writes stay on
+ * this screen until it does — `open` means nobody is defined yet.
+ */
+export const writeStanding = writable<"accepted" | "held" | "open" | null>(
+  null,
+);
+/**
+ * The full standing — status AND role — that `may(standing, action)` from
+ * @holons/core/holosphere weighs an action against: the one table every
+ * surface reads to grey out what this key's signature would not count for.
+ */
+export const standing = writable<WriteStanding | null>(null);
 
-/** Caretaker-set display name shown in the header; overrides the holon name. */
-export const brandName = writable<string>("");
 /** Caretaker-set header logo (data URL or image URL); empty → bundled logo. */
 export const brandLogo = writable<string>("");
 /** Accent colour (hex); applied as the `--teal` family across the UI. */
 export const accent = writable<string>("#0e6b66");
 
 /**
- * Whose items the views show — the "Show" pill, shared by every view:
- * `personal` (only the logged-in user's), `all` (this holon), or `networked`
- * (this holon plus its federation partners). Persisted per device; hydrated
- * in `+layout.svelte`.
+ * What the views show — the "Show federated" switch, shared by every view:
+ * `all` (this holon's own items) or `networked` (this holon plus its
+ * federation partners). Persisted per device; hydrated in `+layout.svelte`.
  */
 export const scope = writable<Scope>("all");
 
@@ -91,6 +123,27 @@ export const rolesPref = writable<TabPref>("auto");
 export const checklistsPref = writable<TabPref>("auto");
 
 /**
+ * Caretaker preference for the optional Shifts tab (Elinor-format community
+ * shifts read from a Nostr relay — see $lib/shifts) — same tri-state
+ * semantics as `libraryPref`.
+ */
+export const shiftsPref = writable<TabPref>("auto");
+
+/**
+ * Caretaker preference for the optional Stock tab (fungible stock folded
+ * from REA events — see $lib/stock) — same tri-state semantics as
+ * `libraryPref`: `auto` shows it once the holon keeps any item.
+ */
+export const stockPref = writable<TabPref>("auto");
+
+/**
+ * Caretaker preference for the optional Offers tab (the market: offers
+ * matched to needs — see $lib/offers). `auto` shows it once the holon has
+ * an offer or a need of its own on the quests lens.
+ */
+export const offersPref = writable<TabPref>("auto");
+
+/**
  * Whether the optional Status tab (a ranked contribution leaderboard) is shown
  * (a caretaker opt-in, persisted in config). Toggling it adds/removes the tab in
  * `visibleTabs`; the StatusView owns its own data subscriptions, so no aggregator
@@ -106,8 +159,26 @@ export const statusEnabled = writable<boolean>(false);
  */
 export const flowsEnabled = writable<boolean>(false);
 
+/**
+ * Whether the Tasks board is shown. On by default (it is the boot view), a
+ * caretaker opt-out persisted in config; when it goes, `visibleTabs`'s
+ * subscriber below moves the screen to the pin or the first remaining tab.
+ */
+export const tasksEnabled = writable<boolean>(true);
+
+/** Whether the Calendar is shown — on by default, same shape as `tasksEnabled`. */
+export const calendarEnabled = writable<boolean>(true);
+
 /** Federation partner id → display name, for the per-item source chips. */
 export const partnerNames = writable<Record<string, string>>({});
+
+/**
+ * Every name the resolver has learned, id → name (`$lib/names` fills it).
+ * Lives here, not in `$lib/names`, so the card stores below can depend on
+ * it without an import cycle: a card is mapped with the short form and
+ * re-mapped the moment the person's name arrives.
+ */
+export const names = writable<ReadonlyMap<string, string>>(new Map());
 
 /**
  * Free-text search from the header bar. Filters the visible content of every
@@ -137,6 +208,15 @@ export const libraryViewMode = writable<LibraryViewMode>("cards");
 /** Roles layout: today cards / week grid / the user's own roles. */
 export const rolesViewMode = writable<RolesViewMode>("cards");
 
+/** Flows layout: the Sankey graph, or the balances. */
+export const flowsViewMode = writable<FlowsViewMode>("graph");
+
+/** Stock layout: the shelf, the reorder list, or the federation moves. */
+export const stockViewMode = writable<StockViewMode>("shelf");
+
+/** Offers layout: supply, matches, or demand. */
+export const offersViewMode = writable<OffersViewMode>("demand");
+
 /** Calendar window: day / week / month. Persisted per device via config. */
 export const calendarMode = writable<CalendarMode>("day");
 
@@ -148,12 +228,15 @@ export const calendarMode = writable<CalendarMode>("day");
 export const libraryCalendarMode = writable<CalendarMode>("month");
 
 /**
- * Task ids the swipe deck has dealt with this session — skipped, joined, or
- * liked — so the deck strictly advances. A module store (not component state)
- * because tab auto-rotation remounts the Tasks view every flip; deliberately
- * never persisted, so skipped cards return next session.
+ * Everyone's progress through the swipe deck, keyed by `deckKey(hub, person)`
+ * ($lib/deck): which cards they dealt with — skipped, joined, or liked — and
+ * the frozen order theirs were dealt in. One entry per hub and person, so a
+ * shared screen never hands someone the previous visitor's deck and a hub
+ * switch can't hide a card over a colliding id. A module store (not component
+ * state) because tab auto-rotation remounts the Tasks view every flip;
+ * deliberately never persisted, so skipped cards return next session.
  */
-export const swipeDismissed = writable<Set<string>>(new Set());
+export const swipeDecks = writable<Map<string, DeckState>>(new Map());
 
 // ── Transient notice (toast) ───────────────────────────────────────────────
 //
@@ -178,90 +261,162 @@ export const userMenuOpen = writable<boolean>(false);
 
 export const rawQuests = writable<Quest[]>([]);
 export const rawLibrary = writable<LibraryItem[]>([]);
+/**
+ * The `stock` lens as it streams in: item specs, ours and the partners' we
+ * receive it from (split by `_federation.origin` in $lib/stock). Levels are
+ * never stored — the Stock view folds them from `rea_events` itself.
+ */
+export const rawStock = writable<unknown[]>([]);
 export const rawRoles = writable<Role[]>([]);
 export const rawChecklists = writable<Checklist[]>([]);
+
+/**
+ * The displayed holon's shift schedule — occurrences and resolved signups —
+ * as last built from the `shifts` and `shifts_rsvp` lenses ($lib/shifts owns
+ * the feed). Already windowed to the upcoming horizon.
+ *
+ * These ARE Holosphere records now, decoded from the NIP-52 events Elinor
+ * publishes rather than from the kind-30078 envelope. They are still kept out
+ * of the federation, scope and watchdog machinery: the lens is read-only on
+ * its wire and refuses the hologram and propagation paths that machinery
+ * drives, because a standard kind's `d` tag cannot carry a scalespace copy.
+ */
+export const rawShifts = writable<{
+  occurrences: ShiftOccurrence[];
+  rsvps: ShiftRsvp[];
+}>({ occurrences: [], rsvps: [] });
+
+/**
+ * pubkey → display name for shift participants, from kind-31926 identity
+ * attestations on the shift relay ($lib/shifts owns the lookup). Pubkeys
+ * missing here render as a hex prefix.
+ */
+export const shiftNames = writable<Map<string, string>>(new Map());
+
+/**
+ * pubkey → person identifier from the same kind-31926 attestations — the
+ * identity collapse for RSVP resolution: one person may hold several keys
+ * (Elinor's plus the Holons-derived one), and their status on a shift is
+ * the newest RSVP across ALL of them. Without this map a cancel made under
+ * a sibling key would leave the board showing the person enrolled.
+ */
+export const shiftIdentity = writable<Map<string, string>>(new Map());
+
+/**
+ * False until the first schedule fetch for the current holon settles (with
+ * data or empty), so the Shifts view can show "reading…" instead of a
+ * misleading empty state during the initial relay round-trip.
+ */
+export const shiftsLoaded = writable<boolean>(false);
 
 /**
  * Wall-clock time of the last live emission per lens, stamped by the layout's
  * subscription callbacks. This is the heartbeat the write-echo watchdog reads:
  * a successful LOCAL write must echo through its lens subscription within a
- * couple of seconds (same Gun graph, same process), so a write with no
+ * couple of seconds (same local store, same process), so a write with no
  * emission after it proves the subscription has gone deaf — the one failure
  * that otherwise looks exactly like "the app stopped updating" and silently
  * eats every remote update too. Plain object, not a store: the watchdog polls
  * it point-in-time; nothing renders from it.
  */
 export const lensEmitAt: Record<
-  "quests" | "library" | "roles" | "checklists",
+  "quests" | "library" | "roles" | "checklists" | "stock",
   number
 > = {
   quests: 0,
   library: 0,
   roles: 0,
   checklists: 0,
+  stock: 0,
 };
 
 // Scope narrows the raw records first (dropping partner copies outside the
 // networked scope, keeping holograms), then search filters the view models.
 // The translator is a derived input everywhere a view model bakes display
 // text ("Untitled" fallbacks), so a language switch recomputes the boards.
+// `holonColors` is a dep everywhere a foreign card carries its source holon's
+// colour, so a caretaker choosing a colour re-tints the cards live.
+// `names` is a dep wherever a card carries people: the people are named at
+// mapping time, so a name learned later (a key's kind 0) re-maps the cards.
 export const events = derived(
-  [rawQuests, partnerNames, searchQuery, scope, t],
-  ([$q, $n, $query, $s, $t]) =>
-    filterBySearch(toEvents(scopeLocal($q, $s), $n, $t), $query),
+  [rawQuests, partnerNames, searchQuery, scope, t, holonColors, names],
+  ([$q, $n, $query, $s, $t, $c]) =>
+    filterBySearch(toEvents(scopeLocal($q, $s), $n, $t, $c), $query),
 );
 export const backlog = derived(
-  [rawQuests, partnerNames, searchQuery, scope, taskSort, t],
-  ([$q, $n, $query, $s, $sort, $t]) =>
-    filterBySearch(toBacklog(scopeLocal($q, $s), $n, $sort, $t), $query),
+  [
+    rawQuests,
+    partnerNames,
+    searchQuery,
+    scope,
+    taskSort,
+    t,
+    holonColors,
+    names,
+  ],
+  ([$q, $n, $query, $s, $sort, $t, $c]) =>
+    filterBySearch(toBacklog(scopeLocal($q, $s), $n, $sort, $t, $c), $query),
 );
-// One palette slot per distinct category, derived from *all* quests (not a
-// search- or scope-filtered subset) so a category keeps the same colour across
-// the calendar and the task wall, and doesn't shift as the filters narrow.
-export const categoryColors = derived(rawQuests, ($q) =>
-  categoryColorMap($q.map((x) => x.category)),
-);
+// The clock (ticked by `startClock`, below) — declared here because the
+// library's cards follow it.
+export const now = writable<Date>(new Date());
+/**
+ * The clock at minute grain — what time-dependent boards derive from, so a
+ * booking that starts or ends flips its card without re-deriving every second.
+ */
+export const minute = derived(now, ($n) => Math.floor($n.getTime() / 60_000));
+
 export const things = derived(
-  [rawLibrary, partnerNames, searchQuery, scope, t],
-  ([$l, $n, $query, $s, $t]) =>
-    filterBySearch(toThings(scopeLocal($l, $s), $n, $t), $query),
+  [rawLibrary, partnerNames, searchQuery, scope, t, holonColors, minute, names],
+  ([$l, $n, $query, $s, $t, $c, $m]) =>
+    filterBySearch(
+      toThings(scopeLocal($l, $s), $n, $t, $c, new Date($m * 60_000)),
+      $query,
+    ),
 );
 // The library's bookings as calendar spans — what the Library's calendar
 // layout renders (through the same CalendarView the Calendar tab uses). No
 // translator input: a booking's title is the item's own name, so there is no
 // display text to re-resolve on a language switch.
 export const bookingEvents = derived(
-  [rawLibrary, partnerNames, searchQuery, scope],
-  ([$l, $n, $query, $s]) =>
-    filterBySearch(toBookingEvents(scopeLocal($l, $s), $n), $query),
+  [rawLibrary, partnerNames, searchQuery, scope, holonColors, names],
+  ([$l, $n, $query, $s, $c]) =>
+    filterBySearch(toBookingEvents(scopeLocal($l, $s), $n, $c), $query),
 );
 export const roleCards = derived(
-  [rawRoles, partnerNames, searchQuery, scope, t],
-  ([$r, $n, $query, $s, $t]) =>
-    filterBySearch(toRoles(scopeLocal($r, $s), $n, $t), $query),
+  [rawRoles, partnerNames, searchQuery, scope, t, holonColors, names],
+  ([$r, $n, $query, $s, $t, $c]) =>
+    filterBySearch(toRoles(scopeLocal($r, $s), $n, $t, $c), $query),
 );
 export const checklistCards = derived(
-  [rawChecklists, partnerNames, searchQuery, scope],
-  ([$c, $n, $query, $s]) =>
-    filterBySearch(toChecklists(scopeLocal($c, $s), $n), $query),
+  [rawChecklists, partnerNames, searchQuery, scope, holonColors],
+  ([$c, $n, $query, $s, $col]) =>
+    filterBySearch(toChecklists(scopeLocal($c, $s), $n, $col), $query),
 );
 // Tap-to-filter chips for the search dropdown, derived from the *unqueried*
 // view models so the list stays stable while a query narrows the boards —
 // but scope-filtered, so local scopes don't suggest partner people/categories.
 export const searchSuggestions: Readable<SearchSuggestions> = derived(
-  [rawQuests, rawLibrary, rawRoles, partnerNames, scope, t],
-  ([$q, $l, $r, $n, $s, $t]) =>
-    toSuggestions(
+  [rawQuests, rawLibrary, rawRoles, rawStock, partnerNames, scope, t],
+  ([$q, $l, $r, $st, $n, $s, $t]) => {
+    const base = toSuggestions(
       toEvents(scopeLocal($q, $s), $n, $t),
       toBacklog(scopeLocal($q, $s), $n, undefined, $t),
       toRoles(scopeLocal($r, $s), $n, $t),
       toThings(scopeLocal($l, $s), $n, $t),
-    ),
+    );
+    // The shelf's categories join the chips so the Stock tab can be
+    // narrowed by category with one tap, like the task wall.
+    const categories = [
+      ...new Set([...base.categories, ...shelfCategories(splitSpecs($st).own)]),
+    ].sort((a, b) => a.localeCompare(b));
+    return { ...base, categories };
+  },
 );
 
 /**
  * Whether the board may render. False while a holon's initial data burst is
- * still streaming in from Gun; the layout flips it true once that settles, so
+ * still streaming in from the relays; the layout flips it true once that settles, so
  * the active view mounts a single time on the full set and its entrance
  * animation plays cleanly — exactly like a tab switch (which remounts on
  * already-loaded data) — instead of animating cards one-by-one as they arrive.
@@ -278,8 +433,11 @@ export type Selection =
   // `isNew` marks a draft built locally (e.g. long-press on the calendar) that
   // hasn't been written to Holosphere yet — the detail modal opens straight in
   // edit mode and Cancel discards it instead of leaving a phantom card.
-  | { kind: "event"; quest: Quest; isNew?: boolean }
-  | { kind: "task"; quest: Quest; isNew?: boolean }
+  // `occurrence` is the stored start of the one occurrence of a recurring
+  // series that was tapped (see `CalendarEvent.occurrence`): the card shows
+  // that date and "done" ticks off just that occurrence.
+  | { kind: "event"; quest: Quest; isNew?: boolean; occurrence?: string }
+  | { kind: "task"; quest: Quest; isNew?: boolean; occurrence?: string }
   | { kind: "thing"; item: LibraryItem }
   | null;
 
@@ -300,16 +458,28 @@ export const completionRequest = writable<CompletionRequest>(null);
 /** When true, the next quest opened in the DetailModal starts in edit mode. */
 export const editOnOpen = writable<boolean>(false);
 
-/** Open a quest (calendar event or backlog task) by id, looked up live. */
-export function openQuest(id: string, kind: "event" | "task"): void {
+/**
+ * Open a quest (calendar event or backlog task) by id, looked up live.
+ * Returns whether the record was known (a deep link retries until it is).
+ */
+export function openQuest(
+  id: string,
+  kind: "event" | "task",
+  occurrence?: string,
+): boolean {
   const q = get(rawQuests).find((x) => String(x.id ?? x.title) === id);
-  if (q) selection.set({ kind, quest: q });
+  if (q)
+    selection.set(
+      occurrence ? { kind, quest: q, occurrence } : { kind, quest: q },
+    );
+  return !!q;
 }
 
-/** Open a library thing by id, looked up live. */
-export function openThing(id: string): void {
+/** Open a library thing by id, looked up live. Returns whether it was known. */
+export function openThing(id: string): boolean {
   const item = get(rawLibrary).find((x) => String(x.id ?? "") === id);
   if (item) selection.set({ kind: "thing", item });
+  return !!item;
 }
 
 export function closeDetail(): void {
@@ -322,20 +492,48 @@ export function closeDetail(): void {
 // switch re-labels the tabs live (a module const must never freeze a
 // translated string).
 export const TABS = [
-  { id: "tasks", labelKey: "tabs.tasks", glyph: "✎" },
-  { id: "calendar", labelKey: "tabs.calendar", glyph: "▦" },
-  { id: "library", labelKey: "tabs.library", glyph: "❖" },
-  { id: "checklists", labelKey: "tabs.checklists", glyph: "☑" },
-  { id: "roles", labelKey: "tabs.roles", glyph: "✪" },
-  { id: "status", labelKey: "tabs.status", glyph: "♛" },
-  { id: "flows", labelKey: "tabs.flows", glyph: "⇄" },
+  { id: "tasks", labelKey: "tabs.tasks", icon: "pencil" },
+  { id: "calendar", labelKey: "tabs.calendar", icon: "calendar" },
+  { id: "shifts", labelKey: "tabs.shifts", icon: "hourglass" },
+  { id: "library", labelKey: "tabs.library", icon: "box" },
+  { id: "checklists", labelKey: "tabs.checklists", icon: "check-square" },
+  { id: "roles", labelKey: "tabs.roles", icon: "badge" },
+  { id: "status", labelKey: "tabs.status", icon: "crown" },
+  { id: "flows", labelKey: "tabs.flows", icon: "swap" },
+  { id: "stock", labelKey: "tabs.stock", icon: "shelf" },
+  { id: "offers", labelKey: "tabs.offers", icon: "target" },
 ] as const satisfies readonly {
   id: string;
   labelKey: MessageKey;
-  glyph: string;
+  icon: IconName;
 }[];
 
 export type TabId = (typeof TABS)[number]["id"];
+
+/**
+ * The caretaker's tab order (persisted per device, see `resolveTabOrder`):
+ * ids in strip order, empty for the default. Set by dragging tabs on the
+ * strip; `orderedTabs` applies it, `visibleTabs` filters it.
+ */
+export const tabOrder = writable<string[]>([]);
+
+/** Every tab in the caretaker's order, hidden ones included. */
+export const orderedTabs = derived(tabOrder, ($order) =>
+  applyTabOrder(TABS, $order),
+);
+
+/**
+ * Commit a new order of the tabs currently on the strip — what a drag on the
+ * tab bar produces. Hidden tabs keep their slots (`mergeTabOrder`), and the
+ * result persists so the strip reads the same after a power-cycle.
+ */
+export function reorderTabs(visibleIds: readonly TabId[]): void {
+  const full = get(orderedTabs).map((t) => t.id);
+  const next = mergeTabOrder(full, visibleIds);
+  if (next.every((id, i) => id === full[i])) return;
+  tabOrder.set(next);
+  setTabOrder(next);
+}
 
 /**
  * Whether the Library / Roles tab is actually shown: an explicit caretaker
@@ -360,29 +558,152 @@ export const checklistsEnabled = derived(
   ([$pref, $items]) =>
     $pref === "on" || ($pref === "auto" && $items.length > 0),
 );
+export const shiftsEnabled = derived(
+  [shiftsPref, rawShifts],
+  ([$pref, $s]) =>
+    $pref === "on" || ($pref === "auto" && $s.occurrences.length > 0),
+);
+// Content-driven on OUR specs only: a partner's shelf folding in must not
+// open a tab on a board that keeps nothing itself.
+export const stockEnabled = derived(
+  [stockPref, rawStock],
+  ([$pref, $items]) =>
+    $pref === "on" ||
+    ($pref === "auto" &&
+      $items.some(
+        (r) =>
+          !(r as { _federation?: { origin?: unknown } } | null)?._federation
+            ?.origin,
+      )),
+);
+
+// Content-driven on the holon's OWN market items: an offer or a need of
+// its own on the quests lens (partner copies alone do not open the tab).
+export const offersEnabled = derived(
+  [offersPref, rawQuests],
+  ([$pref, $items]) =>
+    $pref === "on" ||
+    ($pref === "auto" &&
+      $items.some((q) => {
+        const r = q as {
+          type?: unknown;
+          _federation?: { origin?: unknown };
+          _hologram?: unknown;
+        } | null;
+        return (
+          (r?.type === "offer" || r?.type === "need") &&
+          !r?._federation?.origin &&
+          !r?._hologram
+        );
+      })),
+);
 
 /**
- * Tabs actually shown: Library, Lists, and Roles per their (possibly
- * content-driven) visibility above, Status only when the caretaker enabled it.
+ * Tabs actually shown: Tasks unless the caretaker switched it off; Library,
+ * Lists, Roles, and Shifts per their (possibly content-driven) visibility
+ * above; Status and Flows only when the caretaker enabled them.
  */
 export const visibleTabs = derived(
   [
+    orderedTabs,
+    tasksEnabled,
+    calendarEnabled,
     libraryEnabled,
     checklistsEnabled,
     rolesEnabled,
+    shiftsEnabled,
     statusEnabled,
     flowsEnabled,
+    stockEnabled,
+    offersEnabled,
   ],
-  ([$library, $checklists, $roles, $status, $flows]) =>
-    TABS.filter(
+  ([
+    $tabs,
+    $tasks,
+    $calendar,
+    $library,
+    $checklists,
+    $roles,
+    $shifts,
+    $status,
+    $flows,
+    $stock,
+    $offers,
+  ]) =>
+    $tabs.filter(
       (t) =>
+        (t.id !== "tasks" || $tasks) &&
+        (t.id !== "calendar" || $calendar) &&
         (t.id !== "library" || $library) &&
         (t.id !== "checklists" || $checklists) &&
         (t.id !== "roles" || $roles) &&
+        (t.id !== "shifts" || $shifts) &&
         (t.id !== "status" || $status) &&
-        (t.id !== "flows" || $flows),
+        (t.id !== "flows" || $flows) &&
+        (t.id !== "stock" || $stock) &&
+        (t.id !== "offers" || $offers),
     ),
 );
+
+/** The tabs a caretaker could add back: in order, not currently shown. */
+export const hiddenTabs = derived(
+  [orderedTabs, visibleTabs],
+  ([$all, $shown]) => $all.filter((t) => !$shown.some((s) => s.id === t.id)),
+);
+
+/**
+ * Show or hide one tab — the single path behind the Settings switches and
+ * the strip's own "+" / ✕. Content-driven tabs (library, lists, roles,
+ * shifts) get an explicit on/off that overrides their `auto`; the opt-in
+ * boards (status, flows) and the opt-out ones (tasks, calendar) flip their
+ * flag. Everything persists per device. (The Status framing modal is the
+ * caller's job — this only records the decision.)
+ */
+export function setTabShown(id: TabId, on: boolean): void {
+  const pref: TabPref = on ? "on" : "off";
+  switch (id) {
+    case "library":
+      setLibraryPref(pref);
+      libraryPref.set(pref);
+      break;
+    case "roles":
+      setRolesPref(pref);
+      rolesPref.set(pref);
+      break;
+    case "checklists":
+      setChecklistsPref(pref);
+      checklistsPref.set(pref);
+      break;
+    case "shifts":
+      setShiftsPref(pref);
+      shiftsPref.set(pref);
+      break;
+    case "stock":
+      setStockPref(pref);
+      stockPref.set(pref);
+      break;
+    case "offers":
+      setOffersPref(pref);
+      offersPref.set(pref);
+      break;
+    case "status":
+      setStatusEnabled(on);
+      statusEnabled.set(on);
+      break;
+    case "flows":
+      setFlowsEnabled(on);
+      flowsEnabled.set(on);
+      break;
+    case "tasks":
+      setTasksEnabled(on);
+      tasksEnabled.set(on);
+      break;
+    case "calendar":
+      setCalendarEnabled(on);
+      calendarEnabled.set(on);
+      break;
+  }
+}
 
 // A persisted pin from a previous session, validated against the known tabs.
 const savedPin = resolvePinnedTab();
@@ -390,8 +711,32 @@ const initialPin: TabId | null = TABS.some((t) => t.id === savedPin)
   ? (savedPin as TabId)
   : null;
 
-/** The active view — the kiosk opens on its pinned tab, else Tasks. */
-export const activeTab = writable<TabId>(initialPin ?? "tasks");
+/**
+ * The view a board rests on when nothing picked one: no pin, no deep link,
+ * or the active tab just vanished. The calendar — what a hub's members and
+ * visitors most want at a glance — rather than the first tab on the strip.
+ */
+export const DEFAULT_TAB: TabId = "calendar";
+
+/** The active view — the kiosk opens on its pinned tab, else the Calendar. */
+export const activeTab = writable<TabId>(initialPin ?? DEFAULT_TAB);
+
+/**
+ * A deep-linked tab (URL path) whose view is content-driven and not visible
+ * yet — `/shifts` before the relay fetch lands, `/library` before the lens
+ * streams in. Held until the tab appears in `visibleTabs`, which then
+ * activates it and spends the request; a human tap clears it instead (their
+ * choice wins over the URL's ask).
+ */
+export const requestedTab = writable<TabId | null>(null);
+
+/**
+ * A deep-linked card (`?task=`, `?event=`, `?thing=`, see cardlink.ts) whose
+ * record hasn't streamed in yet. Held until the quests/library lens delivers
+ * it, which then opens it in the DetailModal and spends the ask; a human tap
+ * on any card clears it instead (their choice wins over the URL's).
+ */
+export const pendingCard = writable<LinkedCard | null>(null);
 
 /**
  * The tab the kiosk is pinned to, or null to auto-rotate. While pinned the
@@ -403,7 +748,6 @@ export const pinnedTab = writable<TabId | null>(initialPin);
 
 // ── Clock ──────────────────────────────────────────────────────────────────
 
-export const now = writable<Date>(new Date());
 let clockTimer: ReturnType<typeof setInterval> | null = null;
 
 export function startClock(): () => void {
@@ -424,6 +768,7 @@ export function startClock(): () => void {
 // the page is revealed. `flipAt` drives the thin progress bar so the screen
 // telegraphs the next move.
 
+/** True once the screen is unattended (also on displays that never flip). */
 export const rotating = writable<boolean>(false);
 /** Wall-clock time (ms) of the next scheduled flip, or null while paused. */
 export const flipAt = writable<number | null>(null);
@@ -437,29 +782,37 @@ export const flipAt = writable<number | null>(null);
 export const autoRotates = writable<boolean>(true);
 
 /**
- * Whether no one has touched the screen recently — drives hiding the header
- * chrome for an immersive board. Starts true (an unattended kiosk shows the
- * board, not the chrome); any interaction clears it via `noteInteraction`.
- */
-export const idle = writable<boolean>(true);
-
-/**
- * When true, auto-rotation is suspended regardless of the idle/resume timers —
+ * When true, auto-rotation is suspended regardless of the resume timer —
  * a view holds this while an overlay it owns is open (e.g. the Status score
  * breakdown) so the screen can't flip out from under someone reading it.
  */
 export const rotationHold = writable<boolean>(false);
 
 /**
- * When true, the global pills bar hides regardless of idle — a view holds
- * this while an in-view panel replaces its board (e.g. an open checklist),
- * where the filter pills would be meaningless chrome.
+ * The active view's settings, offered to the pills band (GlobalPills) as
+ * one gear: a view that has something to set registers its opener while it
+ * is mounted and clears it on the way out (see `offerSettings`). The view
+ * keeps the sheet itself and any gate in front of it (a login prompt, say);
+ * the band only offers the tap.
  */
-export const pillsSuppressed = writable<boolean>(false);
+export interface ViewSettings {
+  labelKey: MessageKey;
+  open: () => void;
+}
+export const viewSettings = writable<ViewSettings | null>(null);
+
+/**
+ * Register `entry` as the active view's settings for as long as the caller
+ * is mounted. Returns the teardown, which clears the band only if the entry
+ * is still ours — the next view may already have registered its own.
+ */
+export function offerSettings(entry: ViewSettings): () => void {
+  viewSettings.set(entry);
+  return () => viewSettings.update((v) => (v === entry ? null : v));
+}
 
 let tickTimer: ReturnType<typeof setInterval> | null = null;
 let resumeTimer: ReturnType<typeof setTimeout> | null = null;
-let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
 function scheduleFlip() {
   // A pinned kiosk or a phone never advances, so don't arm the progress bar.
@@ -528,28 +881,23 @@ export function startRotation(): () => void {
       document.removeEventListener("visibilitychange", onVisibility);
     if (tickTimer) clearInterval(tickTimer);
     if (resumeTimer) clearTimeout(resumeTimer);
-    if (idleTimer) clearTimeout(idleTimer);
     tickTimer = null;
     resumeTimer = null;
-    idleTimer = null;
   };
 }
 
 /**
- * Call on any user interaction: reveal the chrome, pause rotation, and arm both
- * the chrome-hide and rotation-resume timers so the screen returns to its
- * immersive, self-advancing state once everyone walks away.
+ * Call on any user interaction: pause rotation and arm the rotation-resume
+ * timer so the screen self-advances again once everyone walks away.
  */
 export function noteInteraction() {
   pauseRotation();
-  idle.set(false);
   armResume();
-  if (idleTimer) clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => idle.set(true), IDLE_HIDE_MS);
 }
 
 /** Manually select a tab by id (also counts as an interaction). */
 export function selectTab(id: TabId) {
+  requestedTab.set(null); // a tap outranks a pending deep-link ask
   activeTab.set(id);
   noteInteraction();
 }
@@ -584,16 +932,30 @@ export const flipProgress: Readable<number> = derived(
 // Keep it coherent: a pinned tab that (re)appears reclaims an unattended
 // screen (a pinned kiosk must not be stranded on the boot fallback once its
 // view's data arrives), and an active tab that vanished falls back to the pin
-// or the first visible tab. Module-lifetime subscription — these are app
+// (else the default view, else the first visible tab). Module-lifetime subscription — these are app
 // singletons, so it is never torn down. (Declared last: the callback runs
 // synchronously on subscribe and reads stores defined above.)
 visibleTabs.subscribe((tabs) => {
   const has = (id: TabId | null) => tabs.some((t) => t.id === id);
+  // A deep-linked tab that just appeared (its data arrived) claims the
+  // screen — fulfilling the URL's explicit ask — and the request is spent.
+  const req = get(requestedTab);
+  if (req && has(req)) {
+    requestedTab.set(null);
+    if (get(activeTab) !== req) activeTab.set(req);
+    return;
+  }
   const pin = get(pinnedTab);
   const cur = get(activeTab);
   if (pin && has(pin) && cur !== pin && get(rotating)) {
     activeTab.set(pin);
   } else if (!has(cur)) {
-    activeTab.set(pin && has(pin) ? pin : (tabs[0]?.id ?? "tasks"));
+    activeTab.set(
+      pin && has(pin)
+        ? pin
+        : has(DEFAULT_TAB)
+          ? DEFAULT_TAB
+          : (tabs[0]?.id ?? DEFAULT_TAB),
+    );
   }
 });

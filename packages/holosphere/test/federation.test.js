@@ -300,7 +300,7 @@ describe('Federation Tests', () => {
       expect(result.messages.some(m => m.includes('self-referential'))).toBe(true);
 
       // A's record must NOT have been clobbered with a self-pointer.
-      const atA = await holosphere.gun.get(APP).get(A).get('quests').get('q1');
+      const atA = await holosphere.get(A, 'quests', 'q1', null, { resolveHolograms: false });
       // (No write happened, so nothing self-referential landed at A.)
       expect(atA && atA.soul === `${APP}/${A}/quests/q1`).toBeFalsy();
     });

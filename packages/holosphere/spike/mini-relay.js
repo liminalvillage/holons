@@ -9,6 +9,12 @@
  * Honors NIP-33 parameterized-replaceable (kinds 30000-39999): keeps one event
  * per (pubkey, kind, d-tag), newest created_at wins.
  *
+ * Like strfry it caps concurrent REQs per connection (`maxSubsPerConnection`,
+ * default unlimited here): past the cap the REQ is dropped with a NOTICE
+ * `ERROR: too many concurrent REQs` and never answered — exactly how a client
+ * that over-subscribes goes deaf in production. `openSubs()`, `rejected()`
+ * and `reqCount()` let a test assert the budget a client keeps.
+ *
  * In production this role is played by a real relay (e.g. strfry) — same wire
  * protocol, durable storage, backups. This file is ONLY for the spike.
  */
@@ -35,10 +41,13 @@ function matches(filter, evt) {
   return true;
 }
 
-export function startRelay({ port = 0 } = {}) {
+export function startRelay({ port = 0, maxSubsPerConnection = Infinity } = {}) {
   const events = new Map();       // id -> event
   const replaceable = new Map();  // replKey -> id (for NIP-33)
   const subs = new Map();         // ws -> Map(subId -> filters[])
+  let rejected = 0;               // REQs dropped over the cap
+  let reqCount = 0;               // REQ messages ever received
+  let peakSubs = 0;               // most subs open on one connection at once
 
   const wss = new WebSocketServer({ port });
 
@@ -80,14 +89,30 @@ export function startRelay({ port = 0 } = {}) {
       }
 
       if (type === 'REQ') {
+        reqCount++;
         const subId = rest[0];
         const filters = rest.slice(1);
-        subs.get(ws).set(subId, filters);
+        const sm = subs.get(ws);
+        if (!sm.has(subId) && sm.size >= maxSubsPerConnection) {
+          rejected++;
+          ws.send(JSON.stringify(['NOTICE', 'ERROR: too many concurrent REQs']));
+          return;
+        }
+        sm.set(subId, filters);
+        if (sm.size > peakSubs) peakSubs = sm.size;
         const out = [];
         for (const evt of events.values()) {
           if (filters.some((f) => matches(f, evt))) out.push(evt);
         }
-        out.sort((a, b) => a.created_at - b.created_at);
+        // NIP-01: with `limit`, the newest events are returned (newest first);
+        // otherwise the stored set in chronological order.
+        const limit = Math.min(...filters.map((f) => (f.limit > 0 ? f.limit : Infinity)));
+        if (Number.isFinite(limit)) {
+          out.sort((a, b) => (b.created_at - a.created_at) || (a.id < b.id ? 1 : -1));
+          out.length = Math.min(out.length, limit);
+        } else {
+          out.sort((a, b) => a.created_at - b.created_at);
+        }
         for (const evt of out) ws.send(JSON.stringify(['EVENT', subId, evt]));
         ws.send(JSON.stringify(['EOSE', subId]));
         return;
@@ -109,6 +134,14 @@ export function startRelay({ port = 0 } = {}) {
         port: actualPort,
         count: () => events.size,
         events: () => Array.from(events.values()),
+        /** Subscriptions open right now, summed over every connection. */
+        openSubs: () => [...subs.values()].reduce((n, sm) => n + sm.size, 0),
+        /** Most subscriptions one connection has had open at once. */
+        peakSubs: () => peakSubs,
+        /** REQs dropped over `maxSubsPerConnection`. */
+        rejected: () => rejected,
+        /** REQ messages received in total. */
+        reqCount: () => reqCount,
         close: () =>
           new Promise((r) => {
             // `wss.close` waits for every client to hang up — a lingering

@@ -9,7 +9,7 @@
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import GenericImportModal from "./shared/GenericImportModal.svelte";
     import { nameMap, resolvedName, resolveName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
-    import { showFederated, showHolograms, showUnverified, passesLensFilters } from '$lib/stores/lensFilters';
+    import { showFederated, showHolograms, passesLensFilters } from '$lib/stores/lensFilters';
     import SourceBadge from './shared/SourceBadge.svelte';
     import { CheckSquare, Plus } from 'svelte-feathers';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
@@ -69,7 +69,7 @@
         let entries = Object.entries(allChecklists);
 
         entries = entries.filter(([_, checklist]) =>
-            passesLensFilters(checklist as any, $showHolograms, $showFederated, $showUnverified)
+            passesLensFilters(checklist as any, $showHolograms, $showFederated)
         );
 
         switch (filters.activeFilter) {
@@ -195,10 +195,11 @@
     let questsUnsubscribe: (() => void) | undefined;
     let subscribedHolonId: string | null = null;
     let subscribedFedFlag: boolean | null = null;
+    let checklistsFedSub: { unsubscribe: () => void; setFederated: (on: boolean) => void } | undefined;
 
     // Local-first + progressive load via queryManager.subscribe.
     // - Cached snapshot paints immediately (no waiting on peers).
-    // - Items stream in as Gun delivers them: local graph first, federated
+    // - Items stream in as the store delivers them: local snapshot first, federated
     //   peers after, populating the UI as info arrives.
     // - Federated mode still routes through holosphere.getFederated (which
     //   reads the full federated set) because subscribe is per-holon and
@@ -242,7 +243,8 @@
             // instead of letting ours shadow the partners' same-named lists.
             { includeFederated: targetFed, dedupeAcrossSpaces: false }
         );
-        checklistsUnsubscribe = () => checklistSub.unsubscribe();
+        checklistsFedSub = checklistSub;
+        checklistsUnsubscribe = () => { checklistsFedSub = undefined; checklistSub.unsubscribe(); };
 
         rolesUnsubscribe = queryManager.subscribe({
             holonId: targetHolon,

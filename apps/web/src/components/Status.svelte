@@ -4,7 +4,6 @@
     import { ID, walletAddress } from "../dashboard/store";
     import { page } from "$app/stores";
     import type { HoloSphere } from "holosphere";
-    import { ethers } from 'ethers';
     import User from "./User.svelte";
     import PieChart3D from "./PieChart3D.svelte";
     import { expenseCurrency } from "../utils/expenseCalculations";
@@ -12,9 +11,9 @@
     import { DEFAULT_EQUATION, REAAggregator, ZERO_USER_AGGREGATES, loadHolonUserData, scoreHolonUsers, type ScoredHolonUser, type UserAggregates } from "@holons/core/scoring";
     import { getEventStore } from "../lib/rea/eventStore";
     import { readHolonSettings } from "@holons/core/settings";
+    import { may, writeAcceptance, type WriteStanding } from "@holons/core/holosphere";
     import TitleBar from "./shared/TitleBar.svelte";
     import { nameMap, resolvedName, resolveName, resolvedInitials } from '$lib/stores/nameResolver';
-    import { HolonsManager } from "../lib/holons/HolonsManager";
     interface User {
         id?: string;
         username?: string;
@@ -60,9 +59,6 @@
     }
 
     // Contract share state
-    let manager: HolonsManager | null = null;
-    let contractShares: Record<string, { sharePercent: number; etherFormatted: string }> = {};
-    let contractSharesLoaded = false;
 
     // Initialize with the core default: egalitarian, every weight 0, until
     // the holon's saved equation loads.
@@ -70,6 +66,14 @@
 
     // Add state for editing
     let isEditingEquation = false;
+    // The equation is a guarded settings field (`may(standing, 'settings.guarded')`):
+    // an admin's signature counts, anyone else's is recorded and ignored.
+    let eqStanding: WriteStanding | null = null;
+    $: canEditEquation = may(eqStanding, 'settings.guarded');
+    async function loadEqStanding(id: string) {
+        try { eqStanding = await writeAcceptance(holosphere, id); } catch { eqStanding = null; }
+    }
+    $: if (holonID) void loadEqStanding(holonID);
     let editingEquation: Equation = { ...equation, currencies: { ...equation.currencies } };
 
     // Score breakdown popover state
@@ -105,7 +109,7 @@
     async function saveEquation() {
         try {
             // Not `getAll(...)[0]`: the settings lens can hold more than one
-            // record (imported calendars, legacy id-less writes) and Gun's map
+            // record (imported calendars, legacy id-less writes) and the lens
             // order is undefined, so index 0 is a coin toss. Spreading the
             // wrong record here would save it back over the real settings.
             const currentSettings = (await readHolonSettings(holosphere, holonID)) ?? {};
@@ -187,7 +191,7 @@
         try {
             // Get current settings first to check for existing currencies
             // Not `getAll(...)[0]`: the settings lens can hold more than one
-            // record (imported calendars, legacy id-less writes) and Gun's map
+            // record (imported calendars, legacy id-less writes) and the lens
             // order is undefined, so index 0 is a coin toss. Spreading the
             // wrong record here would save it back over the real settings.
             const currentSettings = (await readHolonSettings(holosphere, holonID)) ?? {};
@@ -265,15 +269,12 @@
                 valueEquationLoaded = false;
                 currenciesLoaded = false;
                 expensesLoaded = false;
-                contractSharesLoaded = false;
                 expenseStore = {};
                 availableCurrencies = [];
-                contractShares = {};
                 aggregatesByUser = {};
                 aggregatesLoaded = false;
                 reaSubscribedFor = null;
                 loadEquation();
-                loadContractShares();
                 fetchInitialUsersAndSubscribe();
                 subscribeToSettings();
                 subscribeToExpenses();
@@ -301,15 +302,12 @@
                 valueEquationLoaded = false;
                 currenciesLoaded = false;
                 expensesLoaded = false;
-                contractSharesLoaded = false;
                 expenseStore = {};
                 availableCurrencies = [];
-                contractShares = {};
                 aggregatesByUser = {};
                 aggregatesLoaded = false;
                 reaSubscribedFor = null;
                 loadEquation();
-                loadContractShares();
                 fetchInitialUsersAndSubscribe();
                 subscribeToSettings();
                 subscribeToExpenses();
@@ -329,7 +327,6 @@
         // Initial load if we have an ID
         if (holonID) {
             loadEquation();
-            loadContractShares();
             fetchInitialUsersAndSubscribe();
             subscribeToSettings();
             subscribeToExpenses();
@@ -378,39 +375,6 @@
         }
     }
 
-    // Load contract shares for interior members
-    async function loadContractShares() {
-        if (!holosphere || !holonID) {
-            contractSharesLoaded = true;
-            return;
-        }
-
-        try {
-            // Initialize manager if we have a wallet connection
-            if ($walletAddress && window.ethereum) {
-                const provider = new ethers.BrowserProvider(window.ethereum);
-                manager = new HolonsManager(provider, holosphere);
-                await manager.initialize();
-
-                // Get interior members with their shares
-                const members = await manager.getInteriorMembersWithBalances(holonID);
-
-                // Convert to lookup by userId
-                contractShares = {};
-                for (const member of members) {
-                    contractShares[member.userId] = {
-                        sharePercent: member.sharePercent,
-                        etherFormatted: member.etherFormatted
-                    };
-                }
-            }
-            contractSharesLoaded = true;
-        } catch (error) {
-            console.error('Error loading contract shares:', error);
-            contractSharesLoaded = true;
-        }
-    }
-
     // Settings.currencies is the single source of truth for the currency
     // list. We do NOT derive currencies from expenses anymore — instead we
     // auto-merge any orphan currencies found in expenses into settings on
@@ -418,10 +382,10 @@
     let settingsAutoMerged = false;
     let currentSettingsSnapshot: any = null;
 
-    // Live Gun-listener handles. Each subscribe function below tears down its
+    // Live store-listener handles. Each subscribe function below tears down its
     // own previous handle before opening a new one, and onDestroy tears them
     // all down — otherwise every holon switch (the ID/page subscriptions call
-    // these on each change) would leak a `.map().on()` callback that Gun keeps
+    // these on each change) would leak a watch callback that the store keeps
     // forever.
     let settingsSub: { unsubscribe: () => void } | undefined;
     let expensesSub: { unsubscribe: () => void } | undefined;
@@ -1003,7 +967,6 @@
                                     {/each}
                                     <th class="p-2 font-semibold vertical-header"><span>Score</span></th>
                                     <th class="p-2 font-semibold vertical-header"><span>%</span></th>
-                                    <th class="p-2 font-semibold vertical-header"><span>Share</span></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1099,17 +1062,6 @@
                                                 </span>
                                             </div>
                                         </td>
-                                        <td class="p-2 text-center">
-                                            {#if contractShares[userId] || contractShares[user.id]}
-                                                {@const share = contractShares[userId] || contractShares[user.id]}
-                                                <div class="flex flex-col">
-                                                    <span class="text-green-400 text-xs font-semibold">{share.sharePercent.toFixed(1)}%</span>
-                                                    <span class="text-[10px] text-gray-400">{share.etherFormatted}</span>
-                                                </div>
-                                            {:else}
-                                                <span class="text-gray-500 text-xs">--</span>
-                                            {/if}
-                                        </td>
                                     </tr>
                                 {/each}
                             </tbody>
@@ -1163,6 +1115,9 @@
                         <div>
                             <h3 class="text-xl font-bold text-white mb-2">Value Equation</h3>
                             <p class="text-gray-400 text-sm">Current scoring weights used to calculate user rankings</p>
+                            {#if !canEditEquation}
+                                <p class="text-amber-300 text-xs mt-1">Only an admin's signature changes the value equation; yours would be recorded but not counted.</p>
+                            {/if}
                         </div>
                         {#if isEditingEquation}
                             <div class="flex items-center gap-2">
@@ -1177,7 +1132,9 @@
                                 </button>
                                 <button 
                                     onclick={saveEquation}
-                                    class="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium"
+                                    disabled={!canEditEquation}
+                                    title={canEditEquation ? 'Save the equation' : "Only an admin's signature changes the value equation"}
+                                    class="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm font-medium"
                                 >
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>

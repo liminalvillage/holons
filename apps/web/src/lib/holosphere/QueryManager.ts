@@ -6,8 +6,6 @@
  */
 
 import type { HoloSphere } from "holosphere";
-import { get } from "svelte/store";
-import { showUnverified } from "$lib/stores/lensFilters";
 
 export interface QueryConfig {
   holonId: string;
@@ -20,6 +18,10 @@ interface CacheEntry {
   data: Map<string, any>;
   timestamp: number;
   subscription?: { unsubscribe: () => void };
+  // Kept so refetches can address the
+  // holon/lens without parsing the cache key back apart.
+  holonId?: string;
+  lens?: string;
 }
 
 interface PendingQuery {
@@ -107,25 +109,15 @@ class QueryManager {
   private holosphere: HoloSphere | null = null;
 
   // Pending notifications (coalesced via microtask so a burst of per-item
-  // updates from Gun's map().on() fires one re-render per cycle, not N).
+  // store emissions fires one re-render per cycle, not N).
   private pendingNotifications: Set<string> = new Set();
   private notifyScheduled = false;
-  private toggleHooked = false;
 
   /**
    * Initialize the query manager with a HoloSphere instance
    */
   init(holosphere: HoloSphere) {
     this.holosphere = holosphere;
-    // Re-emit every active subscription when the "show all data" toggle flips,
-    // so the _unverified filter in notifySubscribers re-applies without a
-    // re-fetch (items are already loaded & tagged under enforce).
-    if (!this.toggleHooked) {
-      this.toggleHooked = true;
-      showUnverified.subscribe(() => {
-        for (const key of this.subscribers.keys()) this.scheduleNotify(key);
-      });
-    }
   }
 
   /**
@@ -224,6 +216,8 @@ class QueryManager {
         data: dataMap,
         timestamp: Date.now(),
         subscription: existingEntry?.subscription,
+        holonId,
+        lens,
       });
 
       return Array.from(dataMap.values());
@@ -237,8 +231,8 @@ class QueryManager {
    * Subscribe to real-time updates for a holon/lens.
    *
    * Local-first + progressive: emits the cached snapshot synchronously
-   * (next microtask), then streams in items as Gun's map().on() delivers
-   * them — local cache first, federated peers as they respond. No blocking
+   * (next microtask), then streams in items as the local store delivers
+   * them — its own snapshot first, relay catch-up as it lands. No blocking
    * getAll round-trip on the critical path.
    */
   subscribe(config: QueryConfig): () => void {
@@ -263,6 +257,8 @@ class QueryManager {
       entry = { data: new Map(), timestamp: 0 };
       this.cache.set(key, entry);
     }
+    entry.holonId = holonId;
+    entry.lens = lens;
 
     // Emit current cached snapshot immediately so the UI paints what we
     // already know without waiting on the network.
@@ -280,7 +276,7 @@ class QueryManager {
       });
     }
 
-    // Set up holosphere subscription if not already active. Gun's
+    // Set up holosphere subscription if not already active. The store's
     // map().on() fires per-item — first for whatever is in the local
     // graph, then again for each peer response as it arrives.
     //
@@ -296,10 +292,6 @@ class QueryManager {
           (item: any, itemKey?: string) => {
             this.handleSubscriptionEvent(key, item, itemKey);
           },
-          // Under enforce, pull unsigned/legacy items in too (tagged
-          // _unverified) so the "show all data" toggle can reveal them; the
-          // default-hidden filter lives in notifySubscribers. No-op otherwise.
-          { includeUnverified: !!(this.holosphere as any).enforceActive },
         );
         entry.subscription = normalizeSubscription(sub);
       } catch (error) {
@@ -375,7 +367,7 @@ class QueryManager {
 
   /**
    * Coalesce a burst of per-item updates into one subscriber notification
-   * per microtask. Gun's map().on() can fire hundreds of times in a row
+   * per microtask. The store's watch can fire hundreds of times in a row
    * when local cache hydrates; without this, every subscriber would
    * re-render once per item.
    */
@@ -396,13 +388,9 @@ class QueryManager {
     if (!entry) return;
     const subs = this.subscribers.get(key);
     if (!subs || subs.size === 0) return;
-    // "Show all data" gate: hide _unverified (unsigned/legacy) items unless the
-    // toggle is on. Items only carry _unverified under enforce, so this is a
-    // no-op in off/shadow.
-    const showUnv = get(showUnverified);
-    const data = Array.from(entry.data.values()).filter(
-      (i) => showUnv || !i?._unverified,
-    );
+    // Items only carry _unverified under enforce (unsigned, or signed by a key
+    // outside the read-list); they are never surfaced. No-op in off/shadow.
+    const data = Array.from(entry.data.values()).filter((i) => !i?._unverified);
     subs.forEach((callback) => {
       try {
         callback(data);
@@ -416,7 +404,7 @@ class QueryManager {
    * Synchronously drop a single record from the cache and notify
    * subscribers. Use this immediately after `holosphere.delete(...)` so the
    * UI doesn't see the deleted item flash back when an unrelated update
-   * causes the manager to re-emit its cached snapshot before Gun's null
+   * causes the manager to re-emit its cached snapshot before the store's
    * tombstone has propagated through `subscribe()`.
    *
    * If the id isn't in the cache, it's a no-op (no spurious notification).

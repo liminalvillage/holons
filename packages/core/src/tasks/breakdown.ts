@@ -2,19 +2,19 @@
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 //
 // AI task breakdown: decompose a task into constituent steps that become
-// linked dependencies. Pure and UI-agnostic — this module owns the tool
-// schema the LLM is forced to call, the prompt that gives it the whole
+// linked dependencies. Pure and UI-agnostic — this module owns the JSON
+// schema the model's answer must follow, the prompt that gives it the whole
 // canvas as context (so it reuses existing tasks instead of recreating
 // them), proposal validation, and the materializer that turns a proposal
-// into concrete Quest records wired into the dependency DAG. The actual
-// LLM HTTP call lives at the edge (apps/web server route).
+// into concrete Quest records wired into the dependency DAG. The model call
+// itself goes through @holons/core/ai at the edge (the web/kiosk routes).
 //
 // Dependency semantics (see dependencies.ts): a task's `dependencies` array
 // lists its predecessors. The broken-down task becomes the goal node — it
 // gains the terminal (sink) steps as dependencies — so on the canvas the
 // steps fan out to its left and arrows flow steps → goal.
 //
-// The LLM only ever proposes PARALLEL steps: `propose_steps` exposes no
+// The LLM only ever proposes PARALLEL steps: the answer's schema has no
 // step→step ordering field, so every proposed step is a sink and points
 // straight at the goal. Identical output from every provider/model, instead of
 // a "keep this empty" rule the weaker ones ignore. The materializer below
@@ -38,7 +38,7 @@ export interface BreakdownContextTask {
   dependencies: string[];
 }
 
-/** One proposed step, as returned by the LLM through `propose_steps`. */
+/** One proposed step, as the model returns it. */
 export interface BreakdownStep {
   title: string;
   description: string;
@@ -52,7 +52,7 @@ export interface BreakdownStep {
   category: string;
   /**
    * 0-based indices of other steps in the batch that must come first. The LLM
-   * never sets these — `propose_steps` has no such field, so every proposed
+   * never sets these — the answer's schema has no such field, so every proposed
    * step is a direct, parallel prerequisite of the goal. The materializer
    * still honours them so a human can chain steps by hand afterwards.
    */
@@ -82,96 +82,84 @@ export class BreakdownValidationError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// LLM tool definition (plain JSON — the server route casts to Anthropic.Tool)
+// The answer's JSON schema (structured output: every object closed, every
+// property required, so the model can't omit or add a field)
 // ---------------------------------------------------------------------------
 
-export const PROPOSE_STEPS_TOOL_NAME = 'propose_steps';
-
-export const PROPOSE_STEPS_TOOL: {
-  name: string;
-  description: string;
-  input_schema: Record<string, unknown>;
-} = {
-  name: PROPOSE_STEPS_TOOL_NAME,
-  description:
-    'Propose the constituent steps of a task. Every step becomes a new task ' +
-    'wired directly into the task being broken down, so the steps run in ' +
-    'parallel and each must be a concrete piece of work on its own.',
-  input_schema: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['language', 'atomic', 'reasoning', 'steps'],
-    properties: {
-      // Deliberately FIRST: naming the language before writing anything else
-      // anchors the rest of the generation in it. "Same language as the task"
-      // alone lets models drift toward the (often English) canvas context.
-      language: {
-        type: 'string',
-        description:
-          'The language the task being broken down is written in (e.g. ' +
-          '"Italian", "Spanish", "English"), judged ONLY from that task\'s ' +
-          'own title and description — never from the surrounding canvas. ' +
-          'Everything that follows must be written in this language.',
-      },
-      atomic: {
-        type: 'boolean',
-        description:
-          'True if the task is already a single actionable unit and should ' +
-          'NOT be broken down. steps must then be empty.',
-      },
-      reasoning: {
-        type: 'string',
-        description:
-          'One short paragraph: why this decomposition and this number of steps.',
-      },
-      steps: {
-        type: 'array',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: [
-            'title',
-            'description',
-            'existingTaskId',
-            'category',
-            'dependsOnExisting',
-          ],
-          properties: {
-            title: {
-              type: 'string',
-              description:
-                'Short title naming the work of this step, written plainly ' +
-                'as it is — no particular phrasing is required. MUST be in ' +
-                'the language named in the `language` field.',
-            },
-            description: {
-              type: 'string',
-              description:
-                '1-3 sentences saying what this step involves. MUST be in ' +
-                'the language named in the `language` field.',
-            },
-            existingTaskId: {
-              type: 'string',
-              description:
-                'Empty string for a new task. If an EXISTING task from the ' +
-                'provided list already covers this step, put its id here so ' +
-                'no duplicate is created.',
-            },
-            category: {
-              type: 'string',
-              description:
-                "The step's category: the task being broken down keeps its " +
-                'own, so use an EMPTY string to inherit it, or pick a ' +
-                'category already in use on the canvas when it fits this ' +
-                'step better. NEVER invent a new category.',
-            },
-            dependsOnExisting: {
-              type: 'array',
-              items: { type: 'string' },
-              description:
-                'Ids of EXISTING tasks (from the provided list) that must be ' +
-                'completed before this step.',
-            },
+export const BREAKDOWN_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['language', 'atomic', 'reasoning', 'steps'],
+  properties: {
+    // Deliberately FIRST: naming the language before writing anything else
+    // anchors the rest of the generation in it. "Same language as the task"
+    // alone lets models drift toward the (often English) canvas context.
+    language: {
+      type: 'string',
+      description:
+        'The language the task being broken down is written in (e.g. ' +
+        '"Italian", "Spanish", "English"), judged ONLY from that task\'s ' +
+        'own title and description — never from the surrounding canvas. ' +
+        'Everything that follows must be written in this language.',
+    },
+    atomic: {
+      type: 'boolean',
+      description:
+        'True if the task is already a single actionable unit and should ' +
+        'NOT be broken down. steps must then be empty.',
+    },
+    reasoning: {
+      type: 'string',
+      description:
+        'One short paragraph: why this decomposition and this number of steps.',
+    },
+    steps: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'title',
+          'description',
+          'existingTaskId',
+          'category',
+          'dependsOnExisting',
+        ],
+        properties: {
+          title: {
+            type: 'string',
+            description:
+              'Short title naming the work of this step, written plainly ' +
+              'as it is — no particular phrasing is required. MUST be in ' +
+              'the language named in the `language` field.',
+          },
+          description: {
+            type: 'string',
+            description:
+              '1-3 sentences saying what this step involves. MUST be in ' +
+              'the language named in the `language` field.',
+          },
+          existingTaskId: {
+            type: 'string',
+            description:
+              'Empty string for a new task. If an EXISTING task from the ' +
+              'provided list already covers this step, put its id here so ' +
+              'no duplicate is created.',
+          },
+          category: {
+            type: 'string',
+            description:
+              "The step's category: the task being broken down keeps its " +
+              'own, so use an EMPTY string to inherit it, or pick a ' +
+              'category already in use on the canvas when it fits this ' +
+              'step better. NEVER invent a new category.',
+          },
+          dependsOnExisting: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Ids of EXISTING tasks (from the provided list) that must be ' +
+              'completed before this step.',
           },
         },
       },
@@ -253,7 +241,7 @@ export function buildBreakdownPrompt(input: BreakdownPromptInput): {
     'Rules:',
     '1. Determine the language of the task being broken down from its OWN',
     "   title and description (never from the other tasks on the canvas),",
-    "   name it FIRST in propose_steps' `language` field, and then write the",
+    "   name it FIRST in the answer's `language` field, and then write the",
     '   reasoning and every step title and description in that SAME LANGUAGE',
     '   — an Italian task gets Italian steps, a Spanish task Spanish steps,',
     '   and so on. Never default to English for a non-English task, and',
@@ -277,7 +265,7 @@ export function buildBreakdownPrompt(input: BreakdownPromptInput): {
     "6. Give each step a category: '' inherits the broken-down task's own,",
     '   or pick one from the "Categories in use" list when it fits the step',
     '   better. Never invent a new category.',
-    'Call propose_steps exactly once.',
+    'Answer with one JSON object that follows the given schema.',
   ].join('\n');
 
   // Categories already in use (goal task first, then the canvas) — the closed
@@ -314,7 +302,7 @@ export function buildBreakdownPrompt(input: BreakdownPromptInput): {
     'Break down the task above into independent steps that each feed directly ' +
       'into it. First name the language that task itself is written in via ' +
       'the `language` field, then write every title and description in that ' +
-      'same language. Call propose_steps exactly once.',
+      'same language.',
   );
 
   return { system, user: lines.join('\n') };
@@ -329,9 +317,9 @@ function isStringArray(v: unknown): v is string[] {
 }
 
 /**
- * Validate the raw `propose_steps` tool input from the LLM. Throws
- * `BreakdownValidationError` on shape violations (defense in depth — the
- * tool schema is enforced upstream, but never trust parsed model output).
+ * Validate the model's raw answer. Throws `BreakdownValidationError` on
+ * shape violations (defense in depth — the schema is enforced upstream, but
+ * never trust parsed model output).
  */
 export function parseBreakdownProposal(input: unknown): BreakdownProposal {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) {
@@ -348,11 +336,9 @@ export function parseBreakdownProposal(input: unknown): BreakdownProposal {
   if (typeof language !== 'string') {
     throw new BreakdownValidationError('proposal.language must be a string');
   }
-  // Absent fields are defaulted rather than rejected: OpenAI's non-strict
-  // tool calling treats `required` as advisory, and gpt-4o omits `steps`
-  // (typically alongside atomic: true) or a step's empty lists. An absent
-  // list is unambiguous — nothing in it — so only a present-but-wrong type
-  // is a shape violation.
+  // Absent lists are defaulted rather than rejected: an absent list is
+  // unambiguous — nothing in it — so only a present-but-wrong type is a
+  // shape violation.
   const rawSteps = obj.steps ?? [];
   if (!Array.isArray(rawSteps)) {
     throw new BreakdownValidationError('proposal.steps must be an array');

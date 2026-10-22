@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { formatDate, formatTime } from '../../utils/date';
-	import { resolveImage } from '../../utils/imageServer';
+	import { pictureUrl } from '@holons/core/media';
 	import SourceBadge from './SourceBadge.svelte';
 	import CategoryBadge from './badges/CategoryBadge.svelte';
 	import RecurringBadge from './badges/RecurringBadge.svelte';
@@ -58,10 +58,13 @@
 		role?: string;
 		tabindex?: number;
 		ariaLabel?: string;
+		/** Sealed on the relays (private scope): a lock before the badges. */
+		locked?: boolean;
 	}
 
 	let {
 		quest,
+		locked = false,
 		variant = 'list',
 		holonID = '',
 		showCreated = false,
@@ -122,15 +125,16 @@
 			{#if quest.picture}
 				<img
 					class="note-thumb"
-					src={resolveImage(quest.picture)}
+					src={pictureUrl(quest.picture)}
 					alt={quest.title}
 					loading="lazy"
 					onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
 				/>
 			{/if}
 
-			{#if quest.category || quest.when}
+			{#if quest.category || quest.when || locked}
 				<div class="note-meta">
+					{#if locked}<span class="note-tag" title="Private">🔒</span>{/if}
 					{#if quest.category}<span class="note-tag">{quest.category}</span>{/if}
 					{#if quest.when}<span class="note-when">{formatDate(quest.when)}</span>{/if}
 				</div>
@@ -179,7 +183,7 @@
 			{#if quest.picture}
 				<img
 					class="row-thumb"
-					src={resolveImage(quest.picture)}
+					src={pictureUrl(quest.picture)}
 					alt={quest.title}
 					loading="lazy"
 					onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
@@ -197,6 +201,7 @@
 				</div>
 
 				<div class="row-meta">
+					{#if locked}<span class="row-tag" title="Private">🔒</span>{/if}
 					{#if quest.category}<span class="row-tag">{quest.category}</span>{/if}
 					{#if quest.when}
 						<span class="row-due" class:is-overdue={isOverdue}>
@@ -267,7 +272,7 @@
 		{#if quest.picture}
 			<img
 				class="card-thumb"
-				src={resolveImage(quest.picture)}
+				src={pictureUrl(quest.picture)}
 				alt={quest.title}
 				loading="lazy"
 				onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}

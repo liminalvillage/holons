@@ -5,8 +5,11 @@ import { describe, it, expect } from 'vitest';
 import { finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import { bytesToHex } from '@noble/hashes/utils';
 import {
+  deriveIdentityProviderKey,
   deriveNostrKeyFromEntropy,
+  deriveTelegramNostrKey,
   entropyFromBytes,
+  IDENTITY_PROVIDER_CONTEXT,
   ETH_IDENTITY_MESSAGE,
   PASSKEY_PRF_SALT,
   buildAuthEventTemplate,
@@ -58,6 +61,29 @@ describe('deriveNostrKeyFromEntropy', () => {
     );
     expect(bytesToHex(PASSKEY_PRF_SALT)).toBe('c70ecae19029fafac265c84bd9f1bc3b9942d7d277a49f920d2c4848d2939541');
     expect(PASSKEY_PRF_SALT).toHaveLength(32);
+  });
+});
+
+describe('deriveIdentityProviderKey', () => {
+  const secret = 'a-sufficiently-long-derivation-secret';
+
+  it('is stable and follows the frozen entropy rule', () => {
+    const k = deriveIdentityProviderKey(secret);
+    expect(k).toEqual(deriveIdentityProviderKey(secret));
+    expect(k).toEqual(
+      deriveNostrKeyFromEntropy(new TextEncoder().encode(secret), IDENTITY_PROVIDER_CONTEXT),
+    );
+    expect(IDENTITY_PROVIDER_CONTEXT).toBe('service:identity-provider'); // frozen
+  });
+
+  it('is domain-separated from member keys under the same secret', () => {
+    const provider = deriveIdentityProviderKey(secret).publicKey;
+    expect(deriveTelegramNostrKey(42, secret).publicKey).not.toBe(provider);
+    expect(deriveTelegramNostrKey(IDENTITY_PROVIDER_CONTEXT, secret).publicKey).not.toBe(provider);
+  });
+
+  it('refuses an empty secret', () => {
+    expect(() => deriveIdentityProviderKey('')).toThrow(/NOSTR_DERIVATION_SECRET/);
   });
 });
 

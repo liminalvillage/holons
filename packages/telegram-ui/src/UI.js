@@ -15,11 +15,16 @@ import {
 } from './utilities.js';
 import QRCode from 'qrcode';
 import { colorFromCategory } from '@holons/core/categories';
+import { hostsOf } from '@holons/core/tasks';
+import { normalizeOffer, remainingSupply } from '@holons/core/offers';
 
 const DASHBOARD_ADDRESS =
   process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
 let browser = null;
+// The word-cloud page and its vendored d3 libs live next to the bot, so the
+// render never depends on a CDN (rawgit went away and left blank clouds).
+const CLOUD_PAGE_URL = new URL('../html/cloud.html', import.meta.url).href;
 let browserAvailable = false;
 
 function escapeHtml(s) {
@@ -631,7 +636,7 @@ class UI {
       users = users.filter(user => mentions.includes(user.username));
 
     for (let i = 0; i < users.length; i++) {
-      values = values.concat(users[i].values);
+      values = values.concat(users[i].values || []);
     }
 
     if (!this.isBrowserAvailable()) {
@@ -648,7 +653,7 @@ class UI {
     try {
       page = await browser.newPage();
       const path = './images/valuecloud' + utils.getholonId(ctx) + '.png';
-      page.setContent(fs.readFileSync('./html/cloud.html', 'utf8'));
+      await page.goto(CLOUD_PAGE_URL, { waitUntil: 'load' });
       await page.addScriptTag({
         content: `
             const words = ${JSON.stringify(values)};
@@ -656,7 +661,7 @@ class UI {
         `,
       });
 
-      await page.waitForSelector('svg');
+      await page.waitForSelector(values.length ? 'svg text' : 'svg');
 
       // Screenshot the word cloud
       const svgElement = await page.$('svg');
@@ -714,7 +719,7 @@ class UI {
       users = users.filter(user => mentions.includes(user.username));
 
     for (let i = 0; i < users.length; i++) {
-      needs = needs.concat(users[i].needs);
+      needs = needs.concat(users[i].needs || []);
     }
 
     if (!this.isBrowserAvailable()) {
@@ -731,14 +736,14 @@ class UI {
     try {
       page = await browser.newPage();
       const path = './images/needscloud' + utils.getholonId(ctx) + '.png';
-      page.setContent(fs.readFileSync('./html/cloud.html', 'utf8'));
+      await page.goto(CLOUD_PAGE_URL, { waitUntil: 'load' });
       await page.addScriptTag({
         content: `
             const words = ${JSON.stringify(needs)};
             window.myWordCloud.update(getWords(words));
         `,
       });
-      await page.waitForSelector('svg');
+      await page.waitForSelector(needs.length ? 'svg text' : 'svg');
 
       // Screenshot the word cloud
       const svgElement = await page.$('svg');
@@ -958,7 +963,15 @@ class UI {
       // Get offers from quests collection using holosphere.getAll with holograms
       const allQuests =
         (await this.db.holosphere.getAll(holonId.toString(), 'quests')) || [];
-      let offers = allQuests.filter(quest => quest.type === 'offer');
+      // Offers carry a lifecycle now (@holons/core/offers): only what is
+      // still on the market, with what is left of it.
+      let offers = allQuests
+        .map(quest => normalizeOffer(quest))
+        .filter(
+          offer =>
+            offer && (offer.status === 'open' || offer.status === 'reserved')
+        )
+        .map(offer => ({ ...offer, remaining: remainingSupply(offer) }));
 
       // If in a topic, filter further by message_thread_id
       if (isTopic && threadId) {
@@ -2029,6 +2042,7 @@ class UI {
             <td class="offer-cell">
               <div class="offer-info">
                 <span class="offer-title">${offer.title}</span>
+                ${offer.supply ? `<span class="offer-qty">${offer.remaining}${offer.supply.unit && offer.supply.unit !== 'one' ? ' ' + offer.supply.unit : '×'}${offer.mode && offer.mode !== 'give' ? ' · ' + offer.mode : ''}${offer.price != null ? ' · ' + offer.price + ' ' + (offer.currency || '') : ''}</span>` : ''}
               </div>
             </td>
           </tr>`;
@@ -2614,6 +2628,10 @@ class UI {
       lines.push(
         `| 🔄 ${i18next.t('repeat', { lng: language, defaultValue: 'Repeat' })}: ${i18next.t(event.frequency, { lng: language, defaultValue: event.frequency })}`
       );
+
+    const hosts = hostsOf(event);
+    if (hosts.length)
+      lines.push(`| 👑: ${hosts.map(u => getDisplayName(u)).join(', ')}`);
 
     if (event.participants?.length) {
       const names = event.participants.map(u => getDisplayName(u));

@@ -4,6 +4,7 @@
  * All functions are UI-agnostic. Callers (Telegram bot, web app, etc.)
  * adapt their user-shape to {@link TelegramUserLike} before calling.
  */
+import { rememberHolon } from '../holons/list.js';
 import type { TelegramUserLike, UserDB, UserProfile } from './index.js';
 
 const USERS_LENS = 'users';
@@ -50,6 +51,17 @@ export async function getUserProfile(
 
   const profile = createDefaultProfile(user);
   await db.put(holonIdStr, USERS_LENS, profile);
+  // Their first record here is the moment they joined: the holon goes on the
+  // list their own holon keeps (`holons` lens), where the dock, the inbound
+  // climb and anyone asking "which hubs is this person in" read it. Quiet: a
+  // failed write never costs the profile.
+  if (holonIdStr !== String(user.id)) {
+    try {
+      await rememberHolon(db, String(user.id), { id: holonIdStr });
+    } catch {
+      // The list is a convenience; the profile is the record.
+    }
+  }
   return profile;
 }
 

@@ -9,12 +9,24 @@
   --card: #fffdf8;
 
   /* Ink + brand */
+  /* Three tiers of ink, and every one of them is TEXT: each clears WCAG AA
+     (4.5:1) on the paper, the deep paper and the card. `--muted` is the
+     quietest a label may go — it does NOT clear the post-it colours, so a
+     secondary label on a note uses `--ink-soft`. */
   --ink: #20302f;
   --ink-soft: #4d5e5c;
-  --muted: #8a9794;
+  --muted: #5c6966;
   --teal: #0e6b66;
   --teal-deep: #0a4f4a;
+  /* The accent as text, and the ink on an accent ground. The layout re-derives
+     both from the caretaker's colour and the palette on screen
+     (palette.accentFamily); these are the defaults until it has. */
+  --teal-ink: var(--teal-deep);
+  --on-teal: #fff;
   --line: #e3ddcd;
+  /* The one warm alarm: a shift nobody has taken, a plan the wall drifted from.
+     Deep enough to be read as text on the paper. */
+  --warn: #b0461f;
 
   /* Post-it palette (warm, low-saturation) */
   --note-sun: #ffe79a;
@@ -23,6 +35,26 @@
   --note-coral: #ffc7b8;
   --note-lav: #ddd2f1;
   --note-lime: #e6efa7;
+
+  /* Meaning colours, each deep enough to be read as TEXT on the paper, the
+     card and every post-it: something went wrong, something needs a look,
+     and the appreciation heart (whose count is written inside it). */
+  --danger: #9a3b2f;
+  --on-danger: #fff;
+  --caution: #8f4a0b;
+  --heart: #b0241c;
+  --on-heart: #fff;
+  /* The heart nobody here has given yet: the same heart, gone quiet. */
+  --heart-quiet: color-mix(in srgb, var(--heart) 55%, var(--ink-soft));
+  /* A faint accent wash: today's cell, a row that is on, a drop target. */
+  --teal-wash: color-mix(in srgb, var(--teal) 10%, var(--card));
+
+  /* Two quiet grounds for whatever sits on a note or the card and must not
+     shout: `--glass`, a chip set into the surface, and `--ghost`, a secondary
+     button raised off it. Both flip with the palette so the ink on them —
+     dark by day, light by night — always has something to read against. */
+  --glass: rgba(255, 255, 255, 0.55);
+  --ghost: rgba(255, 255, 255, 0.5);
 
   --shadow-note: 0 10px 22px rgba(28, 48, 46, 0.14);
   --shadow-soft: 0 6px 18px rgba(28, 48, 46, 0.08);
@@ -68,8 +100,10 @@
 
   --ink: #eef2f0;
   --ink-soft: #b3c0bd;
-  --muted: #7c8b88;
+  --muted: #93a19e;
+  --teal-ink: color-mix(in srgb, var(--teal) 30%, #fff);
   --line: #2c3539;
+  --warn: #e8815c;
 
   --note-sun: #5a4a1e;
   --note-mint: #214233;
@@ -78,41 +112,18 @@
   --note-lav: #3a3158;
   --note-lime: #3b4521;
 
+  --danger: #ffa598;
+  --on-danger: #3d0f0a;
+  --caution: #f0b060;
+  --heart: #ffa598;
+  --on-heart: #3d0f0a;
+  --teal-wash: color-mix(in srgb, var(--teal) 24%, var(--card));
+
+  --glass: rgba(0, 0, 0, 0.3);
+  --ghost: rgba(255, 255, 255, 0.08);
+
   --shadow-note: 0 10px 24px rgba(0, 0, 0, 0.5);
   --shadow-soft: 0 6px 18px rgba(0, 0, 0, 0.42);
-}
-
-/* Card/note content that was authored with hardcoded light-theme colours —
-   dark ink (`rgba(32,48,47,…)`) for secondary labels and white pill chips —
-   doesn't follow the palette via variables, so it goes invisible on the deep
-   note grounds. Re-tint those bits here (global, so it reaches every component's
-   scoped classes; the `[data-theme]` attribute keeps specificity above the
-   component rules). Secondary labels → light ink; chips/pills → dark grounds. */
-:root[data-theme="dark"] .tag,
-:root[data-theme="dark"] .kind,
-:root[data-theme="dark"] .chip,
-:root[data-theme="dark"] .open,
-:root[data-theme="dark"] .fixednote,
-:root[data-theme="dark"] .when,
-:root[data-theme="dark"] .where,
-:root[data-theme="dark"] .src {
-  color: rgba(238, 242, 240, 0.66);
-}
-:root[data-theme="dark"] .tool,
-:root[data-theme="dark"] .src,
-:root[data-theme="dark"] .take.in {
-  background: rgba(0, 0, 0, 0.3);
-  color: var(--ink-soft);
-}
-/* The complete tick keeps its accent meaning but brightened so it reads on the
-   dark pill. */
-:root[data-theme="dark"] .tool.check {
-  color: color-mix(in srgb, var(--teal) 50%, #fff);
-}
-/* Ghost buttons (modal Edit/Cancel) used a translucent-white ground that turns
-   the now-light ink invisible on the dark card; give them a faint light tint. */
-:root[data-theme="dark"] .ghost {
-  background: rgba(255, 255, 255, 0.08);
 }
 
 * {
@@ -133,6 +144,19 @@ body {
   user-select: none;
   -webkit-touch-callout: none;
   overscroll-behavior: none;
+}
+
+/* Pan, never pinch-zoom the page (touch-action intersects down the tree, so
+   this holds in every component; lib/nozoom.ts covers iOS Safari). */
+html {
+  touch-action: pan-x pan-y;
+}
+
+/* A placeholder is still text someone has to read: the browser's default grey
+   falls short on both palettes. */
+::placeholder {
+  color: var(--muted);
+  opacity: 1;
 }
 
 button {

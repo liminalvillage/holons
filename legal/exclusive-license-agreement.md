@@ -4,8 +4,6 @@
 sublicenza dei diritti di utilizzazione economica d'autore sul software
 "Holons"**
 
-> ⚠️ **Unexecuted template.** Have it reviewed by Italian counsel /
-> commercialista, then sign and date. Not legal advice.
 
 This Agreement ("**Agreement**") is entered into on **22 May 2026**
 ("**Effective Date**") between:
@@ -27,7 +25,7 @@ Licensor and Licensee are each a "**Party**" and together the "**Parties**".
 ## Recitals
 
 A. The Licensor is the sole author and copyright owner of the software
-   project known as **"Holons"** (formerly "Harvest"), a monorepo comprising
+   project known as **"Holons"**, a monorepo comprising
    the `@holons/core` domain library and the web, Telegram, text, AI, and MCP
    interfaces, including all source code, documentation, configuration,
    assets, commit history, and design materials authored by the Licensor from

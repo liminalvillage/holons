@@ -4,8 +4,8 @@ import { jest } from '@jest/globals';
 // Configure Jest
 jest.setTimeout(30000); // 30 second timeout
 
-// Utility to wait for GunDB propagation
-const waitForGun = (delay = 250) => new Promise(resolve => setTimeout(resolve, delay));
+// Utility to wait for local-store propagation
+const waitForStore = (delay = 250) => new Promise(resolve => setTimeout(resolve, delay));
 
 describe('HoloSphere Deletion Tests', () => {
     const testAppName = 'test-app-deletion';
@@ -26,7 +26,7 @@ describe('HoloSphere Deletion Tests', () => {
         await holoSphere.deleteAll(testHolon, testLens);
         await holoSphere.deleteAllGlobal(testGlobalTable);
         
-        // Close Gun connections
+        // Close the instance
         if (holoSphere) {
             await holoSphere.close();
         }
@@ -57,25 +57,12 @@ describe('HoloSphere Deletion Tests', () => {
             expect(deletedData).toBeNull();
         });
 
-        test('should delete a node properly', async () => {
-            // Create test node data
-            const nodeData = { value: 'node-to-delete' };
-            const nodeKey = 'test-node-key';
-            
-            // Store node
-            await holoSphere.putNode(testHolon, testLens, { id: nodeKey, value: nodeData });
-            
-            // Verify node exists
-            const storedNode = await holoSphere.getNode(testHolon, testLens, 'value');
-            expect(storedNode).toBeDefined();
-            
-            // Delete node
-            const deleteResult = await holoSphere.deleteNode(testHolon, testLens, 'value');
-            expect(deleteResult).toBe(true);
-            
-            // Verify node is deleted
-            const deletedNode = await holoSphere.getNode(testHolon, testLens, 'value');
-            expect(deletedNode).toBeNull();
+        test('getNode/deleteNode operate on the stored record', async () => {
+            await holoSphere.put(testHolon, testLens, { id: 'node-key', value: 'node-to-delete' });
+            expect((await holoSphere.getNode(testHolon, testLens, 'node-key')).value).toBe('node-to-delete');
+            expect(await holoSphere.deleteNode(testHolon, testLens, 'node-key')).toBe(true);
+            expect(await holoSphere.get(testHolon, testLens, 'node-key')).toBeNull();
+            expect((await holoSphere.getNode(testHolon, testLens, 'node-key'))._deleted).toBe(true);
         });
     });
 
@@ -116,14 +103,14 @@ describe('HoloSphere Deletion Tests', () => {
             await holoSphere.putGlobal(testGlobalTable, globalData);
 
             // 2. Wait significantly for put to settle
-            await waitForGun(1500); // Generous wait after put
+            await waitForStore(1500); // Generous wait after put
 
             // 3. Delete global data
             const deleteResult = await holoSphere.deleteGlobal(testGlobalTable, globalData.id);
             expect(deleteResult).toBe(true);
 
             // 4. Wait for delete to settle
-            await waitForGun(500); // Wait after delete
+            await waitForStore(500); // Wait after delete
 
             // 5. Verify global data is deleted
             const deletedGlobalData = await holoSphere.getGlobal(testGlobalTable, globalData.id);
@@ -210,7 +197,7 @@ describe('HoloSphere Deletion Tests', () => {
         test('should handle deletion of non-existent items gracefully', async () => {
             // Try to delete non-existent item
             const deleteResult = await holoSphere.delete(testHolon, testLens, 'non-existent-id');
-            expect(deleteResult).toBe(true); // Gun returns success even for non-existent items
+            expect(deleteResult).toBe(true); // delete reports success even for non-existent items
             
             // Try to delete non-existent global item
             const deleteGlobalResult = await holoSphere.deleteGlobal(testGlobalTable, 'non-existent-global-id');

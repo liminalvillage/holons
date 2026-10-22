@@ -27,6 +27,7 @@
 
 import { argv, exit, env } from 'node:process';
 import { HoloSphere } from 'holosphere';
+import { resolveRelays } from '../dist/holosphere/relays.js';
 import { REAEventStore } from '../dist/rea/index.js';
 import { REAEventFactory } from '../dist/rea/index.js';
 
@@ -48,11 +49,15 @@ async function main() {
 	const flags = parseArgs(argv.slice(2));
 	const holonId = flags.holonId;
 	const appName = flags.appName || env.HOLONS_APP || 'HolonsDebug';
-	const privateKey = env.HOLOSPHERE_PRIVATE_KEY || null;
+	const privateKey = env.HOLOSPHERE_NSEC || null;
 
+	// The relays are the wire (HOLOSPHERE_RELAYS, default: production);
+	// the store is in memory for this one-shot process.
 	const holosphere = new HoloSphere({
 		appName,
 		...(privateKey ? { privateKey } : {}),
+		relays: resolveRelays(env.HOLOSPHERE_RELAYS),
+		store: { adapter: 'memory' },
 		logLevel: 'WARN'
 	});
 	await holosphere.ready();
@@ -100,7 +105,8 @@ async function main() {
 	}
 
 	console.log(`${flags.dryRun ? '[dry-run] ' : ''}Done. wrote ${written} events, deleted ${deleted} stale events.`);
-	if (!flags.dryRun) await new Promise((r) => setTimeout(r, 3000));
+	if (!flags.dryRun) await new Promise((r) => setTimeout(r, 3000)); // let the relay publishes drain
+	await holosphere.close();
 }
 
 main().then(

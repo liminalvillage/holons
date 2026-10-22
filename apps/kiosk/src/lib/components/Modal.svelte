@@ -1,5 +1,6 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   // Generic "bring it forward" overlay: a dimmed backdrop and a card that zooms
   // up from the tapped element. Closes on backdrop tap, the ✕, or Escape.
   import { createEventDispatcher } from "svelte";
@@ -12,6 +13,12 @@
   export let glow: string | undefined = undefined;
   /** Per-record clock seed [0,1) so the modal flickers on its own time. */
   export let seed: number | undefined = undefined;
+  /** A wide card for sheets that carry a board preview beside a form. */
+  export let wide = false;
+  // The corner: the ✕ and, through the `corner` slot, a sheet's one headline
+  // action beside it. Its width is published as `--corner-w` on the card so
+  // the sheet's title can keep clear of it (`padding-right: var(--corner-w)`).
+  let cornerW = 0;
   function close() {
     dispatch("close");
   }
@@ -45,13 +52,19 @@
   <div
     class="card"
     class:holo
+    class:wide
     style="--tint: {tint};{glow ? ` --glow: ${glow};` : ''}"
     style:--holo-seed={seed}
+    style:--corner-w="{cornerW}px"
     role="dialog"
     aria-modal="true"
   >
-    <button class="x" on:click={close} aria-label={$t("common.close")}>✕</button
-    >
+    <div class="corner" bind:clientWidth={cornerW}>
+      <slot name="corner" />
+      <button class="x" on:click={close} aria-label={$t("common.close")}
+        ><Icon name="close" /></button
+      >
+    </div>
     <div class="body scroll">
       <slot />
     </div>
@@ -75,6 +88,11 @@
   .card {
     position: relative;
     width: min(34rem, 100%);
+  }
+  .card.wide {
+    width: min(64rem, 100%);
+  }
+  .card {
     max-height: 86dvh;
     border-radius: 22px;
     background: var(--tint);
@@ -105,17 +123,22 @@
       transform: scale(1) translateY(0);
     }
   }
-  .x {
+  .corner {
     position: absolute;
     top: 0.8rem;
     right: 0.8rem;
     z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .x {
     width: 44px;
     height: 44px;
     border-radius: 50%;
     font-size: 1.1rem;
     color: var(--ink-soft);
-    background: rgba(255, 255, 255, 0.55);
+    background: var(--ghost);
     display: grid;
     place-items: center;
   }

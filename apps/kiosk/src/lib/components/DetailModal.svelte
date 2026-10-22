@@ -1,12 +1,13 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   // The zoomed-forward detail card for a tapped post-it / library thing. Shows
   // full details and — when logged in with Telegram — edit fields and actions
   // (save, mark complete, borrow / return). Writes go through identity-aware
   // helpers; the meaning of borrowing lives in @holons/core/library.
   import Modal from "./Modal.svelte";
   import Confetti from "./Confetti.svelte";
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { get } from "svelte/store";
   import {
     selection,
@@ -18,23 +19,47 @@
     completionRequest,
     editOnOpen,
     partnerNames,
+    showNotice,
+    minute,
   } from "$lib/stores";
-  import { isLoggedIn, telegramUser, loginOpen, borrowActor } from "$lib/auth";
+  import { holonColors } from "$lib/palette";
+  import { selectionCardUrl } from "$lib/cardlink";
+  import { requestSwitch, segmentFor } from "$lib/dock";
+  import { isLoggedIn, currentUser, loginOpen, borrowActor } from "$lib/auth";
   import { getWriter, getLibraryDb, getHolosphere } from "$lib/holosphere";
   import { HIDDEN_LENS, buildHiddenEntry } from "@holons/core/hidden";
-  import { toggleJoin, toggleAppreciate } from "$lib/membership";
-  import { checkComplete, recordCompletion } from "$lib/complete";
+  import { getFederationSnapshot } from "@holons/core/federation";
+  import { privacyOfHolon, type Audience } from "@holons/core/privacy";
+  import AudienceEditor from "./AudienceEditor.svelte";
+  import {
+    addMember,
+    refreshOwnDm,
+    toggleJoin,
+    toggleAppreciate,
+  } from "$lib/membership";
+  import { loadMembers, members, type Member } from "$lib/members";
+  import {
+    checkComplete,
+    checkOccurrenceComplete,
+    recordCompletion,
+    recordOccurrenceCompletion,
+  } from "$lib/complete";
   import {
     noteColor,
+    personName,
     toPeople,
     sourceRef,
+    deleteRef,
     isHologram,
     sourceGlow,
+    sourceHolonId,
     sourceLabel,
     holoSeed,
   } from "$lib/data";
   import { linkify } from "$lib/linkify";
-  import { resolveImage } from "$lib/image";
+  import { openBoard } from "$lib/taskchat";
+  import TaskChat from "./TaskChat.svelte";
+  import { pictureUrl } from "@holons/core/media";
   import { avatarUrl, avatarInitial, hideImg, showImg } from "./Avatars.svelte";
   import {
     bookItem,
@@ -42,25 +67,54 @@
     recordBorrowAccounting,
     recordReturnAccounting,
     findOverlappingBooking,
+    bookingBound,
     bookingOriginLabel,
+    bookingStatus,
     getDisplayBookings,
-    isBookingActive,
+    isBookingPast,
+    isTimedBooking,
+    returnableBooking,
+    timeOf,
     dayKey,
     getItemIcon,
     getTypeDisplayName,
     LIBRARY_TYPES,
+    type LibraryItem,
   } from "@holons/core/library";
   import {
+    QUEST_FREQUENCIES,
     applyBreakdownProposal,
     buildScheduleFields,
+    hostsOf,
+    isAgendaQuest,
+    isOccurrenceCompleted,
+    isRecurring,
+    questFrequency,
+    questKind,
     questSchedule,
+    rosterDiff,
     scheduleToFields,
+    setParticipants,
+    setQuestFrequency,
+    setQuestKind,
+    shiftSchedule,
+    toggleOccurrenceCompleted,
+    boardUrlOf,
+    taskRef,
     type ApplyBreakdownResult,
     type BreakdownStep,
     type Quest,
+    type QuestFrequency,
+    type QuestParticipant,
+    type SwitchableKind,
   } from "@holons/core/tasks";
+  import PeoplePicker from "./PeoplePicker.svelte";
+  import FederationSearch from "./FederationSearch.svelte";
+  import ProposalVote from "./ProposalVote.svelte";
   import { breakdownAvailable, requestBreakdownProposal } from "$lib/breakdown";
-  import { t, locale } from "$lib/i18n";
+  import { t, locale, type MessageKey } from "$lib/i18n";
+  import { createAutosave } from "$lib/autosave";
+  import SaveState from "./SaveState.svelte";
 
   // Read the quest fresh from Holosphere before a membership mutation, so the
   // participate-XOR-appreciate toggle is applied to current data (the modal's
@@ -92,6 +146,21 @@
   $: item = sel && sel.kind === "thing" ? sel.item : null;
   $: tint = isThing ? "var(--card)" : noteColor(quest?.category);
 
+  // ── Recurrence ────────────────────────────────────────────────────────────
+  // Core owns what repeating means (@holons/core/tasks recurrence): the card
+  // only says which cadence, and — when it was opened from one occurrence on
+  // the calendar — shows THAT date and ticks off just that occurrence. The
+  // series itself is never completed from here: it keeps going.
+  $: frequency = questFrequency(quest);
+  $: occurrenceWhen =
+    sel && sel.kind !== "thing" && isRecurring(sel.quest)
+      ? sel.occurrence
+      : undefined;
+  $: occurrenceDone =
+    !!occurrenceWhen && isOccurrenceCompleted(quest, occurrenceWhen);
+  const freqLabel = (f: QuestFrequency | null): string =>
+    f ? $t(`detail.freq.${f}` as MessageKey) : $t("detail.freqNever");
+
   // A hologram opens as a hologram: the zoomed card keeps the projection
   // style in the source holon's hue, and any foreign record (hologram or
   // federated) names where it came from next to its category.
@@ -105,7 +174,7 @@
   // first, so one press backs out of the photo rather than the whole card.
   let lightbox: { src: string; alt: string } | null = null;
   function openLightbox(src: string | null | undefined, alt: string): void {
-    if (src) lightbox = { src: resolveImage(src), alt };
+    if (src) lightbox = { src: pictureUrl(src), alt };
   }
   function onLightboxKey(e: KeyboardEvent): void {
     if (!lightbox || e.key !== "Escape") return;
@@ -114,8 +183,18 @@
   }
   $: rec = isThing ? item : quest;
   $: holo = isHologram(rec);
-  $: srcGlow = sourceGlow(rec);
+  $: srcGlow = sourceGlow(rec, $holonColors);
   $: srcName = sourceLabel(rec, $partnerNames);
+
+  /**
+   * The source chip travels to the holon this card came from — after the
+   * person confirms (SwitchConfirm closes this card, then the board closes
+   * into its circle and the source's opens).
+   */
+  function jumpToSource(): void {
+    const id = sourceHolonId(rec);
+    if (id) requestSwitch(id, { name: srcName, from: $holonId });
+  }
   $: seed = holo ? holoSeed(String(rec?.id ?? rec?.title ?? "")) : undefined;
 
   // Existing categories across all quests, for the edit-form dropdown. Sorted
@@ -137,9 +216,11 @@
       ? null
       : sel.kind === "thing"
         ? `thing:${sel.item.id}`
-        : `quest:${sel.quest.id ?? sel.quest.title}`;
+        : `quest:${sel.quest.id ?? sel.quest.title}@${sel.occurrence ?? ""}`;
     if (k !== selKey) {
       selKey = k;
+      // Whatever the form still holds lands before it goes away.
+      if (editing) void autosave.flush();
       editing = false;
       booking = false;
       message = "";
@@ -157,14 +238,17 @@
   // Whether the logged-in user is already a participant of this quest.
   $: amParticipant =
     quest != null &&
-    $telegramUser != null &&
+    $currentUser != null &&
     Array.isArray(quest.participants) &&
     quest.participants.some(
-      (p: any) => String(p?.id) === String($telegramUser?.id),
+      (p: any) => String(p?.id) === String($currentUser?.id),
     );
 
   // Participants as display people (id + friendly name) for the chips below.
   $: people = toPeople(quest?.participants);
+  // The hosts an event names — they get the credit; empty when nobody is
+  // named, and for anything that is not an event.
+  $: hostPeople = toPeople(hostsOf(quest));
 
   // Whether the logged-in user has already appreciated this quest.
   $: appreciationCount = Array.isArray(quest?.appreciation)
@@ -172,10 +256,10 @@
     : 0;
   $: amAppreciating =
     quest != null &&
-    $telegramUser != null &&
+    $currentUser != null &&
     Array.isArray(quest.appreciation) &&
     quest.appreciation.some(
-      (a: any) => String(a?.id) === String($telegramUser?.id),
+      (a: any) => String(a?.id) === String($currentUser?.id),
     );
 
   let editing = false;
@@ -218,7 +302,7 @@
   }
 
   function breakdownInitiator() {
-    const u = $telegramUser;
+    const u = $currentUser;
     if (!u) return undefined; // core falls back to the parent's initiator
     return {
       id: String(u.id),
@@ -412,6 +496,27 @@
   let fDescription = "";
   let fType = "other";
   let fValue = 0;
+  let fFrequency: QuestFrequency | null = null;
+  // Task or event — the switch that moves a card between the two boards.
+  let fKind: SwitchableKind = "task";
+  // The hosts of an event. Kept while the switch reads "task" so flipping it
+  // back to "event" doesn't lose them; only saved on an event.
+  let fHosts: QuestParticipant[] = [];
+  // Who takes part. Anyone can be put on (or taken off) the roster from the
+  // form — the same list a self-service Join/Leave edits one person at a time.
+  let fParticipants: QuestParticipant[] = [];
+  // Both of these hang off the start date, and — like the schedule rules
+  // further down — they shape what is shown and saved rather than the fields
+  // themselves, so a date that reads empty for a keystroke doesn't throw the
+  // choice away: it comes back with the date.
+  //
+  // A cadence counts from the start date; without one there is nothing to
+  // repeat (and the chips disable).
+  $: effectiveFrequency = fDate ? fFrequency : null;
+  // An event is a moment; an undated one would fall off the calendar without
+  // landing anywhere else, so it reads as a task until the date is there
+  // (and the Event chip disables, exactly like the cadence chips).
+  $: effectiveKind = fDate ? fKind : "task";
 
   // Category is a real <select> dropdown over existing categories, with a
   // sentinel entry that swaps in a free-text input so a brand-new category can
@@ -474,38 +579,39 @@
   // Two rows, no modes: a start (date + optional clock) and an end. An end date
   // on a later day is what makes the card a multi-day event — there is nothing
   // extra to learn or switch on. Core owns what the fields mean once stored
-  // (`buildScheduleFields`); these guards only keep the pair coherent.
+  // (`buildScheduleFields`); the rules below only keep the pair coherent.
   //
-  // Clearing the start date clears the rest: an undated card is a backlog task.
-  $: if (!fDate && (fTime || fEndDate || fEndTime))
-    fTime = fEndDate = fEndTime = "";
-  // An end that fell behind the start is dragged along rather than stored
-  // backwards. (ISO day and HH:MM strings both compare correctly as text.)
-  $: if (fEndDate && fDate && fEndDate < fDate) fEndDate = fDate;
-  // Within one day an end before the start is no end at all; across days the
-  // two clocks are independent, so leave them be.
-  $: if (
-    fEndTime &&
-    fTime &&
-    (!fEndDate || fEndDate === fDate) &&
-    fEndTime <= fTime
-  )
-    fEndTime = "";
-  // An all-day card has no clock, so an end time can't outlive the start time
-  // (core ignores one; the form shouldn't pretend otherwise).
-  $: if (!fTime && fEndTime) fEndTime = "";
+  // They shape what is summarized and saved, never the inputs themselves: a
+  // date/time input reads "" (or an early clock) while one of its parts is
+  // being typed, and wiping a field on that passing value made the end time
+  // vanish under the user's fingers.
+  $: schedule = coherentSchedule(fDate, fTime, fEndDate, fEndTime);
+  function coherentSchedule(
+    startDate: string,
+    startTime: string,
+    endDate: string,
+    endTime: string,
+  ) {
+    // An undated card is a backlog task: no clock, no end.
+    if (!startDate)
+      return { startDate, startTime: "", endDate: "", endTime: "" };
+    // An end that fell behind the start is dragged along rather than stored
+    // backwards. (ISO day and HH:MM strings both compare correctly as text.)
+    if (endDate && endDate < startDate) endDate = startDate;
+    // An all-day card has no clock, so an end time can't outlive the start
+    // time. Within one day an end before the start is no end at all; across
+    // days the two clocks are independent.
+    if (
+      !startTime ||
+      ((!endDate || endDate === startDate) && endTime <= startTime)
+    )
+      endTime = "";
+    return { startDate, startTime, endDate, endTime };
+  }
 
   /** What the two rows currently add up to; blank while the card is undated. */
   $: scheduleSummary = fDate
-    ? summarize(
-        buildScheduleFields({
-          startDate: fDate,
-          startTime: fTime,
-          endDate: fEndDate,
-          endTime: fEndTime,
-        }),
-        $locale,
-      )
+    ? summarize(buildScheduleFields(schedule), $locale)
     : "";
 
   // One sentence for a stored schedule, used both on the card and live under
@@ -542,13 +648,75 @@
       : `${day} · ${clock(s.start)}`;
   }
 
+  // The date line: for an occurrence, THAT occurrence's schedule (core shifts
+  // the series' span onto it); otherwise the series' — or the one-off's — own.
   function whenText(loc: string): string {
-    return quest ? summarize(quest, loc) : $t("detail.noDate");
+    if (!quest) return $t("detail.noDate");
+    return summarize(
+      occurrenceWhen
+        ? { ...quest, ...shiftSchedule(quest, occurrenceWhen) }
+        : quest,
+      loc,
+    );
   }
+  // "↻ every week · since 1 Sep" — the series' own start, whichever
+  // occurrence the card was opened from.
+  function repeatsText(loc: string): string {
+    const start = questSchedule(quest).start;
+    if (!frequency || !start) return "";
+    return $t("detail.repeatsLine", {
+      cadence: freqLabel(frequency),
+      start: start.toLocaleDateString(loc, SPAN_DAY),
+    });
+  }
+
+  // ── Lock one card ────────────────────────────────────────────────────
+  // An own card is locked from here: sealed on the relays, read by this
+  // hub's members and the holons it is shared with — never by a key anyone
+  // types (see @holons/core/privacy). A whole board is locked from its own
+  // settings, and its cards follow it. Foreign cards (holograms, federated
+  // copies) are their owner's to lock.
+  let lockable = false;
+  let lockOpen = false;
+  let cardLocked = false;
+  $: lockLens = sel ? (sel.kind === "thing" ? "library" : "quests") : "";
+  $: lockId = sel
+    ? String(sel.kind === "thing" ? sel.item.id : (sel.quest.id ?? ""))
+    : "";
+  $: void checkLockable(sel, $holonId, $isLoggedIn);
+
+  async function checkLockable(
+    s: typeof sel,
+    holon: string | null,
+    loggedIn: boolean,
+  ) {
+    lockable = false;
+    lockOpen = false;
+    cardLocked = false;
+    if (!s || !holon) return;
+    const rec = s.kind === "thing" ? s.item : s.quest;
+    const id = String(rec.id ?? "");
+    if (!id || sourceRef(rec, id)) return;
+    const lens = s.kind === "thing" ? "library" : "quests";
+    try {
+      const hs = await getHolosphere();
+      const flags = (await privacyOfHolon(hs, holon))[lens];
+      if (s !== sel) return;
+      cardLocked = !!flags?.locked || !!flags?.items.includes(id);
+      lockable = loggedIn;
+    } catch {
+      lockable = false;
+    }
+  }
+
+  const onAudienceChange = (e: CustomEvent<Audience>) => {
+    cardLocked = e.detail.locked;
+  };
 
   function startEdit() {
     if (!sel) return;
     message = "";
+    editSel = sel;
     if (sel.kind === "thing") {
       fType =
         String(sel.item.type ?? "")
@@ -571,6 +739,15 @@
         endDate: fEndDate,
         endTime: fEndTime,
       } = scheduleToFields(q));
+      fFrequency = questFrequency(q);
+      // Core names the kind; legacy spellings ('quest', 'meeting') fold into
+      // the two the switch offers. A marketplace card never reaches the
+      // switch, so the fallback is harmless.
+      fKind = questKind(q) === "event" ? "event" : "task";
+      // Read as an event either way, so hosts survive a trip through "task".
+      fHosts = hostsOf({ ...q, type: "event" });
+      fParticipants = Array.isArray(q.participants) ? [...q.participants] : [];
+      savedRoster = q.participants;
     }
     editing = true;
   }
@@ -579,38 +756,370 @@
     loginOpen.set(true);
   }
 
+  // ── Share ────────────────────────────────────────────────────────────────
+  // The link that opens this very card (`/<holon>/tasks?task=<id>`, see
+  // cardlink.ts) from wherever the board is served — the same URL the
+  // address bar mirrors while the card is up. A local draft has none yet.
+  $: linkUrl =
+    sel && $holonId && typeof location !== "undefined"
+      ? selectionCardUrl(location.origin, segmentFor($holonId), sel)
+      : null;
+  let copied = false;
+  let copyTimer: ReturnType<typeof setTimeout> | null = null;
+  async function copyLink() {
+    if (!linkUrl) return;
+    try {
+      await navigator.clipboard.writeText(linkUrl);
+      copied = true;
+      if (copyTimer) clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => (copied = false), 1800);
+    } catch {
+      showNotice($t("clipboard.writeFailed"));
+    }
+  }
+
+  // ── Chat & whiteboard ──────────────────────────────────────────────────────
+  // Hang off the task where it really lives (a hologram resolves to its
+  // source, core `taskRef`), so everyone looking at one task shares them.
+  // The board link is read from the live record, so one someone else made
+  // replaces the snapshot's "none yet".
+  $: taskKey = quest && !isNew ? String(quest.id ?? quest.title ?? "") : "";
+  $: chatRef =
+    quest && taskKey && $holonId ? taskRef(quest, $holonId, taskKey) : null;
+  $: liveQuest = taskKey
+    ? ($rawQuests.find((x) => String(x.id ?? x.title) === taskKey) ?? quest)
+    : null;
+  let minted: { key: string; url: string } | null = null;
+  $: boardHref =
+    boardUrlOf(liveQuest) ??
+    (minted && chatRef && minted.key === `${chatRef.holon}|${chatRef.key}`
+      ? minted.url
+      : null);
+  let chatOpen = false;
+  let chatFor = "";
+  $: if (taskKey !== chatFor) {
+    chatFor = taskKey;
+    chatOpen = false;
+  }
+  let boardBusy = false;
+  async function startBoard() {
+    if (!chatRef || boardBusy) return;
+    const ref = chatRef;
+    // Open the tab inside the tap: Safari blocks a window opened after an await.
+    const w = window.open("about:blank", "_blank");
+    boardBusy = true;
+    try {
+      const url = await openBoard(ref);
+      if (!url) throw new Error("not saved");
+      minted = { key: `${ref.holon}|${ref.key}`, url };
+      if (w) {
+        w.opener = null;
+        w.location.href = url;
+      } else {
+        window.open(url, "_blank", "noopener");
+      }
+    } catch {
+      w?.close();
+      showNotice($t("detail.boardFailed"));
+    } finally {
+      boardBusy = false;
+    }
+  }
+
+  /**
+   * The edited quest as it would be stored, from the form fields over the card
+   * that was opened for editing (null when the form is not a quest's).
+   */
+  function buildQuest(): Quest | null {
+    if (!editSel || editSel.kind === "thing") return null;
+    const base = editSel.quest;
+    // Core turns the local form fields into the stored schedule: UTC instants
+    // for a timed card, bare dates for an all-day one, and an inclusive end
+    // date for a span. Cleared fields are blanked, never deleted (older readers expect them),
+    // on `ends` and its legacy `until` alias alike.
+    const timing: Partial<Quest> = buildScheduleFields(
+      coherentSchedule(fDate, fTime, fEndDate, fEndTime),
+    );
+    // The roster is saved through core, which keeps the participate-XOR-
+    // appreciate rule (a member put on the list stops appreciating).
+    return setParticipants(
+      {
+        ...base,
+        title: fTitle.trim() || base.title,
+        location: fLocation.trim() || undefined,
+        category: fCategory.trim() || undefined,
+        description: fDescription.trim() || undefined,
+        ...timing,
+        // The cadence (core also drops the bot scheduler's handle when it is
+        // cleared, so the bot stops spawning occurrences). Only a dated card
+        // can repeat, so an undated one is saved without a cadence.
+        ...setQuestFrequency(base, timing.when ? fFrequency : null),
+        // Task ↔ event. Core refuses to retype a marketplace item, so an offer
+        // that somehow reached this form keeps its own lifecycle.
+        ...setQuestKind(base, timing.when ? fKind : "task"),
+        ...(timing.when && fKind === "event" ? { hosts: fHosts } : {}),
+      },
+      fParticipants,
+    );
+  }
+
+  async function putQuest(updated: Quest): Promise<boolean> {
+    const holon = $holonId;
+    if (!holon) return false;
+    const writer = await getWriter(holon, (m) => (message = m));
+    const ok = await writer.put("quests", updated);
+    if (!ok) {
+      if (!message) message = $t("detail.saveFailed");
+      return false;
+    }
+    message = "";
+    // Core mirrored the card into the holon of everyone put on the roster and
+    // dropped it from whoever was taken off — that is part of the write. What
+    // is left for the board is the signed-in user's own Telegram DM, when
+    // their place on the card changed.
+    const before = savedRoster;
+    savedRoster = updated.participants;
+    const me = $currentUser;
+    if (!me) return true;
+    const { joined, left } = rosterDiff(before, updated.participants);
+    if ([...joined, ...left].some((p) => String(p.id) === String(me.id)))
+      void refreshOwnDm(String(updated.id), me);
+    return true;
+  }
+
+  /** A new card is created on the tap of Create; an existing one autosaves. */
   async function saveQuest() {
+    const updated = buildQuest();
+    if (!updated) return;
+    saving = true;
+    message = "";
+    const ok = await putQuest(updated);
+    saving = false;
+    if (ok) closeDetail();
+  }
+
+  /** The edited library item as it would be stored. */
+  function buildThing(): Record<string, unknown> | null {
+    if (!editSel || editSel.kind !== "thing") return null;
+    const item = editSel.item;
+    // A federated/hologram item is owned by another holon — edit it there, not
+    // in our own lens, or we fork a stray local copy that shadows (and unlinks)
+    // the federated original. Also drop read-side provenance tags so the kiosk's
+    // `_holon` marker (or a resolved `_hologram`/`_federation` envelope) is never
+    // persisted onto the stored item.
+    const ref = sourceRef(item, String(item.id));
+    const clean: Record<string, unknown> = { ...item };
+    delete clean._holon;
+    delete clean._hologram;
+    delete clean._federation;
+    return {
+      ...clean,
+      id: ref?.key ?? item.id,
+      // Categories are canonically lowercase ('tool', 'book', …); a freshly
+      // typed one is normalised the same way so it dedupes across items.
+      type: fType.trim().toLowerCase() || "other",
+      description: fDescription.trim(),
+      value: Number(fValue) || 0,
+    };
+  }
+
+  async function putThing(
+    item: LibraryItem,
+    updated: Record<string, unknown>,
+  ): Promise<boolean> {
+    const holon = sourceRef(item, String(item.id))?.holon ?? $holonId;
+    if (!holon) return false;
+    const writer = await getWriter(holon, (m) => (message = m));
+    const ok = await writer.put("library", updated);
+    if (ok) message = "";
+    else if (!message) message = $t("detail.couldNotSave");
+    return ok;
+  }
+
+  // ── Autosave ─────────────────────────────────────────────────────────────
+  // Editing an existing card writes as you go (a new card still waits for
+  // Create — it needs its title first). The card being edited is captured in
+  // `editSel`, so a write that lands after the modal moved on still goes to
+  // the card it was typed into.
+  let editSel: typeof sel = null;
+  /** The roster as last written, so a DM refresh follows each real change. */
+  let savedRoster: Quest["participants"] | undefined;
+  type Edit =
+    | { kind: "quest"; record: Quest }
+    | { kind: "thing"; item: LibraryItem; record: Record<string, unknown> };
+  const autosave = createAutosave<Edit>(
+    () => {
+      if (!editSel) return null;
+      if (editSel.kind === "thing") {
+        const record = buildThing();
+        return record ? { kind: "thing", item: editSel.item, record } : null;
+      }
+      if (editSel.isNew) return null;
+      const record = buildQuest();
+      return record ? { kind: "quest", record } : null;
+    },
+    (e) =>
+      e.kind === "quest" ? putQuest(e.record) : putThing(e.item, e.record),
+  );
+  $: autosave.watch(
+    !editing || isNew
+      ? null
+      : isThing
+        ? JSON.stringify([fType, fDescription, fValue])
+        : JSON.stringify([
+            fTitle,
+            fDate,
+            fTime,
+            fEndDate,
+            fEndTime,
+            fFrequency,
+            fKind,
+            fHosts,
+            fParticipants,
+            fCategory,
+            fLocation,
+            fDescription,
+          ]),
+  );
+  onDestroy(() => void autosave.flush());
+
+  /** Leave the form: what is still waiting is written, then the card closes. */
+  async function doneEditing() {
+    saving = true;
+    const ok = await autosave.flush();
+    saving = false;
+    if (ok) closeDetail();
+  }
+
+  // Who can still be put on this card: the holon's members not yet on it.
+  // The roster loads once the card is up, so the control appears with it.
+  $: if (quest && $isLoggedIn) void loadMembers();
+  $: onRoster = new Set(people.map((p) => String(p.id)));
+  $: addable = $members.filter((m) => !onRoster.has(String(m.id)));
+
+  /**
+   * Put a member of the holon on this card, straight from it — no edit form.
+   * The card stays up with the new roster so several people can be added in
+   * a row; core's write puts a hologram of the card in each one's own holon.
+   */
+  async function addSomeone(e: Event) {
+    const select = e.currentTarget as HTMLSelectElement;
+    const value = select.value;
+    select.value = ""; // back to the label so the next pick fires change too
+    if (value === FEDERATION) {
+      fedSearch = true;
+      return;
+    }
+    const m = $members.find((x) => String(x.id) === value);
+    if (m) await addPerson(m);
+  }
+
+  /** The dropdown's last entry: search the federation's people instead. */
+  const FEDERATION = "__federation";
+  let fedSearch = false;
+  // A different card closes the search; a new roster on the same one does not.
+  let fedSearchFor: unknown = null;
+  $: if ((quest?.id ?? null) !== fedSearchFor) {
+    fedSearchFor = quest?.id ?? null;
+    fedSearch = false;
+  }
+
+  /** Someone from the dropdown or the federation search, onto this card. */
+  async function addPerson(m: Member) {
     if (!sel || sel.kind === "thing" || !$holonId) return;
     saving = true;
     message = "";
-    // Core turns the local form fields into the stored schedule: UTC instants
-    // for a timed card, bare dates for an all-day one, and an inclusive end
-    // date for a span. Cleared fields are blanked, never deleted (Gun merges),
-    // on `ends` and its legacy `until` alias alike.
-    const timing: Partial<Quest> = buildScheduleFields({
-      startDate: fDate,
-      startTime: fTime,
-      endDate: fEndDate,
-      endTime: fEndTime,
-    });
-    const updated = {
-      ...sel.quest,
-      title: fTitle.trim() || sel.quest.title,
-      location: fLocation.trim() || undefined,
-      category: fCategory.trim() || undefined,
-      description: fDescription.trim() || undefined,
-      ...timing,
-    };
-    const writer = await getWriter($holonId, (m) => (message = m));
-    const ok = await writer.put("quests", updated);
+    try {
+      const id = String(sel.quest.id ?? sel.quest.title);
+      const res = await addMember($holonId, id, m, sourceRef(sel.quest, id));
+      if (res === "failed") {
+        message = $t("detail.addFailed");
+        return;
+      }
+      if (res !== "already") {
+        // Only the people lists changed; the card keeps its own provenance.
+        selection.set({
+          ...sel,
+          quest: {
+            ...sel.quest,
+            participants: res.participants,
+            appreciation: res.appreciation,
+          },
+        });
+      }
+      showNotice($t("detail.addedPerson", { name: personName(m) }));
+    } finally {
+      saving = false;
+    }
+  }
+
+  /**
+   * Tick this occurrence off, or back on. Ticking it off credits the people
+   * who took part THIS time exactly like a one-off task — the same confirm
+   * dialog, the same REA events priced by the holon's equation (see
+   * `recordOccurrenceCompletion`) — while the series itself stays open.
+   * Un-ticking is a plain edit, as for a one-off marked ongoing again.
+   */
+  async function toggleOccurrence() {
+    if (!sel || sel.kind === "thing" || !$holonId || !occurrenceWhen) return;
+    const user = $currentUser;
+    if (!user) {
+      loginOpen.set(true);
+      return;
+    }
+    saving = true;
+    message = "";
+    const fresh = await freshQuest(sel.quest);
+    const when = occurrenceWhen;
+    if (isOccurrenceCompleted(fresh, when)) {
+      const updated = {
+        ...fresh,
+        completedOccurrences: toggleOccurrenceCompleted(fresh, when),
+      };
+      const writer = await getWriter($holonId, (m) => (message = m));
+      const ok = await writer.put("quests", updated);
+      saving = false;
+      if (ok) closeDetail();
+      else if (!message) message = $t("detail.couldNotSave");
+      return;
+    }
+    const result = checkOccurrenceComplete(fresh, when);
+    if (!result.ok) {
+      saving = false;
+      message =
+        result.reason === "already-completed"
+          ? $t("tasks.alreadyCompleted")
+          : $t("tasks.stopped");
+      return;
+    }
     saving = false;
-    if (ok) closeDetail();
-    else if (!message) message = $t("detail.saveFailed");
+    const hid = $holonId;
+    // Confirm who was there this time (for honest REA), then record + celebrate.
+    completionRequest.set({
+      task: fresh,
+      onConfirm: async (adjusted) => {
+        try {
+          const { ok } = await recordOccurrenceCompletion(
+            hid,
+            fresh,
+            when,
+            adjusted.participants ?? [],
+            user.id,
+          );
+          if (ok) {
+            closeDetail();
+            setTimeout(party, 180);
+          } else message = $t("detail.couldNotSave");
+        } catch (err) {
+          message = (err as Error)?.message || $t("detail.completeFailed");
+        }
+      },
+    });
   }
 
   async function completeQuest() {
     if (!sel || sel.kind === "thing" || !$holonId) return;
-    const user = $telegramUser;
+    const user = $currentUser;
     if (!user) {
       loginOpen.set(true);
       return;
@@ -650,18 +1159,21 @@
 
   async function deleteQuest() {
     if (!sel || sel.kind === "thing" || !$holonId) return;
-    const user = $telegramUser;
+    const user = $currentUser;
     if (!user) {
       loginOpen.set(true);
       return;
     }
     const localId = String(sel.quest.id ?? sel.quest.title);
-    const mirrored = isHologram(sel.quest);
-    const ref = mirrored ? undefined : sourceRef(sel.quest, localId);
+    // Core decides where a delete lands (`deleteRef`): a hologram loses only
+    // our local mirror, a federation-aggregated card resolves to its owner
+    // holon, our own task deletes in place.
+    const ref = deleteRef(sel.quest, $holonId, localId);
+    const foreign = ref.kind === "federated";
     if (
       typeof window !== "undefined" &&
       !window.confirm(
-        $t(ref ? "detail.hideConfirm" : "detail.deleteConfirm", {
+        $t(foreign ? "detail.hideConfirm" : "detail.deleteConfirm", {
           title: quest?.title ?? $t("detail.thisTask"),
         }),
       )
@@ -675,7 +1187,7 @@
     // `hidden` lens (core owns the shape; +layout filters the quests feed
     // against it). The original stays untouched for its holon, and un-hiding
     // is possible because nothing was destroyed.
-    if (ref) {
+    if (foreign) {
       const writer = await getWriter($holonId, (m) => (message = m));
       const ok = await writer.put(
         HIDDEN_LENS,
@@ -690,34 +1202,28 @@
       return;
     }
     // Soft-delete: write a `_deleted: true` tombstone (the bot's convention)
-    // rather than a hard `put(null)`. A hard delete leaves a husk node that Gun
+    // rather than a hard `put(null)`. A hard delete used to leave a husk node that the old graph
     // keeps re-emitting; the live subscription forwards it (it only swallows a
     // clean null), so the board flips between the real card and an empty
     // "Untitled" phantom — re-triggering the FLIP reshuffle indefinitely. A
     // tombstone is a stable object that both `isDone` and the lens aggregator
     // drop cleanly, so the card just leaves.
     //
-    // WHERE it lands:
-    //   - a hologram (a joined task mirrored into this holon as a pointer) is
-    //     deleted HERE — dropping our mirror, not the source holon's task. The
-    //     write must say so: HoloSphere otherwise follows the pointer, so the
-    //     tombstone would soft-delete the original for everyone while our
-    //     pointer — and the card — stayed exactly where it was.
-    //   - our own task: written in place, as before.
+    // WHERE it lands: `ref` is local for both a hologram (our mirror goes, the
+    // source holon's task stays) and our own task. HoloSphere itself never
+    // follows a pointer for a `_deleted: true` payload, so this tombstone
+    // cannot reach the original.
     const tombstone: Record<string, unknown> = {
       ...sel.quest,
-      id: localId,
+      id: ref.key,
       _deleted: true,
     };
-    // Read-side provenance tags — never persist them (and `_hologram` would
-    // re-route this very write to the source holon).
+    // Read-side provenance tags — never persist them.
     delete tombstone._holon;
     delete tombstone._hologram;
     delete tombstone._federation;
-    const writer = await getWriter($holonId, (m) => (message = m));
-    const ok = await writer.put("quests", tombstone, {
-      disableHologramRedirection: mirrored,
-    });
+    const writer = await getWriter(ref.holon, (m) => (message = m));
+    const ok = await writer.put("quests", tombstone);
     saving = false;
     if (ok) closeDetail();
     else if (!message) message = $t("detail.deleteFailed");
@@ -725,7 +1231,7 @@
 
   async function joinQuest() {
     if (!sel || sel.kind === "thing" || !$holonId) return;
-    const user = $telegramUser;
+    const user = $currentUser;
     if (!user) {
       loginOpen.set(true);
       return;
@@ -749,7 +1255,7 @@
 
   async function appreciate() {
     if (!sel || sel.kind === "thing" || !$holonId) return;
-    const user = $telegramUser;
+    const user = $currentUser;
     if (!user) {
       loginOpen.set(true);
       return;
@@ -775,44 +1281,23 @@
     }
   }
 
-  async function saveThing() {
-    if (!sel || sel.kind !== "thing" || !$holonId) return;
-    saving = true;
-    message = "";
-    // A federated/hologram item is owned by another holon — edit it there, not
-    // in our own lens, or we fork a stray local copy that shadows (and unlinks)
-    // the federated original. Also drop read-side provenance tags so the kiosk's
-    // `_holon` marker (or a resolved `_hologram`/`_federation` envelope) is never
-    // persisted onto the stored item.
-    const ref = sourceRef(sel.item, String(sel.item.id));
-    const holon = ref?.holon ?? $holonId;
-    const clean: Record<string, unknown> = { ...sel.item };
-    delete clean._holon;
-    delete clean._hologram;
-    delete clean._federation;
-    const updated = {
-      ...clean,
-      id: ref?.key ?? sel.item.id,
-      // Categories are canonically lowercase ('tool', 'book', …); a freshly
-      // typed one is normalised the same way so it dedupes across items.
-      type: fType.trim().toLowerCase() || "other",
-      description: fDescription.trim(),
-      value: Number(fValue) || 0,
-    };
-    const writer = await getWriter(holon, (m) => (message = m));
-    const ok = await writer.put("library", updated);
-    saving = false;
-    if (ok) closeDetail();
-    else if (!message) message = $t("detail.couldNotSave");
-  }
-
-  // ── Booking form (borrow for a chosen date range, like the web library) ────
-  // Tapping Borrow opens a From/Until range with quick length chips instead of
-  // borrowing for a hard-coded week. Core's `bookItem` owns the meaning: it
-  // appends to `bookings[]` (the canonical borrow state) and rejects overlaps.
+  // ── Booking form (borrow for a chosen stretch, like the web library) ───────
+  // Tapping Borrow opens a From/Until pair with quick length chips instead of
+  // borrowing for a hard-coded week. Each edge is a date plus an optional
+  // clock, the schedule editor's shape: no time means whole days (a drill for
+  // the week), a time means by the clock (a car for an hour). Core's
+  // `bookItem` owns the meaning: it appends to `bookings[]` (the canonical
+  // borrow state) and rejects overlaps.
   let booking = false;
   let bStart = "";
   let bEnd = "";
+  let bStartTime = "";
+  let bEndTime = "";
+  const HOUR_CHIPS = [
+    { hours: 1, labelKey: "detail.len1h" },
+    { hours: 2, labelKey: "detail.len2h" },
+    { hours: 4, labelKey: "detail.len4h" },
+  ] as const;
   const LENGTH_CHIPS = [
     { days: 1, labelKey: "detail.len1day" },
     { days: 3, labelKey: "detail.len3days" },
@@ -820,34 +1305,101 @@
     { days: 14, labelKey: "detail.len2weeks" },
   ] as const;
 
+  /** `day` + `time` moved by `minutes`, back as the two input values. */
+  function shiftClock(
+    day: string,
+    time: string,
+    minutes: number,
+  ): { day: string; time: string } {
+    const d = new Date(`${day}T${time}`);
+    d.setMinutes(d.getMinutes() + minutes);
+    return {
+      day: toDateInput(d),
+      time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+    };
+  }
+
+  /** The next quarter hour from now — where a booking by the clock starts. */
+  function nextQuarter(): string {
+    const d = new Date();
+    d.setMinutes(Math.ceil((d.getMinutes() + 1) / 15) * 15, 0, 0);
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  /** An hour chip: by the clock, `hours` long from the start time (or from
+   *  the coming quarter hour / 09:00 on a later day when none is set). */
+  function bookHours(hours: number) {
+    if (!bStart) return;
+    if (!bStartTime)
+      bStartTime = bStart === toDateInput(new Date()) ? nextQuarter() : "09:00";
+    const end = shiftClock(bStart, bStartTime, hours * 60);
+    bEnd = end.day;
+    bEndTime = end.time;
+  }
+
+  /** A day chip: whole days, so any clock is dropped. */
+  function bookDays(days: number) {
+    bStartTime = "";
+    bEndTime = "";
+    bEnd = addDaysKey(bStart, days);
+  }
+
+  /** The start clock was edited: no time means whole days again; a first time
+   *  proposes one hour, ending the same day. */
+  function onStartTime() {
+    if (!bStartTime) bEndTime = "";
+    else if (!bEndTime) bookHours(1);
+  }
+
+  $: bookedHours =
+    bStart && bEnd && bStartTime && bEndTime
+      ? (new Date(`${bEnd}T${bEndTime}`).getTime() -
+          new Date(`${bStart}T${bStartTime}`).getTime()) /
+        3_600_000
+      : 0;
+
   function addDaysKey(key: string, n: number): string {
     const d = new Date(`${key}T00:00:00`);
     d.setDate(d.getDate() + n);
     return toDateInput(d);
   }
 
-  /** Short human label for a booking day key ("Jul 27"). */
+  /** Short human label for a booking bound: "Jul 27", or "Jul 27, 14:00"
+   *  when it carries a clock. */
   function fmtDay(loc: string, d: string): string {
-    return new Date(`${dayKey(d)}T00:00:00`).toLocaleDateString(loc, {
+    const day = new Date(`${dayKey(d)}T00:00:00`).toLocaleDateString(loc, {
       day: "numeric",
       month: "short",
     });
+    return timeOf(d) ? `${day}, ${timeOf(d)}` : day;
   }
+
+  /** A booking's stretch: "Jul 27 → Jul 30", "Jul 27, 14:00–15:00". */
+  function fmtSpan(loc: string, b: { start: string; end: string }): string {
+    if (isTimedBooking(b) && dayKey(b.start) === dayKey(b.end))
+      return `${fmtDay(loc, b.start)}–${timeOf(b.end)}`;
+    return `${fmtDay(loc, b.start)} → ${fmtDay(loc, b.end)}`;
+  }
+
+  // The clock at minute grain: a booking starts and ends without the item
+  // being written, so what the card says has to follow the time.
+  $: clock = new Date($minute * 60_000);
 
   // Upcoming/active bookings, soonest first — shown on the card so a free
   // range is easy to pick. (Recomputed per selected item; capped for space.)
   $: upcomingBookings = item
     ? getDisplayBookings(item)
-        .filter((b) => dayKey(b.end) >= toDateInput(new Date()))
-        .sort((a, b) => dayKey(a.start).localeCompare(dayKey(b.start)))
+        .filter((b) => !isBookingPast(b, clock))
         .slice(0, 3)
     : [];
 
-  // The booking covering today, if any — the status line ("Out · Alex") reads
-  // from it, so a federated borrow can say which holon it came in from.
-  $: activeBooking = item
-    ? (getDisplayBookings(item).find((b) => isBookingActive(b)) ?? null)
-    : null;
+  // Where the thing is right now — core reads it from the bookings. The
+  // status line ("Out · Alex") comes from the booking holding it, so a
+  // federated borrow can say which holon it came in from.
+  $: status = item
+    ? bookingStatus(item, clock)
+    : { state: "available" as const, booking: null, next: null };
+  $: activeBooking = status.booking;
 
   function startBooking() {
     if (!item) return;
@@ -856,26 +1408,42 @@
     message = "";
     // Default to the first free day: today, or the day after the booking that
     // covers today (so "book ahead" on an item that's out starts sensibly).
+    // A booking by the clock leaves the rest of its day free, so it does not
+    // push the start along.
     let start = toDateInput(new Date());
     const busy = findOverlappingBooking(item, start, start);
-    if (busy) start = addDaysKey(dayKey(busy.end), 1);
+    if (busy && !isTimedBooking(busy)) start = addDaysKey(dayKey(busy.end), 1);
     bStart = start;
     bEnd = addDaysKey(start, 7);
+    bStartTime = "";
+    bEndTime = "";
     booking = true;
   }
 
   // Moving the start past the end drags the end along (never an inverted range).
   $: if (booking && bStart && bEnd && bEnd < bStart) bEnd = bStart;
 
+  // What the form adds up to, as the bounds core stores.
+  $: bookFrom = bStart ? bookingBound(bStart, bStartTime) : "";
+  $: bookUntil = bEnd
+    ? bookingBound(bEnd, bStartTime ? bEndTime || bStartTime : "")
+    : "";
+
   async function confirmBooking() {
-    if (!sel || sel.kind !== "thing" || !$holonId || !bStart || !bEnd) return;
+    if (!sel || sel.kind !== "thing" || !$holonId || !bookFrom || !bookUntil)
+      return;
     const actor = borrowActor();
     if (!actor) return requestLogin();
-    saving = true;
     message = "";
+    // By the clock, the end has to come after the start.
+    if (bStartTime && bookUntil <= bookFrom) {
+      message = $t("detail.invalidRange");
+      return;
+    }
+    saving = true;
     // Fast-path UX check on the on-screen copy; core re-validates against the
     // stored item on write.
-    const conflict = findOverlappingBooking(sel.item, bStart, bEnd);
+    const conflict = findOverlappingBooking(sel.item, bookFrom, bookUntil);
     if (conflict) {
       saving = false;
       message = $t("detail.overlaps", {
@@ -897,7 +1465,7 @@
       holon,
       key,
       actor,
-      { start: bStart, end: bEnd },
+      { start: bookFrom, end: bookUntil },
       // Where we're booking FROM. Core stamps the booking's origin when this
       // differs from the item's holon, so the owner sees a federated borrow.
       { actingHolon: $holonId, actingHolonName: $holonName || null },
@@ -946,14 +1514,33 @@
     }
   }
 
-  $: borrowedByMe =
-    item?.borrowed &&
-    ($telegramUser?.id === item?.borrowerId ||
-      ($telegramUser?.username && item?.borrower === $telegramUser.username));
+  // Whether there is a borrow of mine to bring back. Core decides whose it is
+  // (the rule `returnItem` itself applies) — comparing ids here went wrong the
+  // moment a Telegram id was a number on one side and text on the other.
+  $: canReturn = !!(
+    item &&
+    $currentUser &&
+    returnableBooking(item, borrowActor() ?? { id: "" }, clock)
+  );
 </script>
 
 {#if sel}
   <Modal {tint} {holo} glow={srcGlow} {seed} on:close={closeDetail}>
+    <svelte:fragment slot="corner">
+      {#if editing && !isNew}<SaveState saver={autosave} />{/if}
+    </svelte:fragment>
+    {#if linkUrl && !editing}
+      <button
+        class="share"
+        class:done={copied}
+        on:click={copyLink}
+        aria-label={$t("detail.copyLink")}
+        title={$t(copied ? "detail.linkCopied" : "detail.copyLink")}
+        >{#if copied}<Icon name="check" />{:else}<Icon
+            name="link"
+          />{/if}</button
+      >
+    {/if}
     {#if isThing && item}
       <!-- ── Library thing ─────────────────────────────────────────────── -->
       <!-- A thing's photo stands in for the type icon when it has one: the
@@ -969,7 +1556,7 @@
         >
           <img
             class="hero"
-            src={resolveImage(itemPicture)}
+            src={pictureUrl(itemPicture)}
             alt={item.id}
             loading="lazy"
             on:error={hideImg}
@@ -982,7 +1569,13 @@
       <div class="chips">
         <span class="kind">{getTypeDisplayName(item.type)}</span>
         {#if srcName}
-          <span class="srcchip" style="--src: {srcGlow}">⇄ {srcName}</span>
+          <button
+            type="button"
+            class="srcchip"
+            style="--src: {srcGlow}"
+            title={$t("source.open", { name: srcName })}
+            on:click={jumpToSource}><Icon name="swap" /> {srcName}</button
+          >
         {/if}
       </div>
 
@@ -994,13 +1587,26 @@
           <div>
             <dt>{$t("detail.status")}</dt>
             <dd>
-              {#if item.borrowed}
-                {item.borrower
-                  ? $t("detail.outWith", { who: item.borrower })
-                  : $t("detail.out")}
+              {#if activeBooking}
+                {#if status.state === "overdue"}
+                  {activeBooking.borrower
+                    ? $t("detail.overdueWith", { who: activeBooking.borrower })
+                    : $t("detail.overdue")}
+                  · {$t("detail.dueWhen", {
+                    when: fmtDay($locale, activeBooking.end),
+                  })}
+                {:else}
+                  {activeBooking.borrower
+                    ? $t("detail.outWith", { who: activeBooking.borrower })
+                    : $t("detail.out")}
+                  · {$t("detail.untilWhen", {
+                    when: fmtDay($locale, activeBooking.end),
+                  })}
+                {/if}
                 {#if bookingOriginLabel(activeBooking)}
                   <span class="viachip" title={$t("detail.viaHolonTitle")}
-                    >⇄ {bookingOriginLabel(activeBooking)}</span
+                    ><Icon name="swap" />
+                    {bookingOriginLabel(activeBooking)}</span
                   >
                 {/if}
               {:else}{$t("detail.availableCap")}{/if}
@@ -1018,15 +1624,12 @@
               <dd>
                 {#each upcomingBookings as b (b.id)}
                   <span class="booking-line"
-                    >{fmtDay($locale, b.start)} → {fmtDay(
-                      $locale,
-                      b.end,
-                    )}{b.borrower
+                    >{fmtSpan($locale, b)}{b.borrower
                       ? ` · ${b.borrower}`
                       : ""}{#if bookingOriginLabel(b)}<span
                         class="viachip"
                         title={$t("detail.viaHolonTitle")}
-                        >⇄ {bookingOriginLabel(b)}</span
+                        ><Icon name="swap" /> {bookingOriginLabel(b)}</span
                       >{/if}</span
                   >
                 {/each}
@@ -1037,25 +1640,64 @@
 
         {#if $isLoggedIn}
           {#if booking}
-            <!-- Borrow for a chosen period — same booking model as the web
-                 library: an inclusive [from, until] day range on bookings[]. -->
-            <div class="row2">
-              <label
-                >{$t("detail.from")}
-                <input type="date" bind:value={bStart} />
-              </label>
-              <label
-                >{$t("detail.until")}
-                <input type="date" bind:value={bEnd} min={bStart} />
-              </label>
+            <!-- Borrow for a chosen stretch — core's booking model: whole days
+                 (inclusive), or by the clock once a time is set. Each edge is
+                 the schedule editor's date + clock pair, so it wraps the same
+                 way on a phone. -->
+            <div class="when-row">
+              <div class="edge">
+                <span class="elab">{$t("detail.from")}</span>
+                <div class="pair">
+                  <input
+                    type="date"
+                    bind:value={bStart}
+                    aria-label={$t("detail.bookFromDateAria")}
+                  />
+                  <input
+                    class="clock"
+                    type="time"
+                    step="900"
+                    bind:value={bStartTime}
+                    on:change={onStartTime}
+                    aria-label={$t("detail.bookFromTimeAria")}
+                  />
+                </div>
+              </div>
+              <div class="edge">
+                <span class="elab">{$t("detail.until")}</span>
+                <div class="pair">
+                  <input
+                    type="date"
+                    bind:value={bEnd}
+                    min={bStart}
+                    aria-label={$t("detail.bookUntilDateAria")}
+                  />
+                  <input
+                    class="clock"
+                    type="time"
+                    step="900"
+                    bind:value={bEndTime}
+                    disabled={!bStartTime}
+                    aria-label={$t("detail.bookUntilTimeAria")}
+                  />
+                </div>
+              </div>
             </div>
             <div class="lengths">
+              {#each HOUR_CHIPS as c (c.hours)}
+                <button
+                  class="chip"
+                  class:on={bookedHours === c.hours}
+                  on:click={() => bookHours(c.hours)}>{$t(c.labelKey)}</button
+                >
+              {/each}
               {#each LENGTH_CHIPS as c (c.days)}
                 <button
                   class="chip"
-                  class:on={bStart && bEnd === addDaysKey(bStart, c.days)}
-                  on:click={() => (bEnd = addDaysKey(bStart, c.days))}
-                  >{$t(c.labelKey)}</button
+                  class:on={!bStartTime &&
+                    bStart &&
+                    bEnd === addDaysKey(bStart, c.days)}
+                  on:click={() => bookDays(c.days)}>{$t(c.labelKey)}</button
                 >
               {/each}
             </div>
@@ -1074,29 +1716,45 @@
             </div>
           {:else}
             <div class="actions">
-              {#if !item.borrowed}
-                <button
-                  class="primary"
-                  on:click={startBooking}
-                  disabled={saving}>{$t("detail.borrow")}</button
-                >
-              {:else if borrowedByMe}
+              <!-- Return whenever a borrow of mine is still open — running, or
+                   past its time. Anyone can book around what is out; a thing
+                   merely overdue is free to borrow. -->
+              {#if canReturn}
                 <button class="primary" on:click={returnThing} disabled={saving}
                   >{$t("detail.return")}</button
                 >
-              {:else}
+              {:else if status.state === "out"}
                 <span class="note-line"
                   >{$t("detail.onLoanTo", {
-                    who: item.borrower ?? $t("detail.someone"),
+                    who: activeBooking?.borrower ?? $t("detail.someone"),
                   })}</span
                 >
+              {/if}
+              {#if status.state === "out"}
                 <button class="ghost" on:click={startBooking} disabled={saving}
                   >{$t("detail.bookAhead")}</button
+                >
+              {:else}
+                <button
+                  class={canReturn ? "ghost" : "primary"}
+                  on:click={startBooking}
+                  disabled={saving}>{$t("detail.borrow")}</button
                 >
               {/if}
               <button class="ghost" on:click={startEdit} disabled={saving}
                 >{$t("detail.edit")}</button
               >
+              {#if lockable || cardLocked}
+                <button
+                  class="ghost lockbtn"
+                  class:on={cardLocked}
+                  aria-expanded={lockOpen}
+                  on:click={() => (lockOpen = !lockOpen)}
+                  disabled={saving}
+                  ><Icon name={cardLocked ? "lock" : "unlock"} />
+                  {$t(cardLocked ? "detail.locked" : "detail.lock")}</button
+                >
+              {/if}
             </div>
           {/if}
         {:else}
@@ -1107,50 +1765,53 @@
           </div>
         {/if}
       {:else}
-        <!-- edit thing -->
-        <label
-          >{$t("detail.category")}
-          {#if addingThingType}
-            <input
-              type="text"
-              bind:value={fType}
-              placeholder={$t("detail.newCategoryPlaceholder")}
-            />
-            <button
-              type="button"
-              class="link-btn"
-              on:click={() => {
-                addingThingType = false;
-                fType = "other";
-              }}>{$t("detail.pickFromList")}</button
-            >
-          {:else}
-            <select value={fType} on:change={onThingTypeSelect}>
-              {#each thingTypeOptions as opt (opt)}
-                <option value={opt}
-                  >{getItemIcon({ type: opt })}
-                  {getTypeDisplayName(opt)}</option
-                >
-              {/each}
-              <option value={NEW_CATEGORY}>＋ {$t("detail.newCategory")}</option
+        <!-- edit thing: what it is first, then how it is filed and what it
+             is worth, side by side. Saves as it is edited. -->
+        <section class="grp first">
+          <label
+            >{$t("detail.description")}
+            <textarea bind:value={fDescription} rows="3"></textarea>
+          </label>
+        </section>
+        <section class="grp duo">
+          <label
+            >{$t("detail.category")}
+            {#if addingThingType}
+              <input
+                type="text"
+                bind:value={fType}
+                placeholder={$t("detail.newCategoryPlaceholder")}
+              />
+              <button
+                type="button"
+                class="link-btn"
+                on:click={() => {
+                  addingThingType = false;
+                  fType = "other";
+                }}>{$t("detail.pickFromList")}</button
               >
-            </select>
-          {/if}
-        </label>
-        <label
-          >{$t("detail.description")}
-          <textarea bind:value={fDescription} rows="3"></textarea>
-        </label>
-        <label
-          >{$t("detail.value")}
-          <input type="number" bind:value={fValue} min="0" />
-        </label>
+            {:else}
+              <select value={fType} on:change={onThingTypeSelect}>
+                {#each thingTypeOptions as opt (opt)}
+                  <option value={opt}
+                    >{getItemIcon({ type: opt })}
+                    {getTypeDisplayName(opt)}</option
+                  >
+                {/each}
+                <option value={NEW_CATEGORY}
+                  >＋ {$t("detail.newCategory")}</option
+                >
+              </select>
+            {/if}
+          </label>
+          <label
+            >{$t("detail.value")}
+            <input type="number" bind:value={fValue} min="0" />
+          </label>
+        </section>
         <div class="actions">
-          <button class="primary" on:click={saveThing} disabled={saving}
-            >{saving ? $t("rolesv.saving") : $t("rolesv.save")}</button
-          >
-          <button class="ghost" on:click={() => (editing = false)}
-            >{$t("common.cancel")}</button
+          <button class="primary" on:click={doneEditing} disabled={saving}
+            >{$t("common.done")}</button
           >
         </div>
       {/if}
@@ -1166,7 +1827,7 @@
           >
             <img
               class="hero"
-              src={resolveImage(quest.picture)}
+              src={pictureUrl(quest.picture)}
               alt={quest.title}
               loading="lazy"
               on:error={hideImg}
@@ -1177,16 +1838,56 @@
           <div class="chips">
             {#if quest.category}<span class="kind">{quest.category}</span>{/if}
             {#if srcName}
-              <span class="srcchip" style="--src: {srcGlow}">⇄ {srcName}</span>
+              <button
+                type="button"
+                class="srcchip"
+                style="--src: {srcGlow}"
+                title={$t("source.open", { name: srcName })}
+                on:click={jumpToSource}><Icon name="swap" /> {srcName}</button
+              >
             {/if}
           </div>
         {/if}
         <h2>{@html linkify(quest.title)}</h2>
-        <p class="when">{whenText($locale)}</p>
-        {#if quest.location}<p class="where">📍 {quest.location}</p>{/if}
+        <p class="when" class:done={occurrenceDone}>{whenText($locale)}</p>
+        {#if frequency}
+          <p class="repeats">
+            {repeatsText($locale)}{#if occurrenceDone}{" · "}{$t(
+                "detail.occurrenceDone",
+              )}{/if}
+          </p>
+        {/if}
+        {#if quest.location}<p class="where">
+            <Icon name="pin" />
+            {quest.location}
+          </p>{/if}
         {#if quest.description}<p class="desc">
             {@html linkify(quest.description)}
           </p>{/if}
+        {#if hostPeople.length}
+          <div class="facts-line">
+            <span class="people-label"
+              ><Icon name="crown" /> {$t("detail.hostedBy")}</span
+            >
+          </div>
+          <ul class="people">
+            {#each hostPeople as p (p.id)}
+              <li class="person">
+                <span class="pav">
+                  <span class="pini">{avatarInitial(p.name)}</span>
+                  <img
+                    src={avatarUrl(p.id)}
+                    alt=""
+                    loading="lazy"
+                    on:error={hideImg}
+                    on:load={showImg}
+                  />
+                </span>
+                <span class="pname">{p.name}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
         {#if people.length || appreciationCount}
           <div class="facts-line">
             {#if people.length}
@@ -1195,7 +1896,7 @@
               >
             {/if}
             {#if appreciationCount}
-              <span>♥ {appreciationCount}</span>
+              <span><Icon name="heart" /> {appreciationCount}</span>
             {/if}
           </div>
         {/if}
@@ -1219,6 +1920,55 @@
           </ul>
         {/if}
 
+        {#if quest && quest.type === "proposal" && $holonId}
+          <!-- A proposal is decided by signed ballots on the votes log, not
+               by who joined it: the fold is core's, this only renders it. -->
+          <ProposalVote holonId={$holonId} proposalId={String(quest.id)} />
+        {/if}
+
+        {#if chatRef}
+          <!-- Open to visitors too: reading the chat and the board needs
+               only what reading the card does. -->
+          <div class="actions links">
+            {#if boardHref}
+              <a
+                class="ghost linkbtn"
+                href={boardHref}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Icon name="whiteboard" />
+                <span>{$t("detail.board")}</span>
+                <Icon name="external" />
+              </a>
+            {:else if $isLoggedIn}
+              <button
+                class="ghost linkbtn"
+                on:click={startBoard}
+                disabled={boardBusy}
+              >
+                <Icon name="whiteboard" />
+                <span>{$t("detail.boardStart")}</span>
+              </button>
+            {/if}
+            <button
+              class="ghost linkbtn"
+              class:on={chatOpen}
+              aria-expanded={chatOpen}
+              aria-controls="task-chat"
+              on:click={() => (chatOpen = !chatOpen)}
+            >
+              <Icon name="chat" />
+              <span>{$t("detail.chat")}</span>
+            </button>
+          </div>
+          {#if chatOpen}
+            {#key `${chatRef.holon}|${chatRef.key}`}
+              <TaskChat id="task-chat" ref={chatRef} />
+            {/key}
+          {/if}
+        {/if}
+
         {#if $isLoggedIn}
           <div class="actions">
             {#if amParticipant}
@@ -1227,7 +1977,7 @@
                 on:click={joinQuest}
                 disabled={saving}
                 title={$t("detail.leaveTitle")}
-                >✓ {$t("detail.joinedLeave")}</button
+                ><Icon name="check" /> {$t("detail.joinedLeave")}</button
               >
             {:else}
               <button class="primary" on:click={joinQuest} disabled={saving}
@@ -1239,17 +1989,61 @@
               class:on={amAppreciating}
               on:click={appreciate}
               disabled={saving}
-              >{amAppreciating
-                ? `♥ ${$t("detail.appreciatedLabel")}`
-                : `♡ ${$t("tasks.appreciate")}`}{appreciationCount
+              >{#if amAppreciating}<Icon name="heart" />
+                {$t("detail.appreciatedLabel")}{:else}<Icon
+                  name="heart-outline"
+                />
+                {$t("tasks.appreciate")}{/if}{appreciationCount
                 ? ` · ${appreciationCount}`
                 : ""}</button
             >
-            <button
-              class={amParticipant ? "primary" : "ghost"}
-              on:click={completeQuest}
-              disabled={saving}>{$t("tasks.markComplete")}</button
-            >
+            {#if quest?.status !== "completed"}
+              <!-- Put anyone in the holon on the card: the members not yet on
+                   it, as a native dropdown laid invisibly over the button;
+                   its last entry searches the federation beyond the holon. -->
+              <span class="ghost addperson" class:busy={saving}>
+                <Icon name="plus" />
+                {$t("detail.addSomeone")}
+                <select
+                  on:change={addSomeone}
+                  disabled={saving}
+                  aria-label={$t("detail.addParticipant")}
+                  title={$t("detail.addParticipant")}
+                >
+                  <option value="">{$t("detail.addParticipant")}</option>
+                  {#each addable as m (m.id)}
+                    <option value={String(m.id)}>{personName(m)}</option>
+                  {/each}
+                  <option value={FEDERATION}
+                    >{$t("people.searchFederation")}</option
+                  >
+                </select>
+              </span>
+            {/if}
+            {#if occurrenceWhen}
+              <!-- Opened from one date of a repeating series: done means done
+                   THIS time. The series lives on. -->
+              <button
+                class={occurrenceDone
+                  ? "ghost"
+                  : amParticipant
+                    ? "primary"
+                    : "ghost"}
+                on:click={toggleOccurrence}
+                disabled={saving}
+                >{$t(
+                  occurrenceDone
+                    ? "detail.undoDoneOnce"
+                    : "detail.markDoneOnce",
+                )}</button
+              >
+            {:else}
+              <button
+                class={amParticipant ? "primary" : "ghost"}
+                on:click={completeQuest}
+                disabled={saving}>{$t("tasks.markComplete")}</button
+              >
+            {/if}
             <button class="ghost" on:click={startEdit} disabled={saving}
               >{$t("detail.edit")}</button
             >
@@ -1259,9 +2053,10 @@
                 on:click={requestBreakdown}
                 disabled={saving || breakingDown}
                 title={$t("detail.breakdownTitle")}
-                >{breakingDown
-                  ? $t("detail.breakingDown")
-                  : `✨ ${$t("detail.breakDown")}`}</button
+                >{#if breakingDown}{$t("detail.breakingDown")}{:else}<Icon
+                    name="sparkles"
+                  />
+                  {$t("detail.breakDown")}{/if}</button
               >
             {/if}
             <button
@@ -1269,7 +2064,25 @@
               on:click={deleteQuest}
               disabled={saving}>{$t("tasks.delete")}</button
             >
+            {#if lockable || cardLocked}
+              <button
+                class="ghost lockbtn"
+                class:on={cardLocked}
+                aria-expanded={lockOpen}
+                on:click={() => (lockOpen = !lockOpen)}
+                disabled={saving}
+                ><Icon name={cardLocked ? "lock" : "unlock"} />
+                {$t(cardLocked ? "detail.locked" : "detail.lock")}</button
+              >
+            {/if}
           </div>
+          {#if fedSearch && quest?.status !== "completed"}
+            <FederationSearch
+              exclude={[...onRoster]}
+              on:pick={(e) => void addPerson(e.detail)}
+              on:close={() => (fedSearch = false)}
+            />
+          {/if}
 
           {#if breakdownSteps !== null}
             <div class="breakdown">
@@ -1316,7 +2129,8 @@
                           n: i + 1,
                           title: step.title,
                         })}
-                        title={$t("detail.removeStep")}>✕</button
+                        title={$t("detail.removeStep")}
+                        ><Icon name="close" /></button
                       >
                     </li>
                   {/each}
@@ -1336,7 +2150,7 @@
                 >
               </div>
               {#each breakdownPreview?.warnings ?? [] as warning}
-                <p class="bd-warn">⚠ {warning}</p>
+                <p class="bd-warn"><Icon name="warning" /> {warning}</p>
               {/each}
               <div class="actions">
                 {#if breakdownPreview && (breakdownPreview.newQuests.length > 0 || breakdownPreview.reusedExistingIds.length > 0)}
@@ -1355,9 +2169,10 @@
                   class="ghost"
                   on:click={requestBreakdown}
                   disabled={breakingDown}
-                  >{breakingDown
-                    ? $t("detail.regenerating")
-                    : `↻ ${$t("detail.regenerate")}`}</button
+                  >{#if breakingDown}{$t("detail.regenerating")}{:else}<Icon
+                      name="repeat"
+                    />
+                    {$t("detail.regenerate")}{/if}</button
                 >
                 <button class="ghost" on:click={cancelBreakdown}
                   >{$t("common.cancel")}</button
@@ -1374,112 +2189,239 @@
         {/if}
       {:else}
         <!-- ── Edit a task / event ────────────────────────────────────────
-             Title, then when it starts and when it ends, then the flat fields.
-             Leaving the end blank keeps it a one-day card; an end date on a
-             later day is what makes it a multi-day event. -->
-        <label class="lead"
-          >{$t("detail.title")}
-          <input
-            type="text"
-            bind:value={fTitle}
-            placeholder={$t("detail.titlePlaceholder")}
-          />
-        </label>
-
-        <div class="when-row">
-          <div class="edge">
-            <span class="elab">{$t("detail.starts")}</span>
-            <div class="pair">
-              <input
-                type="date"
-                bind:value={fDate}
-                aria-label={$t("detail.startDateAria")}
-              />
-              <input
-                class="clock"
-                type="time"
-                bind:value={fTime}
-                aria-label={$t("detail.startTimeAria")}
-              />
-            </div>
-          </div>
-          <div class="edge">
-            <span class="elab">{$t("detail.ends")}</span>
-            <div class="pair">
-              <input
-                type="date"
-                bind:value={fEndDate}
-                min={fDate}
-                disabled={!fDate}
-                aria-label={$t("detail.endDateAria")}
-              />
-              <input
-                class="clock"
-                type="time"
-                bind:value={fEndTime}
-                disabled={!fTime}
-                aria-label={$t("detail.endTimeAria")}
-              />
-            </div>
-          </div>
-        </div>
-        <!-- What the fields add up to, in the same words the card will use
-             once saved. -->
-        {#if scheduleSummary}<p class="sched-sum">{scheduleSummary}</p>{/if}
-
-        <label
-          >{$t("detail.category")}
-          {#if addingCategory}
+             Grouped the way a person thinks about a card: what it is, when
+             it happens (and so whether it is an event, and whether it
+             repeats), who is in it, then where it sits. Leaving the end blank
+             keeps it a one-day card; an end date on a later day is what makes
+             it a multi-day event. An existing card saves as it is edited (the
+             state sits in the corner); a new one waits for Create. -->
+        <section class="grp first">
+          <label class="lead"
+            >{$t("detail.title")}
             <input
               type="text"
-              bind:value={fCategory}
-              placeholder={$t("detail.newCategoryPlaceholder")}
+              bind:value={fTitle}
+              placeholder={$t("detail.titlePlaceholder")}
             />
+          </label>
+          <label
+            >{$t("detail.description")}
+            <textarea bind:value={fDescription} rows="3"></textarea>
+          </label>
+        </section>
+
+        <section class="grp">
+          <div class="when-row">
+            <div class="edge">
+              <span class="elab">{$t("detail.starts")}</span>
+              <div class="pair">
+                <input
+                  type="date"
+                  bind:value={fDate}
+                  aria-label={$t("detail.startDateAria")}
+                />
+                <input
+                  class="clock"
+                  type="time"
+                  bind:value={fTime}
+                  aria-label={$t("detail.startTimeAria")}
+                />
+              </div>
+            </div>
+            <div class="edge">
+              <span class="elab">{$t("detail.ends")}</span>
+              <div class="pair">
+                <input
+                  type="date"
+                  bind:value={fEndDate}
+                  min={fDate}
+                  disabled={!fDate}
+                  aria-label={$t("detail.endDateAria")}
+                />
+                <input
+                  class="clock"
+                  type="time"
+                  bind:value={fEndTime}
+                  disabled={!fTime}
+                  aria-label={$t("detail.endTimeAria")}
+                />
+              </div>
+            </div>
+          </div>
+          <!-- What the fields add up to, in the same words the card will use. -->
+          {#if scheduleSummary}<p class="sched-sum">
+              {scheduleSummary}{#if effectiveFrequency}{" · "}<Icon
+                  name="repeat"
+                />{" "}{freqLabel(effectiveFrequency)}{/if}
+            </p>{/if}
+
+          {#if !fDate}
+            <!-- Kind and cadence both count from a date; until there is one
+                 they are a single line saying so, not a wall of grey chips. -->
+            <p class="kind-hint">{$t("detail.dateUnlocks")}</p>
+          {:else}
+            <!-- Task or event? A task is work to do and lives on the task
+                 board; an event is something happening and lives on the
+                 calendar only. Clearing the date turns it back into a task. -->
+            {#if isAgendaQuest(quest)}
+              <div
+                class="kind-edit"
+                role="radiogroup"
+                aria-label={$t("detail.kind")}
+              >
+                <span class="elab">{$t("detail.kind")}</span>
+                <div class="freq-chips">
+                  <button
+                    type="button"
+                    class="chip"
+                    class:on={effectiveKind === "task"}
+                    role="radio"
+                    aria-checked={effectiveKind === "task"}
+                    on:click={() => (fKind = "task")}
+                    >{$t("detail.kindTask")}</button
+                  >
+                  <button
+                    type="button"
+                    class="chip"
+                    class:on={effectiveKind === "event"}
+                    role="radio"
+                    aria-checked={effectiveKind === "event"}
+                    on:click={() => (fKind = "event")}
+                    >{$t("detail.kindEvent")}</button
+                  >
+                </div>
+                <p class="kind-hint">
+                  {effectiveKind === "event"
+                    ? $t("detail.kindEventHint")
+                    : $t("detail.kindTaskHint")}
+                </p>
+              </div>
+            {/if}
+            <div
+              class="freq"
+              role="radiogroup"
+              aria-label={$t("detail.repeats")}
+            >
+              <span class="elab"
+                ><Icon name="repeat" /> {$t("detail.repeats")}</span
+              >
+              <div class="freq-chips">
+                <button
+                  type="button"
+                  class="chip"
+                  class:on={effectiveFrequency === null}
+                  role="radio"
+                  aria-checked={effectiveFrequency === null}
+                  on:click={() => (fFrequency = null)}>{freqLabel(null)}</button
+                >
+                {#each QUEST_FREQUENCIES as f (f)}
+                  <button
+                    type="button"
+                    class="chip"
+                    class:on={effectiveFrequency === f}
+                    role="radio"
+                    aria-checked={effectiveFrequency === f}
+                    on:click={() => (fFrequency = f)}>{freqLabel(f)}</button
+                  >
+                {/each}
+              </div>
+            </div>
+          {/if}
+        </section>
+
+        <section class="grp">
+          <!-- Who leads the event: named hosts get the credit instead of the
+               participants (core's creditedMembers). Events only. -->
+          {#if effectiveKind === "event"}
+            <div class="hosts-edit">
+              <span class="elab"
+                ><Icon name="crown" /> {$t("detail.hosts")}</span
+              >
+              <PeoplePicker
+                bind:people={fHosts}
+                addLabel={$t("detail.addHost")}
+                removeLabel={(name) => $t("detail.removeHost", { name })}
+              />
+              <p class="kind-hint">{$t("detail.hostsHint")}</p>
+            </div>
+          {/if}
+          <!-- Who takes part: add or drop anyone on the roster, not just
+               yourself. Core keeps a member out of both lists at once. -->
+          <div class="hosts-edit">
+            <span class="elab"
+              ><Icon name="users" /> {$t("detail.participantsLabel")}</span
+            >
+            <PeoplePicker
+              bind:people={fParticipants}
+              addLabel={$t("detail.addParticipant")}
+              removeLabel={(name) => $t("detail.removeParticipant", { name })}
+            />
+            <p class="kind-hint">{$t("detail.participantsHint")}</p>
+          </div>
+        </section>
+
+        <section class="grp duo">
+          <label
+            >{$t("detail.category")}
+            {#if addingCategory}
+              <input
+                type="text"
+                bind:value={fCategory}
+                placeholder={$t("detail.newCategoryPlaceholder")}
+              />
+              <button
+                type="button"
+                class="link-btn"
+                on:click={() => {
+                  addingCategory = false;
+                  fCategory = "";
+                }}>{$t("detail.pickFromList")}</button
+              >
+            {:else}
+              <select value={fCategory} on:change={onCategorySelect}>
+                <option value="">{$t("detail.noCategory")}</option>
+                {#each categoryOptions as opt}
+                  <option value={opt}>{opt}</option>
+                {/each}
+                <option value={NEW_CATEGORY}
+                  >＋ {$t("detail.newCategory")}</option
+                >
+              </select>
+            {/if}
+          </label>
+          <label
+            >{$t("detail.location")}
+            <input type="text" bind:value={fLocation} />
+          </label>
+        </section>
+
+        <div class="actions">
+          {#if isNew}
             <button
-              type="button"
-              class="link-btn"
-              on:click={() => {
-                addingCategory = false;
-                fCategory = "";
-              }}>{$t("detail.pickFromList")}</button
+              class="primary"
+              on:click={saveQuest}
+              disabled={saving || !fTitle.trim()}
+              >{saving ? $t("rolesv.saving") : $t("detail.create")}</button
+            >
+            <button class="ghost" on:click={closeDetail}
+              >{$t("common.cancel")}</button
             >
           {:else}
-            <select value={fCategory} on:change={onCategorySelect}>
-              <option value="">{$t("detail.noCategory")}</option>
-              {#each categoryOptions as opt}
-                <option value={opt}>{opt}</option>
-              {/each}
-              <option value={NEW_CATEGORY}>＋ {$t("detail.newCategory")}</option
-              >
-            </select>
+            <button class="primary" on:click={doneEditing} disabled={saving}
+              >{$t("common.done")}</button
+            >
           {/if}
-        </label>
-        <label
-          >{$t("detail.location")}
-          <input type="text" bind:value={fLocation} />
-        </label>
-        <label
-          >{$t("detail.description")}
-          <textarea bind:value={fDescription} rows="3"></textarea>
-        </label>
-        <div class="actions">
-          <button
-            class="primary"
-            on:click={saveQuest}
-            disabled={saving || (isNew && !fTitle.trim())}
-            >{saving
-              ? $t("rolesv.saving")
-              : isNew
-                ? $t("detail.create")
-                : $t("rolesv.save")}</button
-          >
-          <button
-            class="ghost"
-            on:click={() => (isNew ? closeDetail() : (editing = false))}
-            >{$t("common.cancel")}</button
-          >
         </div>
       {/if}
+    {/if}
+
+    {#if lockOpen && $holonId && lockId}
+      <div class="lockbox">
+        <AudienceEditor
+          scope={{ holon: $holonId, lens: lockLens, item: lockId }}
+          on:change={onAudienceChange}
+        />
+      </div>
     {/if}
 
     {#if message}<p class="msg">{message}</p>{/if}
@@ -1504,7 +2446,7 @@
     <button
       class="lb-x"
       on:click={() => (lightbox = null)}
-      aria-label={$t("common.close")}>✕</button
+      aria-label={$t("common.close")}><Icon name="close" /></button
     >
   </div>
 {/if}
@@ -1522,7 +2464,7 @@
     word-break: break-word;
   }
   h2 :global(a) {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     text-decoration: underline;
     overflow-wrap: anywhere;
   }
@@ -1584,13 +2526,31 @@
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .chips {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 0.5rem;
+  }
+  /* Copy-link, mirroring Modal's own ✕ on the opposite corner. */
+  .share {
+    position: absolute;
+    top: 0.8rem;
+    left: 0.8rem;
+    z-index: 2;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    font-size: 1.1rem;
+    color: var(--ink-soft);
+    background: var(--glass);
+    display: grid;
+    place-items: center;
+  }
+  .share.done {
+    color: var(--teal-ink);
   }
   /* Where a foreign card came from — coloured with the source holon's glow
      hue, matching the wall's source chips and the hologram projection. */
@@ -1622,7 +2582,7 @@
     padding: 0.05rem 0.45rem;
     border-radius: 999px;
     white-space: nowrap;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     border: 1px solid color-mix(in srgb, var(--teal) 45%, transparent);
     background: color-mix(in srgb, var(--teal) 10%, transparent);
   }
@@ -1634,6 +2594,16 @@
     font-weight: 700;
     color: var(--ink);
     margin: 0 0 0.5rem;
+  }
+  /* An occurrence already ticked off reads as such at a glance. */
+  .when.done {
+    text-decoration: line-through;
+    opacity: 0.7;
+  }
+  .repeats {
+    color: var(--ink-soft);
+    font-weight: 600;
+    margin: -0.2rem 0 0.5rem;
   }
   .where {
     color: var(--ink-soft);
@@ -1663,7 +2633,7 @@
     gap: 0.45rem;
     padding: 0.25rem 0.7rem 0.25rem 0.3rem;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.55);
+    background: var(--glass);
     font-weight: 700;
     color: var(--ink);
     font-size: 0.92rem;
@@ -1705,7 +2675,7 @@
     word-break: break-word;
   }
   .desc :global(a) {
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     text-decoration: underline;
     overflow-wrap: anywhere;
   }
@@ -1753,18 +2723,18 @@
     border-radius: 999px;
     font-weight: 700;
     font-size: 0.92rem;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     background: var(--card);
     border: 1.5px solid var(--line);
   }
   .chip.on {
     background: var(--teal);
     border-color: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
   }
   .joined {
-    background: #e7f3f1;
-    color: var(--teal-deep);
+    background: var(--teal-wash);
+    color: var(--teal-ink);
   }
 
   label {
@@ -1857,28 +2827,56 @@
     font-weight: 700;
     color: var(--ink-soft);
   }
-
-  /* The booking sheet's from/until pair: each side can shrink (min-width: 0 —
-     native date controls otherwise keep an intrinsic width and overflow) and
-     wraps when the dialog is too narrow. */
-  .row2 {
+  /* The cadence chips under the schedule — the booking sheet's chips, one
+     row that wraps, greyed out while the card has no date to count from. */
+  .freq {
+    margin-top: 0.9rem;
+  }
+  /* The task/event switch, above the cadence and sharing its chip row. Its
+     own class: `.kind` is the view's uppercase badge, and the hint inside
+     this switch must not read as one. */
+  .kind-edit {
+    margin-top: 0.9rem;
+  }
+  /* The edit form's groups — what, when, who, where — each set off from the
+     last by a hairline, so a long form scans as four short ones. */
+  .grp {
+    margin-top: 1.1rem;
+    padding-top: 0.2rem;
+    border-top: 1px solid var(--line);
+  }
+  .grp.first {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+  /* Two short fields side by side; one above the other on a phone. */
+  .grp.duo {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    column-gap: 0.8rem;
+  }
+  .hosts-edit {
+    margin-top: 0.9rem;
+  }
+  .hosts-edit .elab {
+    margin-bottom: 0.4rem;
+  }
+  .kind-hint {
+    margin: 0.35rem 0 0;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .freq-chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.8rem;
+    gap: 0.45rem;
+    margin-top: 0.35rem;
   }
-  .row2 label {
-    flex: 1 1 8rem;
-    min-width: 0;
+  .chip:disabled {
+    opacity: 0.45;
   }
-  .row2 input {
-    box-sizing: border-box;
-    max-width: 100%;
-  }
-  @media (max-width: 560px) {
-    .row2 label {
-      flex-basis: 6rem;
-    }
-  }
+
   /* "Pick from list" escape hatch under the new-category input. */
   .link-btn {
     display: inline;
@@ -1887,7 +2885,7 @@
     padding: 0;
     background: none;
     border: none;
-    color: var(--teal);
+    color: var(--teal-ink);
     font-size: 0.8rem;
     font-weight: 700;
     cursor: pointer;
@@ -1898,6 +2896,32 @@
     flex-wrap: wrap;
     gap: 0.6rem;
     margin-top: 1.3rem;
+  }
+  /* Lock one card: who may read it. */
+  .lockbox {
+    margin-top: 1rem;
+    padding: 0.8rem 0.9rem;
+    border-radius: 14px;
+    background: var(--glass);
+  }
+  .ghost.on {
+    border-color: var(--teal-deep);
+    color: var(--teal-ink);
+  }
+  /* Chat and whiteboard: icon + label, the board link an anchor. */
+  .linkbtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    padding: 0 1rem;
+    text-decoration: none;
+  }
+  /* The lock is always the last thing on the row, flush right. */
+  .actions .lockbtn {
+    flex: 0 0 auto;
+    min-width: 0;
+    margin-left: auto;
   }
   .primary,
   .ghost {
@@ -1911,15 +2935,15 @@
   }
   .primary {
     background: var(--teal);
-    color: #fff;
+    color: var(--on-teal);
     box-shadow: var(--shadow-soft);
   }
   .ghost {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--ghost);
     color: var(--ink);
   }
   .danger {
-    color: #c0392b;
+    color: var(--danger);
     background: rgba(192, 57, 43, 0.1);
   }
   .danger:active {
@@ -1932,13 +2956,38 @@
   .primary:disabled {
     opacity: 0.6;
   }
+  /* "Add someone": a ghost button whose whole face is a native dropdown. */
+  .addperson {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0 1rem;
+  }
+  .addperson select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+    font-size: 1rem; /* keeps iOS from zooming the page when it opens */
+  }
+  .addperson:focus-within {
+    outline: 2px solid var(--teal-deep);
+    outline-offset: 2px;
+  }
+  .addperson.busy {
+    opacity: 0.6;
+  }
   .appreciate.on {
     background: var(--note-coral);
-    color: #9a3b2f;
+    color: var(--danger);
   }
   .msg {
     margin-top: 0.9rem;
-    color: #9a3b2f;
+    color: var(--danger);
     font-weight: 600;
     text-align: center;
   }
@@ -1949,7 +2998,7 @@
     padding: 0.9rem 1rem;
     border: 1.5px solid var(--line);
     border-radius: 14px;
-    background: rgba(255, 255, 255, 0.45);
+    background: var(--glass);
   }
   .bd-head {
     margin: 0 0 0.4rem;
@@ -1957,7 +3006,7 @@
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .bd-note {
     margin: 0 0 0.5rem;
@@ -1994,7 +3043,7 @@
     margin-left: 0.35rem;
     font-size: 0.78rem;
     font-weight: 600;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
   }
   .bd-desc {
     margin: 0.15rem 0 0;
@@ -2007,7 +3056,7 @@
     min-height: 2.3rem;
     border-radius: 10px;
     background: rgba(192, 57, 43, 0.08);
-    color: #c0392b;
+    color: var(--danger);
     font-weight: 700;
   }
   .bd-x:active {
@@ -2031,7 +3080,7 @@
     margin: 0.2rem 0;
     font-size: 0.82rem;
     font-weight: 600;
-    color: #a07908;
+    color: var(--caution);
   }
   .breakdown .actions {
     margin-top: 0.8rem;

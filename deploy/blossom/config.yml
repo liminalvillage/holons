@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# blossom.holons.io — where every Holons picture lives (hzrd149/blossom-server).
+# Full option reference: config.example.yml in that repository.
+
+port: 3000
+host: 0.0.0.0
+
+# Bare hostname: the descriptor URLs every surface stores.
+publicDomain: "blossom.holons.io"
+
+database:
+  path: data/sqlite.db
+
+storage:
+  backend: local
+  local:
+    dir: ./data/blobs
+  removeWhenNoOwners: false
+  # Pictures only, kept for good: a stored URL is a task's or expense's
+  # picture for as long as the record exists. Anything that isn't an image
+  # is refused (415).
+  rules:
+    - type: "image/*"
+      expiration: 10 years
+
+upload:
+  enabled: true
+  # Every upload carries a signed kind-24242 event (the bot's holon key or a
+  # member's key), so the server knows who put each blob there.
+  requireAuth: true
+  # The web downscales to 1024px; Telegram photos are a few MB at most.
+  maxSize: 20971520 # 20 MB
+  workers: 0
+  maxJobsPerWorker: 4
+  requirePubkeyInRule: false
+
+# Lets the re-host script and other Blossom servers copy blobs by URL.
+mirror:
+  enabled: true
+  requireAuth: true
+
+delete:
+  requireAuth: true
+
+list:
+  enabled: false
+
+media:
+  enabled: false
+
+landing:
+  enabled: true
+  title: "Holons pictures"
+
+report:
+  enabled: true

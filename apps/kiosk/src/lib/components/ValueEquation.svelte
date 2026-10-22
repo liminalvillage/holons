@@ -1,25 +1,31 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
+  import Icon from "$lib/components/Icon.svelte";
   //
   // The value-equation editor: the weights the Status board scores with,
   // editable by the group that reads the board. Shown in two places — folded
   // into Settings under the Status toggle, and in the sheet the board's own
   // footer opens — so retuning never means finding a laptop.
   //
-  // Editing follows the kiosk rule (no Apply step), but a put per tap would
-  // storm the graph, so touches are coalesced into one write (see scheduleEq).
-  // Weights are stored via core's `saveEquation`, which owns the migration,
-  // coercion, and currency-list bookkeeping.
-  import { onDestroy } from "svelte";
+  // Editing follows the kiosk rule (no Apply step). The weights themselves live
+  // in `$lib/equation` — one store every board scores from — so a tap here
+  // re-ranks the Status board and redraws the Flows diagram immediately, and
+  // the write is coalesced there rather than once per component.
   import {
     DEFAULT_EQUATION,
-    loadEquation,
     parseCurrencyCodes,
-    saveEquation,
     type ScoreEquation,
   } from "@holons/core/scoring";
-  import { getHolosphere } from "$lib/holosphere";
+  import {
+    bindEquation,
+    editEquation,
+    equation as equationStore,
+    equationReady,
+    equationSaveState,
+  } from "$lib/equation";
   import { t, type MessageKey } from "$lib/i18n";
+  import { may } from "@holons/core/holosphere";
+  import { standing } from "$lib/stores";
   import Modal from "./Modal.svelte";
 
   /** The holon whose equation is being edited; null renders nothing. */
@@ -101,31 +107,13 @@
     },
   ];
 
-  /** null while loading; the holon's equation once read. */
-  let equation: ScoreEquation | null = null;
-  /** The holon `equation` belongs to, so a holon switch reloads it. */
-  let eqHolon: string | null = null;
-  let eqState: "idle" | "saving" | "saved" = "idle";
-  let eqTimer: ReturnType<typeof setTimeout> | null = null;
-  let eqSavedTimer: ReturnType<typeof setTimeout> | null = null;
-
-  $: void loadEq(holon);
-
-  async function loadEq(id: string | null) {
-    if (id === eqHolon) return;
-    eqHolon = id;
-    equation = null;
-    if (!id) return;
-    try {
-      const hs = await getHolosphere();
-      const eq = await loadEquation(hs, id);
-      if (eqHolon === id)
-        equation = { ...eq, currencies: { ...eq.currencies } };
-    } catch (err) {
-      console.error("[kiosk] failed to load the value equation", err);
-      if (eqHolon === id) equation = { ...DEFAULT_EQUATION };
-    }
-  }
+  // The store is the single reader and writer; this only points it at a holon.
+  // A null prop must NOT unbind it: this editor is mounted in three places, and
+  // one of them rendering before the holon is known would otherwise clear the
+  // weights out from under the boards.
+  $: if (holon) bindEquation(holon);
+  $: equation = holon && $equationReady ? $equationStore : null;
+  $: eqState = $equationSaveState;
 
   /** Weight of `key`, whether it's a built-in metric or a currency code. */
   function eqWeight(
@@ -144,10 +132,11 @@
     if (!equation) return;
     // Round away float dust (0.1 + 0.2) so the stored weight reads cleanly.
     const v = Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
-    equation = currency
-      ? { ...equation, currencies: { ...equation.currencies, [key]: v } }
-      : ({ ...equation, [key]: v } as ScoreEquation);
-    scheduleEq();
+    editEquation(
+      currency
+        ? { ...equation, currencies: { ...equation.currencies, [key]: v } }
+        : ({ ...equation, [key]: v } as ScoreEquation),
+    );
   }
 
   function bumpEq(
@@ -163,41 +152,12 @@
     );
   }
 
-  /**
-   * Coalesce a burst of taps into a single write. Every edit resets the timer,
-   * so holding the + button costs one put, not twenty.
-   */
-  function scheduleEq() {
-    if (eqTimer) clearTimeout(eqTimer);
-    eqState = "saving";
-    eqTimer = setTimeout(() => void flushEq(), 700);
-  }
-
-  async function flushEq() {
-    eqTimer = null;
-    const id = eqHolon;
-    const eq = equation;
-    if (!id || !eq) return;
-    try {
-      const hs = await getHolosphere();
-      await saveEquation(hs, id, eq);
-      if (eqHolon !== id) return;
-      eqState = "saved";
-      if (eqSavedTimer) clearTimeout(eqSavedTimer);
-      eqSavedTimer = setTimeout(() => (eqState = "idle"), 2000);
-    } catch (err) {
-      console.error("[kiosk] failed to save the value equation", err);
-      eqState = "idle";
-    }
-  }
-
   function resetEq() {
     if (!equation) return;
-    equation = {
+    editEquation({
       ...DEFAULT_EQUATION,
       currencies: { ...DEFAULT_EQUATION.currencies },
-    };
-    scheduleEq();
+    });
   }
 
   /** The disclaimer's promise made operable: every weight to zero, in one tap. */
@@ -209,8 +169,7 @@
     const currencies: Record<string, number> = {};
     for (const code of Object.keys(equation.currencies ?? {}))
       currencies[code] = 0;
-    equation = { ...(zeroed as unknown as ScoreEquation), currencies };
-    scheduleEq();
+    editEquation({ ...(zeroed as unknown as ScoreEquation), currencies });
   }
 
   // One list to render: contributions, signals, currencies. Rows arrive
@@ -279,8 +238,7 @@
     if (!codes.length) return;
     const currencies = { ...equation.currencies };
     for (const code of codes) currencies[code] = 0;
-    equation = { ...equation, currencies };
-    scheduleEq();
+    editEquation({ ...equation, currencies });
   }
 
   /** Weights render short: 2, 0.5, 0 — never 2.00. */
@@ -288,108 +246,112 @@
     return String(Math.round(n * 100) / 100);
   }
 
-  onDestroy(() => {
-    if (eqTimer) {
-      clearTimeout(eqTimer);
-      // A pending edit must survive closing the panel mid-burst.
-      void flushEq();
-    }
-    if (eqSavedTimer) clearTimeout(eqSavedTimer);
-  });
+  // The equation weighs the split, so it is a guarded settings field: an
+  // admin's signature counts, anyone else's is recorded and ignored. The
+  // editor says so and goes read-only (`may(standing, 'settings.guarded')`).
+  $: canEdit = may($standing, "settings.guarded");
+
+  // No teardown here on purpose: the pending write lives in `$lib/equation`,
+  // which outlives this component, so closing the panel mid-burst still saves.
 </script>
 
 {#if !equation}
   <p class="eq-loading">{$t("settings.eqLoading")}</p>
 {:else}
   <div class="eq">
-    {#each eqSections as section (section.headKey)}
-      <div class="eq-head">
-        <span>{$t(section.headKey)}</span>
-        <button
-          type="button"
-          class="eq-info"
-          aria-label={$t("settings.eqAboutAria", {
-            section: $t(section.headKey),
-          })}
-          on:click={() =>
-            (eqInfo = {
-              title: $t("settings.eqAbout", { section: $t(section.headKey) }),
-              rows: section.rows,
-            })}>ⓘ</button
-        >
-      </div>
-      {#each section.rows as row (row.key)}
-        {@const weight = eqWeight(equation, row.key, section.currency)}
-        <div class="eq-row">
-          <span class="eq-name">{row.label}</span>
-          <div class="eq-steps">
-            <button
-              type="button"
-              class="eq-step"
-              aria-label={$t("settings.eqLess", { metric: row.label })}
-              on:click={() => bumpEq(row, section.currency, -1)}>−</button
-            >
-            <span
-              class="eq-val"
-              class:off={weight === 0}
-              aria-label={$t("settings.eqValue", { metric: row.label })}
-              >{eqLabel(weight)}</span
-            >
-            <button
-              type="button"
-              class="eq-step"
-              aria-label={$t("settings.eqMore", { metric: row.label })}
-              on:click={() => bumpEq(row, section.currency, 1)}>+</button
-            >
-          </div>
-        </div>
-      {/each}
-      {#if section.currency}
-        {#if addingCurrency}
-          <div class="eq-add">
-            <!-- svelte-ignore a11y_autofocus -->
-            <input
-              type="text"
-              autofocus
-              bind:value={currencyDraft}
-              placeholder={$t("settings.eqCurrencyPlaceholder")}
-              on:keydown={(e) => {
-                if (e.key === "Enter") addCurrencies();
-                if (e.key === "Escape") {
-                  currencyDraft = "";
-                  addingCurrency = false;
-                }
-              }}
-            />
-            <button type="button" class="eq-add-go" on:click={addCurrencies}
-              >{$t("settings.eqAdd")}</button
-            >
-          </div>
-          <p class="eq-hint">{$t("settings.eqCurrencyStartsAtZero")}</p>
-        {:else}
+    {#if !canEdit}
+      <p class="eq-hint eq-readonly">{$t("settings.eqNotAdmin")}</p>
+    {/if}
+    <fieldset class="eq-fs" disabled={!canEdit}>
+      {#each eqSections as section (section.headKey)}
+        <div class="eq-head">
+          <span>{$t(section.headKey)}</span>
           <button
             type="button"
-            class="eq-link eq-add-open"
-            on:click={() => (addingCurrency = true)}
-            >＋ {$t("settings.eqAddCurrency")}</button
+            class="eq-info"
+            aria-label={$t("settings.eqAboutAria", {
+              section: $t(section.headKey),
+            })}
+            on:click={() =>
+              (eqInfo = {
+                title: $t("settings.eqAbout", { section: $t(section.headKey) }),
+                rows: section.rows,
+              })}><Icon name="info" /></button
           >
+        </div>
+        {#each section.rows as row (row.key)}
+          {@const weight = eqWeight(equation, row.key, section.currency)}
+          <div class="eq-row">
+            <span class="eq-name">{row.label}</span>
+            <div class="eq-steps">
+              <button
+                type="button"
+                class="eq-step"
+                aria-label={$t("settings.eqLess", { metric: row.label })}
+                on:click={() => bumpEq(row, section.currency, -1)}>−</button
+              >
+              <span
+                class="eq-val"
+                class:off={weight === 0}
+                aria-label={$t("settings.eqValue", { metric: row.label })}
+                >{eqLabel(weight)}</span
+              >
+              <button
+                type="button"
+                class="eq-step"
+                aria-label={$t("settings.eqMore", { metric: row.label })}
+                on:click={() => bumpEq(row, section.currency, 1)}>+</button
+              >
+            </div>
+          </div>
+        {/each}
+        {#if section.currency}
+          {#if addingCurrency}
+            <div class="eq-add">
+              <!-- svelte-ignore a11y_autofocus -->
+              <input
+                type="text"
+                autofocus
+                bind:value={currencyDraft}
+                placeholder={$t("settings.eqCurrencyPlaceholder")}
+                on:keydown={(e) => {
+                  if (e.key === "Enter") addCurrencies();
+                  if (e.key === "Escape") {
+                    currencyDraft = "";
+                    addingCurrency = false;
+                  }
+                }}
+              />
+              <button type="button" class="eq-add-go" on:click={addCurrencies}
+                >{$t("settings.eqAdd")}</button
+              >
+            </div>
+            <p class="eq-hint">{$t("settings.eqCurrencyStartsAtZero")}</p>
+          {:else}
+            <button
+              type="button"
+              class="eq-link eq-add-open"
+              on:click={() => (addingCurrency = true)}
+              >＋ {$t("settings.eqAddCurrency")}</button
+            >
+          {/if}
         {/if}
-      {/if}
-    {/each}
+      {/each}
 
-    <div class="eq-foot">
-      <button type="button" class="eq-link" on:click={resetEq}
-        >{$t("settings.eqReset")}</button
-      >
-      <button type="button" class="eq-link" on:click={zeroEq}
-        >{$t("settings.eqZero")}</button
-      >
-      <span class="eq-state" class:on={eqState !== "idle"}>
-        {eqState === "saving"
-          ? $t("settings.eqSaving")
-          : $t("settings.eqSaved")}
-      </span>
-    </div>
+      <div class="eq-foot">
+        <button type="button" class="eq-link" on:click={resetEq}
+          >{$t("settings.eqReset")}</button
+        >
+        <button type="button" class="eq-link" on:click={zeroEq}
+          >{$t("settings.eqZero")}</button
+        >
+        <span class="eq-state" class:on={eqState !== "idle"}>
+          {eqState === "saving"
+            ? $t("settings.eqSaving")
+            : $t("settings.eqSaved")}
+        </span>
+      </div>
+    </fieldset>
   </div>
 {/if}
 
@@ -408,6 +370,23 @@
 {/if}
 
 <style>
+  .eq-fs {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+  }
+  /* Read-only for a signature that would not count: the steppers and links
+     are inert (the fieldset disables them) and look it. */
+  .eq-fs:disabled .eq-step,
+  .eq-fs:disabled .eq-link,
+  .eq-fs:disabled .eq-add-open {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .eq-readonly {
+    color: var(--danger);
+  }
   .eq-loading {
     margin: 0.4rem 0 0;
     font-size: 0.85rem;
@@ -439,10 +418,10 @@
     margin-top: 0.4rem;
   }
   .eq-info {
-    width: 30px;
-    height: 30px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-size: 0.95rem;
     line-height: 1;
   }
@@ -472,12 +451,12 @@
     gap: 0.35rem;
   }
   .eq-step {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     border-radius: 11px;
     background: var(--paper);
     border: 1.5px solid var(--line);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-size: 1.1rem;
     font-weight: 700;
     line-height: 1;
@@ -497,9 +476,13 @@
   /* A zeroed weight is a real choice, so it reads as "off", not as an error. */
   .eq-val.off {
     color: var(--muted);
-    opacity: 0.7;
   }
   .eq-link {
+    /* A text link is still a touch target: give it a finger's worth of height
+       rather than the 18px the type alone would occupy. */
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
     font-size: 0.82rem;
     font-weight: 700;
     color: var(--muted);
@@ -532,7 +515,7 @@
     border-radius: 12px;
     background: var(--paper);
     border: 1.5px solid var(--line);
-    color: var(--teal-deep);
+    color: var(--teal-ink);
     font-size: 0.9rem;
     font-weight: 700;
   }

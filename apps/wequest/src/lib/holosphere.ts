@@ -7,20 +7,15 @@
 // acting user's identity.
 
 import { createHoloSphere } from "@holons/core/holosphere";
+import { projectionOptionsFor } from "@holons/core/nostr";
+import { cellToLatLng } from "h3-js";
 import type { HoloSphere } from "holosphere";
-import { Buffer } from "buffer";
 import {
   resolveAppName,
-  resolvePeers,
+  resolveRelays,
   resolveUserId,
   resolveUsername,
 } from "./config";
-
-// Holosphere/Gun reach for a Node-ish Buffer; make sure one exists in-browser
-// before the library loads.
-if (typeof globalThis !== "undefined" && !(globalThis as any).Buffer) {
-  (globalThis as any).Buffer = Buffer;
-}
 
 const DEVICE_KEY = "wequest_device_key";
 
@@ -50,17 +45,27 @@ let instance: Promise<HoloSphere> | null = null;
 /** Build (once) and return the shared HoloSphere instance. */
 export function getHolosphere(): Promise<HoloSphere> {
   if (!instance) {
-    instance = Promise.resolve(
-      createHoloSphere({
-        appName: resolveAppName(),
-        privateKey: deviceKeyHex(),
-        logLevel: "ERROR",
-        awaitReady: true,
-        // Must go through `gunOptions` — the v2 config constructor only honors
-        // `gunOptions.peers`; a top-level `peers` key is silently dropped.
-        extra: { gunOptions: { peers: resolvePeers() } },
+    // The relays are the wire; the local IndexedDB store paints instantly on
+    // reload and survives a flaky network.
+    // Standard-kind projections are on for every lens (VITE_WEQUEST_PROJECTIONS
+    // / VITE_HOLOSPHERE_PROJECTIONS=off opts out).
+    const appName = resolveAppName();
+    const privateKey = deviceKeyHex();
+    instance = createHoloSphere({
+      appName,
+      privateKey,
+      relays: resolveRelays(),
+      store: { adapter: "indexeddb" },
+      nostr: projectionOptionsFor({
+        appName,
+        privateKey,
+        lenses:
+          (import.meta.env.VITE_WEQUEST_PROJECTIONS as string | undefined) ??
+          (import.meta.env.VITE_HOLOSPHERE_PROJECTIONS as string | undefined),
+        cellToLatLng,
       }),
-    );
+      awaitReady: true,
+    });
     // Dev-only console/smoke-test hook.
     if (import.meta.env.DEV && typeof window !== "undefined") {
       instance.then((hs) => ((window as any).__wequest = hs));

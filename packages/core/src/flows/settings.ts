@@ -15,10 +15,13 @@
 import {
   DEFAULT_ALLOCATION_CONFIG,
   normalizeAllocationConfig,
+  normalizeInteriorShares,
   type AllocationConfig,
   type AllocationPartner,
+  type InteriorShares,
 } from './allocation.js';
 import { normalizeCollectiveSlug } from './opencollective.js';
+import { setFederationPartner } from '../federation/partners.js';
 
 /** Settings field holding the OpenCollective link. */
 export const COLLECTIVE_KEY = 'openCollective';
@@ -28,6 +31,27 @@ export const ALLOCATION_KEY = 'allocation';
 
 /** Legacy field written by Flow Management's sync path. */
 const LEGACY_ZONES_KEY = 'federationZones';
+
+/**
+ * Field under `allocation` holding PEOPLE placed on reciprocity zones.
+ *
+ * Kept apart from `zones`, which is the federation partners' map that Flow
+ * Management mirrors on-chain: a partner that is unlinked keeps a stale zone
+ * entry that `toAllocationPartners` drops by not finding it in the
+ * federation record, and folding people into the same map would resurrect
+ * every such ghost. People have no federation record to check against, so
+ * their map is authoritative on its own.
+ */
+const PEOPLE_KEY = 'people';
+
+/**
+ * Field under `allocation` holding the CUSTOM contributors' split, by user id.
+ *
+ * Only read when `allocation.interiorMode` is `custom`; kept through a switch
+ * back to `equation` so a caretaker can flip between the two without losing
+ * the hand-set numbers.
+ */
+const SHARES_KEY = 'shares';
 
 /** The holon's collective slug, or '' when unset. */
 export function readCollectiveSlug(settings: unknown): string {
@@ -81,6 +105,19 @@ export function readAllocationConfig(settings: unknown): AllocationConfig {
 }
 
 /**
+ * Whether the holon ever stored a split of its own.
+ *
+ * `readAllocationConfig` answers with the 50/50 defaults when nothing is
+ * stored, which is right for an editor and wrong for a cascade: a holon that
+ * never configured anything must not start re-dividing what it receives.
+ */
+export function hasAllocationConfig(settings: unknown): boolean {
+  const doc = (settings ?? {}) as Record<string, unknown>;
+  const stored = doc[ALLOCATION_KEY];
+  return stored != null && typeof stored === 'object';
+}
+
+/**
  * Zone assignments for federated partners.
  *
  * Reads the canonical `allocation.zones` map, falling back to the legacy
@@ -89,44 +126,94 @@ export function readAllocationConfig(settings: unknown): AllocationConfig {
 export function readZoneAssignments(settings: unknown): Record<string, number> {
   const doc = (settings ?? {}) as Record<string, unknown>;
   const allocation = (doc[ALLOCATION_KEY] ?? {}) as Record<string, unknown>;
-  const raw = (allocation.zones ?? doc[LEGACY_ZONES_KEY] ?? {}) as Record<string, unknown>;
+  return cleanZoneMap(allocation.zones ?? doc[LEGACY_ZONES_KEY]);
+}
 
+/**
+ * Zone placements for people — members or anyone else the holon shares with
+ * in relationship rather than for tasks — keyed by user id.
+ */
+export function readZonePeople(settings: unknown): Record<string, number> {
+  const doc = (settings ?? {}) as Record<string, unknown>;
+  const allocation = (doc[ALLOCATION_KEY] ?? {}) as Record<string, unknown>;
+  return cleanZoneMap(allocation[PEOPLE_KEY]);
+}
+
+/**
+ * The hand-set contributors' split, by user id — meaningful only when the
+ * config's `interiorMode` is `custom`. Empty when never set.
+ */
+export function readInteriorShares(settings: unknown): InteriorShares {
+  const doc = (settings ?? {}) as Record<string, unknown>;
+  const allocation = (doc[ALLOCATION_KEY] ?? {}) as Record<string, unknown>;
+  return normalizeInteriorShares(allocation[SHARES_KEY]);
+}
+
+/** Only ids placed on a real ring survive; anything else is "not placed". */
+function cleanZoneMap(raw: unknown): Record<string, number> {
   const zones: Record<string, number> = {};
-  for (const [id, value] of Object.entries(raw)) {
+  for (const [id, value] of Object.entries((raw ?? {}) as Record<string, unknown>)) {
     const zone = Number(value);
-    if (Number.isFinite(zone) && zone >= 1) zones[id] = Math.floor(zone);
+    if (Number.isFinite(zone) && zone >= 1 && id) zones[id] = Math.floor(zone);
   }
   return zones;
 }
 
 /**
- * Pair a federation snapshot with its zone assignments.
+ * Pair a federation snapshot with its zone assignments, then the people
+ * placed on rings.
  *
  * Partners with no assignment are returned at zone 0 — unassigned, and so
  * outside every ring. `allocate` ignores them, which is correct: value is only
- * committed to a partner once someone has placed it.
+ * committed to a partner once someone has placed it. People only appear when
+ * placed (an unplaced person is simply not in the map); a person whose id is
+ * also a federation partner keeps the partner's seat.
  */
 export function toAllocationPartners(
   federated: string[],
   partnerNames: Record<string, string>,
   zones: Record<string, number>,
+  people: Record<string, number> = {},
+  peopleNames: Record<string, string> = {},
 ): AllocationPartner[] {
   // The federation record can list a partner twice (double link, replayed
   // write); UIs key on the id, so dedupe here rather than in every renderer.
   const ids = [...new Set((federated ?? []).map((id) => String(id ?? '')).filter(Boolean))];
-  return ids.map((id) => ({
+  // A person's id is their personal holon's id, and a joined personal holon
+  // is also a federation partner: a ring set on the person must still count
+  // when the partner map says nothing, or the placement silently vanishes.
+  const holons: AllocationPartner[] = ids.map((id) => ({
     id,
     name: partnerNames?.[id] || id,
-    zone: zones[id] ?? 0,
+    zone: zones[id] ?? people?.[id] ?? 0,
+    kind: 'holon',
   }));
+  const seated = new Set(ids);
+  const persons: AllocationPartner[] = Object.entries(people ?? {})
+    .filter(([id, zone]) => id && zone >= 1 && !seated.has(id))
+    .map(([id, zone]) => ({
+      id,
+      name: peopleNames?.[id] || partnerNames?.[id] || id,
+      zone,
+      kind: 'person',
+    }));
+  return [...holons, ...persons];
 }
 
-/** Persist the allocation split (and optionally zone assignments) off-chain. */
+/**
+ * Persist the allocation split (and optionally zone assignments) off-chain.
+ *
+ * `zones`, `people` and `shares` each replace their map only when given; a
+ * caller that syncs partner zones (Flow Management) leaves the people
+ * placements and the custom split alone, and vice versa.
+ */
 export async function saveAllocationConfig(
   holosphere: any,
   holonId: string,
   config: Partial<AllocationConfig>,
   zones?: Record<string, number>,
+  people?: Record<string, number>,
+  shares?: InteriorShares,
 ): Promise<AllocationConfig> {
   let existing: any = null;
   try {
@@ -138,6 +225,8 @@ export async function saveAllocationConfig(
   const current = readAllocationConfig(existing);
   const clean = normalizeAllocationConfig({ ...current, ...config });
   const existingZones = readZoneAssignments(existing);
+  const existingPeople = readZonePeople(existing);
+  const existingShares = readInteriorShares(existing);
 
   await holosphere.put(String(holonId), 'settings', {
     ...(existing ?? {}),
@@ -145,8 +234,61 @@ export async function saveAllocationConfig(
     [ALLOCATION_KEY]: {
       ...clean,
       zones: zones ?? existingZones,
+      [PEOPLE_KEY]: cleanZoneMap(people ?? existingPeople),
+      [SHARES_KEY]: normalizeInteriorShares(shares ?? existingShares),
     },
   });
 
   return clean;
+}
+
+/**
+ * Link a holon as a federation partner so the split can seat it.
+ *
+ * A seat on a ring or in the contributors' split needs the partner in the
+ * federation record — that is where every reader (`toAllocationPartners`,
+ * the cascade, the inbound climb) finds it. A partner added from the split
+ * editor shares no lens: the link is the relationship, and which boards flow
+ * between the two is chosen in Settings → Federation. Linking an already
+ * linked partner keeps its lenses — the record is only touched when the
+ * partner is new to it.
+ */
+export async function linkSplitPartner(
+  holosphere: any,
+  holonId: string,
+  partnerId: string,
+  partnerName?: string,
+): Promise<boolean> {
+  const holon = String(holonId ?? '').trim();
+  const partner = String(partnerId ?? '').trim();
+  if (!holon || !partner || holon === partner) return false;
+  let federated: string[] = [];
+  try {
+    const fed = await holosphere.getFederation(holon);
+    federated = Array.isArray(fed?.federated) ? fed.federated.map(String) : [];
+  } catch {
+    // No record yet: the link below creates one.
+  }
+  if (federated.includes(partner)) return true;
+  const outcome = await setFederationPartner(holosphere, holon, partner, {
+    inbound: [],
+    outbound: [],
+    ...(partnerName ? { partnerName } : {}),
+  });
+  return outcome.self === 'linked';
+}
+
+/**
+ * What a found party is to the split: a PERSON goes on a ring or into the
+ * contributors' split by their user id; a HOLON must first be a federation
+ * partner (`linkSplitPartner`). A personal holon (hex key, npub) and a
+ * Telegram user (positive id) are people; a Telegram group (negative id), a
+ * keyed holon (`holon_…`) or anything the registry calls a community is a holon.
+ */
+export function splitPartyKind(id: string, type?: string | null): 'person' | 'holon' {
+  const v = String(id ?? '').trim();
+  if (type === 'personal') return 'person';
+  if (/^[0-9a-f]{64}$/i.test(v) || /^npub1[a-z0-9]{58}$/i.test(v)) return 'person';
+  if (/^\d+$/.test(v)) return 'person';
+  return 'holon';
 }

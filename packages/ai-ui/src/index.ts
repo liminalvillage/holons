@@ -23,9 +23,12 @@ export {
 // corrective pass) shared by every agent-loop embedder, so no UI re-implements
 // the "never claim an action without a successful write" contract.
 export {
+  STAGING_GUIDANCE,
   claimsCompletedAction,
+  claimsDespiteStaging,
   correctionHistory,
   correctionPrompt,
+  hasStagedWrite,
   hasSuccessfulWrite,
   hasWriteAttempt,
   isWriteTool,

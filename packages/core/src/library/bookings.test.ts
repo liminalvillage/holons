@@ -1,13 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
-  actorDisplayName,
   actorMatchesBooking,
+  bookingBound,
+  bookingSpan,
+  bookingStatus,
   dayKey,
   findOverlappingBooking,
   getDisplayBookings,
   isBookingActive,
+  isTimedBooking,
   makeBooking,
+  minuteKey,
+  returnableBooking,
+  timeOf,
+  toBound,
   toDayKey,
+  wallClock,
   withBookings,
   ymd,
   type Booking
@@ -129,15 +137,6 @@ describe('withBookings', () => {
 });
 
 describe('actor identity', () => {
-  it('actorDisplayName prefers display_name, then username without @, then names, then id', () => {
-    expect(actorDisplayName({ id: 1, username: 'bob', display_name: 'Bob the Builder' })).toBe(
-      'Bob the Builder'
-    );
-    expect(actorDisplayName({ id: 1, username: '@bob' })).toBe('bob');
-    expect(actorDisplayName({ id: 1, first_name: 'Bob', last_name: 'Kane' })).toBe('Bob Kane');
-    expect(actorDisplayName({ id: 42 })).toBe('42');
-  });
-
   it('actorMatchesBooking matches by id and by @-tolerant name', () => {
     const byWeb = booking({ borrowerId: '20', borrower: '@Bob' });
     expect(actorMatchesBooking(byWeb, { id: 20, username: 'other' })).toBe(true);
@@ -161,9 +160,133 @@ describe('makeBooking', () => {
     expect(b.start).toBe('2099-01-10');
     expect(b.end).toBe('2099-01-20');
     expect(b.borrowerId).toBe('20');
-    expect(b.borrower).toBe('bob');
+    expect(b.borrower).toBe('Bob Kane'); // the one name rule: real name before handle
     expect(b.borrowerInitials).toBe('BK');
+    expect(makeBooking({ id: 21, username: '@ann' }, '2099-01-10', '2099-01-11').borrower).toBe('ann');
+    expect(makeBooking({ id: 22, display_name: 'Resolved Name', username: 'x' }, '2099-01-10', '2099-01-11').borrower).toBe('Resolved Name');
     expect(b.id).toMatch(/^b-/);
     expect(new Date(b.created).getTime()).not.toBeNaN();
+  });
+});
+
+describe('timed bookings', () => {
+  const hour = booking({ id: 'car', start: '2099-01-10T14:00', end: '2099-01-10T15:00' });
+
+  it('tells a timed bound from a day, and builds one from a day + time', () => {
+    expect(isTimedBooking(hour)).toBe(true);
+    expect(isTimedBooking(booking())).toBe(false);
+    expect(timeOf(hour.start)).toBe('14:00');
+    expect(timeOf('2099-01-10')).toBe('');
+    // A full ISO instant (legacy data) is a day, never a timed bound.
+    expect(timeOf('2099-01-10T14:00:00.000Z')).toBe('');
+    expect(bookingBound('2099-01-10', '14:00')).toBe('2099-01-10T14:00');
+    expect(bookingBound('2099-01-10', '')).toBe('2099-01-10');
+    expect(minuteKey(new Date(2099, 0, 10, 9, 5))).toBe('2099-01-10T09:05');
+    expect(toBound('2099-01-10T14:00')).toBe('2099-01-10T14:00');
+    expect(toBound(new Date(2099, 0, 10, 14, 0))).toBe('2099-01-10');
+  });
+
+  it('spans a whole day end to end and a timed stretch as given', () => {
+    expect(bookingSpan(booking())).toEqual({ from: '2099-01-10T00:00', to: '2099-01-20T24:00' });
+    expect(bookingSpan(hour)).toEqual({ from: '2099-01-10T14:00', to: '2099-01-10T15:00' });
+  });
+
+  it('is active from its start up to, not including, its end', () => {
+    expect(isBookingActive(hour, new Date(2099, 0, 10, 13, 59))).toBe(false);
+    expect(isBookingActive(hour, new Date(2099, 0, 10, 14, 0))).toBe(true);
+    expect(isBookingActive(hour, new Date(2099, 0, 10, 14, 59))).toBe(true);
+    expect(isBookingActive(hour, new Date(2099, 0, 10, 15, 0))).toBe(false);
+  });
+
+  it('lets back-to-back hours stand, and collides with a day booking on that day', () => {
+    const item = { id: 'car', bookings: [hour] };
+    expect(findOverlappingBooking(item, '2099-01-10T15:00', '2099-01-10T16:00')).toBeNull();
+    expect(findOverlappingBooking(item, '2099-01-10T13:00', '2099-01-10T14:00')).toBeNull();
+    expect(findOverlappingBooking(item, '2099-01-10T14:30', '2099-01-10T15:30')?.id).toBe('car');
+    expect(findOverlappingBooking(item, '2099-01-10', '2099-01-10')?.id).toBe('car');
+    expect(findOverlappingBooking(item, '2099-01-11', '2099-01-12')).toBeNull();
+    // A stretch ending at midnight leaves the next day free.
+    const late = { id: 'car', bookings: [booking({ start: '2099-01-10T22:00', end: '2099-01-11T00:00' })] };
+    expect(findOverlappingBooking(late, '2099-01-11', '2099-01-11')).toBeNull();
+  });
+
+  it('mirrors a timed booking into the legacy fields with its real times', () => {
+    const now = new Date();
+    const start = minuteKey(new Date(now.getTime() - 60_000));
+    const end = minuteKey(new Date(now.getTime() + 3_600_000));
+    const item = withBookings({ id: 'car' }, [booking({ start, end })]);
+    expect(item.borrowed).toBe(true);
+    expect(item.returnBy).toBe(end);
+    expect(item.borrowedAt).toBe(new Date(start).toISOString());
+  });
+});
+
+describe('bookingStatus / returnableBooking', () => {
+  const bob = { id: 20, username: 'bob' };
+  const at = new Date(2099, 0, 10, 14, 30);
+
+  it('reads the state from bookings, not from the stored mirror', () => {
+    const next = booking({ id: 'later', start: '2099-01-12', end: '2099-01-13' });
+    // The mirror says "borrowed" but nothing covers now: the write is stale.
+    expect(bookingStatus({ id: 'x', borrowed: true, bookings: [next] }, at)).toEqual({
+      state: 'available',
+      booking: null,
+      next
+    });
+    const hour = booking({ id: 'car', start: '2099-01-10T14:00', end: '2099-01-10T15:00' });
+    // ...and "not borrowed" while a booking has started since.
+    const out = bookingStatus({ id: 'x', borrowed: false, bookings: [hour, next] }, at);
+    expect(out.state).toBe('out');
+    expect(out.booking?.id).toBe('car');
+    expect(out.next?.id).toBe('later');
+  });
+
+  it('is overdue with the last holder once their time is up, until the next booking begins', () => {
+    const lapsed = booking({ id: 'old', start: '2099-01-10T12:00', end: '2099-01-10T13:00' });
+    const item = { id: 'x', bookings: [lapsed] };
+    expect(bookingStatus(item, at)).toMatchObject({ state: 'overdue', booking: { id: 'old' } });
+    const eve = booking({ id: 'eve', borrowerId: '30', start: '2099-01-10T14:00', end: '2099-01-10T16:00' });
+    expect(bookingStatus({ id: 'x', bookings: [lapsed, eve] }, at)).toMatchObject({
+      state: 'out',
+      booking: { id: 'eve' }
+    });
+  });
+
+  it('picks the booking an actor returns: theirs covering now, else their last lapsed one', () => {
+    const lapsed = booking({ id: 'old', start: '2099-01-08', end: '2099-01-09' });
+    const live = booking({ id: 'live', start: '2099-01-10T14:00', end: '2099-01-10T15:00' });
+    const future = booking({ id: 'future', start: '2099-02-01', end: '2099-02-02' });
+    const item = { id: 'x', bookings: [lapsed, live, future] };
+    expect(returnableBooking(item, bob, at)?.id).toBe('live');
+    expect(returnableBooking({ id: 'x', bookings: [lapsed, future] }, bob, at)?.id).toBe('old');
+    expect(returnableBooking({ id: 'x', bookings: [future] }, bob, at)).toBeNull();
+    expect(returnableBooking(item, { id: 99, username: 'mallory' }, at)).toBeNull();
+    // Ids match across number/string — a Telegram id is a number on one
+    // surface and a string on the booking.
+    expect(returnableBooking(item, { id: '20' }, at)?.id).toBe('live');
+  });
+});
+
+describe('wallClock', () => {
+  it('reads the clock of the holon\'s zone, whatever the host\'s', () => {
+    const instant = new Date('2099-01-10T23:30:00.000Z');
+    expect(minuteKey(wallClock(instant, 'Europe/Rome'))).toBe('2099-01-11T00:30');
+    expect(minuteKey(wallClock(instant, 'UTC'))).toBe('2099-01-10T23:30');
+  });
+
+  it('falls back to the host clock for a missing or unknown zone', () => {
+    const instant = new Date(2099, 0, 10, 9, 0);
+    expect(wallClock(instant, '')).toBe(instant);
+    expect(wallClock(instant, 'Not/AZone')).toBe(instant);
+  });
+});
+
+describe('legacy borrow without dates', () => {
+  it('reads as out today, held by its borrower', () => {
+    const item = { id: 'drill', borrowed: true, borrower: 'Dario', borrowerId: 7 };
+    const status = bookingStatus(item);
+    expect(status.state).toBe('out');
+    expect(status.booking).toMatchObject({ id: 'legacy', borrower: 'Dario', borrowerId: '7' });
+    expect(returnableBooking(item, { id: 7 })?.id).toBe('legacy');
   });
 });

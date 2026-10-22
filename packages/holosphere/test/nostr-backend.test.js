@@ -1,10 +1,10 @@
 /**
- * `backend: 'nostr'` — the whole system functioning on the Nostr relay.
+ * The relay is the wire — the whole system functioning on the Nostr relay.
  *
- * Two (or more) HoloSphere instances with NO Gun peers, connected only
- * through an in-process Nostr relay (spike/mini-relay.js): every write is a
- * signed event on the wire, every read/subscription live-syncs from the
- * relay into the local peerless Gun cache.
+ * Two (or more) HoloSphere instances that share nothing but an in-process
+ * Nostr relay (spike/mini-relay.js): every write is a signed event on the
+ * wire, every read/subscription live-syncs from the relay into the local
+ * store.
  */
 import os from 'node:os';
 import path from 'node:path';
@@ -41,12 +41,8 @@ describe('nostr backend (relay is the wire)', () => {
     const sphere = new HoloSphere({
       appName,
       privateKey,
-      backend: 'nostr',
       nostr: { relays: relays || [relay.url], syncTimeoutMs: 3000 },
-      gunOptions: {
-        peers: [], axe: false, multicast: false, stats: false,
-        radisk: true, file: path.join(dir, 'radata'), localStorage: false,
-      },
+      store: { adapter: 'memory' },
     });
     spheres.push(sphere);
     return sphere;
@@ -71,10 +67,10 @@ describe('nostr backend (relay is the wire)', () => {
     }
   });
 
-  test('gun stays peerless — the relay is the only wire', async () => {
+  test('the relay is the only wire', async () => {
     const a = nostrSphere();
     await a.ready();
-    expect(Object.keys(a.gun?._?.opt?.peers || {})).toHaveLength(0);
+    expect(a.store.adapter?.kind).toBe('memory');
     expect(a._relayTransport).toBeTruthy();
     expect(a.signingEnabled).toBe(true);
   }, 15000);
@@ -145,13 +141,38 @@ describe('nostr backend (relay is the wire)', () => {
     const a = nostrSphere();
     await a.put(HOLON, 'library', { id: 'book-1', title: 'Walden' });
     await wait(500); // let the publish land on the relay
-    const fresh = nostrSphere(); // empty radisk — everything must come from the relay
+    const fresh = nostrSphere(); // empty store — everything must come from the relay
     const items = await eventually(async () => {
       const got = await fresh.getAll(HOLON, 'library');
       return got.some((i) => i.id === 'book-1') ? got : null;
     });
     expect(ids(items)).toContain('book-1');
   }, 20000);
+
+  test('reload with the same key: own newest write survives an older other-author copy', async () => {
+    // NIP-33 replaceables are per-pubkey, so the relay holds BOTH the other
+    // author's older copy and our newer one for the same address. A cold
+    // sync (reload, second device with the same derived key, evicted
+    // browser cache) must converge on the newest event — it used to skip
+    // own-pubkey events as "already local" and regress to the older copy.
+    const kb = generateSecretKey();
+    const a = nostrSphere();                    // other author (bot, kiosk, …)
+    const b1 = nostrSphere({ privateKey: kb }); // "the browser session"
+    await a.put(HOLON, 'quests2', { id: 'p1', title: 'Garden day' });
+    await eventually(async () => (await b1.getAll(HOLON, 'quests2')).some((i) => i.id === 'p1'));
+    // b joins the task: same address, newer created_at, different pubkey.
+    await b1.put(HOLON, 'quests2', { id: 'p1', title: 'Garden day', participants: [{ id: 42 }] });
+    await wait(500); // let both events land on the relay
+
+    // "Reload": same key, empty local cache — state must come from the wire.
+    const b2 = nostrSphere({ privateKey: kb });
+    const item = await eventually(async () => {
+      const got = await b2.get(HOLON, 'quests2', 'p1');
+      return got && got.participants?.length ? got : null;
+    });
+    expect(item).toBeTruthy();
+    expect(item.participants).toEqual([{ id: 42 }]);
+  }, 25000);
 
   test('a forged event on the relay is not ingested', async () => {
     const b = nostrSphere();
@@ -183,4 +204,20 @@ describe('nostr backend (relay is the wire)', () => {
     const theirs = await other.getAll(HOLON, 'notes');
     expect(theirs.every((i) => i.id !== 'n1')).toBe(true);
   }, 25000);
+
+  test('same-second create-then-update publishes strictly increasing created_at', async () => {
+    const sphere = nostrSphere({ appName: APP + '-mono' });
+    await sphere.put(HOLON, 'tasks', { id: 'mono', title: 'v1' });
+    await sphere.put(HOLON, 'tasks', { id: 'mono', title: 'v2' });
+    await sphere.put(HOLON, 'tasks', { id: 'mono', title: 'v3' });
+    const evs = await eventually(() => {
+      const e = relay.events().filter((x) => x.kind === 30078 && x.tags.some((t) => t[0] === 'd' && t[1] === `${HOLON}/tasks/mono`));
+      return e.length ? e : null;
+    });
+    // mini-relay keeps only the newest per address; it must be v3 and its
+    // timestamp must exceed the first publish (three puts in one second).
+    const newest = evs[evs.length - 1];
+    expect(JSON.parse(newest.content).title).toBe('v3');
+    expect(newest.created_at).toBeGreaterThanOrEqual(Math.floor(Date.now() / 1000) + 1);
+  }, 15000);
 });

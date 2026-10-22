@@ -2,6 +2,7 @@ import { Scenes, Markup } from 'telegraf';
 import { getQuestions } from '../src/AI.js';
 import questionsData from '../data/questions.json' with { type: 'json' };
 import enquiryTypes from '../data/enquiries.json' with { type: 'json' };
+import { completeStep, nextStep } from './flow.js';
 
 // Create a scene
 export const questionsScene = new Scenes.BaseScene('questions');
@@ -12,30 +13,40 @@ questionsScene.enter(ctx =>
   )
 );
 
-questionsScene.action('done', ctx => {
-  ctx.session.stage += 1;
-  if (ctx.session.stage === ctx.session.sequence.length)
-    ctx.scene.enter('done');
-  else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
-});
+questionsScene.action('done', ctx => nextStep(ctx));
+
+/** What the AI picks from: every question's id, topic and description. */
+const QUESTION_CATALOGUE = questionsData.questions.map(q => ({
+  id: q.questionID,
+  topic: q.languages.EN.questionTopic,
+  description: q.languages.EN.questionDescription,
+}));
 
 questionsScene.on('text', async ctx => {
-  //ask ai to select questions from ctx.message.text
   ctx.session.requirements = ctx.message.text;
-
   ctx.session.currentquestion = 0;
-  getQuestions(ctx.message.text).then(questions => {
-    ctx.session.userResponses = [];
-    ctx.session.question_sequence = questions.questions.map(
-      question => question.id
-    );
-    ctx.reply(
-      'Thank you for your input. We will now ask you a few questions to better clarify your needs.'
-    );
-    ctx.scene.enter(
-      'question_' + ctx.session.question_sequence[ctx.session.currentquestion]
-    );
-  });
+  ctx.session.userResponses = [];
+
+  // The AI picks the questions that fit what they wrote; without it, the
+  // questionnaire's own order still gets them through the step.
+  let picked = [];
+  try {
+    await ctx.sendChatAction('typing').catch(() => {});
+    picked = (await getQuestions(ctx.message.text, QUESTION_CATALOGUE))
+      .questions;
+  } catch (error) {
+    console.error('Error picking questions:', error);
+  }
+  ctx.session.question_sequence = (
+    picked.length > 0 ? picked : QUESTION_CATALOGUE
+  ).map(question => question.id);
+
+  await ctx.reply(
+    'Thank you for your input. We will now ask you a few questions to better clarify your needs.'
+  );
+  return ctx.scene.enter(
+    'question_' + ctx.session.question_sequence[ctx.session.currentquestion]
+  );
 });
 
 questionsScene.action(/explain_(.+)/, ctx => {
@@ -51,14 +62,11 @@ questionsScene.action(/explain_(.+)/, ctx => {
 
 questionsScene.action(/enquiry_(.+)/, ctx => {
   ctx.session.enquiry = ctx.callbackQuery.data.split('_')[1];
-  ctx.session.stage += 1;
-  if (ctx.session.stage === ctx.session.sequence.length)
-    ctx.scene.enter('done');
-  else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
+  return nextStep(ctx);
 });
 
 export function createScenesForQuestions() {
-  //todo:load questions from gun db
+  //todo: load questions from the holon's dna lens
   return questionsData.questions.map(question => {
     return createScene(question);
   });
@@ -68,12 +76,12 @@ function createScene(question) {
   const scene = new Scenes.BaseScene(`question_${question.questionID}`);
 
   scene.enter(ctx => {
-    const userId = ctx.from.id;
+    const lastAnswer = ctx.session.userResponses?.at(-1)?.answer;
     const questionDetails = question.languages.EN; // Adjust based on user's language
     // Check if the question should be enabled based on previous answers
     if (
       question.enablingAnswers.length === 0 ||
-      question.enablingAnswers.includes(this.userResponses[userId]?.lastAnswer)
+      question.enablingAnswers.includes(lastAnswer)
     ) {
       ctx.replyWithHTML(
         `<b>${questionDetails.questionTopic}</b>\n${questionDetails.questionDescription}`,
@@ -104,22 +112,7 @@ function createScene(question) {
       );
     } else {
       ctx.reply('Thank you for completing the questions!');
-      if (!ctx.session.wizard) {
-        // save the new data to the database
-        ctx.session.db.gun
-          .get(ctx.from.id.toString())
-          .get('questions')
-          .put(ctx.session.questions);
-        ctx.session.sceneStack.pop();
-        ctx.scene.enter(
-          ctx.session.sceneStack[ctx.session.sceneStack.length - 1]
-        );
-        return;
-      }
-      ctx.session.stage += 1;
-      if (ctx.session.stage === ctx.session.sequence.length)
-        ctx.scene.enter('done');
-      else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
+      return completeStep(ctx, { questions: ctx.session.userResponses });
     }
   });
   return scene;

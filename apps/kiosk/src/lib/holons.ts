@@ -18,6 +18,11 @@
 // A holon can also be picked by URL *path* — `site.com/<holon id>` or
 // `site.com/<registered label>` (see `holonForPath`) — which wins over the
 // subdomain, so one host can still deep-link any holon.
+//
+// The names themselves are data: edit `hubs.json` next to this file.
+
+import { nostrUtils } from "holosphere";
+import hubs from "./hubs.json";
 
 /** Base domain the kiosk is served under; subdomains of it select a holon. */
 export const BASE_DOMAIN = "hubs.network";
@@ -27,19 +32,16 @@ export const BASE_DOMAIN = "hubs.network";
  * (Holon ids are the negative chat-id strings, e.g. "-1001234567890".)
  * Optional — an unlisted holon is still reachable at `<id>.hubs.network` —
  * but an entry here takes precedence over that fall-through.
+ *
+ * The entries live in `hubs.json` next to this file so naming a hub is a
+ * one-line data edit, no code. Labels are lowercased here so an entry typed
+ * in any case still matches a hostname (DNS is case-insensitive).
  */
-export const SUBDOMAIN_HOLONS: Record<string, string> = {
-  residence: "-1001652773351",
-  lauro: "-1001652773351",
-  liminal: "-1003864542239",
-  akasha: "-1003958094547",
-  casaselva: "-1002964866719",
-  refactory: "-1003943146280",
-  civic: "-5349529224",
-  lunation80: "-1003711659317",
-  armoniaduale: "-1004310409791",
-  commons: "-5459621960",
-};
+export const SUBDOMAIN_HOLONS: Record<string, string> = Object.fromEntries(
+  Object.entries(hubs as Record<string, string>)
+    .filter(([label, id]) => label.trim() && String(id ?? "").trim())
+    .map(([label, id]) => [label.trim().toLowerCase(), String(id).trim()]),
+);
 
 /**
  * The holon-selecting subdomain label of a host, or null when the host is not a
@@ -66,6 +68,7 @@ const RESERVED_SUBDOMAINS = new Set([
   "admin",
   "dev",
   "docs",
+  "kiosk",
   "mail",
   "preview",
   "staging",
@@ -106,7 +109,8 @@ function holonIdFromLabel(label: string): string | null {
  * The holon selected by the URL path, or null when the path doesn't name one.
  * `site.com/-1001234567890` shows that holon directly; `site.com/liminal`
  * resolves a registered label from SUBDOMAIN_HOLONS. Only the first segment is
- * considered (matching the `[[holon]]` route), and `/api/...` is never a holon.
+ * considered (the first half of the `[[holon]]/[[tab]]` route — the tab half
+ * is tabroute.ts), and `/api/...` is never a holon.
  */
 export function holonForPath(pathname: string): string | null {
   const seg = decodeURIComponent(
@@ -117,15 +121,49 @@ export function holonForPath(pathname: string): string | null {
 }
 
 /**
+ * A token that IS an identity — an Ethereum address, a Nostr pubkey (hex or
+ * npub). A holon can be keyed by any of a person's identities, not only a
+ * Telegram id, and these shapes are unambiguous (no tab id, registered label,
+ * or ordinary word looks like them), so they are honoured anywhere a holon id
+ * is. Normalised so the same identity always names the same holon namespace:
+ * addresses lowercased (they circulate in mixed checksum case), and an npub
+ * decoded to its HEX pubkey — the form a person's holon is keyed by and the
+ * one the authority rule reads as "this key speaks for itself".
+ */
+function identityToken(token: string): string | null {
+  const tok = token.trim();
+  if (/^0x[0-9a-f]{40}$/i.test(tok)) return tok.toLowerCase();
+  if (/^[0-9a-f]{64}$/i.test(tok)) return tok.toLowerCase();
+  if (/^npub1[02-9ac-hj-np-z]{58}$/i.test(tok)) {
+    try {
+      const hex = nostrUtils.npubToHex(tok.toLowerCase());
+      return /^[0-9a-f]{64}$/i.test(hex) ? hex.toLowerCase() : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/** A key-founded holon id (`holon_…`, or the first ones' `hub_…`), as core mints them. */
+const FOUNDED_ID_RE = /^(holon|hub)_[a-z0-9]{12,32}$/;
+
+/**
  * The holon a token names, or null. A token is either a registered label
- * ("liminal") or a raw holon id — a group chat id ("-100…") or a personal
- * numeric id. Same rules `holonForPath` applies to a URL segment.
+ * ("liminal"), an identity (an Ethereum address, a pubkey, an npub), a
+ * key-founded holon id (`holon_…`), or a raw Telegram holon id — a group
+ * chat id ("-100…") or a personal numeric id. Same rules `holonForPath`
+ * applies to a URL segment. A registered label wins over everything, so a
+ * name always resolves to its holon id.
  */
 function holonForToken(token: string): string | null {
   const tok = token.trim();
   if (!tok) return null;
   const byLabel = SUBDOMAIN_HOLONS[tok.toLowerCase()];
   if (byLabel && byLabel.trim()) return byLabel;
+  const identity = identityToken(tok);
+  if (identity) return identity;
+  if (FOUNDED_ID_RE.test(tok)) return tok;
   return /^-?\d+$/.test(tok) ? tok : null;
 }
 
@@ -149,6 +187,8 @@ function asUrl(raw: string): URL | null {
  *
  *   -1001234567890                       a holon id straight from the bot
  *   liminal                              a registered label
+ *   0x52908400098527886e0f7030069857d…   an Ethereum address
+ *   npub1…                               a Nostr public key
  *   This holon ID is -1001234567890      the whole `/id` reply, pasted
  *   https://t.me/c/1234567890/42         "Copy link" on a message in the group
  *   https://dashboard.holons.io/-100…    what `/dashboard` replies with
@@ -223,10 +263,31 @@ export function parseHolonPaste(input: string): string | null {
   // mentions a hub's name ("we met the liminal crew") redirect the screen.
   for (const token of raw.split(/\s+/)) {
     const clean = token.replace(/^[(<\[]+|[)>\].,;:!?]+$/g, "");
+    // An identity token (0x…, npub1…) in the middle of a sentence still names
+    // its holon — and it must be caught HERE, before ID_IN_TEXT below plucks a
+    // run of digits out of the middle of the address.
+    const identity = identityToken(clean);
+    if (identity) return identity;
     if (!/^(https?:\/\/|[\w-]+(\.[\w-]+)+\/)/i.test(clean)) continue;
     const id = parseHolonRef(clean);
     if (id) return id;
   }
   const m = ID_IN_TEXT.exec(raw);
   return m ? m[1] : null;
+}
+
+/**
+ * What the dock's add form accepts: everything `parseHolonPaste` does, plus
+ * ANY bare alphanumeric token taken verbatim as a holon id. A registered
+ * label ("liminal") still resolves to its holon id first, and identities
+ * (Telegram ids, Ethereum addresses, npubs) keep their normalised forms —
+ * only a token nothing else recognises falls through unchanged. The fallback
+ * lives here and not in `holonForToken`, where it would turn any word in a
+ * URL path or pasted sentence into a holon.
+ */
+export function parseHolonAdd(input: string): string | null {
+  const known = parseHolonPaste(input);
+  if (known) return known;
+  const tok = (input ?? "").trim();
+  return /^[a-z0-9][a-z0-9_-]*$/i.test(tok) ? tok : null;
 }

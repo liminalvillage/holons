@@ -1,6 +1,6 @@
 {
   "title": "canvases",
-  "description": "Records stored at (holonId, 'canvases', <canvasId>). Whiteboard / visual canvas referenced by Quest.canvasId.",
+  "description": "Records stored at (holonId, 'canvases', <canvasId>). A holon's visual canvas (the web dashboard's /[id]/canvas).",
   "type": "object",
   "properties": {
     "id": {

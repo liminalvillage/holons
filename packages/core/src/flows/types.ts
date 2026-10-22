@@ -19,10 +19,15 @@
  * Tracks never mix units. Appreciation is not hours and hours are not euros, and
  * this repo has no exchange rates, so a track carries its own unit and nothing
  * ever sums across tracks. A holon holding two currencies gets two money tracks.
+ *
+ * The one exception is the `combined` track built by `combineTracks`, and it
+ * does not break the rule: it scales every track to its OWN total first, so
+ * what is added together is shares, never amounts. Real amounts survive on
+ * `display`, which is the only thing the labels ever print.
  */
 
 /** Which kind of value a track measures. Money tracks carry the code in `unit`. */
-export type TrackId = 'money' | 'time' | 'appreciation' | 'allocation';
+export type TrackId = 'money' | 'time' | 'appreciation' | 'allocation' | 'combined';
 
 /**
  * A node in one column of the diagram.
@@ -41,6 +46,33 @@ export interface ValueFlowNode {
 	value: number;
 	/** What produced it: 'opencollective' | 'expense' | 'library' | 'treasury' | … */
 	kind?: string;
+	/**
+	 * How the bar itself is made up, for a bar drawn stacked — a right split
+	 * into spent / claimed / available. Top to bottom; sums to `value`. Absent
+	 * on a bar drawn as one block.
+	 */
+	segments?: ValueFlowSegment[];
+	/** See `ValueFlowSegment.display`. */
+	display?: string;
+}
+
+/** One slice of a stacked bar. */
+export interface ValueFlowSegment {
+	/** What the slice is: 'spent' | 'claimed' | 'available' | 'over' | … */
+	kind: string;
+	/** Display text for the slice, pre-translated by the builder's caller. */
+	label: string;
+	/** Always > 0. */
+	value: number;
+	/** The unit this slice measures, on a track that carries several. */
+	unit?: string;
+	/**
+	 * A ready-made label for this slice, when `value` is not the thing to show.
+	 * A combined track scales every unit to its own total so the widths are
+	 * comparable, which leaves `value` a share and the real amount only
+	 * printable from here. Absent on a single-unit track.
+	 */
+	display?: string;
 }
 
 /** A ribbon between two nodes. Zero-value links are dropped at build time. */
@@ -51,6 +83,14 @@ export interface ValueFlowLink {
 	/** Always > 0. */
 	value: number;
 	kind?: string;
+	/**
+	 * The unit this ribbon measures, on a track that carries several. Ribbons
+	 * are kept apart by it, so a pair of parties trading in two currencies gets
+	 * one ribbon each rather than a single bar of mixed provenance.
+	 */
+	unit?: string;
+	/** See `ValueFlowSegment.display`. */
+	display?: string;
 }
 
 /** One unit-coherent diagram. */

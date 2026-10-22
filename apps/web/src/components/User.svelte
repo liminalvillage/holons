@@ -3,6 +3,7 @@
     import { fade, slide } from "svelte/transition";
     import type { HoloSphere } from "holosphere";
     import { nameMap, resolvedName, resolvedInitials } from '$lib/stores/nameResolver';
+    import { shortId } from '@holons/core/identity';
     import DisplayName from './shared/DisplayName.svelte';
     import { REAAggregator, ZERO_USER_AGGREGATES, type UserAggregates } from "@holons/core/scoring";
     import { classifyMarketItem } from "@holons/core/tasks";
@@ -560,7 +561,7 @@
                             <h1 class="text-3xl font-bold text-white">
                                 <DisplayName id={user.id} {user} />
                             </h1>
-                            <p class="text-gray-400 text-sm">{user.id?.length === 64 ? `${user.id.slice(0, 12)}...` : user.id}</p>
+                            <p class="text-gray-400 text-sm">{shortId(user.id ?? '')}</p>
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
@@ -759,7 +760,7 @@
                                         <div class="flex items-center justify-between text-sm border-b border-gray-600 last:border-0 pb-2 last:pb-0">
                                             <div class="min-w-0 pr-3 flex-1">
                                                 <div class="text-white truncate">
-                                                    {resolvedName(c.id, $nameMap, null) || c.name || c.id}
+                                                    {resolvedName(c.id, $nameMap, null, c.name)}
                                                     {#if c.type === 'holon'}
                                                         <span class="ml-1 text-[10px] uppercase text-gray-400">holon</span>
                                                     {/if}
@@ -986,7 +987,7 @@
                                             <div class="flex items-center justify-between text-sm border-b border-gray-600 last:border-0 pb-2 last:pb-0">
                                                 <div class="min-w-0 pr-3 flex-1">
                                                     <div class="text-white truncate">
-                                                        {resolvedName(c.id, $nameMap, null) || c.name || c.id}
+                                                        {resolvedName(c.id, $nameMap, null, c.name)}
                                                         {#if c.type === 'holon'}
                                                             <span class="ml-1 text-[10px] uppercase text-gray-400">holon</span>
                                                         {/if}

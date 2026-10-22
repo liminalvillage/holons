@@ -151,7 +151,6 @@ export async function executeProposal(
     expense =
       createExpense({
         id: fundingExpenseId(proposal.id),
-        holonId,
         amount: requested,
         currency: 'hour',
         description: String(proposal.title ?? 'funded proposal'),

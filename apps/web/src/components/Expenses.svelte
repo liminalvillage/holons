@@ -4,6 +4,7 @@
 	import { page } from "$app/stores";
 	import type { HoloSphere, ResolvedHologramMeta, FederationMeta } from "holosphere";
 	import { calculateCreditMatrix, expenseCurrency, normalizeCurrency } from "../utils/expenseCalculations";
+	import { expenseSharers } from "@holons/core/expenses";
 	import { REAEventFactory } from "@holons/core/rea";
 	import { getEventStore } from "../lib/rea/eventStore";
 
@@ -30,7 +31,7 @@
 		return 0;
 	}
 
-	import { resolveImage } from "../utils/imageServer";
+	import { pictureUrl } from "@holons/core/media";
 	import { Plus } from 'svelte-feathers';
 	import FeatureToolbar from "./shared/FeatureToolbar.svelte";
 	import TitleBar from "./shared/TitleBar.svelte";
@@ -40,7 +41,7 @@
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 	import { goto } from '$app/navigation';
 	import { nameMap, resolveName, resolvedName, buildHologramLink, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
-	import { showFederated, showHolograms, showUnverified, passesLensFilters } from '$lib/stores/lensFilters';
+	import { showFederated, showHolograms, passesLensFilters } from '$lib/stores/lensFilters';
 	import SourceBadge from './shared/SourceBadge.svelte';
 	import { subscribeHolonUsers } from '$lib/util/usersWithSelf';
 
@@ -135,16 +136,15 @@
 			if (!byId.has(id)) byId.set(id, u);
 		}
 		for (const id of [...reaUserIds, ...expenseUserIds]) {
+			// Older bot records could carry the holon id in the split; skip it.
 			if (id === holonID || byId.has(id)) continue;
-			byId.set(id, { id, first_name: resolvedName(id, $nameMap, null, id) });
+			byId.set(id, { id, first_name: resolvedName(id, $nameMap) });
 		}
 		return [...byId.values()];
 	})();
-	// Include "This Holon" as a virtual participant
-	$: thisHolonUser = holonID ? { id: holonID as any, first_name: 'This Holon' } : null;
-	$: users = thisHolonUser
-		? [thisHolonUser, ...realUsers]
-		: realUsers;
+	// Participants are people only: the split is always an explicit list of
+	// members, and "everyone" just selects all of them.
+	$: users = realUsers;
 
 	// Single lookup for rendering participants as name + avatar everywhere an
 	// id would otherwise leak into the UI. Passed explicitly into the helpers
@@ -181,6 +181,8 @@
 	let unsubscribeFunctions: (() => void)[] = [];
 	let subscribedHolonId: string | null = null;
 	let subscribedFedFlag: boolean | null = null;
+	let expensesFedSub: { unsubscribe: () => void; setFederated: (on: boolean) => void } | undefined;
+
 	let reaRefreshTimer: ReturnType<typeof setTimeout>;
 
 	function cleanupSubscriptions() {
@@ -195,7 +197,7 @@
 	// Local-first + progressive load via queryManager.subscribe. The cached
 	// snapshot fires synchronously (next microtask) so isLoading clears
 	// immediately even when the lens is empty — no more spinner waiting on
-	// Gun's `.once()` that never fires on cold empty paths. Federated mode
+	// a cold read that never resolves on empty paths. Federated mode
 	// adds a getFederated overlay on top of the local stream.
 	function fetchData() {
 		if (!isValidId(holonID) || !holosphere || !connectionReady) return;
@@ -234,7 +236,8 @@
 			},
 			{ includeFederated: targetFed }
 		);
-		unsubscribeFunctions.push(() => expensesSub.unsubscribe());
+		expensesFedSub = expensesSub;
+		unsubscribeFunctions.push(() => { expensesFedSub = undefined; expensesSub.unsubscribe(); });
 
 		// Users stream
 		const usersOff = subscribeHolonUsers({
@@ -397,7 +400,7 @@
 		const q = filters.searchQuery.trim().toLowerCase();
 		return Object.values(expenses)
 			.filter(e => expenseCurrency(e as any) === want)
-			.filter((e: any) => passesLensFilters(e, $showHolograms, $showFederated, $showUnverified))
+			.filter((e: any) => passesLensFilters(e, $showHolograms, $showFederated))
 			.filter((e: any) => {
 				if (!q) return true;
 				const split = Array.isArray(e.splitWith) ? e.splitWith : [];
@@ -556,7 +559,7 @@
 
 	function openAddExpense() {
 		showAddExpense = true;
-		// Default to first real user as payer, include all participants in split
+		// Default to the first member as payer, include everyone in the split
 		newExpense = {
 			amount: 0,
 			description: '',
@@ -767,7 +770,7 @@
 						<div class="expense-card">
 							{#if expense.picture}
 								<img
-									src={resolveImage(expense.picture)}
+									src={pictureUrl(expense.picture)}
 									alt={expense.description}
 									class="expense-thumb"
 									loading="lazy"
@@ -795,7 +798,7 @@
 								</p>
 								<p class="split-with">
 									Split:
-									{#each (Array.isArray(expense.splitWith) ? expense.splitWith : []) as id}
+									{#each expenseSharers(expense, users.map((u) => String(u.id))) as id}
 										<span class="user-chip">
 											<img
 												class="user-avatar user-avatar--sm"

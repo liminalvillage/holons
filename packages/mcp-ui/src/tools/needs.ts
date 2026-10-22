@@ -9,9 +9,9 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
+  createNeed,
   needFromShoppingItem,
   normalizeNeed,
-  respondToNeed,
   claimNeed,
   closeNeed,
   confirmNeedHandoff,
@@ -19,6 +19,7 @@ import {
   settleNeedHandoff,
   publishNeedNearby,
   refreshPublishedNeed,
+  syncNeedsFromShopping,
   NEED_RECORD_LENS,
   NEEDS_LENS,
 } from '@holons/core/needs';
@@ -28,6 +29,7 @@ import {
   CHECKLISTS_COLLECTION,
   SHOPPING_KEY,
 } from '@holons/core/shopping';
+import { answerNeed, releaseNeedReservations } from '@holons/core/offers';
 import type { ToolDeps } from './index.js';
 
 function ok(payload: unknown) {
@@ -61,6 +63,102 @@ async function loadNeed(hs: any, holon: string, needId: string) {
 }
 
 export function registerNeedsTools(server: McpServer, deps: ToolDeps): void {
+  server.registerTool(
+    'need_create',
+    {
+      description:
+        "Ask for something directly — the demand-first entry point, for what nobody would put on a shopping list ('learn guitar', 'a ride to town on Friday', 'a ladder for a week'). Builds a need (type:'need', status:'requested') with a quantity and unit the matcher counts in, persists it at (holon, 'quests'), and shares it nearby: copies to federation partners (toPartners, default true) and/or a live hologram at the holon's settings.hex cell under the 'needs' lens so the map lights (toHex, default false). Set toPartners false and toHex false to keep it on the holon until need_publish.",
+      inputSchema: {
+        holon: z.string().describe('Holon id the need belongs to.'),
+        title: z.string().describe('What is asked for, in the requester’s words.'),
+        category: z
+          .string()
+          .optional()
+          .describe('What kind of thing; matching and contention are per category. Needs without one are listed but never matched.'),
+        quantity: z.number().positive().optional().describe('How much. Default 1.'),
+        unit: z.string().optional().describe("e.g. 'one', 'kg', 'hour'. Default 'one'. A time unit makes it a service."),
+        itemType: z.enum(['good', 'service']).optional(),
+        description: z.string().optional(),
+        tags: z.array(z.string()).optional(),
+        expiresAt: z.number().optional().describe('ms since epoch'),
+        urgent: z.boolean().optional().describe('Emergency mode: rendered with priority.'),
+        toPartners: z.boolean().optional().describe('Publish standalone copies to federation partners. Default true.'),
+        toHex: z
+          .boolean()
+          .optional()
+          .describe("Publish a hologram to the holon's settings.hex cell so the map's needs layer lights. Requires a valid hex address in settings. Default false."),
+        id: z.string().optional().describe('Override the generated id.'),
+      },
+    },
+    async (args) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        const actor = deps.resolveActor();
+        const need = createNeed({
+          holonId: args.holon,
+          initiator: { id: actor.id, username: actor.username },
+          title: args.title,
+          category: args.category,
+          demand: { quantity: args.quantity, unit: args.unit },
+          itemType: args.itemType,
+          description: args.description,
+          tags: args.tags,
+          expiresAt: args.expiresAt,
+          urgency: args.urgent ? 'urgent' : undefined,
+          id: args.id,
+        });
+        const toPartners = args.toPartners !== false;
+        const toHex = args.toHex === true;
+        if (!toPartners && !toHex) {
+          await hs.put(args.holon, NEED_RECORD_LENS, need);
+          return ok({ success: true, need, publishedToPartners: 0, publishedToHex: [] });
+        }
+        const outcome = await publishNeedNearby(hs, args.holon, need, { toPartners, toHex });
+        return ok({
+          success: true,
+          need: outcome.need,
+          publishedToPartners: outcome.partners?.publishedTo ?? 0,
+          publishedToHex: outcome.hexCell?.destinations ?? [],
+          errors: outcome.errors,
+        });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
+  server.registerTool(
+    'need_sync_shopping',
+    {
+      description:
+        "Bring the holon's automatic needs in step with its shopping list (the twin of offer_sync_surplus): one standing need per item still to buy, shared with partners and the map; fulfilled when the item is checked off; cancelled when the item leaves the list before anyone answered. Honours settings.shopping.autoNeed unless `enabled` is given — false takes back only what the sync raised and nobody answered.",
+      inputSchema: {
+        holon: z.string(),
+        enabled: z.boolean().optional().describe('Force the switch; false takes back only.'),
+        toHex: z.boolean().optional().describe("Also hologram new needs at the holon's settings.hex cell. Default true."),
+      },
+    },
+    async (args) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        const actor = deps.resolveActor();
+        const out = await syncNeedsFromShopping(hs, args.holon, {
+          initiator: { id: actor.id, username: actor.username },
+          enabled: args.enabled,
+          toHex: args.toHex,
+        });
+        return ok({
+          success: true,
+          created: out.created.map((n) => ({ id: n.id, title: n.title, demand: n.demand })),
+          closed: out.closed.map((c) => ({ id: c.need.id, outcome: c.outcome })),
+          errors: out.errors,
+        });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+
   server.registerTool(
     'need_publish_from_shopping_item',
     {
@@ -127,17 +225,15 @@ export function registerNeedsTools(server: McpServer, deps: ToolDeps): void {
     'need_respond',
     {
       description:
-        "Respond to a published need as a provider: appends a response (message + optional price) on the need record and flips its status to 'offered'. Write goes to the holon that owns the need (pass the owner holon id — for a foreign need use its _federation.origin / _hologram source).",
+        "Answer a published need as a provider (@holons/core/offers answerNeed): raises an offer for exactly what the need asks on the provider's holon (source kind 'need'), reserves it for the need, and appends a response naming it on the need record, whose status flips to 'offered'. To answer from a standing offer use offer_accept_match. The need write goes to the holon that owns it (pass the owner holon id — for a foreign need use its _federation.origin / _hologram source).",
       inputSchema: {
         holon: z.string().describe('Holon id that OWNS the need record.'),
         needId: z.string().describe("Need id under (holon, 'quests')."),
+        responderHolon: z.string().describe("The provider's own holon id — where the raised offer lives."),
+        quantity: z.number().positive().optional().describe("Units promised, in the need's unit. Default: what the need asks for."),
         message: z.string().optional().describe('What the provider can supply, and when.'),
         price: z.number().optional().describe('Offered price (market price).'),
         currency: z.string().optional().describe("Currency code for the price, e.g. 'EUR'."),
-        responderHolon: z
-          .string()
-          .optional()
-          .describe("The provider's own holon id, for follow-up."),
       },
     },
     async (args) => {
@@ -147,21 +243,32 @@ export function registerNeedsTools(server: McpServer, deps: ToolDeps): void {
         if (!need) return fail(`Need ${args.needId} not found on holon ${args.holon}.`);
 
         const actor = deps.resolveActor();
-        const result = respondToNeed(need, {
-          responder: {
-            id: actor.id,
-            name: actor.username,
-            ...(args.responderHolon ? { holonId: args.responderHolon } : {}),
+        const out = await answerNeed(
+          { holosphere: hs },
+          {
+            need,
+            needHolonId: args.holon,
+            holonId: args.responderHolon,
+            initiator: { id: actor.id, username: actor.username },
+            actor: { id: actor.id, name: actor.username },
+            quantity: args.quantity,
+            message: args.message,
+            price: args.price,
+            currency: args.currency,
           },
-          message: args.message,
-          price: args.price,
-          currency: args.currency,
-        });
-        if (!result.ok) {
-          return fail(`Cannot respond: ${result.reason}`, { status: need.status });
+        );
+        if (!out.ok) {
+          return fail(`Cannot respond: ${out.reason}`, { status: need.status, errors: out.errors });
         }
-        await hs.put(args.holon, NEED_RECORD_LENS, result.need);
-        return ok({ success: true, need: result.need, response: result.response });
+        return ok({
+          success: true,
+          need: out.need,
+          offer: out.offer,
+          responseId: out.responseId,
+          reservationId: out.reservationId,
+          raised: out.raised,
+          errors: out.errors,
+        });
       } catch (err) {
         return fail((err as Error).message);
       }
@@ -193,11 +300,15 @@ export function registerNeedsTools(server: McpServer, deps: ToolDeps): void {
           });
         }
         const refreshed = await refreshPublishedNeed(hs, args.holon, result.need);
+        // The losers' reservations go back; offers raised just for this need are withdrawn.
+        const freed = await releaseNeedReservations(hs, result.need, { except: args.responseId });
         return ok({
           success: true,
           need: refreshed.need,
           handoffCode: result.need.handoff?.code,
-          errors: refreshed.errors,
+          released: freed.released.map((o) => o.id),
+          withdrawn: freed.withdrawn.map((o) => o.id),
+          errors: [...refreshed.errors, ...freed.errors],
         });
       } catch (err) {
         return fail((err as Error).message);
