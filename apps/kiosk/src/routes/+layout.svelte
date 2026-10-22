@@ -153,6 +153,7 @@
   import VoiceWidget from "$lib/components/VoiceWidget.svelte";
   import VoiceDrawer from "$lib/components/VoiceDrawer.svelte";
   import { swallowsContextMenu } from "$lib/holdmenu";
+  import { lockPageZoom } from "$lib/nozoom";
 
   let booting = true;
   let mounted = false;
@@ -1112,6 +1113,10 @@
   function onContextMenu(e: Event) {
     if (swallowsContextMenu(lastPointerType, e.target)) e.preventDefault();
   }
+
+  // No pinch zooms the page, on any view — iOS ignores the viewport meta's
+  // `user-scalable=no`. Views with their own zoom still get the gesture.
+  onMount(() => lockPageZoom(document));
 
   // Mouse movement (no click) also counts as presence, but fires constantly —
   // throttle it so we don't reset the stores on every pixel.

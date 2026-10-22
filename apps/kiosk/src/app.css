@@ -146,6 +146,12 @@ body {
   overscroll-behavior: none;
 }
 
+/* Pan, never pinch-zoom the page (touch-action intersects down the tree, so
+   this holds in every component; lib/nozoom.ts covers iOS Safari). */
+html {
+  touch-action: pan-x pan-y;
+}
+
 /* A placeholder is still text someone has to read: the browser's default grey
    falls short on both palettes. */
 ::placeholder {
