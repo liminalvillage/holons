@@ -14,6 +14,7 @@ import { toSvg as identiconSvg } from 'jdenticon';
 import { log } from '../utils/logger.js';
 import { i18next } from './utilities.js';
 import { notifyNostr } from './createHoloSphere.js';
+import { mountApplications } from './ApplicationsIntake.js';
 
 /**
  * Express server for serving static files, avatars, and images.
@@ -113,6 +114,9 @@ class Server {
 
     // Setup refresh endpoints (holons → telegram message edits)
     this.setupRefreshEndpoints(app);
+
+    // Community applications from the web, kept sealed (ApplicationsIntake.js)
+    mountApplications(app, { getDb: () => this.services.database, log });
 
     // Global error handler
     this.setupGlobalErrorHandler(app);
