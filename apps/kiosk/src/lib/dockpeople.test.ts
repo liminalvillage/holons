@@ -76,6 +76,21 @@ describe("the people field", () => {
         expect(dist(sim, `${i}`, `${j}`)).toBeGreaterThan(48);
   });
 
+  it("stays gathered with many hubs and people in two of them", () => {
+    // One member drawn off by a second hub once widened that hub's whole
+    // ground, which pushed everyone out, and 60 people flew ~400 radii apart.
+    let seed = 7;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const crowd = Array.from({ length: 60 }, (_, i) => {
+      const hubs = new Set([`h${Math.floor(rnd() * 8)}`]);
+      if (rnd() < 0.25) hubs.add(`h${Math.floor(rnd() * 8)}`);
+      return person(`${i}`, ...hubs);
+    });
+    const sim = settlePeople(crowd, 26);
+    const box = simBounds(sim, 26);
+    expect(Math.max(box.w, box.h)).toBeLessThan(40 * 26);
+  });
+
   it("comes to rest, and is the same picture every time", () => {
     const sim = settlePeople(people, 26);
     const field = peopleField(sim, people);

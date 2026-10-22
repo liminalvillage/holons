@@ -99,7 +99,8 @@
       paneW / (box.w + 2 * pad || 1),
       paneH / (box.h + 2 * pad || 1),
     );
-    const s = Math.max(0.4, fit);
+    // Small orbs beat people off screen: a full dock on a phone needs ~0.25.
+    const s = Math.max(0.2, fit);
     // Ease toward the fit: a field that snapped its size every frame would
     // shimmer as the orbs breathe. And not at all while someone is carried:
     // the frame moving under the finger would take the orb out from under it.

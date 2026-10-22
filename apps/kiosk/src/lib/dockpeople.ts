@@ -303,6 +303,10 @@ export function stepPeopleSim(
         fy[i] += (cy[h] - py[i]) * pull;
         reach[h] = Math.max(reach[h], Math.hypot(px[i] - cx[h], py[i] - cy[h]));
       }
+      // No wider than its members need, packed: one member drawn far off by
+      // another hub must not widen the whole ground — it would push everyone
+      // else out, stretch their hubs in turn, and the field would fly apart.
+      reach[h] = Math.min(reach[h], 1.5 * r * Math.sqrt(members.length));
       if (members.length < 2) continue;
       const ground = reach[h] + 1.6 * r;
       for (let j = 0; j < n; j++) {
