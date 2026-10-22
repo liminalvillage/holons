@@ -38,6 +38,7 @@
     type Quest,
   } from "@holons/core/tasks";
   import { toStoredInstant } from "@holons/core/datetime";
+  import { lunationAt } from "@holons/core/flows";
   import {
     noteColor,
     noteTilt,
@@ -1074,6 +1075,22 @@
   $: monthAnchor = new Date($now.getFullYear(), $now.getMonth() + offset, 1);
   // Year window: offset counts whole years.
   $: displayYear = $now.getFullYear() + (view === "year" ? offset : 0);
+  // The lunation we're in, new moon to new moon, for the close-up under the
+  // year (`to` is the cycle's last ms; the line's span ends at the next moon).
+  $: lunation = lunationAt($now.getTime());
+  $: lunationRange = { from: lunation.from, to: lunation.to + 1 };
+  $: lunationTitle = (() => {
+    const fmt = (ms: number) =>
+      new Date(ms).toLocaleDateString($locale, {
+        day: "numeric",
+        month: "short",
+      });
+    return $t("cal.lunationSpan", {
+      n: lunation.index,
+      from: fmt(lunationRange.from),
+      to: fmt(lunationRange.to),
+    });
+  })();
   $: monthGrid = (() => {
     const start = new Date(monthAnchor);
     start.setDate(1 - monthAnchor.getDay());
@@ -1563,6 +1580,21 @@
       <YearTimeline
         events={shownEvents}
         year={displayYear}
+        now={$now}
+        {noteColorFor}
+        onOpen={open}
+        onSelectDay={gotoDay}
+        onDragStart={(e, ev) => beginDrag(e, ev.id, ev.title, !!ev.external)}
+        lifting={dragArmed || drag != null}
+        {dropDay}
+      />
+      <!-- …and the lunation we're in, close up: the same line spanning only
+           new moon to new moon -->
+      <YearTimeline
+        events={shownEvents}
+        year={displayYear}
+        range={lunationRange}
+        title={lunationTitle}
         now={$now}
         {noteColorFor}
         onOpen={open}

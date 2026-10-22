@@ -165,6 +165,8 @@ export const en = {
   "cal.zoomIn": "Zoom in",
   "cal.zoomOut": "Zoom out",
   "cal.zoomReset": "Whole year",
+  "cal.zoomResetSpan": "Whole lunation",
+  "cal.lunationSpan": "Lunation {n} · {from} – {to}",
   "cal.zoomHint": "Pinch or Ctrl + scroll to zoom",
   "cal.springEquinox": "Spring equinox",
   "cal.summerSolstice": "Summer solstice",

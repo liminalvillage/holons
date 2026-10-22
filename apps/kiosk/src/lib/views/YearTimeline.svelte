@@ -24,6 +24,14 @@
   export let events: CalendarEvent[] = [];
   /** The displayed year (navigation lives in CalendarView's header). */
   export let year: number;
+  /**
+   * A span to show instead of the year, `[from, to)` in ms — e.g. one
+   * lunation, new moon to new moon. The line covers exactly this span: the
+   * overview is the whole span and panning never runs past its ends.
+   */
+  export let range: { from: number; to: number } | null = null;
+  /** Names the span while the line isn't zoomed (the year has its header). */
+  export let title: string | null = null;
   /** Live clock, for the "today" marker. */
   export let now: Date;
   /** Shared category→colour map (same palette as the other calendar windows). */
@@ -56,14 +64,17 @@
   const LABELED_LANE_REM = 1.05; // …once span bars are wide enough for titles
 
   const DAY_MS = 86400000;
-  const MAX_ZOOM = 60; // ≈ six days across the width
+  const MIN_SPAN_DAYS = 6; // deepest zoom: about six days across the width
   const DRAG_SLOP_PX = 6; // movement before a press becomes a pan
   const LABEL_MIN_PX = 44; // narrowest room worth a (truncated) title
   const LABEL_MAX_PX = 240;
   const SPAN_LABEL_MIN_PX = 40;
 
-  $: yearStart = new Date(year, 0, 1).getTime();
-  $: yearEnd = new Date(year + 1, 0, 1).getTime();
+  // The span on the line — the year, or `range`. (Named for the year, which
+  // is the usual case; everything below works on any span.)
+  $: yearStart = range ? range.from : new Date(year, 0, 1).getTime();
+  $: yearEnd = range ? range.to : new Date(year + 1, 0, 1).getTime();
+  $: maxZoom = Math.max(1, (yearEnd - yearStart) / (MIN_SPAN_DAYS * DAY_MS));
 
   // Fraction of a year elapsed at `date`, clamped to the displayed year so
   // spans crossing a year boundary pin to the timeline edges. (The helpers
@@ -103,7 +114,7 @@
   }
   /** Zoom to `next`, keeping the year position under `frac` (0–1) still. */
   function zoomAt(frac: number, next: number) {
-    const z = Math.min(MAX_ZOOM, Math.max(1, next));
+    const z = Math.min(maxZoom, Math.max(1, next));
     const anchor = viewStart + frac * spanNow();
     zoom = z;
     viewStart = clampView(anchor - (frac * 100) / z, z);
@@ -112,8 +123,8 @@
     zoom = 1;
     viewStart = 0;
   }
-  // A new year starts from the whole-year overview.
-  $: (year, resetView());
+  // A new year (or span) starts from the whole overview.
+  $: (yearStart, yearEnd, resetView());
 
   function fracAt(clientX: number): number {
     const rect = container.getBoundingClientRect();
@@ -260,15 +271,24 @@
       { key: "cal.winterSolstice", date: new Date(y, 11, 21) },
     ];
   }
-  $: solarEvents = solarPoints(year);
+  $: solarEvents = [
+    ...solarPoints(new Date(yearStart).getFullYear()),
+    ...(range ? solarPoints(new Date(yearEnd).getFullYear()) : []),
+  ].filter((s) => {
+    const time = s.date.getTime();
+    return time >= yearStart && time < yearEnd;
+  });
 
-  // Scan the year in 6-hour steps for the moments the phase crosses new
+  // Scan the span in 6-hour steps for the moments the phase crosses new
   // (≈0) or full (≈0.5); the 10-day de-dupe window keeps one marker per
   // lunation. Same recipe as the dashboard's timeline.
-  function getMoonPhases(y: number): Array<{ date: Date; isNew: boolean }> {
+  function getMoonPhases(
+    from: number,
+    to: number,
+  ): Array<{ date: Date; isNew: boolean }> {
     const phases: Array<{ date: Date; isNew: boolean }> = [];
-    const end = new Date(y + 1, 0, 1);
-    let cursor = new Date(y, 0, 1);
+    const end = new Date(to);
+    let cursor = new Date(from);
     while (cursor < end) {
       const p = phase(cursor).phase;
       if (p < 0.025 || (p > 0.475 && p < 0.525)) {
@@ -284,17 +304,36 @@
     }
     return phases;
   }
-  $: moonPhases = getMoonPhases(year);
+  // A lunation's own edges are its new moons, exactly: pin them there rather
+  // than trusting the scan's 6-hour steps to land on them.
+  $: moonPhases = range
+    ? [
+        { date: new Date(yearStart), isNew: true },
+        ...getMoonPhases(yearStart + 2 * DAY_MS, yearEnd - 2 * DAY_MS),
+        { date: new Date(yearEnd), isNew: true },
+      ]
+    : getMoonPhases(yearStart, yearEnd);
 
   // Month bands on screen. The name pins to the left edge while its month
   // is partly scrolled off, and spells out in full once there's room.
   $: longMonths = pxPerDay * 30 >= 130;
-  $: shownMonths = Array.from({ length: 12 }, (_, i) => {
-    const date = new Date(year, i, 1);
-    const from = positionInYear(date);
-    const to = positionInYear(new Date(year, i + 1, 1));
-    return { i, date, from, to };
-  })
+  $: months = (() => {
+    const list: Array<{ i: number; date: Date; from: number; to: number }> = [];
+    const first = new Date(yearStart);
+    const date = new Date(first.getFullYear(), first.getMonth(), 1);
+    for (let i = 0; date.getTime() < yearEnd; i++) {
+      const next = new Date(date.getFullYear(), date.getMonth() + 1, 1);
+      list.push({
+        i,
+        date: new Date(date),
+        from: positionInYear(date),
+        to: positionInYear(next),
+      });
+      date.setTime(next.getTime());
+    }
+    return list;
+  })();
+  $: shownMonths = months
     .filter((m) => inView(m.from, m.to))
     .map((m) => ({
       ...m,
@@ -314,8 +353,18 @@
       0,
       Math.floor(((viewStart / 100) * (yearEnd - yearStart)) / DAY_MS) - 1,
     );
-    const cursor = new Date(year, 0, 1 + firstVisible);
+    const first = new Date(yearStart);
+    const cursor = new Date(
+      first.getFullYear(),
+      first.getMonth(),
+      first.getDate() + firstVisible,
+    );
     while (cursor.getTime() < yearEnd) {
+      // A span opening mid-day has its first midnight after the start.
+      if (cursor.getTime() <= yearStart) {
+        cursor.setDate(cursor.getDate() + 1);
+        continue;
+      }
       const pos = positionInYear(cursor);
       if (pos > viewStart + viewSpan) break;
       const isMonday = cursor.getDay() === 1;
@@ -330,7 +379,10 @@
     return ticks;
   })();
 
-  $: todayPos = now.getFullYear() === year ? positionInYear(now) : null;
+  $: todayPos =
+    now.getTime() >= yearStart && now.getTime() < yearEnd
+      ? positionInYear(now)
+      : null;
 
   $: fmtPos = (pos: number): string =>
     new Date(
@@ -338,7 +390,7 @@
     ).toLocaleDateString($locale, { day: "numeric", month: "short" });
   $: rangeLabel = zoomed
     ? `${fmtPos(viewStart)} – ${fmtPos(viewStart + viewSpan)}`
-    : String(year);
+    : (title ?? String(year));
 
   // ── Gestures: drag to pan, pinch to zoom, tap to open/jump ────────────────
   let container: HTMLElement;
@@ -406,7 +458,7 @@
     if (gesture?.kind === "pinch" && pointers.size >= 2) {
       const { dist, mid } = pinchMetrics();
       const z = Math.min(
-        MAX_ZOOM,
+        maxZoom,
         Math.max(1, gesture.zoom * (dist / gesture.dist)),
       );
       zoom = z;
@@ -505,7 +557,7 @@
   function onBackgroundKey(e: KeyboardEvent) {
     if ((e.key === "Enter" || e.key === " ") && onSelectDay) {
       e.preventDefault();
-      onSelectDay(now.getFullYear() === year ? now : new Date(year, 0, 1));
+      onSelectDay(todayPos !== null ? now : new Date(yearStart));
     } else if (e.key === "+" || e.key === "=") {
       e.preventDefault();
       zoomAt(0.5, zoom * 1.6);
@@ -651,7 +703,7 @@
 </script>
 
 <div class="yt-bar">
-  {#if zoomed}
+  {#if zoomed || title}
     <span class="yt-range">{rangeLabel}</span>
   {:else}
     <!-- The header already names the year; say how to get closer instead. -->
@@ -668,8 +720,8 @@
     on:pointercancel={onScrubEnd}
     aria-hidden="true"
   >
-    {#each Array(12) as _, i}
-      <span class="yt-ov-month" style="left: {(i / 12) * 100}%"></span>
+    {#each months as m (m.i)}
+      <span class="yt-ov-month" style="left: {m.from}%"></span>
     {/each}
     {#if todayPos !== null}
       <span class="yt-ov-today" style="left: {todayPos}%"></span>
@@ -691,13 +743,14 @@
       class="yt-zbtn wide"
       on:click={resetView}
       disabled={!zoomed}
-      title={$t("cal.zoomReset")}>{$t("cal.zoomReset")}</button
+      title={$t(range ? "cal.zoomResetSpan" : "cal.zoomReset")}
+      >{$t(range ? "cal.zoomResetSpan" : "cal.zoomReset")}</button
     >
     <button
       type="button"
       class="yt-zbtn"
       on:click={() => zoomAt(0.5, zoom * 1.6)}
-      disabled={zoom >= MAX_ZOOM}
+      disabled={zoom >= maxZoom}
       aria-label={$t("cal.zoomIn")}
       title={$t("cal.zoomIn")}>+</button
     >

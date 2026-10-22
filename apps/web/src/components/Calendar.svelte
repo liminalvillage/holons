@@ -4,6 +4,7 @@
     import type { HoloSphere } from "holosphere";
     import { ID } from "../dashboard/store";
     import Timeline from './Timeline.svelte';
+    import { lunationAt } from '@holons/core/flows';
     import CalendarSettings from './CalendarSettings.svelte';
     import { formatDate } from "../utils/date";
     import * as d3 from "d3";
@@ -256,6 +257,15 @@
               matchesSearch(searchNeedle, e.task.title, e.task.name, e.task.category, e.task.description))
         : allExpandedTaskEntries;
     $: expandedTasksRecord = Object.fromEntries(expandedTaskEntries.map(e => [e.key, e.task]));
+
+    // The lunation running now, for the close-up under the year timeline
+    // (`to` is the cycle's last ms; the line's span ends at the next new moon).
+    const lunation = lunationAt();
+    const lunationRange = { from: lunation.from, to: lunation.to + 1 };
+    const lunationTitle = (() => {
+        const fmt = (ms: number) => new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+        return `Lunation ${lunation.index} · ${fmt(lunationRange.from)} – ${fmt(lunationRange.to)}`;
+    })();
 
     function resolveOriginalKey(keyOrInstance: string, task?: any): string {
         if (task?._originalKey) return task._originalKey;
@@ -2472,6 +2482,20 @@
 
     <Timeline
         currentDate={currentDate}
+        profiles={profiles}
+        users={users}
+        tasks={expandedTasksRecord}
+        externalEvents={visibleExternalEvents}
+        spans={allSpans}
+        on:dateSelect={handleTimelineDateSelect}
+        on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.task)}
+    />
+
+    <!-- The lunation we're in, close up: the same line, new moon to new moon -->
+    <Timeline
+        currentDate={currentDate}
+        range={lunationRange}
+        title={lunationTitle}
         profiles={profiles}
         users={users}
         tasks={expandedTasksRecord}

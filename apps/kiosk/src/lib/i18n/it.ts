@@ -173,6 +173,8 @@ export const it: Record<MessageKey, Msg> = {
   "cal.zoomIn": "Ingrandisci",
   "cal.zoomOut": "Riduci",
   "cal.zoomReset": "Tutto l'anno",
+  "cal.zoomResetSpan": "Tutta la lunazione",
+  "cal.lunationSpan": "Lunazione {n} · {from} – {to}",
   "cal.zoomHint": "Pizzica o Ctrl + rotella per ingrandire",
   "cal.springEquinox": "Equinozio di primavera",
   "cal.summerSolstice": "Solstizio d'estate",
