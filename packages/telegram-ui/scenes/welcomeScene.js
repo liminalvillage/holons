@@ -63,12 +63,9 @@ welcomeScene.action('change', async ctx => {
     Markup.inlineKeyboard([
       [
         Markup.button.callback('Name', 'name'),
-        Markup.button.callback('Location', 'location'),
-      ],
-      [
         Markup.button.callback('Values', 'values'),
-        Markup.button.callback('Category', 'category'),
       ],
+      [Markup.button.callback('Category', 'category')],
       [
         Markup.button.callback('Ikigai', 'ikigai'),
         Markup.button.callback('LinkedIn', 'linkedin'),
@@ -100,7 +97,6 @@ welcomeScene.action('delete', async ctx => {
 // Scene navigation actions
 const sceneMap = {
   name: 'values',
-  location: 'location',
   hexagon: 'h3',
   values: 'values',
   category: 'categories',

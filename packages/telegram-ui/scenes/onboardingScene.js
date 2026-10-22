@@ -10,16 +10,16 @@ onboardingScene.enter(ctx => {
   ctx.reply(
     'Do you have any questions? Just ask me! type /done when you are finished.'
   );
-  ctx.session.thread = null;
+  ctx.session.aiResponseId = null;
 });
 
 onboardingScene.command(['done', 'next'], ctx => nextStep(ctx));
 
 onboardingScene.on('text', async ctx => {
   try {
-    const answer = await onboarding(ctx.session.thread, ctx.message.text);
-    if (!answer) return;
-    ctx.session.thread = answer.thread;
+    await ctx.sendChatAction('typing').catch(() => {});
+    const answer = await onboarding(ctx.session.aiResponseId, ctx.message.text);
+    ctx.session.aiResponseId = answer.responseId;
     await ctx.reply(answer.text);
   } catch (error) {
     console.error('Error answering onboarding question:', error);

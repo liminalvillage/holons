@@ -24,7 +24,6 @@ export const DEFAULT_SEQUENCE = [
   'values',
   'ikigai',
   'linkedin',
-  'location',
   'categories',
   'questions',
   'saveprofile',
@@ -39,7 +38,6 @@ export const ONBOARDING_SEQUENCE = [
   'values',
   'ikigai',
   'linkedin',
-  'location',
   'saveprofile',
   'onboarding',
 ];
@@ -47,7 +45,7 @@ export const ONBOARDING_SEQUENCE = [
 /**
  * What someone the bot already knows is asked when a website sends them to
  * onboarding: only their public profile — not the visitor questions
- * (arrival, departure, category, values, location) they answered or that
+ * (arrival, departure, category, values) they answered or that
  * never applied to them.
  */
 export const PROFILE_SEQUENCE = ['ikigai', 'linkedin', 'saveprofile'];

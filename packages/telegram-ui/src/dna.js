@@ -1,6 +1,6 @@
 /**
  * @fileoverview A member's onboarding "DNA" — the answers the wizard scenes
- * collect (values, category, ikigai, LinkedIn link, location, hexagon, video,
+ * collect (values, category, ikigai, LinkedIn link, hexagon, video,
  * questions, summary, booking dates). One record per user in the user's own personal holon:
  * `<userId>/dna/<userId>`. A group answering as a community gets the same
  * record in its own holon, `<chatId>/dna/<chatId>`, under `community`.
@@ -24,7 +24,6 @@ const SESSION_FIELDS = [
   'values',
   'ikigai',
   'linkedin',
-  'location',
   'hex',
   'arrival',
   'departure',

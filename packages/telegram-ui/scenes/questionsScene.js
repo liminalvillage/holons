@@ -15,23 +15,38 @@ questionsScene.enter(ctx =>
 
 questionsScene.action('done', ctx => nextStep(ctx));
 
-questionsScene.on('text', async ctx => {
-  //ask ai to select questions from ctx.message.text
-  ctx.session.requirements = ctx.message.text;
+/** What the AI picks from: every question's id, topic and description. */
+const QUESTION_CATALOGUE = questionsData.questions.map(q => ({
+  id: q.questionID,
+  topic: q.languages.EN.questionTopic,
+  description: q.languages.EN.questionDescription,
+}));
 
+questionsScene.on('text', async ctx => {
+  ctx.session.requirements = ctx.message.text;
   ctx.session.currentquestion = 0;
-  getQuestions(ctx.message.text).then(questions => {
-    ctx.session.userResponses = [];
-    ctx.session.question_sequence = questions.questions.map(
-      question => question.id
-    );
-    ctx.reply(
-      'Thank you for your input. We will now ask you a few questions to better clarify your needs.'
-    );
-    ctx.scene.enter(
-      'question_' + ctx.session.question_sequence[ctx.session.currentquestion]
-    );
-  });
+  ctx.session.userResponses = [];
+
+  // The AI picks the questions that fit what they wrote; without it, the
+  // questionnaire's own order still gets them through the step.
+  let picked = [];
+  try {
+    await ctx.sendChatAction('typing').catch(() => {});
+    picked = (await getQuestions(ctx.message.text, QUESTION_CATALOGUE))
+      .questions;
+  } catch (error) {
+    console.error('Error picking questions:', error);
+  }
+  ctx.session.question_sequence = (
+    picked.length > 0 ? picked : QUESTION_CATALOGUE
+  ).map(question => question.id);
+
+  await ctx.reply(
+    'Thank you for your input. We will now ask you a few questions to better clarify your needs.'
+  );
+  return ctx.scene.enter(
+    'question_' + ctx.session.question_sequence[ctx.session.currentquestion]
+  );
 });
 
 questionsScene.action(/explain_(.+)/, ctx => {

@@ -111,16 +111,6 @@ function harness(chat = privateChat, { withOnboarding = true } = {}) {
           message: { message_id: mid, chat, date: 0, text: 'x' },
         },
       }),
-    location: () =>
-      deliver({
-        message: {
-          message_id: ++mid,
-          from,
-          chat,
-          date: 0,
-          location: { latitude: 45.1, longitude: 9.2 },
-        },
-      }),
   };
 }
 
@@ -203,15 +193,11 @@ describe('/onboarding', () => {
 
     const wrong = await bot.text('my website is example.com');
     expect(sent(wrong, 'does not look like a LinkedIn')).toBeDefined();
-    const locationPrompt = await bot.text(
-      'http://it.linkedin.com/in/t-person/'
-    );
-    expect(sent(locationPrompt, 'share your location')).toBeDefined();
-
-    // The location prompt is another scene's; its answer must land the member
-    // in the next step, still listening.
-    const afterLocation = await bot.location();
-    expect(sent(afterLocation, 'make your answers public')).toBeDefined();
+    // The LinkedIn prompt is another scene's; its answer must land the
+    // member in the next step, still listening — and no location is asked.
+    const afterLinkedin = await bot.text('http://it.linkedin.com/in/t-person/');
+    expect(sent(afterLinkedin, 'make your answers public')).toBeDefined();
+    expect(sent(afterLinkedin, 'location')).toBeUndefined();
     const afterPublic = await bot.tap('public');
     expect(sent(afterPublic, 'Do you have any questions')).toBeDefined();
 
@@ -233,8 +219,8 @@ describe('/onboarding', () => {
       linkedin: 'https://www.linkedin.com/in/t-person/',
       arrival: `${ym(nextMonth).replace('-', '/')}/10 00:00:00`,
       departure: `${ym(nextMonth).replace('-', '/')}/20 00:00:00`,
-      location: { latitude: 45.1, longitude: 9.2 },
     });
+    expect(profile).not.toHaveProperty('location');
 
     // …and the member is known the next time round.
     const again = await bot.text('/onboarding');
@@ -257,8 +243,7 @@ describe('/onboarding — ikigai and LinkedIn', () => {
     const afterIkigai = await bot.tap('input_scene_cancel');
     expect(sent(afterIkigai, 'LinkedIn profile link')).toBeDefined();
     const afterLinkedin = await bot.tap('input_scene_cancel');
-    expect(sent(afterLinkedin, 'share your location')).toBeDefined();
-    await bot.location();
+    expect(sent(afterLinkedin, 'make your answers public')).toBeDefined();
     await bot.tap('public');
 
     expect(bot.errors).toEqual([]);
@@ -276,7 +261,6 @@ describe('/onboarding — ikigai and LinkedIn', () => {
     await bot.tap('done_picking');
     await bot.tap('input_scene_cancel');
     await bot.tap('input_scene_cancel');
-    await bot.location();
     await bot.tap('public');
     await bot.text('/done');
 
@@ -379,7 +363,6 @@ describe('/onboarding — keeping answers private', () => {
     await bot.tap('done_picking');
     await bot.tap('input_scene_cancel'); // skip ikigai
     await bot.tap('input_scene_cancel'); // skip LinkedIn
-    await bot.location();
     await bot.tap('private');
     const done = await bot.text('/done');
 

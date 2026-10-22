@@ -17,7 +17,6 @@ import {
   createScenesForQuestions,
 } from '../scenes/questionsScene.js';
 import onboardingScene from '../scenes/onboardingScene.js';
-import locationScene from '../scenes/locationScene.js';
 import saveprofileScene from '../scenes/saveprofileScene.js';
 import summarizeScene from '../scenes/summarizeScene.js';
 import welcomeScene from '../scenes/welcomeScene.js';
@@ -30,7 +29,7 @@ import { startOnboarding } from '../scenes/flow.js';
  *
  * @class Onboarding
  * @description Manages the user onboarding process through a series of
- * Telegraf scenes including welcome, location, values selection, DNA
+ * Telegraf scenes including welcome, values selection, DNA
  * questionnaire, and profile creation. Stores user responses for
  * profile building.
  *
@@ -60,7 +59,6 @@ export default class Onboarding {
       linkedinScene,
       categoriesScene,
       onboardingScene,
-      locationScene,
       questionsScene,
       saveprofileScene,
       summarizeScene,

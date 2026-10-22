@@ -1,214 +1,92 @@
 import 'dotenv/config';
 import OpenAI from 'openai';
 import fs from 'fs';
+import locale from '../data/locales/en.json' with { type: 'json' };
 
-let openai;
+const openai = new OpenAI({ apiKey: process.env.OPENAI });
 
-(async () => {
-  openai = new OpenAI({
-    apiKey: process.env.OPENAI,
-  });
-})();
+/** Same default as the kiosk/web AI routes; OPENAI_MODEL overrides it. */
+const DEFAULT_OPENAI_MODEL = 'gpt-4o';
 
-export async function onboarding(thread, prompt) {
-  console.log(thread, prompt);
-  //const run = await openai.beta.threads.runs.retrieve(thread.id,run.id)
-  const assistant = await openai.beta.assistants.retrieve(
-    'asst_seXN24Wn2Rtc13TvAkpPRHfF'
-  );
-  if (!thread?.id) {
-    thread = await openai.beta.threads.create();
-  }
-
-  await openai.beta.threads.messages.create(thread.id, {
-    role: 'user',
-    content: prompt,
-  });
-  const run = await openai.beta.threads.runs.create(thread.id, {
-    assistant_id: assistant.id, //,
-    //instructions: "What is the meaning of life?",
-  });
-
-  let runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
-  // Polling mechanism to see if runStatus is completed
-  // This should be made more robust.
-  while (runStatus.status !== 'completed') {
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
-  }
-  // Get the latest messages from the thread
-  const messages = await openai.beta.threads.messages.list(thread.id);
-  const text = messages.data[0].content[0].text.value
-    .replace(/```json\n/, '')
-    .replace(/```/, '')
-    .trim();
-  return {
-    thread: thread,
-    text: text,
-  };
+function model() {
+  return (process.env.OPENAI_MODEL || '').trim() || DEFAULT_OPENAI_MODEL;
 }
 
-const MAX_POLLING_ATTEMPTS = 150; // 5 minutes at 2-second intervals
-
-export async function getQuestions(prompt) {
-  //const run = await openai.beta.threads.runs.retrieve(thread.id,run.id)
-  const assistant = await openai.beta.assistants.retrieve(
-    'asst_AhWVjx7YkLFS58B7M8LsNLPN'
-  );
-  const thread = await openai.beta.threads.create();
-  try {
-    await openai.beta.threads.messages.create(thread.id, {
-      role: 'user',
-      content: prompt,
-    });
-    const run = await openai.beta.threads.runs.create(thread.id, {
-      assistant_id: assistant.id, //,
-      //instructions: "What is the meaning of life?",
-    });
-
-    let runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
-    // Polling mechanism with timeout to prevent infinite loops
-    let attempts = 0;
-    while (
-      runStatus.status !== 'completed' &&
-      attempts < MAX_POLLING_ATTEMPTS
-    ) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
-      attempts++;
-      if (runStatus.status === 'failed' || runStatus.status === 'cancelled') {
-        throw new Error(
-          `Run ${runStatus.status}: ${runStatus.last_error?.message || 'Unknown error'}`
-        );
-      }
-    }
-    if (attempts >= MAX_POLLING_ATTEMPTS) {
-      throw new Error('Polling timeout: run did not complete within 5 minutes');
-    }
-    // Get the latest messages from the thread
-    const messages = await openai.beta.threads.messages.list(thread.id);
-    let json = messages.data[0].content[0].text.value
-      .replace(/```json\n/, '')
-      .replace(/```/, '')
-      .trim();
-    try {
-      json = JSON.parse(json);
-    } catch (e) {
-      console.log(e);
-    }
-    return json;
-  } finally {
-    // Clean up thread to prevent orphaned resources
-    try {
-      await openai.beta.threads.del(thread.id);
-    } catch (cleanupError) {
-      console.error('Error cleaning up thread:', cleanupError.message);
-    }
-  }
+/**
+ * One turn through the Responses API. The old Assistants API (assistant ids,
+ * threads, polled runs) has been shut down; a conversation now continues from
+ * the previous response's id, and the instructions travel with every turn.
+ */
+async function respond({ instructions, input, previousResponseId, json }) {
+  const response = await openai.responses.create({
+    model: model(),
+    instructions,
+    input,
+    ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
+    ...(json ? { text: { format: { type: 'json_object' } } } : {}),
+  });
+  return response;
 }
 
+const ONBOARDING_INSTRUCTIONS = `You are the Holons Bot's onboarding guide, answering newcomers in a Telegram private chat.
+Answer questions about Holons, holons and how to use the bot, using the guide below as your source. Be warm, brief and practical: a few short sentences, plain text without Markdown, in the language the person writes in.
+When a command helps, name it (e.g. /task, /settings). If you do not know something, say so and point them to the @HolonicDAO community chat — never invent features.
+Remind them they can type /done whenever they are ready to continue.
+
+The guide:
+${locale.translation.guide}`;
+
+/**
+ * The onboarding agent: answer `prompt`, continuing the conversation from
+ * `previousResponseId` (null for the first question).
+ *
+ * @returns {Promise<{responseId: string, text: string}>}
+ */
+export async function onboarding(previousResponseId, prompt) {
+  const response = await respond({
+    instructions: ONBOARDING_INSTRUCTIONS,
+    input: prompt,
+    previousResponseId,
+  });
+  return { responseId: response.id, text: response.output_text.trim() };
+}
+
+/**
+ * The questions (ids from `catalogue`) that best clarify what someone looking
+ * for a place to thrive in described in `requirements`, most relevant first.
+ *
+ * @param {string} requirements
+ * @param {Array<{id: string, topic: string, description: string}>} catalogue
+ * @returns {Promise<{questions: Array<{id: string}>}>}
+ */
+export async function getQuestions(requirements, catalogue) {
+  const response = await respond({
+    instructions:
+      'You match a person to the questionnaire questions that will best clarify their needs for a community to live in. ' +
+      'Pick the 4 most relevant questions from the catalogue, most relevant first. ' +
+      'Reply with a JSON object: {"questions": [{"id": "<question id>"}]}, using only ids from the catalogue.\n\n' +
+      'Catalogue:\n' +
+      JSON.stringify(catalogue),
+    input: requirements,
+    json: true,
+  });
+  const known = new Set(catalogue.map(q => q.id));
+  const parsed = JSON.parse(response.output_text);
+  const questions = (Array.isArray(parsed?.questions) ? parsed.questions : [])
+    .map(q => ({ id: String(q?.id ?? '') }))
+    .filter(q => known.has(q.id));
+  return { questions };
+}
+
+/** A summary of a chat transcript: decisions, actions and open points. */
 export async function summarize(history) {
-  //const run = await openai.beta.threads.runs.retrieve(thread.id,run.id)
-  const assistant = await openai.beta.assistants.retrieve(
-    'asst_qhk79F8wV9BDNuwfOI80TqzC'
-  );
-  const thread = await openai.beta.threads.create();
-  try {
-    await openai.beta.threads.messages.create(thread.id, {
-      role: 'user',
-      content: history,
-    });
-    const run = await openai.beta.threads.runs.create(thread.id, {
-      assistant_id: assistant.id, //,
-      //instructions: "What is the meaning of life?",
-    });
-
-    let runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
-    // Polling mechanism with timeout to prevent infinite loops
-    let attempts = 0;
-    while (
-      runStatus.status !== 'completed' &&
-      attempts < MAX_POLLING_ATTEMPTS
-    ) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
-      attempts++;
-      if (runStatus.status === 'failed' || runStatus.status === 'cancelled') {
-        throw new Error(
-          `Run ${runStatus.status}: ${runStatus.last_error?.message || 'Unknown error'}`
-        );
-      }
-    }
-    if (attempts >= MAX_POLLING_ATTEMPTS) {
-      throw new Error('Polling timeout: run did not complete within 5 minutes');
-    }
-    // Get the latest messages from the thread
-    const messages = await openai.beta.threads.messages.list(thread.id);
-    const summary = messages.data[0].content[0].text.value
-      .replace(/```json\n/, '')
-      .replace(/```/, '')
-      .trim();
-    return summary;
-  } finally {
-    // Clean up thread to prevent orphaned resources
-    try {
-      await openai.beta.threads.del(thread.id);
-    } catch (cleanupError) {
-      console.error('Error cleaning up thread:', cleanupError.message);
-    }
-  }
-}
-
-export async function ontology(history) {
-  //const run = await openai.beta.threads.runs.retrieve(thread.id,run.id)
-  const assistant = await openai.beta.assistants.retrieve(
-    'asst_jxRYRSsU4ukVn2F3E82twHrj'
-  );
-  const thread = await openai.beta.threads.create();
-  try {
-    await openai.beta.threads.messages.create(thread.id, {
-      role: 'user',
-      content: history,
-    });
-    const run = await openai.beta.threads.runs.create(thread.id, {
-      assistant_id: assistant.id, //,
-      //instructions: "What is the meaning of life?",
-    });
-
-    let runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
-    // Polling mechanism with timeout to prevent infinite loops
-    let attempts = 0;
-    while (
-      runStatus.status !== 'completed' &&
-      attempts < MAX_POLLING_ATTEMPTS
-    ) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
-      attempts++;
-      if (runStatus.status === 'failed' || runStatus.status === 'cancelled') {
-        throw new Error(
-          `Run ${runStatus.status}: ${runStatus.last_error?.message || 'Unknown error'}`
-        );
-      }
-    }
-    if (attempts >= MAX_POLLING_ATTEMPTS) {
-      throw new Error('Polling timeout: run did not complete within 5 minutes');
-    }
-    // Get the latest messages from the thread
-    const messages = await openai.beta.threads.messages.list(thread.id);
-    const summary = messages.data[0].content[0].text.value
-      .replace(/```json\n/, '')
-      .replace(/```/, '')
-      .trim();
-    return summary;
-  } finally {
-    // Clean up thread to prevent orphaned resources
-    try {
-      await openai.beta.threads.del(thread.id);
-    } catch (cleanupError) {
-      console.error('Error cleaning up thread:', cleanupError.message);
-    }
-  }
+  const response = await respond({
+    instructions:
+      'Summarise this group chat transcript for its members: the main topics, decisions taken, actions with who owns them, and open questions. ' +
+      'Be concise, plain text, in the language of the transcript.',
+    input: history,
+  });
+  return response.output_text.trim();
 }
 
 async function sendMessage(system, message) {
