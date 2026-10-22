@@ -61,6 +61,10 @@ export function buildManifest(startRaw: string | null, nameRaw: string | null) {
     start_url: start,
     scope: "/",
     display: "fullscreen",
+    // Desktop Chrome has no fullscreen app window; standalone is the next best.
+    display_override: ["fullscreen", "standalone"],
+    lang: "en",
+    categories: ["productivity", "social"],
     // Follow the device: portrait on a phone in hand, landscape on a wall tablet.
     orientation: "any",
     background_color: "#f7f4ec",
