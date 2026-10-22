@@ -679,10 +679,27 @@ export const it: Record<MessageKey, Msg> = {
   "settings.eqCurrencies": "Valute",
   "settings.eqReset": "Ripristina i valori predefiniti",
   "settings.eqZero": "Azzera tutti i pesi",
-  "settings.eqSaving": "Salvataggio…",
-  "settings.eqSaved": "Salvato",
-  "settings.eqNotAdmin":
-    "Solo la firma di un admin cambia l'equazione del valore; la tua verrebbe registrata ma non contata.",
+  "settings.eqProposeHint":
+    "Tocca + o − per proporre nuovi pesi. Non cambia nulla finché l'holon non vota. Il voto si chiude alla luna nuova, il {date}.",
+  "settings.eqWhyMoon": "Perché aspettare la luna?",
+  "settings.eqWhyMoonBody":
+    "Perché tutti abbiano modo di votare, non solo chi c'è in quel momento. Un cambiamento alla volta, insieme, a un ritmo che tutto l'holon condivide. Nessuno ha l'interruttore: decidono i voti, e ogni schermo li conta allo stesso modo.",
+  "settings.eqStanding": "{yes} sì, {no} no",
+  "settings.eqClosesIn": {
+    one: "si chiude tra {n} giorno",
+    other: "si chiude tra {n} giorni",
+  },
+  "settings.eqProposalTitle": "Rivedere l'equazione del valore",
+  "settings.eqPropose": {
+    one: "Proponi {n} modifica",
+    other: "Proponi {n} modifiche",
+  },
+  "settings.eqProposeSignIn": "Accedi per proporre",
+  "settings.eqDiscard": "Scarta",
+  "settings.eqOnTheTable": "Sul tavolo",
+  "settings.eqProposed":
+    "Sul tavolo. L'holon ha tempo fino alla luna nuova ({date}) per votare.",
+  "settings.eqProposeFailed": "Impossibile proporre la modifica: {reason}",
   "settings.eqLoading": "Carico l'equazione…",
   "settings.eqLess": "Abbassa il peso di {metric}",
   "settings.eqMore": "Alza il peso di {metric}",
@@ -1691,6 +1708,11 @@ export const it: Record<MessageKey, Msg> = {
   "vote.status.pending": "In attesa di attestazione",
   "vote.status.disputed": "Contestato",
   "vote.status.rejected": "Non contato",
+  "vote.equationOpen": "Se passa, entra in vigore alla luna nuova, il {date}.",
+  "vote.equationPassed": "Approvata. In vigore dalla luna nuova del {date}.",
+  "vote.equationFailed": "Non è passata. L'equazione resta com'era.",
+  "vote.equationTitle": "Cambia l'equazione del valore",
+  "vote.equationNoChange": "L'equazione ha già questi pesi.",
   "alloc.tabRules": "Regole",
   "alloc.tabRulesSummary": "quorum {quorum}",
   "alloc.rulesAbout":

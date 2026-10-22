@@ -673,10 +673,27 @@ export const en = {
   "settings.eqCurrencies": "Currencies",
   "settings.eqReset": "Reset to defaults",
   "settings.eqZero": "Zero every weight",
-  "settings.eqSaving": "Saving…",
-  "settings.eqSaved": "Saved",
-  "settings.eqNotAdmin":
-    "Only an admin's signature changes the value equation; yours would be recorded but not counted.",
+  "settings.eqProposeHint":
+    "Tap + or − to propose new weights. Nothing changes until the holon votes. Votes close at the new moon, {date}.",
+  "settings.eqWhyMoon": "Why wait for the moon?",
+  "settings.eqWhyMoonBody":
+    "So everyone gets a chance to vote, not just whoever is around. One change at a time, together, in a rhythm the whole holon shares. Nobody holds the switch: the votes decide, and every screen counts them the same way.",
+  "settings.eqStanding": "{yes} yes, {no} no",
+  "settings.eqClosesIn": {
+    one: "closes in {n} day",
+    other: "closes in {n} days",
+  },
+  "settings.eqProposalTitle": "Retune the value equation",
+  "settings.eqPropose": {
+    one: "Propose {n} change",
+    other: "Propose {n} changes",
+  },
+  "settings.eqProposeSignIn": "Sign in to propose",
+  "settings.eqDiscard": "Discard",
+  "settings.eqOnTheTable": "On the table",
+  "settings.eqProposed":
+    "On the table. The holon has until the new moon ({date}) to vote.",
+  "settings.eqProposeFailed": "Could not propose the change: {reason}",
   "settings.eqLoading": "Loading the equation…",
   "settings.eqLess": "Lower the weight for {metric}",
   "settings.eqMore": "Raise the weight for {metric}",
@@ -1664,6 +1681,12 @@ export const en = {
   "vote.status.pending": "Awaiting attestation",
   "vote.status.disputed": "Disputed",
   "vote.status.rejected": "Not counted",
+  "vote.equationOpen":
+    "If it passes, this takes effect at the new moon, {date}.",
+  "vote.equationPassed": "Passed. In force since the new moon of {date}.",
+  "vote.equationFailed": "Didn't pass. The equation stays as it was.",
+  "vote.equationTitle": "Changes the value equation",
+  "vote.equationNoChange": "The equation already holds these weights.",
   "alloc.tabRules": "Rules",
   "alloc.tabRulesSummary": "quorum {quorum}",
   "alloc.rulesAbout":

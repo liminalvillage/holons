@@ -16,6 +16,8 @@
   import { partnerNames } from "$lib/stores";
   import type { Vote, VoteChoice, VotesContext } from "@holons/core/governance";
   import { VOTE_CHOICES } from "@holons/core/governance";
+  import { bindEquation, equationReady, governed } from "$lib/equation";
+  import { lang, type MessageKey } from "$lib/i18n";
   import {
     foldVotesContext,
     loadVotesRoster,
@@ -63,6 +65,29 @@
   async function refreshSigner(_u: unknown) {
     signer = await voteSigner();
   }
+
+  // ---- An equation proposal: what it changes, and when it is decided ------
+  // The proposal is a signed entry of the votes log, so what it changes and
+  // the new moon it closes at come from there — never from the quest, which
+  // anyone could edit. Votes after the close are not counted, and if it
+  // passed, it is in force from that moon on. Nothing to apply: every board
+  // folds the result (`$lib/equation`).
+  $: if (holonId) bindEquation(holonId);
+  $: eq = $governed.proposals.find((p) => p.id === proposalId) ?? null;
+  $: closesAt = eq?.closesAt ?? null;
+  $: closed = !!eq?.closed;
+  $: closeDate =
+    closesAt == null
+      ? ""
+      : new Intl.DateTimeFormat($lang, {
+          day: "numeric",
+          month: "long",
+        }).format(new Date(closesAt));
+  $: changes = eq && $equationReady && !closed ? eq.changes : [];
+  const metricLabel = (key: string) =>
+    key.startsWith("currencies.")
+      ? key.slice("currencies.".length)
+      : $t(`status.metric.${key}` as MessageKey);
 
   $: ctx =
     logs && roster && boundTo
@@ -116,6 +141,32 @@
 </script>
 
 <div class="vote" aria-label={$t("vote.title")}>
+  {#if eq}
+    <div class="k">{$t("vote.equationTitle")}</div>
+    {#if changes.length}
+      <ul class="changes">
+        {#each changes as c (c.key)}
+          <li>
+            <span class="who">{metricLabel(c.key)}</span>
+            <span class="move">{c.from} → {c.to}</span>
+          </li>
+        {/each}
+      </ul>
+    {:else if $equationReady && !closed}
+      <p class="sub">{$t("vote.equationNoChange")}</p>
+    {/if}
+    {#if closesAt != null}
+      <p class="sub moon">
+        {#if !closed}
+          {$t("vote.equationOpen", { date: closeDate })}
+        {:else if tally?.passed}
+          {$t("vote.equationPassed", { date: closeDate })}
+        {:else if tally}
+          {$t("vote.equationFailed")}
+        {/if}
+      </p>
+    {/if}
+  {/if}
   <div class="k">{$t("vote.title")}</div>
   {#if tally}
     <div
@@ -139,13 +190,17 @@
         abstain: String(tally.abstain),
         total: String(tally.total),
       })}
-      · {tally.passed ? $t("vote.passing") : $t("vote.notPassing")}
+      {#if !closed}
+        · {tally.passed ? $t("vote.passing") : $t("vote.notPassing")}
+      {/if}
     </p>
   {/if}
   {#if provisional}
     <p class="sub">{$t("vote.provisional")}</p>
   {/if}
-  {#if $isLoggedIn && selfId}
+  {#if closed}
+    <!-- The moon has decided it: the ballots below are the record. -->
+  {:else if $isLoggedIn && selfId}
     <div class="choices" role="group" aria-label={$t("vote.yours")}>
       {#each VOTE_CHOICES as c (c)}
         <button
@@ -239,6 +294,29 @@
     border-color: var(--danger);
     background: var(--danger);
     color: var(--on-danger);
+  }
+  .moon {
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .changes {
+    list-style: none;
+    margin: 0 0 0.75rem;
+    padding: 0;
+    display: grid;
+    gap: 0.3rem;
+    font-size: 0.88rem;
+  }
+  .changes li {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .changes .who {
+    font-weight: 600;
+  }
+  .changes .move {
+    font-variant-numeric: tabular-nums;
   }
   .choice:disabled {
     opacity: 0.6;

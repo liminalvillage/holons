@@ -15,8 +15,9 @@
 // GET  → { pubkey }                          the session user's log pubkey
 // POST { holon, lens, item, refs? } → { event }   the signed kind-1808 entry
 //
-// What this will sign is narrow on purpose: a claim, a give or a vote that
-// names the session user as the party, a verdict, a payout, or a policy record.
+// What this will sign is narrow on purpose: a claim, a give, a vote or an
+// equation proposal that names the session user as the party, a verdict, a
+// payout, or a policy record.
 // Whether any of them COUNTS is the reducer's call, from the holon's policy
 // and signer set, not this route's — a policy signed by a non-admin is a
 // visible entry that changes nothing.
@@ -39,7 +40,11 @@ import {
   isPayout,
   isTransfer,
 } from "@holons/core/flows";
-import { GOVERNANCE_VOTES_LENS, isVote } from "@holons/core/governance";
+import {
+  GOVERNANCE_VOTES_LENS,
+  isEquationProposal,
+  isVote,
+} from "@holons/core/governance";
 import { resolveAppName } from "$lib/config";
 import {
   authConfig,
@@ -105,14 +110,25 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
   if (!item || typeof item !== "object" || Array.isArray(item)) {
     return json({ error: "item must be an object" }, { status: 400 });
   }
-  if (isClaim(item) || isTransfer(item) || isVote(item)) {
+  if (
+    isClaim(item) ||
+    isTransfer(item) ||
+    isVote(item) ||
+    isEquationProposal(item)
+  ) {
     if (String(item.party) !== id || item.onBehalfOf) {
       return json(
         {
           error:
-            "A claim, a give or a vote is signed for the session user only",
+            "A claim, a give, a vote or a proposal is signed for the session user only",
         },
         { status: 403 },
+      );
+    }
+    if (isEquationProposal(item) && lens !== GOVERNANCE_VOTES_LENS) {
+      return json(
+        { error: "An equation proposal goes on governance_votes" },
+        { status: 400 },
       );
     }
   } else if (isMint(item)) {

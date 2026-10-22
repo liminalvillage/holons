@@ -7,10 +7,11 @@
   // into Settings under the Status toggle, and in the sheet the board's own
   // footer opens — so retuning never means finding a laptop.
   //
-  // Editing follows the kiosk rule (no Apply step). The weights themselves live
-  // in `$lib/equation` — one store every board scores from — so a tap here
-  // re-ranks the Status board and redraws the Flows diagram immediately, and
-  // the write is coalesced there rather than once per component.
+  // Nobody edits the equation directly: the holon votes on it. Taps here move a
+  // local draft, the footer puts the difference to the holon as a proposal,
+  // and at the new moon its vote closes, what passed takes effect for every
+  // board at once (`$lib/equation` folds it; `@holons/core/governance` owns
+  // the rule).
   import {
     DEFAULT_EQUATION,
     parseCurrencyCodes,
@@ -18,14 +19,15 @@
   } from "@holons/core/scoring";
   import {
     bindEquation,
-    editEquation,
     equation as equationStore,
     equationReady,
-    equationSaveState,
+    governed,
   } from "$lib/equation";
-  import { t, type MessageKey } from "$lib/i18n";
-  import { may } from "@holons/core/holosphere";
-  import { standing } from "$lib/stores";
+  import { equationClosesAt } from "@holons/core/governance";
+  import { lang, t, type MessageKey } from "$lib/i18n";
+  import { openQuest, showNotice } from "$lib/stores";
+  import { currentUser, isLoggedIn, loginOpen } from "$lib/auth";
+  import { draftPatch, proposeEquation } from "$lib/equationProposal";
   import Modal from "./Modal.svelte";
 
   /** The holon whose equation is being edited; null renders nothing. */
@@ -107,13 +109,92 @@
     },
   ];
 
-  // The store is the single reader and writer; this only points it at a holon.
+  // The store is the single reader; this only points it at a holon.
   // A null prop must NOT unbind it: this editor is mounted in three places, and
   // one of them rendering before the holon is known would otherwise clear the
   // weights out from under the boards.
   $: if (holon) bindEquation(holon);
-  $: equation = holon && $equationReady ? $equationStore : null;
-  $: eqState = $equationSaveState;
+  $: live = holon && $equationReady ? $equationStore : null;
+
+  // ---- Drafting a proposal -----------------------------------------------
+  // Taps move a local draft; the boards keep scoring with the equation in
+  // force until a vote on the difference closes and passes.
+  let draft: ScoreEquation | null = null;
+  let draftFor: string | null = null;
+  let proposing = false;
+  $: if (holon !== draftFor) {
+    draftFor = holon;
+    draft = null;
+  }
+  $: equation = draft ?? live;
+  $: patch = live && draft ? draftPatch(live, draft) : null;
+  $: changeCount = patch
+    ? Object.keys(patch).filter((k) => k !== "currencies").length +
+      Object.keys(patch.currencies ?? {}).length
+    : 0;
+
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  /** "22 November": when a vote closes, in the kiosk's language. */
+  $: moonDate = (ms: number) =>
+    new Intl.DateTimeFormat($lang, { day: "numeric", month: "long" }).format(
+      new Date(ms),
+    );
+  /** When a proposal made now would close: the hint names that moon. */
+  $: nextClose = moonDate(equationClosesAt(Date.now()));
+
+  // Proposals are not tasks, so no board lists them: the editor does, with
+  // what each would change and how its vote stands. A tap opens the ballot.
+  $: openProposals = live
+    ? $governed.proposals
+        .filter((p) => !p.closed)
+        .map((p) => ({
+          ...p,
+          days: Math.max(1, Math.ceil((p.closesAt - Date.now()) / DAY_MS)),
+        }))
+    : [];
+  const metricLabel = (key: string) =>
+    key.startsWith("currencies.")
+      ? key.slice("currencies.".length)
+      : $t(`status.metric.${key}` as MessageKey);
+
+  /** The ⓘ sheet on why changes wait for the moon. */
+  let whyOpen = false;
+
+  /** Every tap edits the draft, never the equation itself. */
+  function commit(next: ScoreEquation) {
+    draft = { ...next, currencies: { ...(next.currencies ?? {}) } };
+  }
+
+  async function propose() {
+    if (!holon || !live || !draft || proposing) return;
+    const user = $currentUser;
+    if (!user) {
+      $loginOpen = true;
+      return;
+    }
+    proposing = true;
+    try {
+      const p = await proposeEquation(
+        holon,
+        user,
+        $t("settings.eqProposalTitle"),
+        live,
+        draft,
+      );
+      if (p) {
+        draft = null;
+        showNotice($t("settings.eqProposed", { date: nextClose }));
+      }
+    } catch (err) {
+      showNotice(
+        $t("settings.eqProposeFailed", {
+          reason: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    } finally {
+      proposing = false;
+    }
+  }
 
   /** Weight of `key`, whether it's a built-in metric or a currency code. */
   function eqWeight(
@@ -132,7 +213,7 @@
     if (!equation) return;
     // Round away float dust (0.1 + 0.2) so the stored weight reads cleanly.
     const v = Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
-    editEquation(
+    commit(
       currency
         ? { ...equation, currencies: { ...equation.currencies, [key]: v } }
         : ({ ...equation, [key]: v } as ScoreEquation),
@@ -154,7 +235,7 @@
 
   function resetEq() {
     if (!equation) return;
-    editEquation({
+    commit({
       ...DEFAULT_EQUATION,
       currencies: { ...DEFAULT_EQUATION.currencies },
     });
@@ -169,7 +250,7 @@
     const currencies: Record<string, number> = {};
     for (const code of Object.keys(equation.currencies ?? {}))
       currencies[code] = 0;
-    editEquation({ ...(zeroed as unknown as ScoreEquation), currencies });
+    commit({ ...(zeroed as unknown as ScoreEquation), currencies });
   }
 
   // One list to render: contributions, signals, currencies. Rows arrive
@@ -238,31 +319,28 @@
     if (!codes.length) return;
     const currencies = { ...equation.currencies };
     for (const code of codes) currencies[code] = 0;
-    editEquation({ ...equation, currencies });
+    commit({ ...equation, currencies });
   }
 
   /** Weights render short: 2, 0.5, 0 — never 2.00. */
   function eqLabel(n: number): string {
     return String(Math.round(n * 100) / 100);
   }
-
-  // The equation weighs the split, so it is a guarded settings field: an
-  // admin's signature counts, anyone else's is recorded and ignored. The
-  // editor says so and goes read-only (`may(standing, 'settings.guarded')`).
-  $: canEdit = may($standing, "settings.guarded");
-
-  // No teardown here on purpose: the pending write lives in `$lib/equation`,
-  // which outlives this component, so closing the panel mid-burst still saves.
 </script>
 
 {#if !equation}
   <p class="eq-loading">{$t("settings.eqLoading")}</p>
 {:else}
   <div class="eq">
-    {#if !canEdit}
-      <p class="eq-hint eq-readonly">{$t("settings.eqNotAdmin")}</p>
-    {/if}
-    <fieldset class="eq-fs" disabled={!canEdit}>
+    <p class="eq-hint">
+      {$t("settings.eqProposeHint", { date: nextClose })}
+      <button
+        type="button"
+        class="eq-link eq-why"
+        on:click={() => (whyOpen = true)}>{$t("settings.eqWhyMoon")}</button
+      >
+    </p>
+    <fieldset class="eq-fs">
       {#each eqSections as section (section.headKey)}
         <div class="eq-head">
           <span>{$t(section.headKey)}</span>
@@ -345,14 +423,56 @@
         <button type="button" class="eq-link" on:click={zeroEq}
           >{$t("settings.eqZero")}</button
         >
-        <span class="eq-state" class:on={eqState !== "idle"}>
-          {eqState === "saving"
-            ? $t("settings.eqSaving")
-            : $t("settings.eqSaved")}
-        </span>
+        {#if changeCount}
+          <button type="button" class="eq-link" on:click={() => (draft = null)}
+            >{$t("settings.eqDiscard")}</button
+          >
+          <button
+            type="button"
+            class="eq-propose"
+            disabled={proposing}
+            on:click={propose}
+            >{$isLoggedIn
+              ? $t("settings.eqPropose", { n: changeCount })
+              : $t("settings.eqProposeSignIn")}</button
+          >
+        {/if}
       </div>
     </fieldset>
+    {#if openProposals.length}
+      <div class="eq-head"><span>{$t("settings.eqOnTheTable")}</span></div>
+      {#each openProposals as p (p.id)}
+        <button
+          type="button"
+          class="eq-proposal"
+          on:click={() => openQuest(p.id, "task")}
+        >
+          <span class="eq-proposal-what">
+            {p.changes.length
+              ? p.changes
+                  .map((c) => `${metricLabel(c.key)} ${c.from} → ${c.to}`)
+                  .join(" · ")
+              : p.title || $t("settings.eqProposalTitle")}
+          </span>
+          <span class="eq-proposal-how">
+            {$t("settings.eqStanding", {
+              yes: p.tally.yes,
+              no: p.tally.no,
+            })} · {$t("settings.eqClosesIn", { n: p.days })}
+          </span>
+        </button>
+      {/each}
+    {/if}
   </div>
+{/if}
+
+{#if whyOpen}
+  <Modal on:close={() => (whyOpen = false)}>
+    <div class="eq-about">
+      <h4>{$t("settings.eqWhyMoon")}</h4>
+      <p>{$t("settings.eqWhyMoonBody")}</p>
+    </div>
+  </Modal>
 {/if}
 
 {#if eqInfo}
@@ -376,16 +496,47 @@
     padding: 0;
     min-width: 0;
   }
-  /* Read-only for a signature that would not count: the steppers and links
-     are inert (the fieldset disables them) and look it. */
-  .eq-fs:disabled .eq-step,
-  .eq-fs:disabled .eq-link,
-  .eq-fs:disabled .eq-add-open {
-    opacity: 0.4;
-    cursor: default;
+  .eq-propose {
+    margin-left: auto;
+    min-height: 44px;
+    padding: 0 1rem;
+    border-radius: 999px;
+    background: var(--teal);
+    color: var(--on-teal);
+    font-size: 0.85rem;
+    font-weight: 700;
   }
-  .eq-readonly {
-    color: var(--danger);
+  .eq-propose:disabled {
+    opacity: 0.6;
+  }
+  .eq-proposal {
+    display: grid;
+    gap: 0.15rem;
+    width: 100%;
+    min-height: 44px;
+    padding: 0.5rem 0;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+  }
+  .eq-proposal-what {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--teal-ink);
+  }
+  .eq-proposal-how {
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .eq-why {
+    display: inline-flex;
+    min-height: 44px;
+    margin-left: 0.25rem;
+  }
+  .eq-about p {
+    margin: 0;
+    font-size: 0.92rem;
+    line-height: 1.45;
+    color: var(--ink);
   }
   .eq-loading {
     margin: 0.4rem 0 0;
@@ -537,17 +688,6 @@
     margin-top: 0.9rem;
     padding-top: 0.6rem;
     border-top: 1.5px solid var(--line);
-  }
-  .eq-state {
-    margin-left: auto;
-    font-size: 0.78rem;
-    font-weight: 700;
-    color: var(--muted);
-    opacity: 0;
-    transition: opacity 0.2s ease;
-  }
-  .eq-state.on {
-    opacity: 1;
   }
 
   /* ⓘ sheet explaining a section's rows. */
