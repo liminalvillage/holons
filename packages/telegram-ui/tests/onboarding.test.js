@@ -182,10 +182,14 @@ describe('/onboarding', () => {
     await bot.text('/onboarding');
     await bot.tap(`n_${ym(nextMonth)}-10_0`);
     await bot.tap(`n_${ym(nextMonth)}-20_0`);
-    await bot.tap('category_Steward');
-    await bot.tap('value_Courage');
-    await bot.tap('value_Honesty');
-    await bot.tap('value_Honesty'); // changed their mind
+    const valuesPrompt = await bot.tap('category_Steward');
+    // The catalogue is data/values.json, ten to a page with their meaning.
+    const picker = sent(valuesPrompt, 'select the values');
+    expect(picker.payload.text).toContain('Accountability/Ethics — To act on');
+    expect(buttons(picker)).toContain('value_Accountability/Ethics');
+    await bot.tap('value_Creativity');
+    await bot.tap('value_Responsibility');
+    await bot.tap('value_Responsibility'); // changed their mind
     const ikigaiPrompt = await bot.tap('done_picking');
     expect(sent(ikigaiPrompt, 'What is your ikigai?')).toBeDefined();
     const linkedinPrompt = await bot.text('I hold space for people to grow.');
@@ -214,7 +218,7 @@ describe('/onboarding', () => {
       username: 't',
       public: true,
       category: 'Steward',
-      values: ['Courage'],
+      values: ['Creativity'],
       ikigai: 'I hold space for people to grow.',
       linkedin: 'https://www.linkedin.com/in/t-person/',
       arrival: `${ym(nextMonth).replace('-', '/')}/10 00:00:00`,
