@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "2.0.0",
   "metadata": {
     "title": "Liminal Village - Application",
     "description": "Let's get to know you better! Please complete this application form.",
@@ -22,188 +22,162 @@
     {
       "id": "section_personal",
       "type": "section",
-      "title": "Personal Information",
-      "description": "Let's start with some basic information about you.",
-      "icon": "👤"
-    },
-    {
-      "id": "email",
-      "type": "text",
-      "inputType": "email",
-      "label": "Email Address",
-      "prompt": "Please enter your email address:",
-      "required": true,
-      "storageKey": "email"
+      "title": "You",
+      "description": "A few details so we know who you are and how to reach you.",
+      "icon": "🌑"
     },
     {
       "id": "name",
       "type": "text",
       "inputType": "text",
-      "label": "Full Name",
-      "prompt": "What's your name?",
+      "label": "Name",
+      "prompt": "What’s your name?",
       "required": true,
       "storageKey": "name"
     },
     {
-      "id": "role",
-      "type": "single_select",
-      "label": "Role in Regenerative Network",
-      "prompt": "What role do you have, or could imagine for yourself within a regenerative network?",
+      "id": "email",
+      "type": "text",
+      "inputType": "email",
+      "label": "E-mail",
+      "prompt": "What’s your e-mail address?",
       "required": true,
-      "options": [
-        { "value": "pollinator", "label": "Pollinator" },
-        { "value": "facilitator", "label": "Facilitator" },
-        { "value": "storyteller", "label": "Storyteller" },
-        { "value": "forager", "label": "Forager" },
-        { "value": "hub_founder", "label": "Hub Founder" },
-        { "value": "hub_steward", "label": "Hub Steward" }
-      ],
-      "allowOther": true,
-      "otherPrompt": "Please describe your role:",
-      "infoButtons": {
-        "enabled": true,
-        "descriptions": {
-          "pollinator": "Works with different hubs, networking and sharing knowledge, ideas and competencies",
-          "facilitator": "Supports hubs in organising and realising their vision",
-          "storyteller": "Creates and broadcasts narratives about what's happening in the network",
-          "forager": "Supports hubs or the network in attracting resources",
-          "hub_founder": "Has founded, or would like to found a hub",
-          "hub_steward": "Stewards, or would like to steward a hub"
-        }
+      "validation": {
+        "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+        "errorMessage": "Please enter a valid e-mail address, e.g. you@example.com"
       },
-      "storageKey": "role"
+      "storageKey": "email"
     },
     {
       "id": "location",
       "type": "text",
       "inputType": "text",
-      "label": "Current Location",
-      "prompt": "Where are you currently located?",
+      "label": "Location",
+      "prompt": "Where are you currently located? (City, country)",
       "required": true,
       "storageKey": "location"
     },
     {
       "id": "age_range",
       "type": "single_select",
-      "label": "Age Range",
-      "prompt": "Select your age range:",
+      "label": "Age range",
+      "prompt": "Your age range:",
       "required": true,
       "options": [
-        { "value": "20-30", "label": "20-30" },
-        { "value": "30-40", "label": "30-40" },
-        { "value": "40-50", "label": "40-50" },
-        { "value": "50-60", "label": "50-60" },
-        { "value": "60-70", "label": "60-70" },
-        { "value": "70-80", "label": "70-80" }
+        {
+          "value": "20-30",
+          "label": "20-30"
+        },
+        {
+          "value": "30-40",
+          "label": "30-40"
+        },
+        {
+          "value": "40-50",
+          "label": "40-50"
+        },
+        {
+          "value": "50-60",
+          "label": "50-60"
+        },
+        {
+          "value": "60-70",
+          "label": "60-70"
+        },
+        {
+          "value": "70-80",
+          "label": "70-80"
+        }
       ],
       "allowOther": false,
       "storageKey": "age_range"
     },
     {
-      "id": "section_visit",
+      "id": "x",
+      "type": "text",
+      "inputType": "text",
+      "label": "X",
+      "prompt": "Where can we find you online? (Optional)\n\nYour X handle, e.g. @handle:",
+      "required": false,
+      "storageKey": "x"
+    },
+    {
+      "id": "linkedin",
+      "type": "text",
+      "inputType": "text",
+      "label": "LinkedIn",
+      "prompt": "LinkedIn (optional), e.g. linkedin.com/in/…",
+      "required": false,
+      "storageKey": "linkedin"
+    },
+    {
+      "id": "website",
+      "type": "text",
+      "inputType": "text",
+      "label": "Other socials or website",
+      "prompt": "Other socials or website (optional), e.g. https://…",
+      "required": false,
+      "storageKey": "website"
+    },
+    {
+      "id": "section_story",
       "type": "section",
-      "title": "Visit Information",
-      "description": "We often welcome guests around the New Moon (or Full Moon), but the timing is flexible and can be adjusted together.\n\nPlease check your calendar with our arrivals around new moons: https://www.timeanddate.com/moon/phases/",
-      "icon": "🌙"
+      "title": "Your story",
+      "description": "What draws you here, and what you bring with you.",
+      "icon": "🌒"
     },
     {
-      "id": "arrival_date",
-      "type": "date",
-      "label": "Arrival Date",
-      "prompt": "If you would like to visit, what arrival date feels right for you?",
+      "id": "role",
+      "type": "multi_select",
+      "label": "Roles in a regenerative network",
+      "prompt": "What roles do you have, or could imagine for yourself, within a regenerative network? (Choose any)\n\n• Pollinator — works with different hubs, networking and sharing knowledge, ideas and competencies\n• Facilitator — supports hubs in organising and realising their vision\n• Storyteller — creates and broadcasts narratives about what’s happening in the network\n• Forager — supports hubs or the network in attracting resources\n• Hub Founder — has founded, or would like to found a hub\n• Hub Steward — stewards, or would like to steward a hub\n• Other — something else, tell us",
       "required": true,
-      "dateConfig": {
-        "minDate": "today",
-        "maxDate": "+365days",
-        "includeTime": false
+      "options": [
+        {
+          "value": "pollinator",
+          "label": "Pollinator"
+        },
+        {
+          "value": "facilitator",
+          "label": "Facilitator"
+        },
+        {
+          "value": "storyteller",
+          "label": "Storyteller"
+        },
+        {
+          "value": "forager",
+          "label": "Forager"
+        },
+        {
+          "value": "hub_founder",
+          "label": "Hub Founder"
+        },
+        {
+          "value": "hub_steward",
+          "label": "Hub Steward"
+        }
+      ],
+      "allowOther": true,
+      "otherPrompt": "Please specify your role:",
+      "pagination": {
+        "itemsPerPage": 6
       },
-      "storageKey": "arrival"
-    },
-    {
-      "id": "departure_date",
-      "type": "date",
-      "label": "Departure Date",
-      "prompt": "Around what date would you expect to leave?\n\n(Please note: we ideally operate around month-long lunar cycles)",
-      "required": true,
-      "dateConfig": {
-        "minDate": "arrival",
-        "maxDate": "+365days",
-        "includeTime": false
-      },
-      "storageKey": "departure"
+      "storageKey": "role"
     },
     {
       "id": "intention",
       "type": "textarea",
-      "label": "Intention for Visiting",
+      "label": "Intention",
       "prompt": "What is your intention for visiting?",
       "required": true,
-      "validation": {
-        "minLength": 20
-      },
       "storageKey": "intention"
-    },
-    {
-      "id": "transportation",
-      "type": "multi_select",
-      "label": "Mode of Transportation",
-      "prompt": "Which mode of transportation will you use to reach Liminal Village?\n\n(You may select more than one)",
-      "required": true,
-      "options": [
-        { "value": "car", "label": "🚗 Car" },
-        { "value": "carpool", "label": "🚙 Carpool / sharing a ride" },
-        { "value": "bus", "label": "🚌 Bus" },
-        { "value": "train", "label": "🚆 Train" },
-        { "value": "flight", "label": "✈️ Flight" },
-        { "value": "bicycle", "label": "🚲 Bicycle" }
-      ],
-      "allowOther": true,
-      "otherPrompt": "Please describe your transportation:",
-      "pagination": {
-        "itemsPerPage": 4
-      },
-      "storageKey": "transportation"
-    },
-    {
-      "id": "drivers_license",
-      "type": "single_select",
-      "label": "Driver's License",
-      "prompt": "Do you have an (international) driver's licence?",
-      "required": true,
-      "options": [
-        { "value": "yes", "label": "Yes" },
-        { "value": "no", "label": "No" }
-      ],
-      "allowOther": false,
-      "storageKey": "drivers_license"
-    },
-    {
-      "id": "accommodation",
-      "type": "single_select",
-      "label": "Accommodation Preference",
-      "prompt": "What type of accommodation would you like to use during your stay at Liminal Village?",
-      "required": true,
-      "options": [
-        { "value": "van", "label": "🚐 My own van / camper" },
-        { "value": "tent", "label": "⛺ My own tent" },
-        { "value": "room", "label": "🛏️ A room at Liminal Village" },
-        { "value": "unsure", "label": "❓ I'm not sure yet / I need more information" }
-      ],
-      "allowOther": false,
-      "storageKey": "accommodation"
-    },
-    {
-      "id": "section_background",
-      "type": "section",
-      "title": "About You",
-      "description": "Tell us something about yourself and your background.",
-      "icon": "🌱"
     },
     {
       "id": "ikigai",
       "type": "textarea",
       "label": "Ikigai",
-      "prompt": "Tell us something about yourself. What is your Ikigai?\n\n(e.g. healer, leader, facilitator, coach, community organizer, performer, artist, etc.)",
+      "prompt": "Tell us something about yourself. What is your Ikigai? (Optional)\n\nWhat you love, what you’re good at, what the world needs — e.g. healer, leader, facilitator, coach, community organizer, performer, artist…",
       "required": false,
       "storageKey": "ikigai"
     },
@@ -211,83 +185,302 @@
       "id": "background",
       "type": "textarea",
       "label": "Background",
-      "prompt": "Any background you would like to share with us?",
+      "prompt": "Any background you would like to share with us? (Optional)",
       "required": false,
       "storageKey": "background"
     },
     {
       "id": "community_experience",
       "type": "textarea",
-      "label": "Community Experience",
-      "prompt": "Do you have any experience living in (intentional) communities, cohousing or ecovillages? Which ones? Can you tell us something about your experiences?",
+      "label": "Community experience",
+      "prompt": "Do you have any experience living in (intentional) communities, cohousing or ecovillages?\n\nWhich ones? Tell us something about your experiences — “none yet” is a fine answer too.",
       "required": true,
-      "validation": {
-        "minLength": 20
-      },
       "storageKey": "community_experience"
     },
     {
       "id": "wellbeing",
       "type": "textarea",
-      "label": "Wellbeing Conditions",
-      "prompt": "Do you have any current wellbeing conditions (physical, emotional, or psychological) that we should be aware of to ensure that your stay is appropriate and safe for you?",
+      "label": "Wellbeing",
+      "prompt": "Do you have any current wellbeing conditions (physical, emotional or psychological) we should be aware of?\n\nSo we can make sure your stay is appropriate and safe for you. Shared only with the people reviewing your application.",
       "required": true,
       "storageKey": "wellbeing"
     },
     {
+      "id": "referral",
+      "type": "textarea",
+      "label": "Referred by",
+      "prompt": "Has someone referred you to Liminal Village? (Optional)\n\nList anyone in our community who is referring you, and whether they have been here in person.",
+      "required": false,
+      "storageKey": "referral"
+    },
+    {
+      "id": "section_visit",
+      "type": "section",
+      "title": "Lunation",
+      "description": "Whether you’d like to join us in person, and when.",
+      "icon": "🌓"
+    },
+    {
+      "id": "visit",
+      "type": "single_select",
+      "label": "Visit in person",
+      "prompt": "Do you wish to visit Liminal Village in person during a lunation?",
+      "required": true,
+      "options": [
+        {
+          "value": "visit",
+          "label": "🌕 Yes, I would like to visit and stay in person"
+        },
+        {
+          "value": "unsure",
+          "label": "🌓 I am not sure yet"
+        },
+        {
+          "value": "remote",
+          "label": "🌐 I only want to join the community remotely"
+        }
+      ],
+      "allowOther": false,
+      "storageKey": "visit"
+    },
+    {
+      "id": "section_dates",
+      "type": "section",
+      "title": "When would you like to come?",
+      "description": "Share your first ideas so we can see if we can host you then — otherwise we’ll get in touch to find other dates.\n\nGuests often arrive around the new moon: see the village’s lunar calendar at https://liminalvillage.com/lunations",
+      "icon": "🌙",
+      "showIf": {
+        "field": "visit",
+        "in": ["visit", "unsure"]
+      }
+    },
+    {
+      "id": "arrival_date",
+      "type": "date",
+      "label": "Arrival",
+      "prompt": "Arrival — what date feels right for you?",
+      "required": true,
+      "dateConfig": {
+        "minDate": "today",
+        "maxDate": "+365days",
+        "includeTime": false
+      },
+      "showIf": {
+        "field": "visit",
+        "in": ["visit", "unsure"]
+      },
+      "storageKey": "arrival"
+    },
+    {
+      "id": "departure_date",
+      "type": "date",
+      "label": "Expected departure",
+      "prompt": "Expected departure — around what date would you leave?\n\n(Guests often stay a full lunation, about a month.)",
+      "required": true,
+      "dateConfig": {
+        "minDate": "arrival",
+        "maxDate": "+365days",
+        "includeTime": false
+      },
+      "showIf": {
+        "field": "visit",
+        "in": ["visit", "unsure"]
+      },
+      "storageKey": "departure"
+    },
+    {
+      "id": "transportation",
+      "type": "multi_select",
+      "label": "Transport",
+      "prompt": "How will you reach Liminal Village? (Choose any — optional)",
+      "required": false,
+      "options": [
+        {
+          "value": "car",
+          "label": "🚗 Car"
+        },
+        {
+          "value": "carpool",
+          "label": "🚙 Carpool / sharing a ride"
+        },
+        {
+          "value": "bus",
+          "label": "🚌 Bus"
+        },
+        {
+          "value": "train",
+          "label": "🚆 Train"
+        },
+        {
+          "value": "flight",
+          "label": "✈️ Flight"
+        },
+        {
+          "value": "bicycle",
+          "label": "🚲 Bicycle"
+        }
+      ],
+      "allowOther": true,
+      "otherPrompt": "Other transport:",
+      "pagination": {
+        "itemsPerPage": 6
+      },
+      "showIf": {
+        "field": "visit",
+        "in": ["visit", "unsure"]
+      },
+      "storageKey": "transportation"
+    },
+    {
+      "id": "drivers_license",
+      "type": "single_select",
+      "label": "Driver’s licence",
+      "prompt": "Do you have an (international) driver’s licence?",
+      "required": true,
+      "options": [
+        {
+          "value": "yes",
+          "label": "Yes"
+        },
+        {
+          "value": "no",
+          "label": "No"
+        }
+      ],
+      "allowOther": false,
+      "showIf": {
+        "field": "visit",
+        "in": ["visit", "unsure"]
+      },
+      "storageKey": "drivers_license"
+    },
+    {
+      "id": "accommodation",
+      "type": "single_select",
+      "label": "Accommodation",
+      "prompt": "Where would you like to stay? (Optional)",
+      "required": false,
+      "options": [
+        {
+          "value": "van",
+          "label": "🚐 My own van / camper"
+        },
+        {
+          "value": "tent",
+          "label": "⛺ My own tent"
+        },
+        {
+          "value": "room",
+          "label": "🛏️ A room at Liminal Village"
+        },
+        {
+          "value": "unsure",
+          "label": "❓ I’m not sure yet / I need more information"
+        }
+      ],
+      "allowOther": false,
+      "showIf": {
+        "field": "visit",
+        "in": ["visit", "unsure"]
+      },
+      "storageKey": "accommodation"
+    },
+    {
       "id": "section_contribution",
       "type": "section",
-      "title": "Contribution & Exchange",
-      "description": "🌿 Liminal Village is part of a growing local–global regenerative network working toward a new way of living—more connected, balanced, and life-supporting.\n\nDuring your stay, we ask you to contribute in ways that nourish yourself, the community, the commons, and the village projects.\n\n🌕 For volunteers, we ask for a minimum stay of one lunation (1 month) and 20 hours per week. For shorter stays, we ask for a financial contribution.",
-      "icon": "🤝"
+      "title": "Contribution",
+      "description": "How you’d like to take part in village life.\n\n🎬 Watch the 2030 Vision again before you answer: https://www.youtube.com/watch?v=XdhPXocPf9g — it shows the network you’d be contributing to; the roles and tasks below are how it comes to life.\n\nLiminal Village is part of a growing local-global regenerative network working toward a new way of living — more connected, balanced and life-supporting. During your stay, we ask you to contribute in ways that nourish yourself, the community, the commons and the village projects, keeping needs and yields in balance across personal, local and global scales.\n\n🌕 Volunteers stay at least one lunation (1 month), offering 20 hours a week.\n🤝 Shorter stays are asked for a financial contribution.\n🍲 Daily rhythm: everyone shares cooking, cleaning and recycling throughout their stay.\n\nMore in the Contribution Guidelines: https://docs.liminalvillage.com",
+      "icon": "🌕"
     },
     {
       "id": "tasks",
       "type": "multi_select",
-      "label": "Roles & Tasks",
-      "prompt": "Which roles or tasks would you like to be involved in?",
+      "label": "Roles / tasks",
+      "prompt": "Which roles or tasks would you like to be involved in? (Choose any)",
       "required": true,
       "options": [
-        { "value": "kitchen", "label": "Anchoring the kitchen (menu planning, food acquisition)" },
-        { "value": "cooking", "label": "Cooking" },
-        { "value": "space_tending", "label": "Space tending (organizing, cleaning)" },
-        { "value": "tech", "label": "Tech contributions" },
-        { "value": "website_social", "label": "Website Development & Social Media" },
-        { "value": "gardening", "label": "Gardening" },
-        { "value": "building", "label": "Building & Maintenance" },
-        { "value": "childcare", "label": "Child Care" },
-        { "value": "crafting", "label": "Crafting (painting, woodwork, art, decoration, etc)" },
-        { "value": "bodywork", "label": "Body & mind work" },
-        { "value": "facilitation", "label": "Group Facilitation & Communication" }
+        {
+          "value": "kitchen",
+          "label": "🧺 Anchoring the kitchen (menu planning, food acquisition)"
+        },
+        {
+          "value": "cooking",
+          "label": "🍲 Cooking"
+        },
+        {
+          "value": "space_tending",
+          "label": "🧹 Space tending (organizing, cleaning)"
+        },
+        {
+          "value": "tech",
+          "label": "💻 Tech contributions"
+        },
+        {
+          "value": "website_social",
+          "label": "🌐 Website Development & Social Media"
+        },
+        {
+          "value": "gardening",
+          "label": "🌱 Gardening"
+        },
+        {
+          "value": "building",
+          "label": "🔨 Building & Maintenance"
+        },
+        {
+          "value": "childcare",
+          "label": "🧸 Child Care"
+        },
+        {
+          "value": "crafting",
+          "label": "🎨 Crafting (painting, woodwork, art, decoration…)"
+        },
+        {
+          "value": "bodywork",
+          "label": "🧘 Body & mind work"
+        },
+        {
+          "value": "facilitation",
+          "label": "🔥 Group Facilitation & Communication"
+        }
       ],
       "allowOther": true,
-      "otherPrompt": "Please describe other roles or tasks you'd like to be involved in:",
+      "otherPrompt": "Other role or task:",
       "pagination": {
-        "itemsPerPage": 4
+        "itemsPerPage": 6
       },
       "storageKey": "tasks"
     },
     {
       "id": "contribution_preference",
       "type": "single_select",
-      "label": "Contribution Preference",
+      "label": "Contribution",
       "prompt": "How would you prefer to contribute to the community?",
       "required": true,
       "options": [
-        { "value": "volunteering", "label": "Volunteering time" },
-        { "value": "financial", "label": "Financial contribution" },
-        { "value": "mixed", "label": "A mix" },
-        { "value": "unsure", "label": "I'm not sure yet" }
+        {
+          "value": "volunteering",
+          "label": "Primarily through volunteering time"
+        },
+        {
+          "value": "financial",
+          "label": "Primarily through a financial contribution"
+        },
+        {
+          "value": "mixed",
+          "label": "A mix of time and financial contribution"
+        },
+        {
+          "value": "unsure",
+          "label": "I’m not sure yet / would like to discuss"
+        }
       ],
       "allowOther": true,
-      "otherPrompt": "Please describe your preferred contribution arrangement:",
+      "otherPrompt": "Please specify:",
       "infoButtons": {
         "enabled": true,
         "descriptions": {
-          "volunteering": "Practical tasks, roles, community support (min 20 hrs/week for 1 month)",
-          "financial": "Daily rate contribution",
-          "mixed": "Combination of volunteer hours and financial contribution",
-          "unsure": "We can discuss options together"
+          "volunteering": "Practical tasks, roles, community support"
         }
       },
       "storageKey": "contribution_preference"
@@ -295,21 +488,20 @@
     {
       "id": "capacity",
       "type": "textarea",
-      "label": "Capacity to Contribute",
-      "prompt": "What is your capacity to contribute? How many hours per week can you offer, and how many hours are you currently committed to in your regular work or other obligations?",
+      "label": "Capacity",
+      "prompt": "What is your capacity to contribute?\n\nHow many hours per week can you offer, and how many are you currently committed to in your regular work or other obligations?",
       "required": true,
-      "validation": {
-        "minLength": 10
-      },
       "storageKey": "capacity"
     },
     {
       "id": "social_links",
-      "type": "text",
-      "inputType": "text",
-      "label": "Social Media & Websites",
-      "prompt": "Please share any websites and social media profiles (e.g. Facebook, Instagram, LinkedIn, etc.)",
+      "type": "textarea",
+      "label": "Websites and social profiles",
+      "prompt": "Please share any websites and social media profiles (e.g. Instagram, Facebook, LinkedIn, a personal site…)",
       "required": true,
+      "showIf": {
+        "allEmpty": ["x", "linkedin", "website"]
+      },
       "storageKey": "social_links"
     }
   ]
