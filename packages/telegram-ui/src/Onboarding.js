@@ -10,6 +10,7 @@ import {
 } from '../scenes/bookingScenes.js';
 import videoScene from '../scenes/videoScene.js';
 import valuesScene from '../scenes/valuesScene.js';
+import { ikigaiScene, linkedinScene } from '../scenes/ikigaiScenes.js';
 import categoriesScene from '../scenes/categoriesScene.js';
 import {
   questionsScene,
@@ -22,19 +23,7 @@ import summarizeScene from '../scenes/summarizeScene.js';
 import welcomeScene from '../scenes/welcomeScene.js';
 import { dnaScene, createScenesForDNA } from '../scenes/dnaScene.js';
 import done from '../scenes/doneScene.js';
-import { startSequence } from '../scenes/flow.js';
-
-/** The steps `/onboarding` walks, in order. */
-const ONBOARDING_SEQUENCE = [
-  'welcome',
-  'arrivalbooking',
-  'departurebooking',
-  'categories',
-  'values',
-  'location',
-  'saveprofile',
-  'onboarding',
-];
+import { startOnboarding } from '../scenes/flow.js';
 
 /**
  * User onboarding system with multi-step scene flows.
@@ -67,6 +56,8 @@ export default class Onboarding {
       departurebookingScene,
       videoScene,
       valuesScene,
+      ikigaiScene,
+      linkedinScene,
       categoriesScene,
       onboardingScene,
       locationScene,
@@ -84,10 +75,7 @@ export default class Onboarding {
       bot.stage.register(scene);
     });
 
-    bot.command('onboarding', ctx => {
-      ctx.session.userResponses = [];
-      return startSequence(ctx, ONBOARDING_SEQUENCE, this.db);
-    });
+    bot.command('onboarding', ctx => startOnboarding(ctx, this.db));
 
     bot.command('summarize', ctx => {
       ctx.session.db = this.db;

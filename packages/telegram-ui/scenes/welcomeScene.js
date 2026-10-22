@@ -70,6 +70,10 @@ welcomeScene.action('change', async ctx => {
         Markup.button.callback('Category', 'category'),
       ],
       [
+        Markup.button.callback('Ikigai', 'ikigai'),
+        Markup.button.callback('LinkedIn', 'linkedin'),
+      ],
+      [
         Markup.button.callback('Enquiry', 'enquiry'),
         Markup.button.callback('Hexagon', 'hexagon'),
       ],
@@ -100,6 +104,8 @@ const sceneMap = {
   hexagon: 'h3',
   values: 'values',
   category: 'categories',
+  ikigai: 'ikigai',
+  linkedin: 'linkedin',
   enquiry: 'questions',
   video: 'video',
 };

@@ -17,16 +17,87 @@
  * @module scenes/flow
  */
 
-import { mergeDna } from '../src/dna.js';
+import { mergeDna, readDna } from '../src/dna.js';
 
 /** The wizard the welcome menu runs when no sequence was asked for. */
 export const DEFAULT_SEQUENCE = [
   'values',
+  'ikigai',
+  'linkedin',
   'location',
   'categories',
   'questions',
   'saveprofile',
 ];
+
+/** The steps `/onboarding` walks, in order. */
+export const ONBOARDING_SEQUENCE = [
+  'welcome',
+  'arrivalbooking',
+  'departurebooking',
+  'categories',
+  'values',
+  'ikigai',
+  'linkedin',
+  'location',
+  'saveprofile',
+  'onboarding',
+];
+
+/**
+ * What someone the bot already knows is asked when a website sends them to
+ * onboarding: only their public profile — not the visitor questions
+ * (arrival, departure, category, values, location) they answered or that
+ * never applied to them.
+ */
+export const PROFILE_SEQUENCE = ['ikigai', 'linkedin', 'saveprofile'];
+
+/** The deep-link payload that opens `/onboarding` (`t.me/<bot>?start=onboarding`). */
+export const ONBOARDING_DEEPLINK = 'onboarding';
+
+/** Begin the `/onboarding` journey from its first step. */
+export function startOnboarding(ctx, db) {
+  ctx.session.userResponses = [];
+  return startSequence(ctx, ONBOARDING_SEQUENCE, db);
+}
+
+/**
+ * Does the bot already know this person? Any one of: an onboarding DNA, a
+ * profile in their own holon, or a hub they belong to (joining one records
+ * it in their holon's `holons` lens).
+ */
+export async function isKnownUser(db, userId) {
+  const id = String(userId);
+  if (await readDna(db, id)) return true;
+  try {
+    const own = await db.get(id, 'users', id);
+    if (own && !own._deleted) return true;
+  } catch {
+    // unreadable counts as unknown
+  }
+  try {
+    const hubs =
+      typeof db.getAll === 'function' ? await db.getAll(id, 'holons') : [];
+    return Array.isArray(hubs) && hubs.some(h => h && !h._deleted);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The deep link's entry: someone new walks the whole journey; someone the
+ * bot already knows only completes their public profile.
+ */
+export async function startFromDeeplink(ctx, db) {
+  if (!(await isKnownUser(db, ctx.from.id))) return startOnboarding(ctx, db);
+  ctx.session.username = ctx.from.username;
+  ctx.session.first_name = ctx.from.first_name;
+  ctx.session.last_name = ctx.from.last_name;
+  await ctx.reply(
+    'Welcome back! Let us complete your public profile — your ikigai and LinkedIn — so people can find and book you.'
+  );
+  return startSequence(ctx, PROFILE_SEQUENCE, db);
+}
 
 /** Begin a wizard run over `sequence` (scene ids), from its first step. */
 export function startSequence(ctx, sequence, db) {

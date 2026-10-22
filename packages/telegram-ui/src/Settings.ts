@@ -38,6 +38,7 @@ import {
 } from '@holons/core/linking';
 import { federationLinkState, laneState } from '@holons/core/federation';
 import { linkContext, outcomeText } from './federationLinks.js';
+import { ONBOARDING_DEEPLINK, startFromDeeplink } from '../scenes/flow.js';
 
 // Re-export so other modules (web, ai-ui) can import the canonical settings
 // shape from either `./Settings.js` or `@holons/core/settings`.
@@ -278,6 +279,17 @@ export default class Settings {
         const payload = ctx.message.text.split(' ')[1];
         if (payload && payload.startsWith('join_') && chatType === 'private') {
           await this._handleJoinDeeplink(ctx, payload, language);
+          return;
+        }
+
+        // A website sent the person to fill in their profile
+        // (`?start=onboarding`): new people get the /onboarding journey,
+        // known ones only the public-profile steps.
+        if (
+          payload === ONBOARDING_DEEPLINK &&
+          chatType === 'private' &&
+          (await this._startOnboardingDeeplink(ctx))
+        ) {
           return;
         }
 
@@ -5588,6 +5600,18 @@ export default class Settings {
           })
         : t('holonUnlinkNone', 'This chat is not linked to any dashboard hub.')
     );
+  }
+
+  /**
+   * `/start onboarding` — open the /onboarding journey, or, for someone the
+   * bot already knows, just the public-profile steps. False when this bot
+   * runs without the onboarding service (its scenes are not registered), so
+   * the caller falls back to the plain welcome.
+   */
+  async _startOnboardingDeeplink(ctx) {
+    if (!this.bot?.stage?.scenes?.has?.('welcome')) return false;
+    await startFromDeeplink(ctx, this.db);
+    return true;
   }
 
   async _handleJoinDeeplink(ctx, payload, language) {

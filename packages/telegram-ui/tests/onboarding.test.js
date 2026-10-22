@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Telegraf, Telegram, Scenes, session } from 'telegraf';
 import Onboarding from '../src/Onboarding.js';
+import Settings from '../src/Settings.ts';
 import InputScene from '../utils/InputScene.js';
 import { Calendar } from '../src/Calendar.js';
 import dnaData from '../data/dna.json' with { type: 'json' };
@@ -20,7 +21,7 @@ const privateChat = { id: 42, type: 'private' };
 const groupChat = { id: -1001, type: 'supergroup', title: 'Village' };
 
 /** A real Telegraf + stage + session with the network replaced by a recorder. */
-function harness(chat = privateChat) {
+function harness(chat = privateChat, { withOnboarding = true } = {}) {
   const calls = [];
   const puts = [];
   let mid = 100;
@@ -51,9 +52,25 @@ function harness(chat = privateChat) {
       puts.push(args);
       return true;
     },
+    getAll: async (holon, lens) =>
+      [...records.entries()]
+        .filter(([k]) => k.startsWith(`${holon}/${lens}/`))
+        .map(([, v]) => v),
   };
   new InputScene(bot);
-  new Onboarding(bot, db);
+  const onboarding = withOnboarding ? new Onboarding(bot, db) : null;
+  // Settings' /start dispatch for the onboarding deep link, on its own.
+  bot.start(async ctx => {
+    const handled =
+      ctx.payload === 'onboarding' &&
+      ctx.chat.type === 'private' &&
+      (await Settings.prototype._startOnboardingDeeplink.call(
+        { bot, db },
+        ctx
+      ));
+    if (!handled) await ctx.reply('Welcome!');
+  });
+  void onboarding;
 
   const deliver = async update => {
     calls.length = 0;
@@ -63,6 +80,8 @@ function harness(chat = privateChat) {
   return {
     puts,
     errors,
+    seed: (holon, lens, data) =>
+      records.set(`${holon}/${lens}/${data.id}`, data),
     text: t =>
       deliver({
         message: {
@@ -72,7 +91,13 @@ function harness(chat = privateChat) {
           date: 0,
           text: t,
           entities: t.startsWith('/')
-            ? [{ type: 'bot_command', offset: 0, length: t.length }]
+            ? [
+                {
+                  type: 'bot_command',
+                  offset: 0,
+                  length: t.split(' ')[0].length,
+                },
+              ]
             : undefined,
         },
       }),
@@ -171,7 +196,17 @@ describe('/onboarding', () => {
     await bot.tap('value_Courage');
     await bot.tap('value_Honesty');
     await bot.tap('value_Honesty'); // changed their mind
-    await bot.tap('done_picking');
+    const ikigaiPrompt = await bot.tap('done_picking');
+    expect(sent(ikigaiPrompt, 'What is your ikigai?')).toBeDefined();
+    const linkedinPrompt = await bot.text('I hold space for people to grow.');
+    expect(sent(linkedinPrompt, 'LinkedIn profile link')).toBeDefined();
+
+    const wrong = await bot.text('my website is example.com');
+    expect(sent(wrong, 'does not look like a LinkedIn')).toBeDefined();
+    const locationPrompt = await bot.text(
+      'http://it.linkedin.com/in/t-person/'
+    );
+    expect(sent(locationPrompt, 'share your location')).toBeDefined();
 
     // The location prompt is another scene's; its answer must land the member
     // in the next step, still listening.
@@ -194,6 +229,8 @@ describe('/onboarding', () => {
       public: true,
       category: 'Steward',
       values: ['Courage'],
+      ikigai: 'I hold space for people to grow.',
+      linkedin: 'https://www.linkedin.com/in/t-person/',
       arrival: `${ym(nextMonth).replace('-', '/')}/10 00:00:00`,
       departure: `${ym(nextMonth).replace('-', '/')}/20 00:00:00`,
       location: { latitude: 45.1, longitude: 9.2 },
@@ -202,6 +239,129 @@ describe('/onboarding', () => {
     // …and the member is known the next time round.
     const again = await bot.text('/onboarding');
     expect(sent(again, 'Welcome back')).toBeDefined();
+  });
+});
+
+describe('/onboarding — ikigai and LinkedIn', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('both can be skipped; nothing is invented for them', async () => {
+    const bot = harness();
+    await bot.text('/onboarding');
+    await bot.tap(`n_${ym(nextMonth)}-10_0`);
+    await bot.tap(`n_${ym(nextMonth)}-20_0`);
+    await bot.tap('category_Steward');
+    await bot.tap('done_picking');
+    const afterIkigai = await bot.tap('input_scene_cancel');
+    expect(sent(afterIkigai, 'LinkedIn profile link')).toBeDefined();
+    const afterLinkedin = await bot.tap('input_scene_cancel');
+    expect(sent(afterLinkedin, 'share your location')).toBeDefined();
+    await bot.location();
+    await bot.tap('public');
+
+    expect(bot.errors).toEqual([]);
+    const [, , profile] = bot.puts[0];
+    expect(profile).not.toHaveProperty('ikigai');
+    expect(profile).not.toHaveProperty('linkedin');
+  });
+
+  it('can be changed later from the welcome-back menu', async () => {
+    const bot = harness();
+    await bot.text('/onboarding');
+    await bot.tap(`n_${ym(nextMonth)}-10_0`);
+    await bot.tap(`n_${ym(nextMonth)}-20_0`);
+    await bot.tap('category_Steward');
+    await bot.tap('done_picking');
+    await bot.tap('input_scene_cancel');
+    await bot.tap('input_scene_cancel');
+    await bot.location();
+    await bot.tap('public');
+    await bot.text('/done');
+
+    await bot.text('/onboarding');
+    const menu = await bot.tap('change');
+    expect(buttons(sent(menu, 'What would you like to change?'))).toEqual(
+      expect.arrayContaining(['ikigai', 'linkedin'])
+    );
+    await bot.tap('linkedin');
+    await bot.text('linkedin.com/in/new-me');
+
+    expect(bot.errors).toEqual([]);
+    await vi.waitFor(() =>
+      expect(bot.puts.at(-1)[2]).toMatchObject({
+        category: 'Steward',
+        linkedin: 'https://www.linkedin.com/in/new-me',
+      })
+    );
+  });
+});
+
+describe('t.me/<bot>?start=onboarding', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('opens the /onboarding journey', async () => {
+    const bot = harness();
+    const calls = await bot.text('/start onboarding');
+    expect(sent(calls, 'When would you like to arrive?')).toBeDefined();
+    expect(sent(calls, 'Welcome!')).toBeUndefined();
+    expect(bot.errors).toEqual([]);
+  });
+
+  it.each([
+    [
+      'an onboarding DNA',
+      ['42', 'dna', { id: '42', category: 'Steward', public: true }],
+    ],
+    [
+      'a profile in their own holon',
+      ['42', 'users', { id: 42, username: 't' }],
+    ],
+    ['a hub they belong to', ['42', 'holons', { id: '-1003864542239' }]],
+  ])(
+    'someone known by %s only completes their public profile',
+    async (_, [holon, lens, data]) => {
+      const bot = harness();
+      bot.seed(holon, lens, data);
+
+      const opening = await bot.text('/start onboarding');
+      expect(sent(opening, 'Welcome back! Let us complete')).toBeDefined();
+      expect(sent(opening, 'What is your ikigai?')).toBeDefined();
+      expect(sent(opening, 'arrive')).toBeUndefined();
+
+      await bot.text('I make bread for the village.');
+      const afterLinkedin = await bot.tap('input_scene_cancel');
+      expect(sent(afterLinkedin, 'make your answers public')).toBeDefined();
+      const done = await bot.tap('public');
+      expect(sent(done, 'Thank you so much')).toBeDefined();
+
+      expect(bot.errors).toEqual([]);
+      const [h, l, profile] = bot.puts.at(-1);
+      expect([h, l]).toEqual(['42', 'dna']);
+      expect(profile).toMatchObject({
+        id: '42',
+        public: true,
+        ikigai: 'I make bread for the village.',
+      });
+      expect(profile).not.toHaveProperty('arrival');
+      if (lens === 'dna') expect(profile.category).toBe('Steward'); // kept
+    }
+  );
+
+  it('falls back to the plain welcome when onboarding is not loaded', async () => {
+    const bot = harness(privateChat, { withOnboarding: false });
+    const calls = await bot.text('/start onboarding');
+    expect(sent(calls, 'Welcome!')).toBeDefined();
+    expect(bot.errors).toEqual([]);
+  });
+
+  it('is ignored in groups', async () => {
+    const bot = harness(groupChat);
+    const calls = await bot.text('/start onboarding');
+    expect(sent(calls, 'Welcome!')).toBeDefined();
   });
 });
 
@@ -217,6 +377,8 @@ describe('/onboarding — keeping answers private', () => {
     await bot.tap(`n_${ym(nextMonth)}-20_0`);
     await bot.tap('category_Steward');
     await bot.tap('done_picking');
+    await bot.tap('input_scene_cancel'); // skip ikigai
+    await bot.tap('input_scene_cancel'); // skip LinkedIn
     await bot.location();
     await bot.tap('private');
     const done = await bot.text('/done');
