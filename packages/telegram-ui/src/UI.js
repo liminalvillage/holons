@@ -5,6 +5,7 @@
 import puppeteer from 'puppeteer';
 import i18next from 'i18next';
 import * as utils from './utilities.js';
+import { fileLink } from './FileBots.js';
 import fs from 'fs';
 import { Markup } from 'telegraf';
 import {
@@ -1107,7 +1108,8 @@ class UI {
         ) {
           imageDataUrl = quest.picture;
         } else {
-          const fileUrl = await this.bot.telegram.getFileLink(quest.picture);
+          const fileUrl = await fileLink(this.bot.telegram, quest.picture);
+          if (!fileUrl) throw new Error('no bot opens this file_id');
           const response = await fetch(fileUrl.href);
           const arrayBuffer = await response.arrayBuffer();
           const buffer = Buffer.from(arrayBuffer);
@@ -1377,7 +1379,8 @@ class UI {
         imageDataUrl = picture;
       } else {
         // Telegram file_id — resolve to a fetchable URL and inline as base64.
-        const fileUrl = await this.bot.telegram.getFileLink(picture);
+        const fileUrl = await fileLink(this.bot.telegram, picture);
+        if (!fileUrl) throw new Error('no bot opens this file_id');
         const response = await fetch(fileUrl.href);
         const arrayBuffer = await response.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);

@@ -8,12 +8,12 @@ import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
-import { Telegram } from 'telegraf';
 import https from 'https';
 import { toSvg as identiconSvg } from 'jdenticon';
 import { log } from '../utils/logger.js';
 import { i18next } from './utilities.js';
 import { notifyNostr } from './createHoloSphere.js';
+import { fileBots, fileOwner } from './FileBots.js';
 
 /**
  * Express server for serving static files, avatars, and images.
@@ -51,33 +51,14 @@ class Server {
     this.setupServer();
   }
 
-  /**
-   * Every bot whose file_ids may reach this server: this bot first, then the
-   * tokens in BOT_TOKENS (comma-separated). A file_id opens only with the
-   * token of the bot that received it, and other bots' groups store theirs.
-   */
+  /** Every bot whose file_ids may reach this server — see FileBots.js. */
   fileBots() {
-    if (!this._fileBots) {
-      const own = String(process.env.BOT_TOKEN ?? '');
-      const others = String(process.env.BOT_TOKENS ?? '')
-        .split(',')
-        .map(t => t.replace(/[^A-Za-z0-9:_-]/g, ''))
-        .filter(t => t && t !== own);
-      this._fileBots = [
-        this.bot.telegram,
-        ...[...new Set(others)].map(t => new Telegram(t)),
-      ];
-    }
-    return this._fileBots;
+    return fileBots(this.bot.telegram);
   }
 
   /** The first bot that opens this file_id, with its getFile answer. */
   async fileOwner(fileId) {
-    for (const telegram of this.fileBots()) {
-      const info = await telegram.getFile(fileId).catch(() => null);
-      if (info) return { telegram, info };
-    }
-    return null;
+    return fileOwner(this.fileBots(), fileId);
   }
 
   setupServer() {
@@ -996,15 +977,18 @@ class Server {
         return '';
       }
 
-      const photos = await this.bot.telegram.getUserProfilePhotos(userIdString);
-
-      if (photos.total_count > 0) {
-        const photo = photos.photos[0].pop();
-        const fileId = photo.file_id;
-        const fileUrl = await this.bot.telegram.getFileLink(fileId);
-
-        return fileUrl.href || '';
+      // A bot sees only the photos of users it has met (and their file_ids
+      // open only with its own token), so ask each bot until one knows them.
+      for (const telegram of this.fileBots()) {
+        const photos = await telegram
+          .getUserProfilePhotos(userIdString)
+          .catch(() => null);
+        const photo = photos?.total_count > 0 ? photos.photos[0].at(-1) : null;
+        if (!photo) continue;
+        const fileUrl = await telegram.getFileLink(photo.file_id);
+        return fileUrl?.href || '';
       }
+      return '';
     } catch (error) {
       console.error('Error retrieving the profile photo:', error);
       return '';
