@@ -39,6 +39,14 @@ import {
 import { federationLinkState, laneState } from '@holons/core/federation';
 import { linkContext, outcomeText } from './federationLinks.js';
 import { ONBOARDING_DEEPLINK, startFromDeeplink } from '../scenes/flow.js';
+import {
+  DEFAULT_APPLICATIONS_HOLON,
+  findProfileClaim,
+  parseProfileClaimPayload,
+  spendProfileClaim,
+} from '@holons/core/applications';
+import { publishProfile } from './dna.js';
+import { normaliseLinkedin } from '../scenes/ikigaiScenes.js';
 
 // Re-export so other modules (web, ai-ui) can import the canonical settings
 // shape from either `./Settings.js` or `@holons/core/settings`.
@@ -301,6 +309,15 @@ export default class Settings {
           chatType === 'private' &&
           (await this._startOnboardingDeeplink(ctx))
         ) {
+          return;
+        }
+
+        // The web application form sent the applicant here to put their
+        // ikigai and LinkedIn on their profile (`profile_<token>`, see
+        // @holons/core/applications): opening it is what tells us whose.
+        const profileClaim = parseProfileClaimPayload(payload);
+        if (profileClaim && chatType === 'private') {
+          await this._redeemProfileClaim(ctx, profileClaim);
           return;
         }
 
@@ -5617,6 +5634,49 @@ export default class Settings {
           })
         : t('holonUnlinkNone', 'This chat is not linked to any dashboard hub.')
     );
+  }
+
+  /**
+   * Redeem a web application's profile claim: copy the ikigai and LinkedIn
+   * the applicant agreed to show into their DNA (holon = their Telegram id).
+   * A token works once it has been written.
+   */
+  async _redeemProfileClaim(ctx, token) {
+    const holon = String(
+      process.env.APPLICATIONS_HOLON || DEFAULT_APPLICATIONS_HOLON
+    ).trim();
+    try {
+      const claim = await findProfileClaim(this.db, holon, token);
+      if (!claim) {
+        await ctx.reply(
+          'This link has already been used, or it is not valid any more. You can add your ikigai and LinkedIn with /onboarding.'
+        );
+        return;
+      }
+      const profile = { ...claim.profile };
+      if (profile.linkedin) {
+        const linkedin = normaliseLinkedin(profile.linkedin);
+        if (linkedin) profile.linkedin = linkedin;
+        else delete profile.linkedin;
+      }
+      if (!Object.keys(profile).length) {
+        await ctx.reply(
+          'Your application had no ikigai or LinkedIn to add. You can add them with /onboarding.'
+        );
+        return;
+      }
+      const saved = await publishProfile(this.db, ctx.from.id, profile);
+      // Spent only once written, so a failed write leaves the link working
+      if (saved) await spendProfileClaim(this.db, holon, claim.application, ctx.from.id);
+      await ctx.reply(
+        saved
+          ? `✅ Added your ${Object.keys(profile).join(' and ')} to your public profile. Change them any time with /onboarding.`
+          : 'Sorry, I could not save your profile. Please try the link again later.'
+      );
+    } catch (error) {
+      console.error('Error redeeming profile claim:', error);
+      await ctx.reply('Sorry, something went wrong. Please try the link again later.');
+    }
   }
 
   /**

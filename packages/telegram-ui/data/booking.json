@@ -16,7 +16,11 @@
     "storagePrefix": "applications",
     "command": "apply",
     "allowEdit": true,
-    "allowResubmit": false
+    "allowResubmit": false,
+    "profile": {
+      "consent": "public_profile",
+      "fields": ["ikigai", "linkedin"]
+    }
   },
   "sections": [
     {
@@ -180,6 +184,28 @@
       "prompt": "Tell us something about yourself. What is your Ikigai? (Optional)\n\nWhat you love, what you’re good at, what the world needs — e.g. healer, leader, facilitator, coach, community organizer, performer, artist…",
       "required": false,
       "storageKey": "ikigai"
+    },
+    {
+      "id": "public_profile",
+      "type": "single_select",
+      "label": "Public profile",
+      "prompt": "Shall we put your ikigai and LinkedIn on your public Holons profile, so people can find and book you (e.g. on liminalvillage.com/services)?\n\nOnly these two — the rest of your application stays private to the stewards.",
+      "required": true,
+      "options": [
+        {
+          "value": "yes",
+          "label": "✅ Yes, show them"
+        },
+        {
+          "value": "no",
+          "label": "🔒 No, keep them private"
+        }
+      ],
+      "allowOther": false,
+      "showIf": {
+        "anyFilled": ["ikigai", "linkedin"]
+      },
+      "storageKey": "public_profile"
     },
     {
       "id": "background",

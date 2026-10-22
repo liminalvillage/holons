@@ -15,6 +15,8 @@ import SectionScene from '../utils/SectionScene.js';
 import DatePickerScene from '../utils/DatePickerScene.js';
 import InputScene from '../utils/InputScene.js';
 import NotificationService from '../utils/NotificationService.js';
+import { publishProfile } from './dna.js';
+import { normaliseLinkedin } from '../scenes/ikigaiScenes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,6 +29,7 @@ const isEmpty = v =>
  * - `{ field, in: [...] }`    — the answer (or any of a multi choice) is one of these
  * - `{ field, notIn: [...] }` — the answer is none of these
  * - `{ allEmpty: [...] }`     — every one of these fields is unanswered
+ * - `{ anyFilled: [...] }`    — at least one of these fields is answered
  * - an array of conditions    — all of them hold
  * An unknown condition holds (the question is asked rather than lost).
  * @param {Object|Object[]} cond
@@ -39,6 +42,9 @@ export function conditionHolds(cond, data = {}) {
   if (Array.isArray(cond.allEmpty)) {
     return cond.allEmpty.every(key => isEmpty(data[key]));
   }
+  if (Array.isArray(cond.anyFilled)) {
+    return cond.anyFilled.some(key => !isEmpty(data[key]));
+  }
   if (cond.field) {
     const v = data[cond.field];
     const values = Array.isArray(v) ? v : [v];
@@ -49,6 +55,26 @@ export function conditionHolds(cond, data = {}) {
   }
   console.warn('BookingSystem: unknown showIf condition', cond);
   return true;
+}
+
+/**
+ * The answers that go on the applicant's public profile, per the form's
+ * `settings.profile` (`{ consent, fields }`): only when the `consent`
+ * question was answered "yes", only the answered `fields`, LinkedIn as a
+ * canonical profile URL (dropped when it is not one). Null when nothing goes.
+ * @param {{ consent: string, fields: string[] }|undefined} profile
+ * @param {Object} data - answers keyed by storageKey
+ * @returns {Object|null}
+ */
+export function profileFields(profile, data = {}) {
+  if (!profile?.consent || data[profile.consent] !== 'yes') return null;
+  const out = {};
+  for (const key of profile.fields ?? []) {
+    let v = typeof data[key] === 'string' ? data[key].trim() : '';
+    if (key === 'linkedin') v = normaliseLinkedin(v) ?? '';
+    if (v) out[key] = v;
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 /** Is this field asked, given the answers so far? */
@@ -479,6 +505,15 @@ export default class BookingSystem {
 
         // Save complete application to database
         await this.saveApplication(ctx, applicationData);
+
+        // What they agreed to show goes on their public profile (DNA)
+        const profile = profileFields(
+          this.config.settings?.profile,
+          applicationData
+        );
+        if (profile && ctx.session.db) {
+          await publishProfile(ctx.session.db, ctx.from.id, profile);
+        }
 
         // Send admin notification
         await this.notificationService.notifyAdmins(

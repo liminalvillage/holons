@@ -13,7 +13,11 @@ import {
   ApplicationsNotSealedError,
   MAX_APPLICATION_BYTES,
   ensureApplicationsSealed,
+  parseProfileClaimPayload,
   parseWebApplication,
+  profileFromApplication,
+  findProfileClaim,
+  spendProfileClaim,
   storeApplication,
 } from './index.js';
 
@@ -136,6 +140,55 @@ describe('storeApplication', () => {
     const lock = vi.spyOn(hs.privacy, 'lock');
     await ensureApplicationsSealed(hs, H);
     expect(lock).not.toHaveBeenCalled();
+    expect(await isLocked(hs, { holon: H, lens: APPLICATIONS_LENS })).toBe(true);
+  });
+});
+
+describe('profile claims', () => {
+  const TOKEN = 'Zm9vYmFyYmF6cXV4MTIz';
+
+  it('keeps a well-formed profileClaim and rejects a malformed one', () => {
+    const r = parseWebApplication({ ...body(), profileClaim: TOKEN });
+    expect(r.ok && r.record.profileClaim).toBe(TOKEN);
+    expect(parseWebApplication({ ...body(), profileClaim: 'short' }).ok).toBe(false);
+    expect(parseWebApplication({ ...body(), profileClaim: 'has spaces in it, nope' }).ok).toBe(false);
+    const none = parseWebApplication(body());
+    expect(none.ok && 'profileClaim' in none.record).toBe(false);
+  });
+
+  it('reads the token out of a /start payload', () => {
+    expect(parseProfileClaimPayload(`profile_${TOKEN}`)).toBe(TOKEN);
+    expect(parseProfileClaimPayload('profile_x')).toBeNull();
+    expect(parseProfileClaimPayload('onboarding')).toBeNull();
+    expect(parseProfileClaimPayload(undefined)).toBeNull();
+  });
+
+  it('takes only the answered profile fields', () => {
+    expect(profileFromApplication({ ikigai: ' Healer ', linkedin: '', wellbeing: 'x' })).toEqual({ ikigai: 'Healer' });
+    expect(profileFromApplication(undefined)).toEqual({});
+  });
+
+  it('finds a claim until it is spent, and the application stays sealed', async () => {
+    const hs = fresh();
+    await hs.ready();
+    await hs.foundHolon(H);
+    const r = parseWebApplication({
+      ...body(),
+      profileClaim: TOKEN,
+      data: { ...body().data, ikigai: 'Bridge builder', linkedin: 'https://www.linkedin.com/in/ada', public_profile: 'yes' },
+    });
+    if (!r.ok) throw new Error(r.error);
+    await storeApplication(hs, H, r.record);
+
+    expect(await findProfileClaim(hs, H, 'not-the-token-at-all')).toBeNull();
+    const claim = await findProfileClaim(hs, H, TOKEN);
+    expect(claim?.profile).toEqual({ ikigai: 'Bridge builder', linkedin: 'https://www.linkedin.com/in/ada' });
+    await spendProfileClaim(hs, H, claim!.application, 42);
+    expect(await findProfileClaim(hs, H, TOKEN)).toBeNull();
+
+    const stored = await hs.get(H, APPLICATIONS_LENS, r.record.id);
+    expect(stored).toMatchObject({ profileClaimedBy: '42', data: { wellbeing: 'private: knee surgery' } });
+    expect(stored).not.toHaveProperty('profileClaim');
     expect(await isLocked(hs, { holon: H, lens: APPLICATIONS_LENS })).toBe(true);
   });
 });

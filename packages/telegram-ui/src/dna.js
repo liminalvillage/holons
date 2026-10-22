@@ -73,6 +73,20 @@ export async function mergeDna(db, userId, fields) {
   }
 }
 
+/**
+ * Put profile answers from elsewhere (an application the person said may
+ * be shown) on their DNA. Marks it public unless they once kept it private:
+ * this only adds fields, it never overrides that choice.
+ */
+export async function publishProfile(db, userId, fields) {
+  if (!fields || !Object.keys(fields).length) return false;
+  const current = await readDna(db, userId);
+  return mergeDna(db, userId, {
+    ...fields,
+    ...(current?.public === false ? {} : { public: true }),
+  });
+}
+
 /** Delete the user's DNA record. */
 export async function clearDna(db, userId) {
   const id = String(userId);

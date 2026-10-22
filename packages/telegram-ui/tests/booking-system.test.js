@@ -7,6 +7,7 @@ import { Context } from 'telegraf';
 import BookingSystem, {
   conditionHolds,
   fieldApplies,
+  profileFields,
   selectionToData,
 } from '../src/BookingSystem.js';
 import booking from '../data/booking.json' with { type: 'json' };
@@ -71,6 +72,7 @@ describe('booking.json', () => {
       'role',
       'intention',
       'ikigai',
+      'public_profile',
       'background',
       'community_experience',
       'wellbeing',
@@ -226,6 +228,57 @@ describe('Other answers', () => {
     expect(multi.session.booking.data).toEqual({
       role: ['forager', 'other'],
       role_other: 'Beekeeper',
+    });
+  });
+});
+
+describe('public profile', () => {
+  const profile = booking.settings.profile;
+  const field = booking.sections.find(s => s.id === 'public_profile');
+
+  it('is asked only once there is an ikigai or a LinkedIn to show', () => {
+    expect(fieldApplies(field, {})).toBe(false);
+    expect(fieldApplies(field, { ikigai: '  ' })).toBe(false);
+    expect(fieldApplies(field, { ikigai: 'Healer' })).toBe(true);
+    expect(fieldApplies(field, { linkedin: 'linkedin.com/in/ada' })).toBe(true);
+  });
+
+  it('takes ikigai and a canonical LinkedIn only with a yes', () => {
+    const data = {
+      ikigai: ' Healer ',
+      linkedin: 'it.linkedin.com/in/ada',
+      wellbeing: 'private',
+    };
+    expect(
+      profileFields(profile, { ...data, public_profile: 'no' })
+    ).toBeNull();
+    expect(profileFields(profile, data)).toBeNull();
+    expect(profileFields(profile, { ...data, public_profile: 'yes' })).toEqual({
+      ikigai: 'Healer',
+      linkedin: 'https://www.linkedin.com/in/ada',
+    });
+    expect(
+      profileFields(profile, { linkedin: 'my profile', public_profile: 'yes' })
+    ).toBeNull();
+  });
+
+  it('writes them into the DNA when the application completes', async () => {
+    const sys = system();
+    const put = vi.fn();
+    const db = { get: vi.fn(async () => null), put };
+    const ctx = ctxAt(sys, 'capacity', {
+      name: 'Ada',
+      ikigai: 'Healer',
+      public_profile: 'yes',
+    });
+    ctx.session.db = db;
+    ctx.reply = vi.fn();
+    const complete = sys.scenes.find(s => s.id === 'booking_complete');
+    await complete.enterMiddleware()(ctx, async () => {});
+    expect(put).toHaveBeenCalledWith('42', 'dna', {
+      ikigai: 'Healer',
+      public: true,
+      id: '42',
     });
   });
 });
