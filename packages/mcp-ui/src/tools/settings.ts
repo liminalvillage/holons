@@ -21,6 +21,7 @@ import {
   setFederationPartner,
   type FederationLinkOutcome,
 } from '@holons/core/federation';
+import { assertEquationEditable } from '@holons/core/governance';
 import type { ToolDeps } from './index.js';
 import { gate } from './standing.js';
 
@@ -229,7 +230,7 @@ export function registerSettingsTools(server: McpServer, deps: ToolDeps): void {
     'equation_save',
     {
       description:
-        "Persist a ScoreEquation for the holon by merging it into the holon's settings under `valueEquation`. Reads the existing settings, layers the new equation in, and writes the whole document back via saveSettings.",
+        "Persist a ScoreEquation for the holon by merging it into the holon's settings under `valueEquation`. Reads the existing settings, layers the new equation in, and writes the whole document back via saveSettings. Refused once a proposal on the equation has passed: from then on only the holon's votes change it.",
       inputSchema: {
         holon: z.string(),
         equation: z
@@ -245,6 +246,7 @@ export function registerSettingsTools(server: McpServer, deps: ToolDeps): void {
         const hs = await deps.getHoloSphere();
         const g = await gate(hs, args.holon, 'settings.guarded');
         if (g.refusal) return fail(g.refusal, { standing: g.standing });
+        await assertEquationEditable(hs, args.holon);
         const existing = (await loadSettings(hs, args.holon)) ?? {};
         const updated = {
           ...(existing as Record<string, unknown>),

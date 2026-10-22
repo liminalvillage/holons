@@ -25,6 +25,11 @@ import {
   computeHolonUserScores,
   migrateEquation,
 } from '@holons/core/scoring';
+import {
+  EQUATION_GOVERNED_MESSAGE,
+  assertEquationEditable,
+  loadGovernedEquation,
+} from '@holons/core/governance';
 import { REAEventStore } from '@holons/core/rea';
 import { registerHolon } from '@holons/core/holosphere';
 import { audience, lock, share, unlock, unshare } from '@holons/core/privacy';
@@ -878,7 +883,7 @@ export default class Settings {
         if (await utils.isAdmin(ctx)) {
           let holonId = utils.getholonId(ctx);
           let settings = await this.getSettings(holonId); // Fetch full settings
-          let weights = settings.valueEquation;
+          let weights = await this.getValueEquation(holonId);
           let currencies = settings.currencies || [];
           ctx.reply(
             i18next.t('settings_value_equation_weights'),
@@ -1111,7 +1116,7 @@ export default class Settings {
         case 'equation':
           let holonIdForEq = ctx.callbackQuery.message.chat.id;
           let settingsForEq = await this.getSettings(holonIdForEq); // Fetch full settings
-          let weightsForEq = settingsForEq.valueEquation;
+          let weightsForEq = await this.getValueEquation(holonIdForEq);
           let currenciesForEq = settingsForEq.currencies || [];
           await ctx
             .editMessageText(i18next.t('settings_equation_title'), {
@@ -1256,7 +1261,7 @@ export default class Settings {
       await ctx.answerCbQuery().catch();
       const holonId = ctx.callbackQuery.message.chat.id;
       let settings = await this.getSettings(holonId); // Fetch full settings
-      let weights = settings.valueEquation;
+      let weights = await this.getValueEquation(holonId);
       let currencies = settings.currencies || [];
       await ctx
         .editMessageText(i18next.t('settings_equation_title'), {
@@ -1289,7 +1294,16 @@ export default class Settings {
         weights[field] = (weights[field] || 0) + delta;
       }
 
-      await this.setValueEquation(holonId, weights);
+      try {
+        await this.setValueEquation(holonId, weights);
+      } catch (err) {
+        // Once the holon votes on its equation, the buttons can't change it.
+        if (err instanceof Error && err.message === EQUATION_GOVERNED_MESSAGE) {
+          await ctx.reply(EQUATION_GOVERNED_MESSAGE);
+          return;
+        }
+        throw err;
+      }
 
       // Need to pass currencies to equationInlineKeyboard
       let updatedSettings = await this.getSettings(holonId);
@@ -3295,7 +3309,13 @@ export default class Settings {
     this._settingsCache.clear();
   }
 
+  /**
+   * Set the starting equation. Refuses once a proposal on it has passed:
+   * from then on only the holon's votes change it, and every reader ignores
+   * this field.
+   */
   async setValueEquation(holonId, equation) {
+    await assertEquationEditable(this.db, holonId.toString());
     let settings = await this.getSettings(holonId);
     // Persist the migrated (canonical) shape only: no top-level `hours`,
     // no flat per-currency keys — they're folded into `currencies`. Keeps
@@ -3304,18 +3324,21 @@ export default class Settings {
     await this.db.put(holonId.toString(), 'settings', settings);
   }
 
+  /** The equation in force: what the holon's votes decided on its base. */
   async getValueEquation(holonId) {
-    let settings = await this.getSettings(holonId);
-    return settings.valueEquation;
+    try {
+      return (await loadGovernedEquation(this.db, holonId.toString())).equation;
+    } catch {
+      const settings = await this.getSettings(holonId);
+      return migrateEquation(settings.valueEquation ?? settings.equation);
+    }
   }
 
   async calculateUserScores(users, holonId, _expensesInstance) {
     const settings = await this.getSettings(holonId);
-    // Migrate the persisted equation so it always carries the canonical
-    // shape (e.g. `currencies.hour`) — identical to the web.
-    const equation = migrateEquation(
-      settings.valueEquation ?? settings.equation
-    );
+    // The equation in force, as the holon's votes decided it — the same
+    // fold the web and the kiosk run, in the canonical shape.
+    const equation = await this.getValueEquation(holonId);
 
     // The ONE shared pipeline (@holons/core/scoring → computeHolonUserScores):
     // REA aggregates + REA balances + equation + normalized shares. The web

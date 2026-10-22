@@ -11,6 +11,7 @@
     import { DEFAULT_EQUATION, REAAggregator, ZERO_USER_AGGREGATES, loadHolonUserData, scoreHolonUsers, type ScoredHolonUser, type UserAggregates } from "@holons/core/scoring";
     import { getEventStore } from "../lib/rea/eventStore";
     import { readHolonSettings } from "@holons/core/settings";
+    import { EQUATION_GOVERNED_MESSAGE, assertEquationEditable, loadGovernedEquation } from "@holons/core/governance";
     import { may, writeAcceptance, type WriteStanding } from "@holons/core/holosphere";
     import TitleBar from "./shared/TitleBar.svelte";
     import { nameMap, resolvedName, resolveName, resolvedInitials } from '$lib/stores/nameResolver';
@@ -69,7 +70,10 @@
     // The equation is a guarded settings field (`may(standing, 'settings.guarded')`):
     // an admin's signature counts, anyone else's is recorded and ignored.
     let eqStanding: WriteStanding | null = null;
-    $: canEditEquation = may(eqStanding, 'settings.guarded');
+    // Once a proposal on the equation has passed, only the holon's votes
+    // change it: every reader ignores the settings field, so nobody edits it.
+    let eqGoverned = false;
+    $: canEditEquation = !eqGoverned && may(eqStanding, 'settings.guarded');
     async function loadEqStanding(id: string) {
         try { eqStanding = await writeAcceptance(holosphere, id); } catch { eqStanding = null; }
     }
@@ -108,6 +112,7 @@
     // Function to save equation changes
     async function saveEquation() {
         try {
+            await assertEquationEditable(holosphere, holonID);
             // Not `getAll(...)[0]`: the settings lens can hold more than one
             // record (imported calendars, legacy id-less writes) and the lens
             // order is undefined, so index 0 is a coin toss. Spreading the
@@ -157,6 +162,11 @@
             isEditingEquation = false;
             console.log('[Status] Value equation saved', cleanEquation);
         } catch (error) {
+            if (error instanceof Error && error.message === EQUATION_GOVERNED_MESSAGE) {
+                eqGoverned = true;
+                isEditingEquation = false;
+                return;
+            }
             console.error('Error saving value equation:', error);
         }
     }
@@ -353,12 +363,16 @@
     async function loadEquation() {
         try {
             const stored = (await readHolonSettings(holosphere, holonID))?.valueEquation;
+            // The equation in force is what the holon's votes decided on that
+            // base — the same fold the bot and the kiosk run.
+            const governed = await loadGovernedEquation(holosphere, holonID).catch(() => null);
+            eqGoverned = !!governed?.governed;
             if (stored && typeof stored === 'object') {
-                equation = migrateEquation(stored);
+                equation = governed?.equation ?? migrateEquation(stored);
                 // If the stored shape was the legacy one with a top-level
                 // `hours` field, persist the migrated form so we don't keep
                 // re-running this on every load. Best-effort; ignore failures.
-                if (typeof (stored as any).hours === 'number') {
+                if (!eqGoverned && typeof (stored as any).hours === 'number') {
                     holosphere.put(holonID, 'settings', {
                         ...((await readHolonSettings(holosphere, holonID)) ?? {}),
                         id: holonID,
@@ -366,7 +380,7 @@
                     }).catch((e: any) => console.warn('[Status] Could not persist migrated equation:', e?.message));
                 }
             } else {
-                equation = migrateEquation(undefined);
+                equation = governed?.equation ?? migrateEquation(undefined);
             }
             valueEquationLoaded = true;
         } catch (error) {
@@ -1115,7 +1129,9 @@
                         <div>
                             <h3 class="text-xl font-bold text-white mb-2">Value Equation</h3>
                             <p class="text-gray-400 text-sm">Current scoring weights used to calculate user rankings</p>
-                            {#if !canEditEquation}
+                            {#if eqGoverned}
+                                <p class="text-amber-300 text-xs mt-1">{EQUATION_GOVERNED_MESSAGE}</p>
+                            {:else if !canEditEquation}
                                 <p class="text-amber-300 text-xs mt-1">Only an admin's signature changes the value equation; yours would be recorded but not counted.</p>
                             {/if}
                         </div>
@@ -1142,7 +1158,7 @@
                                     Save
                                 </button>
                             </div>
-                        {:else}
+                        {:else if !eqGoverned}
                             <button
                                 onclick={() => {
                                     // Deep-copy currencies and seed every
