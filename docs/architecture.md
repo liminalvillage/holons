@@ -74,7 +74,9 @@ logs — see [`protocol.md`](./protocol.md)), `holons` (founding a holon from
 a screen, members by key — NIP-29 shaped), `linking` (tying a holon to a
 Telegram chat by challenge–response) and `onboarding` (claim tokens and
 Telegram deep links); the three are described in
-[`identity-linking.md`](./identity-linking.md). `ai` is the one Claude client
+[`identity-linking.md`](./identity-linking.md). `applications` is the
+community application record (the web form's shape) and the rule that a
+holon keeps it only in its sealed `applications` lens. `ai` is the one Claude client
 every text-AI surface uses, server-side only: `ANTHROPIC_API_KEY`,
 `HOLONS_AI_MODEL` (default `claude-opus-5-5`), effort per route, the refusal
 fallback, structured JSON output and one `AIError` a route maps to a status;
