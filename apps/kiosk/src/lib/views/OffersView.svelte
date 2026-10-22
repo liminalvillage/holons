@@ -22,7 +22,7 @@
   // $lib/offers arranges it for the screen. `?offer=<id>` on the route opens
   // an offer's card on boot ($lib/stocklink). Every await is followed by a
   // holon-identity check.
-  import { onMount, tick } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { get } from "svelte/store";
   import {
     holonId,
@@ -38,6 +38,8 @@
   import { nameOf as resolvedName } from "$lib/names";
   import { personName } from "$lib/data";
   import { t, type MessageKey } from "$lib/i18n";
+  import { createAutosave } from "$lib/autosave";
+  import SaveState from "$lib/components/SaveState.svelte";
   import { resolveOffersScale, setOffersScale } from "$lib/config";
   import type { HoloSphere } from "holosphere";
   import {
@@ -484,11 +486,11 @@
     formOpen = true;
   }
 
+  /** A new offer is listed on the tap; an existing one saves itself below. */
   async function saveOffer() {
     const holon = hid;
     const who = initiator;
-    const hs = hsRef;
-    if (!holon || !who || !hs || !fTitle.trim() || saving) return;
+    if (!holon || !who || !fTitle.trim() || saving) return;
     const quantity = num(fQty);
     if (!quantity || quantity <= 0) {
       showNotice($t("offers.howMany"));
@@ -496,57 +498,96 @@
     }
     saving = true;
     try {
-      if (editing) {
-        const out = editOffer(editing, {
-          title: fTitle,
-          description: fNotes || undefined,
-          category: fCategory,
-          supply: { ...editing.supply, quantity, unit: fUnit },
-          mode: fMode,
-          price: fMode === "sell" ? (num(fPrice) ?? undefined) : undefined,
-          currency: fMode === "sell" ? fCurrency : undefined,
-        });
-        if (!out.ok) {
-          showNotice(
-            $t(
-              out.reason === "below_reserved"
-                ? "offers.belowReserved"
-                : "offers.closed",
-            ),
-          );
-          return;
-        }
-        const r = await refreshPublishedOffer(hs, holon, out.offer);
-        if (hid !== holon) return;
-        upsertLocal(r.offer);
-        showNotice($t("offers.saved"));
-      } else {
-        const offer = createOffer({
-          holonId: holon,
-          initiator: who,
-          title: fTitle,
-          description: fNotes || undefined,
-          category: fCategory || undefined,
-          supply: { quantity, unit: fUnit },
-          mode: fMode,
-          price: fMode === "sell" ? (num(fPrice) ?? undefined) : undefined,
-          currency: fMode === "sell" ? fCurrency : undefined,
-        });
-        const store = await getLensStore();
-        await store.put(holon, "quests", offer);
-        if (hid !== holon) return;
-        upsertLocal(offer);
-        showNotice($t("offers.created"));
-        shareTarget = offer;
-        shareKind = "offer";
-        shareOpen = true;
-      }
+      const offer = createOffer({
+        holonId: holon,
+        initiator: who,
+        title: fTitle,
+        description: fNotes || undefined,
+        category: fCategory || undefined,
+        supply: { quantity, unit: fUnit },
+        mode: fMode,
+        price: fMode === "sell" ? (num(fPrice) ?? undefined) : undefined,
+        currency: fMode === "sell" ? fCurrency : undefined,
+      });
+      const store = await getLensStore();
+      await store.put(holon, "quests", offer);
+      if (hid !== holon) return;
+      upsertLocal(offer);
+      showNotice($t("offers.created"));
+      shareTarget = offer;
+      shareKind = "offer";
+      shareOpen = true;
       formOpen = false;
     } catch (err) {
       fail(err, "offers.saveFailed");
     } finally {
       saving = false;
     }
+  }
+
+  // Editing an offer writes as you go. A blank title or quantity is not
+  // written; a change core refuses (below what is already promised, or a
+  // closed offer) says so and is not written either.
+  const autosave = createAutosave<{ holon: string; offer: OfferRecord }>(
+    () => {
+      const quantity = num(fQty);
+      if (!hid || !editing || !fTitle.trim() || !quantity || quantity <= 0)
+        return null;
+      const out = editOffer(editing, {
+        title: fTitle,
+        description: fNotes || undefined,
+        category: fCategory,
+        supply: { ...editing.supply, quantity, unit: fUnit },
+        mode: fMode,
+        price: fMode === "sell" ? (num(fPrice) ?? undefined) : undefined,
+        currency: fMode === "sell" ? fCurrency : undefined,
+      });
+      if (!out.ok) {
+        showNotice(
+          $t(
+            out.reason === "below_reserved"
+              ? "offers.belowReserved"
+              : "offers.closed",
+          ),
+        );
+        return null;
+      }
+      return { holon: hid, offer: out.offer };
+    },
+    async ({ holon, offer }) => {
+      const hs = hsRef;
+      if (!hs) return false;
+      try {
+        const r = await refreshPublishedOffer(hs, holon, offer);
+        if (hid !== holon) return true;
+        upsertLocal(r.offer);
+        if (editing?.id === r.offer.id) editing = r.offer;
+        return true;
+      } catch (err) {
+        fail(err, "offers.saveFailed");
+        return false;
+      }
+    },
+  );
+  $: autosave.watch(
+    formOpen && editing
+      ? JSON.stringify([
+          fTitle,
+          fCategory,
+          fQty,
+          fUnit,
+          fMode,
+          fPrice,
+          fCurrency,
+          fNotes,
+        ])
+      : null,
+  );
+  onDestroy(() => void autosave.flush());
+
+  function closeForm() {
+    if (editing) void autosave.flush();
+    formOpen = false;
   }
 
   // ── Request form (ask for something) ────────────────────────────────────
@@ -1751,7 +1792,10 @@
 {/if}
 
 {#if formOpen}
-  <Modal on:close={() => (formOpen = false)}>
+  <Modal on:close={closeForm}>
+    <svelte:fragment slot="corner">
+      {#if editing}<SaveState saver={autosave} />{/if}
+    </svelte:fragment>
     <div class="form">
       <div class="glyph" aria-hidden="true">
         {#if editing}<Icon name="pencil" />{:else}＋{/if}
@@ -1838,17 +1882,21 @@
         maxlength="240"
       />
       <div class="actions">
-        <button
-          class="primary"
-          on:click={saveOffer}
-          disabled={saving || !fTitle.trim()}
-          >{saving
-            ? $t("offers.saving")
-            : $t(editing ? "offers.save" : "offers.listIt")}</button
-        >
-        <button class="ghost" on:click={() => (formOpen = false)}
-          >{$t("common.cancel")}</button
-        >
+        {#if editing}
+          <button class="primary" on:click={closeForm}
+            >{$t("common.done")}</button
+          >
+        {:else}
+          <button
+            class="primary"
+            on:click={saveOffer}
+            disabled={saving || !fTitle.trim()}
+            >{saving ? $t("offers.saving") : $t("offers.listIt")}</button
+          >
+          <button class="ghost" on:click={() => (formOpen = false)}
+            >{$t("common.cancel")}</button
+          >
+        {/if}
       </div>
     </div>
   </Modal>

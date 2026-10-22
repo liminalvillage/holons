@@ -11,6 +11,7 @@
   // A role can also have a *fixed* holder (set from a card's edit sheet) who holds
   // it every day. All scheduling meaning lives in @holons/core/roles (wire-shapes
   // shared with the dashboard); this view only reads and writes.
+  import { onDestroy } from "svelte";
   import { get } from "svelte/store";
   import {
     roleCards,
@@ -23,6 +24,8 @@
   import { isLoggedIn, loginOpen, currentUser } from "$lib/auth";
   import { getWriter, getHolosphere } from "$lib/holosphere";
   import { t, locale } from "$lib/i18n";
+  import { createAutosave } from "$lib/autosave";
+  import SaveState from "$lib/components/SaveState.svelte";
   import {
     noteColor,
     noteTilt,
@@ -221,35 +224,47 @@
   let editCard: RoleCard | null = null;
   let editTitle = "";
   let editDesc = "";
-  let savingEdit = false;
   let deleting = false;
   let fixedBusy = false;
   $: editRaw = editCard ? (byId.get(editCard.id) ?? null) : null;
+  // The role the form is editing, kept past the modal's close so a write that
+  // is still waiting lands on it.
+  let editBase: Role | null = null;
+  $: if (editRaw) editBase = editRaw;
 
   function openEdit(card: RoleCard) {
     if (!get(currentUser)) {
       loginOpen.set(true);
       return;
     }
+    editBase = null;
     editCard = card;
     editTitle = card.title;
     editDesc = card.description ?? "";
   }
 
-  async function saveEdit() {
-    if (!editCard || !editRaw) return;
+  /** The role with the form's fields on it (its id/key stay put on rename). */
+  function withForm(raw: Role): Role {
     const title = editTitle.trim();
-    if (!title) return;
-    savingEdit = true;
-    try {
-      // Keep the role's id/key stable on rename; only display fields change.
-      await persist({ ...editRaw, title, description: editDesc.trim() });
-      editCard = null;
-    } catch (err) {
-      console.error("[kiosk] edit role failed", err);
-    } finally {
-      savingEdit = false;
-    }
+    return title ? { ...raw, title, description: editDesc.trim() } : raw;
+  }
+
+  // The form saves itself as you type; a blank title is not written.
+  const autosave = createAutosave<Role>(
+    () => (editBase && editTitle.trim() ? withForm(editBase) : null),
+    async (role) => {
+      const hid = get(holonId);
+      if (!hid) return false;
+      const writer = await getWriter(hid, (m) => showNotice(m));
+      return writer.put("roles", role);
+    },
+  );
+  $: autosave.watch(editCard ? JSON.stringify([editTitle, editDesc]) : null);
+  onDestroy(() => void autosave.flush());
+
+  function closeEdit() {
+    void autosave.flush();
+    editCard = null;
   }
 
   async function makeFixed() {
@@ -260,7 +275,8 @@
     }
     fixedBusy = true;
     try {
-      await persist(setPermanent(editRaw, meParticipant()));
+      autosave.cancel(); // this write carries the form too
+      await persist(setPermanent(withForm(editRaw), meParticipant()));
       editCard = null;
     } catch (err) {
       console.error("[kiosk] make fixed failed", err);
@@ -273,7 +289,8 @@
     if (!editRaw) return;
     fixedBusy = true;
     try {
-      await persist(clearPermanent(editRaw));
+      autosave.cancel();
+      await persist(clearPermanent(withForm(editRaw)));
       editCard = null;
     } catch (err) {
       console.error("[kiosk] clear fixed failed", err);
@@ -286,6 +303,7 @@
     const hid = get(holonId);
     if (!hid || !editCard) return;
     const raw = editRaw;
+    autosave.cancel(); // a late edit must not bring it back
     deleting = true;
     try {
       const hs = await getHolosphere();
@@ -633,7 +651,8 @@
 {/if}
 
 {#if editCard}
-  <Modal on:close={() => (editCard = null)}>
+  <Modal on:close={closeEdit}>
+    <SaveState slot="corner" saver={autosave} />
     <div class="form">
       <div class="glyph" aria-hidden="true"><Icon name="pencil" /></div>
       <h3>{$t("rolesv.editAria")}</h3>
@@ -642,7 +661,7 @@
         bind:value={editTitle}
         placeholder={$t("rolesv.titlePlaceholder")}
         maxlength="60"
-        on:keydown={(e) => e.key === "Enter" && saveEdit()}
+        on:keydown={(e) => e.key === "Enter" && closeEdit()}
       />
       <textarea
         bind:value={editDesc}
@@ -670,14 +689,7 @@
       </div>
 
       <div class="actions">
-        <button
-          class="primary"
-          on:click={saveEdit}
-          disabled={savingEdit || !editTitle.trim()}
-          >{savingEdit ? $t("rolesv.saving") : $t("rolesv.save")}</button
-        >
-        <button class="ghost" on:click={() => (editCard = null)}
-          >{$t("common.cancel")}</button
+        <button class="primary" on:click={closeEdit}>{$t("common.done")}</button
         >
       </div>
       <button class="danger" on:click={deleteRole} disabled={deleting}

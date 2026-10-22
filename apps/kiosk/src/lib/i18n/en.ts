@@ -13,6 +13,9 @@ export const en = {
   "common.close": "Close",
   "common.cancel": "Cancel",
   "common.saving": "Saving…",
+  "common.saved": "Saved",
+  "common.saveFailed": "Not saved — tap to retry",
+  "common.done": "Done",
   "common.apply": "Apply",
   "common.send": "Send",
   "common.untitled": "Untitled",
@@ -236,7 +239,6 @@ export const en = {
   "rolesv.clearFixed": "Clear",
   "rolesv.makeMeFixed": "Make me the fixed holder",
   "rolesv.saving": "Saving…",
-  "rolesv.save": "Save",
   "rolesv.deleteRole": "Delete role",
 
   // Library status chips
@@ -328,7 +330,7 @@ export const en = {
   "shifts.cannotPublish":
     "You can save the plan, but not publish from here — {reason}.",
   "shifts.adopted":
-    "No plan saved yet — this one was read off the shifts already on the wall. Save it to keep it.",
+    "No plan saved yet — this one was read off the shifts already on the wall. It is kept the moment you change or publish it.",
   "shifts.catalog": "Shifts",
   "shifts.enabled": "Enabled",
   "shifts.title": "Title",
@@ -364,12 +366,11 @@ export const en = {
     one: "Remove {n} not in plan",
     other: "Remove {n} not in plan",
   },
-  "shifts.savePlan": "Save plan",
   "shifts.publishMissing": {
     one: "Publish {n} missing",
     other: "Publish {n} missing",
   },
-  "shifts.saveAndPublish": "Save & publish",
+  "shifts.saveAndPublish": "Publish",
 
   // Pill segments (shared layout/sort vocabulary)
   "pills.card": "Card",
@@ -1039,7 +1040,8 @@ export const en = {
   "detail.kindEvent": "Event",
   "detail.kindTaskHint": "On the task board",
   "detail.kindEventHint": "On the calendar only",
-  "detail.kindNeedsDate": "Give it a date to make it an event",
+  "detail.dateUnlocks":
+    "Add a start date to make it an event or have it repeat.",
   "detail.starts": "Starts",
   "detail.ends": "Ends",
   "detail.startDateAria": "Start date",
@@ -1579,7 +1581,6 @@ export const en = {
   "alloc.zonesAbout":
     "What each zone actually receives, as a share of the whole fund.",
   "alloc.zonesPreview": "Nobody placed yet — the shape the zones would take.",
-  "alloc.save": "Save",
   "alloc.errSave": "Couldn't save the split. Try again.",
   "alloc.errDenied": "You can't change this holon's settings.",
   "alloc.split": "Contributors share divided",
@@ -1875,13 +1876,11 @@ export const en = {
   "offers.service": "A service (time), not a thing",
   "offers.notesPlaceholder": "Condition, pickup, timing…",
   "offers.untilLabel": "Until (optional)",
-  "offers.save": "Save",
   "offers.listIt": "List it",
   "offers.saving": "Saving…",
   "offers.howMany": "How many?",
   "offers.belowReserved": "You've promised more than that already.",
   "offers.closed": "This offer is closed.",
-  "offers.saved": "Offer updated.",
   "offers.created":
     "Offer listed here. Share it to reach partners and the map.",
   "offers.saveFailed": "Couldn't save the offer.",

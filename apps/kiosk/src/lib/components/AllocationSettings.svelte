@@ -5,21 +5,26 @@
   //
   // The allocation split, editable where it is read — the kiosk's take on the
   // dashboard's AllocationEditor. Move a slider, place a partner — or a
-  // person — on a ring, point the holon at its OpenCollective collective; Save writes the settings
-  // lens through core (`saveAllocationConfig` / `saveCollectiveSlug`), which
-  // is exactly what the Flows board and Flow Management read back.
+  // person — on a ring, point the holon at its OpenCollective collective; each
+  // change saves itself a moment later into the settings lens through core
+  // (`saveAllocationConfig` / `saveCollectiveSlug`), which is exactly what the
+  // Flows board and Flow Management read back.
   //
   // Every change is also dispatched as a `draft`, so the board behind the
-  // sheet redraws as the sliders move — nothing is written until Save.
+  // sheet redraws as the sliders move, before the write lands.
   //
-  // Save writes the settings lens and nothing else: the split lives in one
+  // The write is the settings lens and nothing else: the split lives in one
   // place and every surface — and the Pot's rights table — reads it there.
+  // Nothing here touches the chain (that is the Pot panel's, at the new moon),
+  // which is why it can save as you go.
   //
   // Writes go through `getReaStore`, so the acting identity is the logged-in
   // user, signed by the device key — the caller gates on login first.
 
-  import { createEventDispatcher } from "svelte";
+  import { createEventDispatcher, onDestroy } from "svelte";
   import { t, locale } from "$lib/i18n";
+  import { createAutosave } from "$lib/autosave";
+  import SaveState from "./SaveState.svelte";
   import { may } from "@holons/core/holosphere";
   import { standing } from "$lib/stores";
   import {
@@ -551,41 +556,93 @@
     if (!denied) console.error("[kiosk] allocation save failed", err);
   }
 
-  /** Save the split: the settings lens, which every surface reads. */
-  async function save() {
-    if (busy) return;
+  type SplitEdit = {
+    config: AllocationConfig;
+    zones: Record<string, number>;
+    people: Record<string, number>;
+    shares: InteriorShares;
+    partners: { id: string; name: string }[];
+    slug: string;
+  };
+
+  /** Write the split: the settings lens, which every surface reads. */
+  async function save(edit: SplitEdit): Promise<boolean> {
     busy = true;
     error = "";
     try {
       const store = await getReaStore();
       // A holon found in the finder is a partner from here on: the record
       // every reader finds it in is written before the split that seats it.
-      for (const p of newPartners) {
+      for (const p of edit.partners) {
         await linkSplitPartner(store, holonId, p.id, p.name);
       }
-      newPartners = [];
+      const linked = new Set(edit.partners.map((p) => p.id));
+      newPartners = newPartners.filter((p) => !linked.has(p.id));
       await saveAllocationConfig(
         store,
         holonId,
-        { interiorPercent, steepness, nzones, interiorMode },
-        zoneOf,
-        personZone,
-        shareOf,
+        edit.config,
+        edit.zones,
+        edit.people,
+        edit.shares,
       );
-      if (slug.trim() !== collectiveSlug) {
-        await saveCollectiveSlug(store, holonId, slug.trim());
+      if (edit.slug !== savedSlug) {
+        await saveCollectiveSlug(store, holonId, edit.slug);
+        savedSlug = edit.slug;
       }
       dispatch("saved");
-      dispatch("close");
+      return true;
     } catch (err: any) {
       failed(err);
+      return false;
     } finally {
       busy = false;
     }
   }
+
+  // Every change saves itself a moment later (admins only — the split is a
+  // guarded setting). The edit is snapshotted when the write falls due.
+  let savedSlug = collectiveSlug;
+  const autosave = createAutosave<SplitEdit>(
+    () =>
+      canEditSplit
+        ? structuredClone({
+            config: { interiorPercent, steepness, nzones, interiorMode },
+            zones: zoneOf,
+            people: personZone,
+            shares: shareOf,
+            partners: newPartners,
+            slug: slug.trim(),
+          })
+        : null,
+    save,
+  );
+  $: autosave.watch(
+    JSON.stringify([
+      interiorPercent,
+      steepness,
+      nzones,
+      interiorMode,
+      zoneOf,
+      personZone,
+      shareOf,
+      newPartners,
+      slug.trim(),
+    ]),
+  );
+  onDestroy(() => void autosave.flush());
+
+  /** Close the panel; a change still waiting is written first. */
+  function close() {
+    void autosave.flush();
+    dispatch("close");
+  }
 </script>
 
-<SidePanel title={$t("flows.settings")} on:close={() => dispatch("close")}>
+<SidePanel title={$t("flows.settings")} on:close={close}>
+  <svelte:fragment slot="corner">
+    {#if canEditSplit}<SaveState saver={autosave} />{/if}
+  </svelte:fragment>
   <!-- The four questions this panel answers, each carrying its current value
        so the whole state reads at a glance without opening anything. -->
   <div
@@ -1284,15 +1341,11 @@
     <div class="actions">
       {#if tab === "view"}
         <!-- The View tab applied on the tap; there is nothing to save. -->
-        <button class="primary" on:click={() => dispatch("close")}
-          >{$t("common.close")}</button
-        >
+        <button class="primary" on:click={close}>{$t("common.close")}</button>
       {:else if tab === "rules"}
         <!-- The rules are a signed log entry, not a settings write: their
              own button, gated on the signature that would count. -->
-        <button class="ghost" on:click={() => dispatch("close")}
-          >{$t("common.cancel")}</button
-        >
+        <button class="ghost" on:click={close}>{$t("common.cancel")}</button>
         <button
           class="primary"
           disabled={!rulesCanSign || rulesUnchanged}
@@ -1305,17 +1358,7 @@
         {#if !canEditSplit}
           <span class="sub warn foot-note">{$t("alloc.splitNotAdmin")}</span>
         {/if}
-        <button class="ghost" on:click={() => dispatch("close")}
-          >{$t("common.cancel")}</button
-        >
-        <button
-          class="primary"
-          disabled={busy || !canEditSplit}
-          title={canEditSplit ? "" : $t("alloc.splitNotAdmin")}
-          on:click={save}
-        >
-          {busy ? $t("common.saving") : $t("alloc.save")}
-        </button>
+        <button class="primary" on:click={close}>{$t("common.done")}</button>
       {/if}
     </div>
   </svelte:fragment>

@@ -20,6 +20,8 @@
   import { createEventDispatcher, onMount } from "svelte";
   import { get } from "svelte/store";
   import { t, locale } from "$lib/i18n";
+  import { createAutosave } from "$lib/autosave";
+  import SaveState from "./SaveState.svelte";
   import {
     now,
     rawShifts,
@@ -58,10 +60,10 @@
   const dispatch = createEventDispatcher<{ close: void }>();
 
   // ── The draft ────────────────────────────────────────────────────────---
-  // A copy, so Cancel costs nothing and Save writes once. A holon with no
-  // plan yet adopts one from whatever is already on the wall (an Elinor
-  // group's occurrences), else starts from Elinor's seed catalog in this
-  // screen's zone.
+  // A copy the sheet edits; every change saves itself (see `changed`). A
+  // holon with no plan yet adopts one from whatever is already on the wall
+  // (an Elinor group's occurrences), else starts from Elinor's seed catalog in
+  // this screen's zone — merely opening the sheet writes nothing.
   const browserTz =
     (typeof Intl !== "undefined" &&
       Intl.DateTimeFormat().resolvedOptions().timeZone) ||
@@ -79,6 +81,7 @@
   // over an untouched adopted draft.
   $: if ($shiftPlanLoaded && $shiftPlan && adopted && !dirty) {
     draft = structuredClone($shiftPlan);
+    tzInput = draft.tzid; // the zone field follows, so it reads as no edit
     adopted = false;
   }
 
@@ -102,7 +105,7 @@
     }
     error = "";
     draft = r.plan;
-    dirty = true;
+    changed();
   }
   function toggleDay(def: ShiftDefinition, d: number) {
     const cur = def.days?.length ? def.days : DAYS;
@@ -112,7 +115,7 @@
   }
   function remove(code: string) {
     draft = removeShiftDefinition(draft, code);
-    dirty = true;
+    changed();
   }
 
   // The add form: Elinor's fields, code generated from the title.
@@ -134,7 +137,7 @@
     }
     error = "";
     draft = r.plan;
-    dirty = true;
+    changed();
     nTitle = "";
     addOpen = false;
   }
@@ -143,7 +146,7 @@
   $: tzOk = isValidTimeZone(tzInput);
   $: if (tzOk && tzInput !== draft.tzid) {
     draft = { ...draft, tzid: tzInput };
-    dirty = true;
+    changed();
   }
   const zones: string[] =
     typeof Intl !== "undefined" &&
@@ -254,11 +257,22 @@
     }
   }
 
-  async function save(): Promise<boolean> {
+  // The plan saves itself a moment after each change; the write takes the
+  // draft as it was when it fell due.
+  const autosave = createAutosave<ShiftPlan>(
+    () => structuredClone(draft),
+    (plan) => save(plan),
+  );
+  function changed() {
+    dirty = true;
+    autosave.touch();
+  }
+
+  async function save(plan: ShiftPlan = draft): Promise<boolean> {
     busy = true;
     error = "";
     try {
-      await saveShiftPlanFor(holonId, draft);
+      await saveShiftPlanFor(holonId, plan);
       dirty = false;
       adopted = false;
       return true;
@@ -276,9 +290,8 @@
 
   /** Save, then publish everything the plan promises and is not on the wall. */
   async function saveAndPublish() {
-    if (dirty || adopted) {
-      if (!(await save())) return;
-    }
+    if (!(await autosave.flush())) return;
+    if (adopted && !(await save())) return;
     await publishSlots(toPublish.map((i) => i.expected!));
   }
 
@@ -287,9 +300,16 @@
   onMount(() => {
     tzInput = draft.tzid;
   });
+
+  /** Close the sheet; a change still waiting is written first. */
+  function close() {
+    void autosave.flush();
+    dispatch("close");
+  }
 </script>
 
-<Modal wide on:close={() => dispatch("close")}>
+<Modal wide on:close={close}>
+  <SaveState slot="corner" saver={autosave} />
   <div class="sheet">
     <h3>{$t("shifts.configure")}</h3>
     {#if !$shiftCoordinator}
@@ -472,7 +492,7 @@
                 draft = v
                   ? { ...draft, location: v }
                   : (({ location: _l, ...rest }) => rest)(draft);
-                dirty = true;
+                changed();
               }}
             />
           </label>
@@ -489,7 +509,7 @@
                   Math.min(60, Number(e.currentTarget.value) || 14),
                 );
                 draft = { ...draft, horizonDays: v };
-                dirty = true;
+                changed();
               }}
             />
           </label>
@@ -594,9 +614,6 @@
 
     {#if error}<p class="error">{error}</p>{/if}
     <div class="actions">
-      <button class="ghost" type="button" on:click={() => dispatch("close")}
-        >{$t("common.cancel")}</button
-      >
       {#if canPublish && retractable.length}
         <button
           class="ghost danger"
@@ -606,12 +623,8 @@
           >{$t("shifts.retractStale", { n: retractable.length })}</button
         >
       {/if}
-      <button
-        class="ghost"
-        type="button"
-        disabled={busy || (!dirty && !adopted)}
-        on:click={save}
-        >{busy ? $t("common.saving") : $t("shifts.savePlan")}</button
+      <button class="ghost" type="button" on:click={close}
+        >{$t("common.done")}</button
       >
       <button
         class="primary"

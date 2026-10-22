@@ -7,7 +7,7 @@
   // helpers; the meaning of borrowing lives in @holons/core/library.
   import Modal from "./Modal.svelte";
   import Confetti from "./Confetti.svelte";
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { get } from "svelte/store";
   import {
     selection,
@@ -79,6 +79,7 @@
     getItemIcon,
     getTypeDisplayName,
     LIBRARY_TYPES,
+    type LibraryItem,
   } from "@holons/core/library";
   import {
     QUEST_FREQUENCIES,
@@ -112,6 +113,8 @@
   import ProposalVote from "./ProposalVote.svelte";
   import { breakdownAvailable, requestBreakdownProposal } from "$lib/breakdown";
   import { t, locale, type MessageKey } from "$lib/i18n";
+  import { createAutosave } from "$lib/autosave";
+  import SaveState from "./SaveState.svelte";
 
   // Read the quest fresh from Holosphere before a membership mutation, so the
   // participate-XOR-appreciate toggle is applied to current data (the modal's
@@ -216,6 +219,8 @@
         : `quest:${sel.quest.id ?? sel.quest.title}@${sel.occurrence ?? ""}`;
     if (k !== selKey) {
       selKey = k;
+      // Whatever the form still holds lands before it goes away.
+      if (editing) void autosave.flush();
       editing = false;
       booking = false;
       message = "";
@@ -711,6 +716,7 @@
   function startEdit() {
     if (!sel) return;
     message = "";
+    editSel = sel;
     if (sel.kind === "thing") {
       fType =
         String(sel.item.type ?? "")
@@ -741,6 +747,7 @@
       // Read as an event either way, so hosts survive a trip through "task".
       fHosts = hostsOf({ ...q, type: "event" });
       fParticipants = Array.isArray(q.participants) ? [...q.participants] : [];
+      savedRoster = q.participants;
     }
     editing = true;
   }
@@ -819,10 +826,13 @@
     }
   }
 
-  async function saveQuest() {
-    if (!sel || sel.kind === "thing" || !$holonId) return;
-    saving = true;
-    message = "";
+  /**
+   * The edited quest as it would be stored, from the form fields over the card
+   * that was opened for editing (null when the form is not a quest's).
+   */
+  function buildQuest(): Quest | null {
+    if (!editSel || editSel.kind === "thing") return null;
+    const base = editSel.quest;
     // Core turns the local form fields into the stored schedule: UTC instants
     // for a timed card, bare dates for an all-day one, and an inclusive end
     // date for a span. Cleared fields are blanked, never deleted (older readers expect them),
@@ -832,10 +842,10 @@
     );
     // The roster is saved through core, which keeps the participate-XOR-
     // appreciate rule (a member put on the list stops appreciating).
-    const updated = setParticipants(
+    return setParticipants(
       {
-        ...sel.quest,
-        title: fTitle.trim() || sel.quest.title,
+        ...base,
+        title: fTitle.trim() || base.title,
         location: fLocation.trim() || undefined,
         category: fCategory.trim() || undefined,
         description: fDescription.trim() || undefined,
@@ -843,34 +853,142 @@
         // The cadence (core also drops the bot scheduler's handle when it is
         // cleared, so the bot stops spawning occurrences). Only a dated card
         // can repeat, so an undated one is saved without a cadence.
-        ...setQuestFrequency(sel.quest, timing.when ? fFrequency : null),
+        ...setQuestFrequency(base, timing.when ? fFrequency : null),
         // Task ↔ event. Core refuses to retype a marketplace item, so an offer
         // that somehow reached this form keeps its own lifecycle.
-        ...setQuestKind(sel.quest, timing.when ? fKind : "task"),
+        ...setQuestKind(base, timing.when ? fKind : "task"),
         ...(timing.when && fKind === "event" ? { hosts: fHosts } : {}),
       },
       fParticipants,
     );
-    const writer = await getWriter($holonId, (m) => (message = m));
+  }
+
+  async function putQuest(updated: Quest): Promise<boolean> {
+    const holon = $holonId;
+    if (!holon) return false;
+    const writer = await getWriter(holon, (m) => (message = m));
     const ok = await writer.put("quests", updated);
-    saving = false;
     if (!ok) {
       if (!message) message = $t("detail.saveFailed");
-      return;
+      return false;
     }
-    closeDetail();
+    message = "";
     // Core mirrored the card into the holon of everyone put on the roster and
     // dropped it from whoever was taken off — that is part of the write. What
     // is left for the board is the signed-in user's own Telegram DM, when
     // their place on the card changed.
+    const before = savedRoster;
+    savedRoster = updated.participants;
     const me = $currentUser;
-    if (!me) return;
-    const { joined, left } = rosterDiff(
-      sel.quest.participants,
-      updated.participants,
-    );
+    if (!me) return true;
+    const { joined, left } = rosterDiff(before, updated.participants);
     if ([...joined, ...left].some((p) => String(p.id) === String(me.id)))
       void refreshOwnDm(String(updated.id), me);
+    return true;
+  }
+
+  /** A new card is created on the tap of Create; an existing one autosaves. */
+  async function saveQuest() {
+    const updated = buildQuest();
+    if (!updated) return;
+    saving = true;
+    message = "";
+    const ok = await putQuest(updated);
+    saving = false;
+    if (ok) closeDetail();
+  }
+
+  /** The edited library item as it would be stored. */
+  function buildThing(): Record<string, unknown> | null {
+    if (!editSel || editSel.kind !== "thing") return null;
+    const item = editSel.item;
+    // A federated/hologram item is owned by another holon — edit it there, not
+    // in our own lens, or we fork a stray local copy that shadows (and unlinks)
+    // the federated original. Also drop read-side provenance tags so the kiosk's
+    // `_holon` marker (or a resolved `_hologram`/`_federation` envelope) is never
+    // persisted onto the stored item.
+    const ref = sourceRef(item, String(item.id));
+    const clean: Record<string, unknown> = { ...item };
+    delete clean._holon;
+    delete clean._hologram;
+    delete clean._federation;
+    return {
+      ...clean,
+      id: ref?.key ?? item.id,
+      // Categories are canonically lowercase ('tool', 'book', …); a freshly
+      // typed one is normalised the same way so it dedupes across items.
+      type: fType.trim().toLowerCase() || "other",
+      description: fDescription.trim(),
+      value: Number(fValue) || 0,
+    };
+  }
+
+  async function putThing(
+    item: LibraryItem,
+    updated: Record<string, unknown>,
+  ): Promise<boolean> {
+    const holon = sourceRef(item, String(item.id))?.holon ?? $holonId;
+    if (!holon) return false;
+    const writer = await getWriter(holon, (m) => (message = m));
+    const ok = await writer.put("library", updated);
+    if (ok) message = "";
+    else if (!message) message = $t("detail.couldNotSave");
+    return ok;
+  }
+
+  // ── Autosave ─────────────────────────────────────────────────────────────
+  // Editing an existing card writes as you go (a new card still waits for
+  // Create — it needs its title first). The card being edited is captured in
+  // `editSel`, so a write that lands after the modal moved on still goes to
+  // the card it was typed into.
+  let editSel: typeof sel = null;
+  /** The roster as last written, so a DM refresh follows each real change. */
+  let savedRoster: Quest["participants"] | undefined;
+  type Edit =
+    | { kind: "quest"; record: Quest }
+    | { kind: "thing"; item: LibraryItem; record: Record<string, unknown> };
+  const autosave = createAutosave<Edit>(
+    () => {
+      if (!editSel) return null;
+      if (editSel.kind === "thing") {
+        const record = buildThing();
+        return record ? { kind: "thing", item: editSel.item, record } : null;
+      }
+      if (editSel.isNew) return null;
+      const record = buildQuest();
+      return record ? { kind: "quest", record } : null;
+    },
+    (e) =>
+      e.kind === "quest" ? putQuest(e.record) : putThing(e.item, e.record),
+  );
+  $: autosave.watch(
+    !editing || isNew
+      ? null
+      : isThing
+        ? JSON.stringify([fType, fDescription, fValue])
+        : JSON.stringify([
+            fTitle,
+            fDate,
+            fTime,
+            fEndDate,
+            fEndTime,
+            fFrequency,
+            fKind,
+            fHosts,
+            fParticipants,
+            fCategory,
+            fLocation,
+            fDescription,
+          ]),
+  );
+  onDestroy(() => void autosave.flush());
+
+  /** Leave the form: what is still waiting is written, then the card closes. */
+  async function doneEditing() {
+    saving = true;
+    const ok = await autosave.flush();
+    saving = false;
+    if (ok) closeDetail();
   }
 
   // Who can still be put on this card: the holon's members not yet on it.
@@ -1163,37 +1281,6 @@
     }
   }
 
-  async function saveThing() {
-    if (!sel || sel.kind !== "thing" || !$holonId) return;
-    saving = true;
-    message = "";
-    // A federated/hologram item is owned by another holon — edit it there, not
-    // in our own lens, or we fork a stray local copy that shadows (and unlinks)
-    // the federated original. Also drop read-side provenance tags so the kiosk's
-    // `_holon` marker (or a resolved `_hologram`/`_federation` envelope) is never
-    // persisted onto the stored item.
-    const ref = sourceRef(sel.item, String(sel.item.id));
-    const holon = ref?.holon ?? $holonId;
-    const clean: Record<string, unknown> = { ...sel.item };
-    delete clean._holon;
-    delete clean._hologram;
-    delete clean._federation;
-    const updated = {
-      ...clean,
-      id: ref?.key ?? sel.item.id,
-      // Categories are canonically lowercase ('tool', 'book', …); a freshly
-      // typed one is normalised the same way so it dedupes across items.
-      type: fType.trim().toLowerCase() || "other",
-      description: fDescription.trim(),
-      value: Number(fValue) || 0,
-    };
-    const writer = await getWriter(holon, (m) => (message = m));
-    const ok = await writer.put("library", updated);
-    saving = false;
-    if (ok) closeDetail();
-    else if (!message) message = $t("detail.couldNotSave");
-  }
-
   // ── Booking form (borrow for a chosen stretch, like the web library) ───────
   // Tapping Borrow opens a From/Until pair with quick length chips instead of
   // borrowing for a hard-coded week. Each edge is a date plus an optional
@@ -1439,6 +1526,9 @@
 
 {#if sel}
   <Modal {tint} {holo} glow={srcGlow} {seed} on:close={closeDetail}>
+    <svelte:fragment slot="corner">
+      {#if editing && !isNew}<SaveState saver={autosave} />{/if}
+    </svelte:fragment>
     {#if linkUrl && !editing}
       <button
         class="share"
@@ -1675,50 +1765,53 @@
           </div>
         {/if}
       {:else}
-        <!-- edit thing -->
-        <label
-          >{$t("detail.category")}
-          {#if addingThingType}
-            <input
-              type="text"
-              bind:value={fType}
-              placeholder={$t("detail.newCategoryPlaceholder")}
-            />
-            <button
-              type="button"
-              class="link-btn"
-              on:click={() => {
-                addingThingType = false;
-                fType = "other";
-              }}>{$t("detail.pickFromList")}</button
-            >
-          {:else}
-            <select value={fType} on:change={onThingTypeSelect}>
-              {#each thingTypeOptions as opt (opt)}
-                <option value={opt}
-                  >{getItemIcon({ type: opt })}
-                  {getTypeDisplayName(opt)}</option
-                >
-              {/each}
-              <option value={NEW_CATEGORY}>＋ {$t("detail.newCategory")}</option
+        <!-- edit thing: what it is first, then how it is filed and what it
+             is worth, side by side. Saves as it is edited. -->
+        <section class="grp first">
+          <label
+            >{$t("detail.description")}
+            <textarea bind:value={fDescription} rows="3"></textarea>
+          </label>
+        </section>
+        <section class="grp duo">
+          <label
+            >{$t("detail.category")}
+            {#if addingThingType}
+              <input
+                type="text"
+                bind:value={fType}
+                placeholder={$t("detail.newCategoryPlaceholder")}
+              />
+              <button
+                type="button"
+                class="link-btn"
+                on:click={() => {
+                  addingThingType = false;
+                  fType = "other";
+                }}>{$t("detail.pickFromList")}</button
               >
-            </select>
-          {/if}
-        </label>
-        <label
-          >{$t("detail.description")}
-          <textarea bind:value={fDescription} rows="3"></textarea>
-        </label>
-        <label
-          >{$t("detail.value")}
-          <input type="number" bind:value={fValue} min="0" />
-        </label>
+            {:else}
+              <select value={fType} on:change={onThingTypeSelect}>
+                {#each thingTypeOptions as opt (opt)}
+                  <option value={opt}
+                    >{getItemIcon({ type: opt })}
+                    {getTypeDisplayName(opt)}</option
+                  >
+                {/each}
+                <option value={NEW_CATEGORY}
+                  >＋ {$t("detail.newCategory")}</option
+                >
+              </select>
+            {/if}
+          </label>
+          <label
+            >{$t("detail.value")}
+            <input type="number" bind:value={fValue} min="0" />
+          </label>
+        </section>
         <div class="actions">
-          <button class="primary" on:click={saveThing} disabled={saving}
-            >{saving ? $t("rolesv.saving") : $t("rolesv.save")}</button
-          >
-          <button class="ghost" on:click={() => (editing = false)}
-            >{$t("common.cancel")}</button
+          <button class="primary" on:click={doneEditing} disabled={saving}
+            >{$t("common.done")}</button
           >
         </div>
       {/if}
@@ -2096,210 +2189,228 @@
         {/if}
       {:else}
         <!-- ── Edit a task / event ────────────────────────────────────────
-             Title, then when it starts and when it ends, then the flat fields.
-             Leaving the end blank keeps it a one-day card; an end date on a
-             later day is what makes it a multi-day event. -->
-        <label class="lead"
-          >{$t("detail.title")}
-          <input
-            type="text"
-            bind:value={fTitle}
-            placeholder={$t("detail.titlePlaceholder")}
-          />
-        </label>
-
-        <div class="when-row">
-          <div class="edge">
-            <span class="elab">{$t("detail.starts")}</span>
-            <div class="pair">
-              <input
-                type="date"
-                bind:value={fDate}
-                aria-label={$t("detail.startDateAria")}
-              />
-              <input
-                class="clock"
-                type="time"
-                bind:value={fTime}
-                aria-label={$t("detail.startTimeAria")}
-              />
-            </div>
-          </div>
-          <div class="edge">
-            <span class="elab">{$t("detail.ends")}</span>
-            <div class="pair">
-              <input
-                type="date"
-                bind:value={fEndDate}
-                min={fDate}
-                disabled={!fDate}
-                aria-label={$t("detail.endDateAria")}
-              />
-              <input
-                class="clock"
-                type="time"
-                bind:value={fEndTime}
-                disabled={!fTime}
-                aria-label={$t("detail.endTimeAria")}
-              />
-            </div>
-          </div>
-        </div>
-        <!-- What the fields add up to, in the same words the card will use
-             once saved. -->
-        {#if scheduleSummary}<p class="sched-sum">
-            {scheduleSummary}{#if effectiveFrequency}{" · "}<Icon
-                name="repeat"
-              />{" "}{freqLabel(effectiveFrequency)}{/if}
-          </p>{/if}
-
-        <!-- Task or event? A task is work to do and lives on the task board;
-             an event is something happening and lives on the calendar only.
-             One tap moves the card between the two. An event needs a date —
-             it IS a moment — so the chip waits for one, and clearing the date
-             turns the card back into a task. -->
-        {#if isAgendaQuest(quest)}
-          <div class="kind" role="radiogroup" aria-label={$t("detail.kind")}>
-            <span class="elab">{$t("detail.kind")}</span>
-            <div class="freq-chips">
-              <button
-                type="button"
-                class="chip"
-                class:on={effectiveKind === "task"}
-                role="radio"
-                aria-checked={effectiveKind === "task"}
-                on:click={() => (fKind = "task")}
-                >{$t("detail.kindTask")}</button
-              >
-              <button
-                type="button"
-                class="chip"
-                class:on={effectiveKind === "event"}
-                role="radio"
-                aria-checked={effectiveKind === "event"}
-                disabled={!fDate}
-                on:click={() => (fKind = "event")}
-                >{$t("detail.kindEvent")}</button
-              >
-            </div>
-            <p class="kind-hint">
-              {#if !fDate}{$t(
-                  "detail.kindNeedsDate",
-                )}{:else if effectiveKind === "event"}{$t(
-                  "detail.kindEventHint",
-                )}{:else}{$t("detail.kindTaskHint")}{/if}
-            </p>
-          </div>
-        {/if}
-
-        <!-- Who leads the event: named hosts get the credit instead of the
-             participants (core's creditedMembers). Events only. -->
-        {#if effectiveKind === "event"}
-          <div class="hosts-edit">
-            <span class="elab"><Icon name="crown" /> {$t("detail.hosts")}</span>
-            <PeoplePicker
-              bind:people={fHosts}
-              addLabel={$t("detail.addHost")}
-              removeLabel={(name) => $t("detail.removeHost", { name })}
-            />
-            <p class="kind-hint">{$t("detail.hostsHint")}</p>
-          </div>
-        {/if}
-
-        <!-- Who takes part: add or drop anyone on the roster, not just
-             yourself. Core keeps a member out of both lists at once. -->
-        <div class="hosts-edit">
-          <span class="elab"
-            ><Icon name="users" /> {$t("detail.participantsLabel")}</span
-          >
-          <PeoplePicker
-            bind:people={fParticipants}
-            addLabel={$t("detail.addParticipant")}
-            removeLabel={(name) => $t("detail.removeParticipant", { name })}
-          />
-          <p class="kind-hint">{$t("detail.participantsHint")}</p>
-        </div>
-
-        <!-- Repeats: one tap picks the cadence, the same choices as the web
-             dashboard's task modal. Greyed until the card has a start date. -->
-        <div class="freq" role="radiogroup" aria-label={$t("detail.repeats")}>
-          <span class="elab"><Icon name="repeat" /> {$t("detail.repeats")}</span
-          >
-          <div class="freq-chips">
-            <button
-              type="button"
-              class="chip"
-              class:on={effectiveFrequency === null}
-              role="radio"
-              aria-checked={effectiveFrequency === null}
-              disabled={!fDate}
-              on:click={() => (fFrequency = null)}>{freqLabel(null)}</button
-            >
-            {#each QUEST_FREQUENCIES as f (f)}
-              <button
-                type="button"
-                class="chip"
-                class:on={effectiveFrequency === f}
-                role="radio"
-                aria-checked={effectiveFrequency === f}
-                disabled={!fDate}
-                on:click={() => (fFrequency = f)}>{freqLabel(f)}</button
-              >
-            {/each}
-          </div>
-        </div>
-
-        <label
-          >{$t("detail.category")}
-          {#if addingCategory}
+             Grouped the way a person thinks about a card: what it is, when
+             it happens (and so whether it is an event, and whether it
+             repeats), who is in it, then where it sits. Leaving the end blank
+             keeps it a one-day card; an end date on a later day is what makes
+             it a multi-day event. An existing card saves as it is edited (the
+             state sits in the corner); a new one waits for Create. -->
+        <section class="grp first">
+          <label class="lead"
+            >{$t("detail.title")}
             <input
               type="text"
-              bind:value={fCategory}
-              placeholder={$t("detail.newCategoryPlaceholder")}
+              bind:value={fTitle}
+              placeholder={$t("detail.titlePlaceholder")}
             />
+          </label>
+          <label
+            >{$t("detail.description")}
+            <textarea bind:value={fDescription} rows="3"></textarea>
+          </label>
+        </section>
+
+        <section class="grp">
+          <div class="when-row">
+            <div class="edge">
+              <span class="elab">{$t("detail.starts")}</span>
+              <div class="pair">
+                <input
+                  type="date"
+                  bind:value={fDate}
+                  aria-label={$t("detail.startDateAria")}
+                />
+                <input
+                  class="clock"
+                  type="time"
+                  bind:value={fTime}
+                  aria-label={$t("detail.startTimeAria")}
+                />
+              </div>
+            </div>
+            <div class="edge">
+              <span class="elab">{$t("detail.ends")}</span>
+              <div class="pair">
+                <input
+                  type="date"
+                  bind:value={fEndDate}
+                  min={fDate}
+                  disabled={!fDate}
+                  aria-label={$t("detail.endDateAria")}
+                />
+                <input
+                  class="clock"
+                  type="time"
+                  bind:value={fEndTime}
+                  disabled={!fTime}
+                  aria-label={$t("detail.endTimeAria")}
+                />
+              </div>
+            </div>
+          </div>
+          <!-- What the fields add up to, in the same words the card will use. -->
+          {#if scheduleSummary}<p class="sched-sum">
+              {scheduleSummary}{#if effectiveFrequency}{" · "}<Icon
+                  name="repeat"
+                />{" "}{freqLabel(effectiveFrequency)}{/if}
+            </p>{/if}
+
+          {#if !fDate}
+            <!-- Kind and cadence both count from a date; until there is one
+                 they are a single line saying so, not a wall of grey chips. -->
+            <p class="kind-hint">{$t("detail.dateUnlocks")}</p>
+          {:else}
+            <!-- Task or event? A task is work to do and lives on the task
+                 board; an event is something happening and lives on the
+                 calendar only. Clearing the date turns it back into a task. -->
+            {#if isAgendaQuest(quest)}
+              <div
+                class="kind-edit"
+                role="radiogroup"
+                aria-label={$t("detail.kind")}
+              >
+                <span class="elab">{$t("detail.kind")}</span>
+                <div class="freq-chips">
+                  <button
+                    type="button"
+                    class="chip"
+                    class:on={effectiveKind === "task"}
+                    role="radio"
+                    aria-checked={effectiveKind === "task"}
+                    on:click={() => (fKind = "task")}
+                    >{$t("detail.kindTask")}</button
+                  >
+                  <button
+                    type="button"
+                    class="chip"
+                    class:on={effectiveKind === "event"}
+                    role="radio"
+                    aria-checked={effectiveKind === "event"}
+                    on:click={() => (fKind = "event")}
+                    >{$t("detail.kindEvent")}</button
+                  >
+                </div>
+                <p class="kind-hint">
+                  {effectiveKind === "event"
+                    ? $t("detail.kindEventHint")
+                    : $t("detail.kindTaskHint")}
+                </p>
+              </div>
+            {/if}
+            <div
+              class="freq"
+              role="radiogroup"
+              aria-label={$t("detail.repeats")}
+            >
+              <span class="elab"
+                ><Icon name="repeat" /> {$t("detail.repeats")}</span
+              >
+              <div class="freq-chips">
+                <button
+                  type="button"
+                  class="chip"
+                  class:on={effectiveFrequency === null}
+                  role="radio"
+                  aria-checked={effectiveFrequency === null}
+                  on:click={() => (fFrequency = null)}>{freqLabel(null)}</button
+                >
+                {#each QUEST_FREQUENCIES as f (f)}
+                  <button
+                    type="button"
+                    class="chip"
+                    class:on={effectiveFrequency === f}
+                    role="radio"
+                    aria-checked={effectiveFrequency === f}
+                    on:click={() => (fFrequency = f)}>{freqLabel(f)}</button
+                  >
+                {/each}
+              </div>
+            </div>
+          {/if}
+        </section>
+
+        <section class="grp">
+          <!-- Who leads the event: named hosts get the credit instead of the
+               participants (core's creditedMembers). Events only. -->
+          {#if effectiveKind === "event"}
+            <div class="hosts-edit">
+              <span class="elab"
+                ><Icon name="crown" /> {$t("detail.hosts")}</span
+              >
+              <PeoplePicker
+                bind:people={fHosts}
+                addLabel={$t("detail.addHost")}
+                removeLabel={(name) => $t("detail.removeHost", { name })}
+              />
+              <p class="kind-hint">{$t("detail.hostsHint")}</p>
+            </div>
+          {/if}
+          <!-- Who takes part: add or drop anyone on the roster, not just
+               yourself. Core keeps a member out of both lists at once. -->
+          <div class="hosts-edit">
+            <span class="elab"
+              ><Icon name="users" /> {$t("detail.participantsLabel")}</span
+            >
+            <PeoplePicker
+              bind:people={fParticipants}
+              addLabel={$t("detail.addParticipant")}
+              removeLabel={(name) => $t("detail.removeParticipant", { name })}
+            />
+            <p class="kind-hint">{$t("detail.participantsHint")}</p>
+          </div>
+        </section>
+
+        <section class="grp duo">
+          <label
+            >{$t("detail.category")}
+            {#if addingCategory}
+              <input
+                type="text"
+                bind:value={fCategory}
+                placeholder={$t("detail.newCategoryPlaceholder")}
+              />
+              <button
+                type="button"
+                class="link-btn"
+                on:click={() => {
+                  addingCategory = false;
+                  fCategory = "";
+                }}>{$t("detail.pickFromList")}</button
+              >
+            {:else}
+              <select value={fCategory} on:change={onCategorySelect}>
+                <option value="">{$t("detail.noCategory")}</option>
+                {#each categoryOptions as opt}
+                  <option value={opt}>{opt}</option>
+                {/each}
+                <option value={NEW_CATEGORY}
+                  >＋ {$t("detail.newCategory")}</option
+                >
+              </select>
+            {/if}
+          </label>
+          <label
+            >{$t("detail.location")}
+            <input type="text" bind:value={fLocation} />
+          </label>
+        </section>
+
+        <div class="actions">
+          {#if isNew}
             <button
-              type="button"
-              class="link-btn"
-              on:click={() => {
-                addingCategory = false;
-                fCategory = "";
-              }}>{$t("detail.pickFromList")}</button
+              class="primary"
+              on:click={saveQuest}
+              disabled={saving || !fTitle.trim()}
+              >{saving ? $t("rolesv.saving") : $t("detail.create")}</button
+            >
+            <button class="ghost" on:click={closeDetail}
+              >{$t("common.cancel")}</button
             >
           {:else}
-            <select value={fCategory} on:change={onCategorySelect}>
-              <option value="">{$t("detail.noCategory")}</option>
-              {#each categoryOptions as opt}
-                <option value={opt}>{opt}</option>
-              {/each}
-              <option value={NEW_CATEGORY}>＋ {$t("detail.newCategory")}</option
-              >
-            </select>
+            <button class="primary" on:click={doneEditing} disabled={saving}
+              >{$t("common.done")}</button
+            >
           {/if}
-        </label>
-        <label
-          >{$t("detail.location")}
-          <input type="text" bind:value={fLocation} />
-        </label>
-        <label
-          >{$t("detail.description")}
-          <textarea bind:value={fDescription} rows="3"></textarea>
-        </label>
-        <div class="actions">
-          <button
-            class="primary"
-            on:click={saveQuest}
-            disabled={saving || (isNew && !fTitle.trim())}
-            >{saving
-              ? $t("rolesv.saving")
-              : isNew
-                ? $t("detail.create")
-                : $t("rolesv.save")}</button
-          >
-          <button
-            class="ghost"
-            on:click={() => (isNew ? closeDetail() : (editing = false))}
-            >{$t("common.cancel")}</button
-          >
         </div>
       {/if}
     {/if}
@@ -2721,9 +2832,29 @@
   .freq {
     margin-top: 0.9rem;
   }
-  /* The task/event switch, above the cadence and sharing its chip row. */
-  .kind {
+  /* The task/event switch, above the cadence and sharing its chip row. Its
+     own class: `.kind` is the view's uppercase badge, and the hint inside
+     this switch must not read as one. */
+  .kind-edit {
     margin-top: 0.9rem;
+  }
+  /* The edit form's groups — what, when, who, where — each set off from the
+     last by a hairline, so a long form scans as four short ones. */
+  .grp {
+    margin-top: 1.1rem;
+    padding-top: 0.2rem;
+    border-top: 1px solid var(--line);
+  }
+  .grp.first {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+  /* Two short fields side by side; one above the other on a phone. */
+  .grp.duo {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    column-gap: 0.8rem;
   }
   .hosts-edit {
     margin-top: 0.9rem;

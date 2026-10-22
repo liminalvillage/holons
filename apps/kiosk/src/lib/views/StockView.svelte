@@ -24,7 +24,7 @@
   // with a retry backoff and a periodic refresh, never subscribed; every
   // await is followed by a holon-identity check. The `stock` lens (item
   // specs) is small and streams in through the shell (`rawStock`).
-  import { onMount, tick } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { get } from "svelte/store";
   import {
     holonId,
@@ -45,6 +45,8 @@
     getLensStore,
   } from "$lib/holosphere";
   import { t, locale, type MessageKey } from "$lib/i18n";
+  import { createAutosave } from "$lib/autosave";
+  import SaveState from "$lib/components/SaveState.svelte";
   import type { HoloSphere } from "holosphere";
   import { getFederationSnapshot } from "@holons/core/federation";
   import { REAEventStore } from "@holons/core/rea";
@@ -397,57 +399,98 @@
     return Number.isFinite(v) && v >= 0 ? v : null;
   };
 
+  /** Write a spec and show it at once; the auto offers follow its keep-back. */
+  async function putSpec(
+    holon: string,
+    record: StockItemSpecRecord,
+    was: string | null,
+  ): Promise<void> {
+    const store = await getLensStore();
+    await store.put(holon, STOCK_LENS, record);
+    // Optimistic: the lens echo follows, but the row should not blink in late.
+    rawStock.update((items) => [
+      ...items.filter(
+        (r) =>
+          (r as { id?: string; _federation?: unknown })?.id !== record.id ||
+          (r as { _federation?: { origin?: string } })?._federation?.origin,
+      ),
+      record,
+    ]);
+    if (was && openItemId === was) openItemId = record.id;
+    // Keep-back (min / target) moved: the auto offers follow the spec too.
+    await tick();
+    publishTotals(holon);
+  }
+
+  /** A new item is added on the tap; an existing one saves itself below. */
   async function saveSpec() {
     const holon = hid;
     const user = get(currentUser);
     if (!holon || !user || !fName.trim()) return;
+    const id = stockItemId(fName);
+    if (sets.own.some((s) => s.id === id)) {
+      showNotice($t("stock.nameTaken"));
+      return;
+    }
     saving = true;
     try {
-      const store = await getLensStore();
-      let record: StockItemSpecRecord;
-      if (editing) {
-        record = updateStockItemSpec(editing, {
-          name: fName,
-          category: fCategory,
-          unit: fUnit,
-          target: num(fTarget),
-          min: num(fMin),
-        });
-      } else {
-        const id = stockItemId(fName);
-        if (sets.own.some((s) => s.id === id)) {
-          showNotice($t("stock.nameTaken"));
-          return;
-        }
-        record = createStockItemSpec({
-          name: fName,
-          category: fCategory,
-          unit: fUnit,
-          target: num(fTarget) ?? undefined,
-          min: num(fMin) ?? undefined,
-          createdBy: user.id,
-        });
-      }
-      await store.put(holon, STOCK_LENS, record);
-      // Optimistic: the lens echo follows, but the row should not blink in late.
-      rawStock.update((items) => [
-        ...items.filter(
-          (r) =>
-            (r as { id?: string; _federation?: unknown })?.id !== record.id ||
-            (r as { _federation?: { origin?: string } })?._federation?.origin,
-        ),
-        record,
-      ]);
+      const record = createStockItemSpec({
+        name: fName,
+        category: fCategory,
+        unit: fUnit,
+        target: num(fTarget) ?? undefined,
+        min: num(fMin) ?? undefined,
+        createdBy: user.id,
+      });
+      await putSpec(holon, record, null);
       formOpen = false;
-      if (editing && openItemId === editing.id) openItemId = record.id;
-      // Keep-back (min / target) moved: the auto offers follow the spec too.
-      await tick();
-      publishTotals(holon);
     } catch (err) {
       fail(err, "stock.saveFailed");
     } finally {
       saving = false;
     }
+  }
+
+  // Editing an item writes as you go (a blank name is not written).
+  const autosave = createAutosave<{
+    holon: string;
+    record: StockItemSpecRecord;
+    was: string;
+  }>(
+    () =>
+      hid && editing && fName.trim()
+        ? {
+            holon: hid,
+            was: editing.id,
+            record: updateStockItemSpec(editing, {
+              name: fName,
+              category: fCategory,
+              unit: fUnit,
+              target: num(fTarget),
+              min: num(fMin),
+            }),
+          }
+        : null,
+    async ({ holon, record, was }) => {
+      try {
+        await putSpec(holon, record, was);
+        return true;
+      } catch (err) {
+        fail(err, "stock.saveFailed");
+        return false;
+      }
+    },
+  );
+  $: autosave.watch(
+    formOpen && editing
+      ? JSON.stringify([fName, fCategory, fUnit, fTarget, fMin])
+      : null,
+  );
+  onDestroy(() => void autosave.flush());
+
+  function closeForm() {
+    if (editing) void autosave.flush();
+    formOpen = false;
   }
 
   let confirmDelete = false;
@@ -1210,7 +1253,10 @@
 {/if}
 
 {#if formOpen}
-  <Modal on:close={() => (formOpen = false)}>
+  <Modal on:close={closeForm}>
+    <svelte:fragment slot="corner">
+      {#if editing}<SaveState saver={autosave} />{/if}
+    </svelte:fragment>
     <div class="form">
       <div class="glyph" aria-hidden="true">
         {#if editing}<Icon name="pencil" />{:else}＋{/if}
@@ -1267,15 +1313,21 @@
         />
       </label>
       <div class="actions">
-        <button
-          class="primary"
-          on:click={saveSpec}
-          disabled={saving || !fName.trim()}
-          >{saving ? $t("stock.saving") : $t("stock.save")}</button
-        >
-        <button class="ghost" on:click={() => (formOpen = false)}
-          >{$t("common.cancel")}</button
-        >
+        {#if editing}
+          <button class="primary" on:click={closeForm}
+            >{$t("common.done")}</button
+          >
+        {:else}
+          <button
+            class="primary"
+            on:click={saveSpec}
+            disabled={saving || !fName.trim()}
+            >{saving ? $t("stock.saving") : $t("stock.save")}</button
+          >
+          <button class="ghost" on:click={() => (formOpen = false)}
+            >{$t("common.cancel")}</button
+          >
+        {/if}
       </div>
     </div>
   </Modal>

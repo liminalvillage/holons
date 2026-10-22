@@ -10,6 +10,9 @@ export const it: Record<MessageKey, Msg> = {
   "common.close": "Chiudi",
   "common.cancel": "Annulla",
   "common.saving": "Salvataggio…",
+  "common.saved": "Salvato",
+  "common.saveFailed": "Non salvato — tocca per riprovare",
+  "common.done": "Fatto",
   "common.apply": "Applica",
   "common.send": "Invia",
   "common.untitled": "Senza titolo",
@@ -245,7 +248,6 @@ export const it: Record<MessageKey, Msg> = {
   "rolesv.clearFixed": "Rimuovi",
   "rolesv.makeMeFixed": "Rendimi il titolare fisso",
   "rolesv.saving": "Salvataggio…",
-  "rolesv.save": "Salva",
   "rolesv.deleteRole": "Elimina il ruolo",
 
   // Library status chips
@@ -337,7 +339,7 @@ export const it: Record<MessageKey, Msg> = {
   "shifts.cannotPublish":
     "Puoi salvare il piano, ma non pubblicare da qui — {reason}.",
   "shifts.adopted":
-    "Nessun piano salvato — questo è stato ricavato dai turni già sulla parete. Salvalo per tenerlo.",
+    "Nessun piano salvato — questo è stato ricavato dai turni già sulla parete. Viene salvato appena lo modifichi o lo pubblichi.",
   "shifts.catalog": "Turni",
   "shifts.enabled": "Attivo",
   "shifts.title": "Titolo",
@@ -373,12 +375,11 @@ export const it: Record<MessageKey, Msg> = {
     one: "Rimuovi {n} fuori piano",
     other: "Rimuovi {n} fuori piano",
   },
-  "shifts.savePlan": "Salva piano",
   "shifts.publishMissing": {
     one: "Pubblica {n} mancante",
     other: "Pubblica {n} mancanti",
   },
-  "shifts.saveAndPublish": "Salva e pubblica",
+  "shifts.saveAndPublish": "Pubblica",
 
   // Pill segments
   "pills.card": "Scheda",
@@ -1062,7 +1063,8 @@ export const it: Record<MessageKey, Msg> = {
   "detail.kindEvent": "Evento",
   "detail.kindTaskHint": "Nella bacheca dei compiti",
   "detail.kindEventHint": "Solo nel calendario",
-  "detail.kindNeedsDate": "Dagli una data per renderlo un evento",
+  "detail.dateUnlocks":
+    "Aggiungi una data d’inizio per renderlo un evento o farlo ripetere.",
   "detail.starts": "Inizio",
   "detail.ends": "Fine",
   "detail.startDateAria": "Data di inizio",
@@ -1605,7 +1607,6 @@ export const it: Record<MessageKey, Msg> = {
     "Quanto riceve davvero ogni zona, come quota dell'intero fondo.",
   "alloc.zonesPreview":
     "Nessuno collocato \u2014 la forma che le zone avrebbero.",
-  "alloc.save": "Salva",
   "alloc.errSave": "Salvataggio della ripartizione non riuscito. Riprova.",
   "alloc.errDenied": "Non puoi cambiare le impostazioni di questo holon.",
   "alloc.split": "Quota dei contributori divisa",
@@ -1905,13 +1906,11 @@ export const it: Record<MessageKey, Msg> = {
   "offers.service": "Un servizio (tempo), non una cosa",
   "offers.notesPlaceholder": "Condizioni, ritiro, orari…",
   "offers.untilLabel": "Fino a (facoltativo)",
-  "offers.save": "Salva",
   "offers.listIt": "Pubblica",
   "offers.saving": "Salvo…",
   "offers.howMany": "Quanti?",
   "offers.belowReserved": "Hai già promesso più di così.",
   "offers.closed": "Questa offerta è chiusa.",
-  "offers.saved": "Offerta aggiornata.",
   "offers.created":
     "Offerta pubblicata qui. Condividila per raggiungere i partner e la mappa.",
   "offers.saveFailed": "Impossibile salvare l'offerta.",

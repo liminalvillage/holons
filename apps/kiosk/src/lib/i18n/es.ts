@@ -10,6 +10,9 @@ export const es: Record<MessageKey, Msg> = {
   "common.close": "Cerrar",
   "common.cancel": "Cancelar",
   "common.saving": "Guardando…",
+  "common.saved": "Guardado",
+  "common.saveFailed": "No guardado — toca para reintentar",
+  "common.done": "Listo",
   "common.apply": "Aplicar",
   "common.send": "Enviar",
   "common.untitled": "Sin título",
@@ -240,7 +243,6 @@ export const es: Record<MessageKey, Msg> = {
   "rolesv.clearFixed": "Quitar",
   "rolesv.makeMeFixed": "Hazme el titular fijo",
   "rolesv.saving": "Guardando…",
-  "rolesv.save": "Guardar",
   "rolesv.deleteRole": "Eliminar el rol",
 
   // Library status chips
@@ -336,7 +338,7 @@ export const es: Record<MessageKey, Msg> = {
   "shifts.cannotPublish":
     "Puedes guardar el plan, pero no publicar desde aquí — {reason}.",
   "shifts.adopted":
-    "Aún no hay plan guardado — este se dedujo de los turnos ya en la pared. Guárdalo para conservarlo.",
+    "Aún no hay plan guardado — este se dedujo de los turnos ya en la pared. Se guarda en cuanto lo cambias o lo publicas.",
   "shifts.catalog": "Turnos",
   "shifts.enabled": "Activo",
   "shifts.title": "Título",
@@ -375,12 +377,11 @@ export const es: Record<MessageKey, Msg> = {
     one: "Quitar {n} fuera del plan",
     other: "Quitar {n} fuera del plan",
   },
-  "shifts.savePlan": "Guardar plan",
   "shifts.publishMissing": {
     one: "Publicar {n} que falta",
     other: "Publicar {n} que faltan",
   },
-  "shifts.saveAndPublish": "Guardar y publicar",
+  "shifts.saveAndPublish": "Publicar",
 
   // Pill segments
   "pills.card": "Ficha",
@@ -1057,7 +1058,8 @@ export const es: Record<MessageKey, Msg> = {
   "detail.kindEvent": "Evento",
   "detail.kindTaskHint": "En el tablero de tareas",
   "detail.kindEventHint": "Solo en el calendario",
-  "detail.kindNeedsDate": "Ponle una fecha para convertirlo en evento",
+  "detail.dateUnlocks":
+    "Añade una fecha de inicio para hacerlo un evento o que se repita.",
   "detail.starts": "Empieza",
   "detail.ends": "Termina",
   "detail.startDateAria": "Fecha de inicio",
@@ -1598,7 +1600,6 @@ export const es: Record<MessageKey, Msg> = {
     "Lo que recibe realmente cada zona, como parte del fondo entero.",
   "alloc.zonesPreview":
     "Nadie colocado a\u00fan \u2014 la forma que tendr\u00edan las zonas.",
-  "alloc.save": "Guardar",
   "alloc.errSave": "No se pudo guardar el reparto. Inténtalo de nuevo.",
   "alloc.errDenied": "No puedes cambiar los ajustes de este holon.",
   "alloc.split": "Parte de los contribuidores dividida",
@@ -1896,13 +1897,11 @@ export const es: Record<MessageKey, Msg> = {
   "offers.service": "Un servicio (tiempo), no una cosa",
   "offers.notesPlaceholder": "Estado, recogida, horario…",
   "offers.untilLabel": "Hasta (opcional)",
-  "offers.save": "Guardar",
   "offers.listIt": "Publicar",
   "offers.saving": "Guardando…",
   "offers.howMany": "¿Cuántos?",
   "offers.belowReserved": "Ya has prometido más que eso.",
   "offers.closed": "Esta oferta está cerrada.",
-  "offers.saved": "Oferta actualizada.",
   "offers.created":
     "Oferta publicada aquí. Compártela para llegar a los socios y al mapa.",
   "offers.saveFailed": "No se pudo guardar la oferta.",

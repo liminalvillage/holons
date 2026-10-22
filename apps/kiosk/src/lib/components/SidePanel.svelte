@@ -117,6 +117,8 @@
   >
     <header class="head">
       <h2 id={titleId}>{title}</h2>
+      <!-- A sheet's live state beside its ✕ (an autosaving form's pill). -->
+      <slot name="corner" />
       <button class="x" on:click={close} aria-label={$t("common.close")}
         ><Icon name="close" /></button
       >
