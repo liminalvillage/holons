@@ -173,7 +173,7 @@
   // from the live root size rather than assuming 16px — a fixed 104 drew
   // the lens for a circle the screen never showed. Re-read on every field
   // resize: the root size is viewport-driven, so it moves with the window.
-  const ORB_REM = 6.5;
+  const ORB_REM = 4.75;
   let ORB = ORB_REM * 16; // px diameter — remeasured below once the field mounts
   function orbPx(): number {
     if (typeof document === "undefined") return ORB_REM * 16;
@@ -743,12 +743,11 @@
     requestOpen(id);
   }
 
-  /** The search box picked a hub: dock it, or fly to it if it is here. */
+  /** The search box picked a hub: dock it, or open it if it is here. */
   function pickHub(hit: { id: string; name: string; docked: boolean }) {
     if (!hit.docked)
       void addHub({ id: hit.id, name: hit.name }, { stay: true });
-    else if (mapOn) void dockMap?.showBoard(hit.id);
-    else requestOpen(hit.id); // no earth to fly: open the board itself
+    else requestOpen(hit.id); // its orb is already in the sky: open it
   }
   /** The search box picked a place: the earth flies there. */
   function pickPlace(place: PlaceHit) {

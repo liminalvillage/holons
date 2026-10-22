@@ -6,7 +6,7 @@
   // registry (lib/holonsearch), with anything pasted whole accepted outright
   // — and PLACES, by name, from the geocoder (lib/placesearch). Owns nothing
   // but the query: a pick is handed back to whoever holds the map (the
-  // dock's bar → DockView), which docks the hub or flies to it when it is
+  // dock's bar → DockView), which docks the hub or opens it when it is
   // docked already, and flies the earth to the place. The query itself is
   // bindable: the dock reads it live to show only the orbs that answer it.
   import { onDestroy } from "svelte";
