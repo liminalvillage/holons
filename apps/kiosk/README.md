@@ -178,23 +178,25 @@ memory only and is re-derived from the session cookie on each load.
 The voice widget (hold-to-talk + typed transcripts) runs one of two pipelines
 behind the same UI:
 
-| Mode     | Pipeline                                                                                                                          | Enable with                                                          |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `ws`     | A [`@holons/voice-ui`](../../packages/voice-ui) server owns STT → agent → TTS (local models or hosted APIs)                       | `VITE_VOICE_WS_URL` (defaults to probing `ws://localhost:8787`)      |
-| `direct` | The browser itself calls the OpenAI API: Whisper STT → chat-completions agent loop with in-page tools over Holosphere → tts-1 TTS | An OpenAI API key entered in **Settings** (kept on that device only) |
+| Mode     | Pipeline                                                                                                                                                                    | Enable with                                                     |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `ws`     | A [`@holons/voice-ui`](../../packages/voice-ui) server owns STT → agent → TTS (local models or hosted APIs)                                                                 | `VITE_VOICE_WS_URL` (defaults to probing `ws://localhost:8787`) |
+| `direct` | The browser drives the OpenAI pipeline through the deploy's `/api/ai/voice` relay: Whisper STT → chat-completions agent loop with in-page tools over Holosphere → tts-1 TTS | `OPENAI_API_KEY` in the deploy's server env                     |
 
-Direct mode needs no companion server — a deployed kiosk speaks on its own.
-The caretaker pastes an OpenAI API key into **Settings → Voice**; it is stored
-in the device's `localStorage` (never in the deployed bundle) and applies
-immediately, so each kiosk site/device carries its own key. Clearing the field
-turns voice off again. Use a dedicated, spending-capped key per hub, since
-anyone with physical access to the device could read it.
+Direct mode needs no companion server — a deployed kiosk speaks on its own,
+through its session-gated `/api/ai/voice` relay, so the key never leaves the
+server. (A key an earlier build stored on a device is still honoured.)
+
+Text AI — task breakdown and drafting a record from a description — runs on
+Claude through `/api/ai/breakdown` and `/api/ai/draft`, with
+`ANTHROPIC_API_KEY` (and optionally `HOLONS_AI_MODEL`, default
+`claude-opus-5-5`) in the deploy's server env. Without it those buttons stay
+hidden.
 
 `VITE_VOICE_MODE=ws|direct` picks the mode explicitly; otherwise an explicit
 `VITE_VOICE_WS_URL` keeps `ws`, else an available key enables `direct`. With
-neither, the buttons stay hidden. For local dev, `VITE_OPENAI_API_KEY` in the
-root `.env` acts as a fallback key (do **not** set it on Netlify — it would
-bake the key into the public bundle). Optional model overrides:
+neither, the buttons stay hidden. There is no build-time key — anything baked
+into the bundle is public. Optional model overrides:
 `VITE_VOICE_LLM_MODEL` (`gpt-4o-mini`), `VITE_VOICE_STT_MODEL` (`whisper-1`),
 `VITE_VOICE_TTS_MODEL` (`tts-1`), `VITE_VOICE_TTS_VOICE` (`alloy`).
 

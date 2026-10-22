@@ -27,7 +27,7 @@ function printHelp(): void {
       '',
       'Environment:',
       '  ANTHROPIC_API_KEY               Required for live calls',
-      '  HOLONS_AI_MODEL                 Override the default model',
+      '  HOLONS_AI_MODEL                 Override the default model (claude-opus-5-5)',
       '',
     ].join('\n'),
   );

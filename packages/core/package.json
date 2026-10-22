@@ -30,10 +30,11 @@
     "seed:demo-holon": "node scripts/seed-demo-holon.mjs"
   },
   "dependencies": {
-    "holosphere": "workspace:*",
-    "ical.js": "^2.2.1",
+    "@anthropic-ai/sdk": "^1.1.0",
     "@noble/curves": "^1.8.0",
     "@noble/hashes": "^1.8.0",
+    "holosphere": "workspace:*",
+    "ical.js": "^2.2.1",
     "nostr-tools": "^2.23.5",
     "ws": "^8.21.3"
   },

@@ -3,14 +3,14 @@
 //
 // POST /api/ai/draft — fill in a record's fields from a description someone
 // wrote, so the map's add form can be answered in a sentence instead of field
-// by field. Same shape as /api/ai/breakdown next door: OpenAI-only over plain
-// fetch, the key read from the deploy's server env so it never reaches the
-// client bundle, and session-gated in production because without that this is
-// an open proxy to the key. Nothing is written here — the draft goes back to
-// the browser as a suggestion in a form someone still has to save.
+// by field. Same shape as /api/ai/breakdown next door: one structured-output
+// Claude call through @holons/core/ai, the key read from the deploy's server
+// env so it never reaches the client bundle, and session-gated in production
+// because without that this is an open proxy to the key. Nothing is written
+// here — the draft goes back to the browser as a suggestion in a form someone
+// still has to save.
 //
-// GET reports `{ configured }`, so the client can choose between this route
-// and a device-pasted key without guessing (see $lib/draft).
+// GET reports `{ configured }`, so the client knows whether to offer drafting.
 
 import { json } from "@sveltejs/kit";
 import { env } from "$env/dynamic/private";
@@ -18,21 +18,24 @@ import type { RequestHandler } from "./$types";
 import {
   DRAFT_MAX_DESCRIPTION_CHARS,
   DRAFT_MAX_FIELDS,
-  DRAFT_TOOL_NAME,
   DraftValidationError,
   buildDraftPrompt,
-  buildDraftTool,
+  buildDraftSchema,
   parseDraft,
   type DraftField,
 } from "@holons/core/drafting";
+import {
+  aiConfigured,
+  aiModel,
+  completeJSON,
+  createClaude,
+  toAIError,
+} from "@holons/core/ai";
 import {
   verifySession,
   authConfig,
   SESSION_COOKIE,
 } from "$lib/server/telegramAuth";
-
-/** Matches the breakdown route's fallback; OPENAI_MODEL overrides it. */
-const DEFAULT_OPENAI_MODEL = "gpt-4o";
 
 const KINDS = new Set([
   "text",
@@ -43,24 +46,6 @@ const KINDS = new Set([
   "choice",
   "list",
 ]);
-
-function openaiKey(): string {
-  return (
-    env.OPENAI_API_KEY ||
-    env.OPENAI ||
-    env.VITE_OPENAI_API_KEY ||
-    ""
-  ).trim();
-}
-
-class OpenAIError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.name = "OpenAIError";
-    this.status = status;
-  }
-}
 
 /**
  * The fields as this route will accept them: a client asking for hundreds of
@@ -96,14 +81,13 @@ function sanitizeFields(input: unknown): DraftField[] {
 
 /** Whether this deploy can draft server-side. Public, leaks nothing. */
 export const GET: RequestHandler = async () => {
-  return json({ configured: openaiKey() !== "" });
+  return json({ configured: aiConfigured(env) });
 };
 
 export const POST: RequestHandler = async ({ request, cookies }) => {
-  const key = openaiKey();
-  if (!key) {
+  if (!aiConfigured(env)) {
     return json(
-      { error: "AI drafting is not configured (set OPENAI_API_KEY)." },
+      { error: "AI drafting is not configured (set ANTHROPIC_API_KEY)." },
       { status: 503 },
     );
   }
@@ -151,56 +135,17 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
       : null;
 
   const prompt = buildDraftPrompt({ kind, description, fields, place });
-  const tool = buildDraftTool(fields);
 
   try {
-    const model = (env.OPENAI_MODEL || "").trim() || DEFAULT_OPENAI_MODEL;
-    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: prompt.system },
-          { role: "user", content: prompt.user },
-        ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: tool.name,
-              description: tool.description,
-              parameters: tool.input_schema,
-              strict: true,
-            },
-          },
-        ],
-        tool_choice: { type: "function", function: { name: DRAFT_TOOL_NAME } },
-      }),
+    const { output, model } = await completeJSON({
+      client: createClaude(env),
+      model: aiModel(env),
+      system: prompt.system,
+      user: prompt.user,
+      schema: buildDraftSchema(fields),
+      effort: "low",
     });
-    if (!resp.ok) {
-      const detail = await resp.text().catch(() => "");
-      throw new OpenAIError(resp.status, detail.slice(0, 300));
-    }
-    const data = await resp.json();
-    const args =
-      data?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-    if (typeof args !== "string") {
-      throw new DraftValidationError("the model returned no fields");
-    }
-    let input: unknown;
-    try {
-      input = JSON.parse(args);
-    } catch {
-      throw new DraftValidationError("the model returned malformed JSON");
-    }
-    return json({
-      values: parseDraft(input, fields),
-      model: data?.model ?? model,
-    });
+    return json({ values: parseDraft(output, fields), model });
   } catch (err) {
     if (err instanceof DraftValidationError) {
       return json(
@@ -208,26 +153,8 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
         { status: 422 },
       );
     }
-    if (err instanceof OpenAIError) {
-      if (err.status === 401 || err.status === 403) {
-        return json(
-          { error: "AI provider rejected the configured API key." },
-          { status: 502 },
-        );
-      }
-      if (err.status === 429) {
-        return json(
-          { error: "AI provider rate limit hit — try again shortly." },
-          { status: 429 },
-        );
-      }
-      console.error("AI draft (OpenAI) failed:", err.status, err.message);
-      return json(
-        { error: "AI request was rejected by the provider." },
-        { status: 422 },
-      );
-    }
-    console.error("AI draft failed:", err);
-    return json({ error: "AI draft failed." }, { status: 500 });
+    const aiErr = toAIError(err);
+    console.error("AI draft failed:", aiErr.kind, aiErr.message);
+    return json({ error: aiErr.publicMessage }, { status: aiErr.status });
   }
 };

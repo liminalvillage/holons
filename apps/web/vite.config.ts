@@ -43,8 +43,9 @@ export default defineConfig({
     preserveSymlinks: false,
   },
   ssr: {
-    // Don't bundle Node.js-only packages for SSR
-    external: ["ws"],
+    // Don't bundle Node.js-only packages for SSR (the Claude SDK's Node
+    // shims lose their bindings when bundled)
+    external: ["ws", "@anthropic-ai/sdk"],
     // Ensure these packages are bundled (not externalized)
     noExternal: ["holosphere"],
   },

@@ -1321,10 +1321,6 @@ export const it: Record<MessageKey, Msg> = {
   "clipboard.writeFailed": "scrittura non riuscita",
 
   // AI breakdown errors
-  "breakdown.badKey":
-    "OpenAI ha rifiutato la chiave API di questo dispositivo.",
-  "breakdown.rateLimit":
-    "Limite di richieste OpenAI raggiunto — riprova tra poco.",
   "breakdown.failed": "Scomposizione AI non riuscita (HTTP {status}).",
 
   "draft.placeholder": "Descrivilo in una frase e compilo io il modulo…",
@@ -1334,7 +1330,7 @@ export const it: Record<MessageKey, Msg> = {
     "Non c'è abbastanza per compilare il modulo — prova a dire di più.",
   "draft.failed": "Non è stato possibile compilare (HTTP {status}).",
   "draft.unavailable":
-    "Per compilare serve una chiave OpenAI — impostala sul deploy o incollala nelle Impostazioni.",
+    "Per compilare serve una chiave AI sul deploy (ANTHROPIC_API_KEY).",
   // Flows board
   "flows.loading": "Lettura del registro\u2026",
   "flows.empty": "Qui non si \u00e8 ancora mosso nulla.",

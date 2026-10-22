@@ -47,7 +47,10 @@ class HoloSphere {
      * with relays but no key an ephemeral key is generated (identity does not
      * survive a restart).
      */
-    constructor(appnameOrConfig, strict = false, openaikey = null, legacyOptions = undefined) {
+    // The third positional slot once took an OpenAI key; it is ignored (AI
+    // lives in @holons/core/ai, not the data layer) and kept so the slot
+    // after it doesn't shift.
+    constructor(appnameOrConfig, strict = false, _unused = null, legacyOptions = undefined) {
         if (typeof appnameOrConfig === 'object' && appnameOrConfig !== null) {
             const config = appnameOrConfig;
             this.config = config;
@@ -60,7 +63,6 @@ class HoloSphere {
             if (config.gunOptions) {
                 console.warn('[holosphere] gunOptions are ignored: Gun has been removed (see STORE.md for store options)');
             }
-            openaikey = config.openaiKey || config.openaikey || null;
         } else {
             this.appname = appnameOrConfig;
             this.config = { appName: appnameOrConfig };
@@ -111,7 +113,6 @@ class HoloSphere {
         this._privacy = createPrivacy(this);
         this.store.setUnseal(this._privacy.unseal);
 
-        this.openai = null;
         this.subscriptions = {};
         this.schemaCache = new Map();
         // Holon-name cache so resolveHologram + getFederated don't refetch
@@ -606,16 +607,8 @@ class HoloSphere {
         return ComputeOps.compute(this, holon, lens, options, password);
     }
 
-    async summarize(history) {
-        return ComputeOps.summarize(this, history);
-    }
-
     async upcast(holon, lens, content, maxLevels = 15) {
         return ComputeOps.upcast(this, holon, lens, content, maxLevels);
-    }
-
-    async updateParent(id, report) {
-        return ComputeOps.updateParent(this, id, report);
     }
 
     async propagate(holon, lens, data, options = {}) {

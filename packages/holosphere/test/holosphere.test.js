@@ -57,18 +57,10 @@ describe('HoloSphere', () => {
             expect(holoSphere).toBeInstanceOf(HoloSphere);
             expect(holoSphere.store).toBeDefined();
             expect(holoSphere.validator).toBeDefined();
-            // The constructor sets `this.openai = null` unconditionally —
-            // callers wire a client in themselves when they need one.
-            expect(holoSphere.openai).toBeNull();
             expect(holoSphere.subscriptions).toBeDefined();
             expect(holoSphere.subscriptions).toEqual({});
         });
 
-        test('should initialize with OpenAI', async () => {
-            const withOpenAI = new HoloSphere({ appName: testAppName, openaiKey: 'fake-key', store: { adapter: 'memory' } });
-            expect(withOpenAI.openai).toBeDefined();
-            await withOpenAI.close();
-        });
     });
 
     describe('Space Management', () => {

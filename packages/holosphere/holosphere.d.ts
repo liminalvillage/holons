@@ -418,7 +418,6 @@ interface HoloSphereConfig {
   strict?: boolean;
   /** Relay URLs — the wire. Without relays the instance is local-only. */
   relays?: string[];
-  openaiKey?: string | null;
   /** Local store configuration (see STORE.md). */
   store?: StoreOptions;
   /** Read-side signing modes. */
@@ -566,9 +565,7 @@ declare class HoloSphere {
     // Compute
     computeHierarchy(holon: string, lens: string, options: object, maxLevels?: number, password?: string | null): Promise<Array<any>>;
     compute(holon: string, lens: string, options: object | string, password?: string | null): Promise<any>;
-    summarize(history: string): Promise<string>;
     upcast(holon: string, lens: string, content: object, maxLevels?: number): Promise<object>;
-    updateParent(id: string, report: string): Promise<object>;
     propagate(holon: string, lens: string, data: object, options?: PropagationOptions): Promise<PropagationResult>;
     propagateDeletion(holon: string, lens: string, key?: string | null, options?: DeletionPropagationOptions): Promise<DeletionPropagationResult>;
 

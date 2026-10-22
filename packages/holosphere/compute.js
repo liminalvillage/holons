@@ -40,7 +40,7 @@ export async function computeHierarchy(holoInstance, holon, lens, options, maxLe
  * @param {string} holon - The holon identifier.
  * @param {string} lens - The lens to compute.
  * @param {object} options - Computation options
- * @param {string} options.operation - The operation to perform ('summarize', 'aggregate', 'concatenate')
+ * @param {string} options.operation - The operation to perform ('aggregate', 'concatenate')
  * @param {string[]} [options.fields] - Fields to perform operation on
  * @param {string} [options.targetField] - Field to store the result in
  * @param {string} [password] - Optional password for private holons
@@ -91,7 +91,7 @@ export async function compute(holoInstance, holon, lens, options, password = nul
     }
 
     // Validate operation
-    const validOperations = ['summarize', 'aggregate', 'concatenate'];
+    const validOperations = ['aggregate', 'concatenate'];
     if (!validOperations.includes(operation)) {
         throw new Error(`compute: Invalid operation (must be one of ${validOperations.join(', ')})`);
     }
@@ -110,14 +110,6 @@ export async function compute(holoInstance, holon, lens, options, password = nul
         try {
             let computed;
             switch (operation) {
-                case 'summarize':
-                    // For summarize, concatenate specified fields or use entire content
-                    const textToSummarize = fields.length > 0
-                        ? flatContents.map(item => fields.map(field => item[field]).filter(Boolean).join('\n')).join('\n')
-                        : JSON.stringify(flatContents);
-                    computed = await holoInstance.summarize(textToSummarize); // Use instance's summarize
-                    break;
-
                 case 'aggregate':
                     // For aggregate, sum numeric fields
                     computed = fields.reduce((acc, field) => {
@@ -176,41 +168,6 @@ export async function compute(holoInstance, holon, lens, options, password = nul
 }
 
 /**
- * Summarizes provided history text using OpenAI.
- * @param {HoloSphere} holoInstance - The HoloSphere instance.
- * @param {string} history - The history text to summarize.
- * @returns {Promise<string>} - The summarized text.
- */
-export async function summarize(holoInstance, history) {
-    if (!holoInstance.openai) {
-        return 'OpenAI not initialized, please specify the API key in the constructor.'
-    }
-
-    try {
-        const response = await holoInstance.openai.chat.completions.create({
-            model: "gpt-4",
-            messages: [
-                {
-                    role: "system",
-                    content: "You are a helpful assistant that summarizes text concisely while preserving key information. Keep summaries clear and focused."
-                },
-                {
-                    role: "user",
-                    content: history
-                }
-            ],
-            temperature: 0.7,
-            max_tokens: 500
-        });
-
-        return response.choices[0].message.content.trim();
-    } catch (error) {
-        console.error('Error in summarize:', error);
-        throw new Error('Failed to generate summary');
-    }
-}
-
-/**
  * Upcasts content to parent holonagons recursively using holograms.
  * @param {HoloSphere} holoInstance - The HoloSphere instance.
  * @param {string} holon - The current holon identifier.
@@ -251,48 +208,9 @@ export async function upcast(holoInstance, holon, lens, content, maxLevels = 15)
     return content;
 }
 
-/**
- * Updates the parent holon with a new report.
- * Note: This function assumes the existence of `getCellInfo` and `db.put` on the holoInstance,
- * which were not defined in the original class. Adjust as needed.
- * @param {HoloSphere} holoInstance - The HoloSphere instance.
- * @param {string} id - The child holon identifier.
- * @param {string} report - The report to update.
- * @returns {Promise<object>} - The updated parent information.
- */
-export async function updateParent(holoInstance, id, report) {
-    // Check if required methods exist on the instance
-    if (typeof holoInstance.getCellInfo !== 'function' || !holoInstance.db || typeof holoInstance.db.put !== 'function') {
-        console.warn('updateParent requires getCellInfo and db.put methods on the HoloSphere instance.');
-        // Decide how to handle this: throw error, return null, etc.
-        // For now, let's proceed assuming they might exist but log a warning.
-    }
-
-    try {
-        let cellinfo = await holoInstance.getCellInfo(id)
-        let res = h3.getResolution(id)
-        let parent = h3.cellToParent(id, res - 1)
-        let parentInfo = await holoInstance.getCellInfo(parent)
-        parentInfo.wisdom[id] = report
-        //update summary using instance's summarize
-        let summary = await holoInstance.summarize(Object.values(parentInfo.wisdom).join('\n'))
-        parentInfo.summary = summary
-
-        // Assuming db is accessible like this
-        await holoInstance.db.put('cell', parentInfo)
-        return parentInfo
-    } catch (error) {
-        console.error("Error during updateParent:", error);
-        // Re-throw or handle error appropriately
-        throw error;
-    }
-} 
-
 // Export all compute operations as default
 export default {
     computeHierarchy,
     compute,
-    summarize,
-    upcast,
-    updateParent
+    upcast
 }; 

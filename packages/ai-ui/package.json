@@ -17,7 +17,9 @@
   },
   "typesVersions": {
     "*": {
-      "*": ["./src/index.ts"]
+      "*": [
+        "./src/index.ts"
+      ]
     }
   },
   "scripts": {
@@ -28,7 +30,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "@anthropic-ai/sdk": "^1.1.0",
     "@holons/core": "workspace:*"
   },
   "devDependencies": {

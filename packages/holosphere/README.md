@@ -86,8 +86,8 @@ async function coordinateResources(region) {
         })
     );
     
-    // Compute summaries for parent holon
-    await sphere.compute(region, 'resources', 'summarize');
+    // Roll the localities' totals up into the parent holon
+    await sphere.compute(region, 'resources', { operation: 'aggregate', fields: ['quantity'] });
 }
 ```
 
@@ -201,8 +201,7 @@ function monitorArea(lat, lng, callback) {
 ### Location-Based Content System
 
 ```javascript
-// Initialize with AI capabilities for content summarization
-const sphere = new HoloSphere('local-content', false, 'your-openai-key');
+const sphere = new HoloSphere('local-content');
 
 // Define content schema
 const contentSchema = {
@@ -231,9 +230,9 @@ async function postLocalContent(lat, lng, title, content, author) {
     };
     
     await sphere.put(holon, 'articles', article);
-    
-    // Generate summaries for parent areas
-    await sphere.compute(holon, 'articles', 'summarize');
+
+    // Gather the area's articles into its parent holon
+    await sphere.compute(holon, 'articles', { operation: 'concatenate' });
 }
 
 // Get content for multiple zoom levels
@@ -294,8 +293,7 @@ await sphere.put(holon, 'measurements', {
 ```javascript
 new HoloSphere(
     appName,    // String: Namespace for your application
-    strict,     // Boolean: Enable strict schema validation (default: false)
-    openaikey   // String: Optional OpenAI API key for AI features
+    strict      // Boolean: Enable strict schema validation (default: false)
 )
 ```
 
@@ -323,7 +321,6 @@ Data in HoloSphere is organized by:
 - h3-js: Uber's H3 geospatial indexing
 - nostr-tools: relay transport, signing and NIP-44
 - ajv: JSON Schema validation
-- openai: AI capabilities (optional)
 
 ## License
 

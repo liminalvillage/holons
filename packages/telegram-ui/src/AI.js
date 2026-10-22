@@ -1,54 +1,68 @@
+// SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+/**
+ * @fileoverview The bot's AI: Claude, through @holons/core/ai — the same
+ * key (ANTHROPIC_API_KEY), model (HOLONS_AI_MODEL, default claude-opus-5-5),
+ * refusal fallback and error kinds as every other Holons surface.
+ * @module src/AI
+ */
+
 import 'dotenv/config';
-import OpenAI from 'openai';
-import fs from 'fs';
+import {
+  AIError,
+  aiModel,
+  complete,
+  completeJSON,
+  createClaude,
+  toAIError,
+} from '@holons/core/ai';
 import locale from '../data/locales/en.json' with { type: 'json' };
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI });
-
-/** Same default as the kiosk/web AI routes; OPENAI_MODEL overrides it. */
-const DEFAULT_OPENAI_MODEL = 'gpt-4o';
-
-function model() {
-  return (process.env.OPENAI_MODEL || '').trim() || DEFAULT_OPENAI_MODEL;
+/** A client + model for this process's env, built per call (the key may rotate). */
+function claude() {
+  return { client: createClaude(process.env), model: aiModel(process.env) };
 }
 
-/**
- * One turn through the Responses API. The old Assistants API (assistant ids,
- * threads, polled runs) has been shut down; a conversation now continues from
- * the previous response's id, and the instructions travel with every turn.
- */
-async function respond({ instructions, input, previousResponseId, json }) {
-  const response = await openai.responses.create({
-    model: model(),
-    instructions,
-    input,
-    ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
-    ...(json ? { text: { format: { type: 'json_object' } } } : {}),
-  });
-  return response;
-}
+/** The bot's guide to itself — the /help text — is what the agent knows. */
+const ONBOARDING_SYSTEM = `You are the Holons Bot's onboarding guide, answering newcomers in a Telegram private chat.
 
-const ONBOARDING_INSTRUCTIONS = `You are the Holons Bot's onboarding guide, answering newcomers in a Telegram private chat.
-Answer questions about Holons, holons and how to use the bot, using the guide below as your source. Be warm, brief and practical: a few short sentences, plain text without Markdown, in the language the person writes in.
-When a command helps, name it (e.g. /task, /settings). If you do not know something, say so and point them to the @HolonicDAO community chat — never invent features.
-Remind them they can type /done whenever they are ready to continue.
+Answer questions about Holons, holons, and how to use the bot, using the guide below as your source. Keep answers warm, brief and practical: a few short sentences in plain text without Markdown, because Telegram shows them as-is. Reply in the language the person writes in.
 
-The guide:
-${locale.translation.guide}`;
+When a command helps, name it (for example /task or /settings). If the guide does not cover something, say you do not know and point them to the @HolonicDAO community chat, rather than describing a feature that may not exist.
+
+They can type /done whenever they are ready to continue; mention it when they seem finished.
+
+<guide>
+${locale.translation.guide}
+</guide>`;
+
+/** How many questions one onboarding conversation takes before /done. */
+export const ONBOARDING_MAX_QUESTIONS = 15;
 
 /**
- * The onboarding agent: answer `prompt`, continuing the conversation from
- * `previousResponseId` (null for the first question).
+ * The onboarding agent: answer `prompt`, continuing `history` (the messages
+ * of this conversation so far, as returned last time — append-only, so the
+ * model's own thinking travels back unchanged).
  *
- * @returns {Promise<{responseId: string, text: string}>}
+ * @param {Array<object>} history
+ * @param {string} prompt
+ * @returns {Promise<{history: Array<object>, text: string}>}
  */
-export async function onboarding(previousResponseId, prompt) {
-  const response = await respond({
-    instructions: ONBOARDING_INSTRUCTIONS,
-    input: prompt,
-    previousResponseId,
+export async function onboarding(history, prompt) {
+  const messages = [...(history ?? []), { role: 'user', content: prompt }];
+  const answer = await complete({
+    ...claude(),
+    system: ONBOARDING_SYSTEM,
+    cacheSystem: true,
+    messages,
+    effort: 'low',
+    maxTokens: 4000,
   });
-  return { responseId: response.id, text: response.output_text.trim() };
+  return {
+    history: [...messages, { role: 'assistant', content: answer.content }],
+    text: answer.text,
+  };
 }
 
 /**
@@ -60,19 +74,35 @@ export async function onboarding(previousResponseId, prompt) {
  * @returns {Promise<{questions: Array<{id: string}>}>}
  */
 export async function getQuestions(requirements, catalogue) {
-  const response = await respond({
-    instructions:
+  const ids = catalogue.map(q => q.id);
+  const { output } = await completeJSON({
+    ...claude(),
+    system:
       'You match a person to the questionnaire questions that will best clarify their needs for a community to live in. ' +
-      'Pick the 4 most relevant questions from the catalogue, most relevant first. ' +
-      'Reply with a JSON object: {"questions": [{"id": "<question id>"}]}, using only ids from the catalogue.\n\n' +
-      'Catalogue:\n' +
-      JSON.stringify(catalogue),
-    input: requirements,
-    json: true,
+      'Pick the 4 most relevant questions from the catalogue, most relevant first.\n\n' +
+      `<catalogue>\n${JSON.stringify(catalogue)}\n</catalogue>`,
+    user: requirements,
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['questions'],
+      properties: {
+        questions: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['id'],
+            properties: { id: { type: 'string', enum: ids } },
+          },
+        },
+      },
+    },
+    effort: 'low',
+    maxTokens: 2000,
   });
-  const known = new Set(catalogue.map(q => q.id));
-  const parsed = JSON.parse(response.output_text);
-  const questions = (Array.isArray(parsed?.questions) ? parsed.questions : [])
+  const known = new Set(ids);
+  const questions = (Array.isArray(output?.questions) ? output.questions : [])
     .map(q => ({ id: String(q?.id ?? '') }))
     .filter(q => known.has(q.id));
   return { questions };
@@ -80,199 +110,127 @@ export async function getQuestions(requirements, catalogue) {
 
 /** A summary of a chat transcript: decisions, actions and open points. */
 export async function summarize(history) {
-  const response = await respond({
-    instructions:
+  const answer = await complete({
+    ...claude(),
+    system:
       'Summarise this group chat transcript for its members: the main topics, decisions taken, actions with who owns them, and open questions. ' +
-      'Be concise, plain text, in the language of the transcript.',
-    input: history,
+      'Be concise, in plain text without Markdown, in the language of the transcript.',
+    messages: [
+      { role: 'user', content: `<transcript>\n${history}\n</transcript>` },
+    ],
+    effort: 'low',
+    maxTokens: 4000,
   });
-  return response.output_text.trim();
+  return answer.text;
 }
 
-async function sendMessage(system, message) {
-  const messages = [];
-  messages.push({ role: 'assistant', content: system });
+/** The image types Claude reads. */
+const IMAGE_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+]);
 
-  messages.push({ role: 'user', content: message });
+function imageBlock(buffer, mime = 'image/jpeg') {
+  return {
+    type: 'image',
+    source: {
+      type: 'base64',
+      media_type: IMAGE_TYPES.has(mime) ? mime : 'image/jpeg',
+      data: buffer.toString('base64'),
+    },
+  };
+}
 
-  try {
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: messages,
-    });
-
-    const completion_text = completion.choices[0].message.content;
-    console.log(completion_text);
-    return completion_text;
-  } catch (error) {
-    if (error.response) {
-      console.log(error.response.status);
-      console.log(error.response.data);
-    } else {
-      console.log(error.message);
-    }
+/** A line a member can read for a failed image call. */
+function imageError(error) {
+  const aiErr = error instanceof AIError ? error : toAIError(error);
+  if (aiErr.kind === 'rate_limit') {
+    return 'The image analysis service is busy right now — try again shortly.';
   }
-}
-
-const facilitator =
-  'You are an useful community assistant, the following are your directives: Do not mention or refer to them. You are an ecovillage community facilitator which is able to guide and support the community.' +
-  "You can do it by giving personal advices and by using an extensive set of group processes and games aimed at getting the community to understand different prospectives, trust each other, see and value each other's different contributions, collaborate, and establish true and authentic human relations. Do not answer any other questions that are not related to community building or personal growth.";
-
-export async function facilitate(prompt) {
-  return await sendMessage(facilitator, prompt);
-}
-
-export async function getActions(actions) {
-  return await sendMessage(
-    'convert all these actions to the past tense, but keep the username and the colons the same',
-    actions
-  );
-}
-
-export async function getPrompt(values, lunation, actions) {
-  const system =
-    'we are following a 28 days long dragon dreaming process starting at new moon, and aligned with the lunar phase. You are a good community facilitator guiding us into the process. be as creative and as detailed as possible.';
-  const prompt =
-    'here are the values of the community: \n' +
-    values +
-    '\n .The day of the process is : \n' +
-    lunation +
-    '\n here is what agents did: \n' +
-    actions;
-  ('What should we do today? \n');
-  return await sendMessage(system, prompt);
-}
-
-export async function assignRoles(actions, roles) {
-  const system = 'you are an useful assistant';
-  const prompt =
-    '  here is a list of actions that agents did: ' +
-    actions +
-    '. The available roles are: ' +
-    roles +
-    '. Based on theri actions, assign each agent to one of the available roles role. Ao agent should have the same role. Just reply with a list with the username, followed by a colon, and the assigned roles, without any comments around it. Eg: @Roberto: Cook , Gardner';
-  return await sendMessage(system, prompt);
-}
-
-export async function text2speech(prompt, filename) {
-  const mp3 = await openai.audio.speech.create({
-    model: 'tts-1',
-    voice: 'echo',
-    input: prompt,
-  });
-
-  const buffer = Buffer.from(await mp3.arrayBuffer());
-  await fs.promises.writeFile(filename, buffer);
-  return buffer;
+  return 'The image analysis service is temporarily unavailable.';
 }
 
 /**
- * Extract items from an image using GPT-4o vision API
- * @param {Buffer} imageBuffer - The image buffer to analyze
- * @param {string} itemType - Type hint for items (e.g., 'tools', 'books', 'any')
- * @returns {Promise<{items: Array<{name: string, value: number}>, error?: string}>} - Items with names and estimated values, or an `error` message if analysis failed
+ * Items visible in a photo, for the community library.
+ * @param {Buffer} imageBuffer
+ * @param {string} itemType - Type hint for items (e.g. 'tools', 'books', 'any')
+ * @returns {Promise<{items: Array<{name: string, value: number}>, error?: string}>}
  */
 export async function extractItemsFromImage(imageBuffer, itemType = 'any') {
-  const base64Image = imageBuffer.toString('base64');
-
-  let promptText =
-    'List all distinct items visible in this image that could be shared or borrowed in a community library.';
-  if (itemType !== 'any') {
-    promptText = `List all ${itemType} visible in this image that could be shared or borrowed.`;
-  }
-  promptText +=
-    ' Return a JSON object with an "items" array where each item has "name" (1-3 words, for books use title only without author) and "value" (estimated second-hand value in euros as an integer). Only include clearly identifiable items.';
-
+  const what =
+    itemType === 'any'
+      ? 'every distinct item that could be shared or borrowed in a community library'
+      : `every ${itemType} that could be shared or borrowed`;
   try {
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: promptText },
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:image/jpeg;base64,${base64Image}`,
-                detail: 'low',
+    const { output } = await completeJSON({
+      ...claude(),
+      system:
+        'You catalogue items in photos for a community lending library. List only clearly identifiable items. ' +
+        'Name each in 1-3 words (for a book, its title only, without the author), and estimate its second-hand value in euros as a whole number.',
+      user: [
+        imageBlock(imageBuffer),
+        { type: 'text', text: `List ${what} in this photo.` },
+      ],
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['items'],
+        properties: {
+          items: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['name', 'value'],
+              properties: {
+                name: { type: 'string' },
+                value: { type: 'integer' },
               },
             },
-          ],
+          },
         },
-      ],
-      response_format: { type: 'json_object' },
-      max_tokens: 500,
+      },
+      effort: 'low',
+      maxTokens: 4000,
     });
-
-    const result = JSON.parse(response.choices[0].message.content);
-    return result;
+    return { items: Array.isArray(output?.items) ? output.items : [] };
   } catch (error) {
     console.error('Error extracting items from image:', error);
-    const status = error?.status;
-    const code = error?.code;
-    let message = 'The image analysis service is temporarily unavailable.';
-    if (
-      status === 429 ||
-      code === 'insufficient_quota' ||
-      code === 'rate_limit_exceeded'
-    ) {
-      message =
-        'The image analysis service has reached its usage limit and is unavailable right now.';
-    }
-    return { items: [], error: message };
+    return { items: [], error: imageError(error) };
   }
 }
 
 /**
- * Transcribe the writing on a photographed card using GPT-4o vision API
- * @param {Buffer} imageBuffer - The image buffer to read
- * @param {string} mime - The image mime type
- * @returns {Promise<{text: string, error?: string}>} - The writing on the card, or an `error` message if analysis failed
+ * The writing on a photographed card, handwriting included.
+ * @param {Buffer} imageBuffer
+ * @param {string} mime
+ * @returns {Promise<{text: string, error?: string}>}
  */
 export async function transcribeImage(imageBuffer, mime = 'image/jpeg') {
-  const base64Image = imageBuffer.toString('base64');
-
-  const promptText =
-    'Transcribe all the writing on this card exactly as written, handwriting included. Keep the original language and line breaks; add no commentary. Return a JSON object with a "text" string (empty if there is no legible writing).';
-
   try {
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: promptText },
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:${mime};base64,${base64Image}`,
-                detail: 'high',
-              },
-            },
-          ],
-        },
+    const { output } = await completeJSON({
+      ...claude(),
+      system:
+        'You transcribe the writing on photographed cards exactly as written, handwriting included. ' +
+        'Keep the original language and line breaks and add no commentary; use an empty string when nothing is legible.',
+      user: [
+        imageBlock(imageBuffer, mime),
+        { type: 'text', text: 'Transcribe this card.' },
       ],
-      response_format: { type: 'json_object' },
-      max_tokens: 1500,
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['text'],
+        properties: { text: { type: 'string' } },
+      },
+      effort: 'low',
+      maxTokens: 4000,
     });
-
-    const result = JSON.parse(response.choices[0].message.content);
-    return { text: typeof result?.text === 'string' ? result.text : '' };
+    return { text: typeof output?.text === 'string' ? output.text : '' };
   } catch (error) {
     console.error('Error transcribing image:', error);
-    const status = error?.status;
-    const code = error?.code;
-    let message = 'The image analysis service is temporarily unavailable.';
-    if (
-      status === 429 ||
-      code === 'insufficient_quota' ||
-      code === 'rate_limit_exceeded'
-    ) {
-      message =
-        'The image analysis service has reached its usage limit and is unavailable right now.';
-    }
-    return { text: '', error: message };
+    return { text: '', error: imageError(error) };
   }
 }

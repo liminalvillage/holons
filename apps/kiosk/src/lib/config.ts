@@ -526,17 +526,14 @@ export function setBrandLogo(value: string | null): void {
 
 /**
  * OpenAI API key for the serverless "direct" voice mode. Settings no longer
- * offers a field for it — a deploy holds its key server-side (/api/ai/voice,
- * /api/ai/breakdown) instead — but a key an earlier build stored on THIS
- * device is still honoured, so a kiosk already set up that way keeps speaking.
- * The VITE_OPENAI_API_KEY env var remains as a dev/self-hosted fallback;
- * anything baked that way is readable by whoever can load the site.
+ * offers a field for it — a deploy holds its key server-side (/api/ai/voice)
+ * instead — but a key an earlier build stored on THIS device is still
+ * honoured, so a kiosk already set up that way keeps speaking. There is no
+ * build-time key: anything baked into the bundle is readable by whoever can
+ * load the site.
  */
 export function resolveVoiceKey(): string | null {
-  const device = deviceVoiceKey();
-  if (device) return device;
-  const env = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
-  return env && env.trim() ? env.trim() : null;
+  return deviceVoiceKey();
 }
 
 /**

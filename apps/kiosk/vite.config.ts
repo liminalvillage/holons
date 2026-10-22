@@ -30,7 +30,9 @@ export default defineConfig(({ command }) => ({
     dedupe: ["svelte"],
   },
   ssr: {
-    external: ["ws"],
+    // The Claude SDK (reached through @holons/core/ai in the AI routes) runs
+    // from node_modules: bundled, its Node shims lose their bindings.
+    external: ["ws", "@anthropic-ai/sdk"],
     noExternal: ["holosphere"],
   },
   build: {

@@ -74,7 +74,13 @@ logs — see [`protocol.md`](./protocol.md)), `holons` (founding a holon from
 a screen, members by key — NIP-29 shaped), `linking` (tying a holon to a
 Telegram chat by challenge–response) and `onboarding` (claim tokens and
 Telegram deep links); the three are described in
-[`identity-linking.md`](./identity-linking.md). The `package.json` wildcard
+[`identity-linking.md`](./identity-linking.md). `ai` is the one Claude client
+every text-AI surface uses, server-side only: `ANTHROPIC_API_KEY`,
+`HOLONS_AI_MODEL` (default `claude-opus-5-5`), effort per route, the refusal
+fallback, structured JSON output and one `AIError` a route maps to a status;
+`tasks` (breakdown) and `drafting` own the schemas and prompts it fills.
+Speech (STT/TTS, the kiosk voice relay) stays on OpenAI (`OPENAI_API_KEY`).
+The `package.json` wildcard
 export (`"./*"`) makes a new domain folder importable immediately — no edit
 to the barrel needed.
 

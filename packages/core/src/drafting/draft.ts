@@ -7,9 +7,9 @@
 // ask for one by one come back filled in.
 //
 // Pure and UI-agnostic, like the task breakdown next door: this module owns
-// the tool schema the model is forced to call, the prompt, and the validation
-// of what comes back. The HTTP call to the provider lives at the edge (an app
-// server route, or the browser when the device holds its own key).
+// the JSON schema the model's answer follows, the prompt, and the validation
+// of what comes back. The model call goes through @holons/core/ai at an app
+// server route.
 //
 // The contract with the model is deliberately narrow. It never invents facts —
 // no plausible-looking URL, price, or phone number — and it never picks a
@@ -59,8 +59,6 @@ export interface DraftRequest {
   now?: number;
 }
 
-export const DRAFT_TOOL_NAME = 'fill_record';
-
 /** How long a drafted value may be, per kind. */
 const MAX_TEXT = 300;
 const MAX_LONG = 2000;
@@ -82,15 +80,14 @@ function emptyFor(kind: DraftFieldKind): string {
 }
 
 /**
- * The forced-call tool: one property per field, every one of them required
- * (structured outputs treat `required` as the whole contract, so "unknown" has
- * to be expressible IN the value — an empty string, an empty array, or null).
+ * The answer's JSON schema: one property per field, every one of them
+ * required (structured output treats `required` as the whole contract, so
+ * "unknown" has to be expressible IN the value — an empty string, an empty
+ * array, or null).
  */
-export function buildDraftTool(fields: readonly DraftField[]): {
-  name: string;
-  description: string;
-  input_schema: Record<string, unknown>;
-} {
+export function buildDraftSchema(
+  fields: readonly DraftField[]
+): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
   for (const f of fields.slice(0, DRAFT_MAX_FIELDS)) {
     const about = [f.label && f.label !== f.name ? f.label : '', f.about ?? '']
@@ -128,24 +125,17 @@ export function buildDraftTool(fields: readonly DraftField[]): {
     }
   }
   return {
-    name: DRAFT_TOOL_NAME,
-    description:
-      'Fill in the fields of a record from a description someone wrote. ' +
-      'Every field must be present; leave empty the ones the description ' +
-      'does not answer.',
-    input_schema: {
-      type: 'object',
-      additionalProperties: false,
-      required: Object.keys(properties),
-      properties,
-    },
+    type: 'object',
+    additionalProperties: false,
+    required: Object.keys(properties),
+    properties,
   };
 }
 
 /**
- * The prompt. The fields are described in the tool schema, so the messages
- * carry the rules, the moment (today, and where the thing is) and the text —
- * nothing that the tool already says.
+ * The prompt. The fields are described in the answer's schema, so the
+ * messages carry the rules, the moment (today, and where the thing is) and
+ * the text — nothing that the schema already says.
  */
 export function buildDraftPrompt(req: DraftRequest): {
   system: string;
@@ -154,7 +144,7 @@ export function buildDraftPrompt(req: DraftRequest): {
   const now = req.now ?? Date.now();
   const today = new Date(now).toISOString().slice(0, 10);
   const system = [
-    `You fill in one "${req.kind}" record from a short description, by calling ${DRAFT_TOOL_NAME}.`,
+    `You fill in one "${req.kind}" record from a short description, answering with a JSON object that holds every field of the given schema.`,
     'Rules, in order of importance:',
     '1. Use ONLY what the description says, or what plainly follows from it. Never invent a fact — no made-up web address, email, phone number, price, date, or name. If the description does not answer a field, leave that field empty.',
     '2. Write in the same language as the description.',

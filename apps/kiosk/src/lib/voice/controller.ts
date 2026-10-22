@@ -11,8 +11,8 @@
 //
 // Selection (the pure matrix lives in transport.ts): VITE_VOICE_MODE=ws|direct
 // wins; otherwise a Settings-pasted device key, an explicit VITE_VOICE_WS_URL,
-// a baked-in VITE_OPENAI_API_KEY, then the deploy's /api/ai/voice relay (the
-// same server-side key AI breakdown uses), else ws probes localhost. When
+// then the deploy's /api/ai/voice relay (OPENAI_API_KEY server-side), else ws
+// probes localhost. When
 // nothing is reachable/configured the buttons render nothing.
 
 import { get, writable } from "svelte/store";

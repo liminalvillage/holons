@@ -1,42 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // AI task breakdown for the kiosk — the same feature as the web dashboard's
-// /api/ai/breakdown. Two transports, resolved per request:
+// /api/ai/breakdown, through the kiosk's own /api/ai/breakdown serverless
+// function, which holds the Claude key in the deploy's server env (e.g.
+// Netlify site config) — never in the bundle, never on a device. Availability
+// is probed once via GET.
 //
-//   1. A key pasted on THIS device (Settings → localStorage, with
-//      VITE_OPENAI_API_KEY as the dev/self-hosted fallback — the same key the
-//      "direct" voice mode speaks with) → the browser calls OpenAI directly.
-//      A pasted key is an explicit caretaker choice, so it outranks the
-//      server route, matching how the voice backend is resolved.
-//   2. Otherwise, the kiosk's own /api/ai/breakdown serverless function,
-//      which holds the key in the deploy's server env (e.g. Netlify site
-//      config) — never in the bundle. Availability is probed once via GET.
-//
-// All meaning — tool schema, prompt, proposal validation, materialization —
-// lives in @holons/core/tasks; this module only routes the HTTP call.
+// All meaning — schema, prompt, proposal validation, materialization — lives
+// in @holons/core/tasks; this module only routes the HTTP call.
 
 import {
-  PROPOSE_STEPS_TOOL,
-  PROPOSE_STEPS_TOOL_NAME,
   BREAKDOWN_MAX_GOAL_DESCRIPTION_CHARS,
-  BreakdownValidationError,
-  buildBreakdownPrompt,
   parseBreakdownProposal,
   toBreakdownContext,
   type BreakdownContextTask,
   type BreakdownProposal,
   type Quest,
 } from "@holons/core/tasks";
-import { resolveVoiceKey } from "./config";
 import { tr } from "./i18n";
 
-/** Same CORS-friendly host the direct voice mode talks to (voice/openai.ts). */
-const API_BASE = "https://api.openai.com/v1";
-
-/** Matches the web route's OpenAI fallback model (DEFAULT_OPENAI_MODEL). */
-const BREAKDOWN_MODEL = "gpt-4o";
-
-// Whether the deploy's serverless function holds an OpenAI key, probed once
+// Whether the deploy's serverless function holds the AI key, probed once
 // per page load. A static/self-hosted build without functions 404s → false.
 let serverProbe: Promise<boolean> | null = null;
 function serverConfigured(): Promise<boolean> {
@@ -49,9 +32,8 @@ function serverConfigured(): Promise<boolean> {
   return serverProbe;
 }
 
-/** Whether this kiosk can break tasks down (a device key OR a server key). */
-export async function breakdownAvailable(): Promise<boolean> {
-  if (resolveVoiceKey()) return true;
+/** Whether this kiosk can break tasks down (its deploy holds the AI key). */
+export function breakdownAvailable(): Promise<boolean> {
   return serverConfigured();
 }
 
@@ -87,23 +69,18 @@ function compact(input: BreakdownRequest): {
 }
 
 /**
- * Resolve a proposal for the task: direct-from-browser when this device holds
- * a key, else through the deploy's serverless function. Throws an `Error`
- * with a kiosk-friendly message on failure.
+ * Resolve a proposal for the task through the kiosk's session-gated route
+ * (the key stays server-side). Throws an `Error` with a kiosk-friendly
+ * message on failure.
  */
 export async function requestBreakdownProposal(
   input: BreakdownRequest,
 ): Promise<BreakdownProposal> {
-  const key = resolveVoiceKey();
-  if (key) return viaOpenAI(key, input);
-  if (await serverConfigured()) return viaServer(input);
-  throw new Error(
-    "AI breakdown is not configured — set OPENAI_API_KEY on the deploy, or paste a key in Settings.",
-  );
-}
-
-/** The kiosk's own session-gated serverless route (key stays server-side). */
-async function viaServer(input: BreakdownRequest): Promise<BreakdownProposal> {
+  if (!(await serverConfigured())) {
+    throw new Error(
+      "AI breakdown is not configured — set ANTHROPIC_API_KEY on the deploy.",
+    );
+  }
   const { task, allTasks } = compact(input);
   const res = await fetch("/api/ai/breakdown", {
     method: "POST",
@@ -121,76 +98,4 @@ async function viaServer(input: BreakdownRequest): Promise<BreakdownProposal> {
   }
   // The route already validated, but never trust parsed network input.
   return parseBreakdownProposal(data.proposal);
-}
-
-/** One forced-tool OpenAI chat-completions call straight from the browser. */
-async function viaOpenAI(
-  key: string,
-  input: BreakdownRequest,
-): Promise<BreakdownProposal> {
-  const { task, allTasks } = compact(input);
-  const prompt = buildBreakdownPrompt({
-    task,
-    allTasks,
-    holonContext: input.holonContext,
-  });
-
-  const resp = await fetch(`${API_BASE}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      model: BREAKDOWN_MODEL,
-      messages: [
-        { role: "system", content: prompt.system },
-        { role: "user", content: prompt.user },
-      ],
-      tools: [
-        {
-          type: "function",
-          function: {
-            name: PROPOSE_STEPS_TOOL.name,
-            description: PROPOSE_STEPS_TOOL.description,
-            parameters: PROPOSE_STEPS_TOOL.input_schema,
-            // Structured outputs: without this OpenAI treats `required` as
-            // advisory and gpt-4o omits `steps` on atomic proposals.
-            strict: true,
-          },
-        },
-      ],
-      tool_choice: {
-        type: "function",
-        function: { name: PROPOSE_STEPS_TOOL_NAME },
-      },
-    }),
-  });
-  if (!resp.ok) {
-    if (resp.status === 401 || resp.status === 403) {
-      throw new Error(tr("breakdown.badKey"));
-    }
-    if (resp.status === 429) {
-      throw new Error(tr("breakdown.rateLimit"));
-    }
-    throw new Error(tr("breakdown.failed", { status: resp.status }));
-  }
-
-  const data = (await resp.json()) as {
-    choices?: {
-      message?: { tool_calls?: { function?: { arguments?: unknown } }[] };
-    }[];
-  };
-  const args =
-    data?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-  if (typeof args !== "string") {
-    throw new BreakdownValidationError("the model returned no proposal");
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(args);
-  } catch {
-    throw new BreakdownValidationError("the model returned malformed JSON");
-  }
-  return parseBreakdownProposal(parsed);
 }

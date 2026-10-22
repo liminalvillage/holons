@@ -1300,8 +1300,6 @@ export const en = {
   "clipboard.writeFailed": "write failed",
 
   // AI breakdown errors
-  "breakdown.badKey": "OpenAI rejected this device's API key.",
-  "breakdown.rateLimit": "OpenAI rate limit hit — try again shortly.",
   "breakdown.failed": "AI breakdown failed (HTTP {status}).",
 
   // Drafting a map record from a description (the add form's optional
@@ -1312,7 +1310,7 @@ export const en = {
   "draft.nothing": "Nothing in that to fill the form with — try saying more.",
   "draft.failed": "Couldn't draft that (HTTP {status}).",
   "draft.unavailable":
-    "Drafting needs an OpenAI key — set one on the deploy, or paste one in Settings.",
+    "Drafting needs an AI key on the deploy (ANTHROPIC_API_KEY).",
   // Flows board
   "flows.loading": "Reading the ledger\u2026",
   "flows.empty": "Nothing has moved here yet.",

@@ -1315,9 +1315,6 @@ export const es: Record<MessageKey, Msg> = {
   "clipboard.writeFailed": "fallo de escritura",
 
   // AI breakdown errors
-  "breakdown.badKey": "OpenAI rechazó la clave API de este dispositivo.",
-  "breakdown.rateLimit":
-    "Límite de peticiones de OpenAI alcanzado — inténtalo en un momento.",
   "breakdown.failed": "El desglose con IA falló (HTTP {status}).",
 
   "draft.placeholder": "Descríbelo en una frase y relleno el formulario…",
@@ -1327,7 +1324,7 @@ export const es: Record<MessageKey, Msg> = {
     "No hay bastante para rellenar el formulario — cuéntame algo más.",
   "draft.failed": "No se pudo rellenar (HTTP {status}).",
   "draft.unavailable":
-    "Rellenar necesita una clave de OpenAI — ponla en el deploy o pégala en Ajustes.",
+    "Rellenar necesita una clave de IA en el deploy (ANTHROPIC_API_KEY).",
   // Flows board
   "flows.loading": "Leyendo el registro\u2026",
   "flows.empty": "Aqu\u00ed todav\u00eda no se ha movido nada.",

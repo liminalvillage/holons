@@ -3,10 +3,9 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  DRAFT_TOOL_NAME,
   DraftValidationError,
   buildDraftPrompt,
-  buildDraftTool,
+  buildDraftSchema,
   parseDraft,
   type DraftField,
 } from './draft.js';
@@ -26,19 +25,18 @@ const FIELDS: DraftField[] = [
   { name: 'tags', kind: 'list' },
 ];
 
-describe('the tool the model must call', () => {
-  const tool = buildDraftTool(FIELDS);
+describe("the answer's schema", () => {
+  const schema = buildDraftSchema(FIELDS);
 
   it('asks for every field, since a structured output has no optional half', () => {
-    const props = tool.input_schema.properties as Record<string, any>;
-    expect(tool.name).toBe(DRAFT_TOOL_NAME);
-    expect(tool.input_schema.additionalProperties).toBe(false);
-    expect(tool.input_schema.required).toEqual(FIELDS.map((f) => f.name));
+    const props = schema.properties as Record<string, any>;
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.required).toEqual(FIELDS.map((f) => f.name));
     expect(Object.keys(props)).toEqual(FIELDS.map((f) => f.name));
   });
 
   it('gives every kind a way to say "the description does not say"', () => {
-    const props = tool.input_schema.properties as Record<string, any>;
+    const props = schema.properties as Record<string, any>;
     expect(props.amount.type).toEqual(['number', 'null']);
     expect(props.open.type).toEqual(['boolean', 'null']);
     expect(props.tags).toMatchObject({ type: 'array', items: { type: 'string' } });
@@ -53,7 +51,7 @@ describe('the tool the model must call', () => {
   });
 
   it('tells the model what each field is, in the words the caller uses', () => {
-    const props = tool.input_schema.properties as Record<string, any>;
+    const props = schema.properties as Record<string, any>;
     expect(props.locality.description).toContain('The town it is in');
     expect(props.name.description).toContain('The record needs this');
     expect(props.when.description).toContain('ISO 8601');
@@ -64,7 +62,7 @@ describe('the tool the model must call', () => {
       name: `f${i}`,
       kind: 'text' as const,
     }));
-    const props = buildDraftTool(many).input_schema.properties as Record<
+    const props = buildDraftSchema(many).properties as Record<
       string,
       unknown
     >;

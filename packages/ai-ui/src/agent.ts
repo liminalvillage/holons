@@ -8,6 +8,7 @@
 // (MCP) and/or LLM provider (local mlx_lm.server).
 
 import type Anthropic from '@anthropic-ai/sdk';
+import type { AIEffort } from '@holons/core/ai';
 import { loadTools, type ToolDefinition } from './tools.js';
 import type { CommandRegistry } from './commands.js';
 import { AnthropicProvider } from './providers/anthropic.js';
@@ -28,6 +29,8 @@ export interface AgentOptions {
   system?: string;
   /** Per-response token budget. */
   maxTokens?: number;
+  /** How hard the model thinks per turn (default `medium`). */
+  effort?: AIEffort;
   /** Inject a pre-built client (e.g. for tests or custom retry policy). */
   client?: Anthropic;
   /** Pre-loaded registry/tools (avoids re-importing for each call). */
@@ -43,7 +46,7 @@ export interface AgentResult {
   /** Last stop reason returned by the API. */
   stopReason: string | null;
   /** Full message transcript (user + assistant) for inspection. */
-  messages: Anthropic.MessageParam[];
+  messages: Anthropic.Beta.BetaMessageParam[];
 }
 
 const DEFAULT_SYSTEM =
@@ -106,6 +109,7 @@ export async function runAgent(
     client: options.client,
     model: options.model,
     maxTokens: options.maxTokens,
+    effort: options.effort,
   });
 
   const result = await runAgentLoop({
@@ -121,6 +125,6 @@ export async function runAgent(
     text: result.text,
     iterations: result.iterations,
     stopReason: result.stopReason,
-    messages: result.transcript as Anthropic.MessageParam[],
+    messages: result.transcript as Anthropic.Beta.BetaMessageParam[],
   };
 }

@@ -22,7 +22,9 @@ export function makeLLM(config: VoiceConfig): LLMProvider {
       model: config.llmModel,
     });
   }
-  return new AnthropicProvider({ model: config.anthropicModel });
+  // Spoken replies are short and latency is felt, so the agent thinks at
+  // low effort; the tools do the real work.
+  return new AnthropicProvider({ model: config.anthropicModel, effort: 'low' });
 }
 
 export function makeSTT(config: VoiceConfig): STTProvider {

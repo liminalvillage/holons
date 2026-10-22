@@ -130,11 +130,6 @@
   "peerDependencies": {
     "h3-js": "^4.1.0"
   },
-  "peerDependenciesMeta": {
-    "openai": {
-      "optional": true
-    }
-  },
   "optionalDependencies": {
     "ws": "^8.21.3"
   }

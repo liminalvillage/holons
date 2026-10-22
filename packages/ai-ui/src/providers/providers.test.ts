@@ -20,9 +20,11 @@ const TOOLS: AgentTool[] = [
 describe('LLM provider normalization', () => {
   it('Anthropic tool_use → neutral ToolCall, then end_turn', async () => {
     let turn = 0;
+    const requests: Record<string, any>[] = [];
     const fakeClient = {
-      messages: {
-        create: async () => {
+      beta: { messages: {
+        create: async (req: Record<string, any>) => {
+          requests.push({ ...req, messages: [...req.messages] });
           turn++;
           if (turn === 1) {
             return {
@@ -40,7 +42,7 @@ describe('LLM provider normalization', () => {
           }
           return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'done' }] };
         },
-      },
+      } },
     } as unknown as Anthropic;
 
     const provider = new AnthropicProvider({ client: fakeClient });
@@ -58,6 +60,17 @@ describe('LLM provider normalization', () => {
     expect(seen[0]).toMatchObject({ name: 'task_create', input: { title: 'roof' } });
     expect(res.text).toContain('done');
     expect(res.iterations).toBe(2);
+    const req = requests[0];
+    expect(req.model).toBe('claude-opus-5-5');
+    expect(req.output_config).toEqual({ effort: 'medium' });
+    expect(req.system[0].cache_control).toEqual({ type: 'ephemeral' });
+    expect(req.tools.map((x: { name: string }) => x.name)).toEqual(['task_create']);
+    // The second turn sends the assistant turn back whole, then the result.
+    expect(requests[1].messages.map((m: { role: string }) => m.role)).toEqual([
+      'user',
+      'assistant',
+      'user',
+    ]);
   });
 
   it('OpenAI-compatible tool_calls → neutral ToolCall, then stop', async () => {
@@ -121,14 +134,14 @@ describe('LLM provider normalization', () => {
       { role: 'assistant', content: 'Created task "roof".' },
     ];
 
-    let anthropicMessages: Anthropic.MessageParam[] = [];
+    let anthropicMessages: Anthropic.Beta.BetaMessageParam[] = [];
     const fakeClient = {
-      messages: {
-        create: async (req: { messages: Anthropic.MessageParam[] }) => {
+      beta: { messages: {
+        create: async (req: { messages: Anthropic.Beta.BetaMessageParam[] }) => {
           anthropicMessages = [...req.messages];
           return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] };
         },
-      },
+      } },
     } as unknown as Anthropic;
     await runAgentLoop({
       provider: new AnthropicProvider({ client: fakeClient }),
@@ -183,7 +196,7 @@ describe('sequential dispatch', () => {
   it('runs a turn\'s tool calls one after another in emitted order', async () => {
     let turn = 0;
     const fakeClient = {
-      messages: {
+      beta: { messages: {
         create: async () => {
           turn++;
           if (turn === 1) {
@@ -197,7 +210,7 @@ describe('sequential dispatch', () => {
           }
           return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'ready' }] };
         },
-      },
+      } },
     } as unknown as Anthropic;
     const order: string[] = [];
     let inFlight = 0;
