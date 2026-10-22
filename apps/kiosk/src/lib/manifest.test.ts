@@ -68,6 +68,10 @@ describe("manifestHref", () => {
 });
 
 describe("buildManifest", () => {
+  it("opens in whatever orientation the device is held", () => {
+    expect(buildManifest("/liminal", "Liminal").orientation).toBe("any");
+  });
+
   it("names the app for the hub and opens on it, as its own app", () => {
     const m = buildManifest("/liminal", "Liminal Village");
     expect(m.name).toBe("Liminal Village");

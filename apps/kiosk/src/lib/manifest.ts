@@ -61,7 +61,8 @@ export function buildManifest(startRaw: string | null, nameRaw: string | null) {
     start_url: start,
     scope: "/",
     display: "fullscreen",
-    orientation: "portrait",
+    // Follow the device: portrait on a phone in hand, landscape on a wall tablet.
+    orientation: "any",
     background_color: "#f7f4ec",
     theme_color: "#0e6b66",
     icons: [
