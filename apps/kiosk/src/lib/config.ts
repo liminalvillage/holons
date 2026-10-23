@@ -17,6 +17,7 @@
 // URL survives reloads and power-cycles of the entrance display.
 
 import { holonForHost, holonForPath } from "./holons";
+import { holonForLaunch, miniAppLaunch } from "./miniapp";
 import {
   DEFAULT_WINDOW_PRESET,
   isWindowPreset,
@@ -238,6 +239,9 @@ export function resolveRelays(): string[] {
 export function resolveHolonId(): string | null {
   const fromParam = readParam("holon");
   if (fromParam) persist(HOLON_KEY, fromParam);
+  // Opened as a Telegram Mini App: the holon its button named (`startapp`),
+  // else the launching person's own. Never persisted, like the path.
+  const fromLaunch = holonForLaunch(miniAppLaunch());
   // The URL path (`site.com/<id>` or a registered label) and a registered
   // subdomain (liminal.hubs.network → liminal) are authoritative for that URL —
   // one deploy serves every holon. Neither is persisted: visiting another
@@ -253,6 +257,7 @@ export function resolveHolonId(): string | null {
   const env = import.meta.env.VITE_KIOSK_HOLON as string | undefined;
   return (
     fromParam ||
+    fromLaunch ||
     fromPath ||
     fromSubdomain ||
     persisted(HOLON_KEY) ||

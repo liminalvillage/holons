@@ -599,6 +599,13 @@ export const offersEnabled = derived(
 );
 
 /**
+ * The one service this screen is, when the kiosk was opened as a Telegram
+ * Mini App for it (see miniapp.ts) — null on an ordinary board. Set once on
+ * boot. It narrows the tabs to that view and stops rotation and pin snap-back.
+ */
+export const appService = writable<TabId | null>(null);
+
+/**
  * Tabs actually shown: Tasks unless the caretaker switched it off; Library,
  * Lists, Roles, and Shifts per their (possibly content-driven) visibility
  * above; Status and Flows only when the caretaker enabled them.
@@ -616,6 +623,7 @@ export const visibleTabs = derived(
     flowsEnabled,
     stockEnabled,
     offersEnabled,
+    appService,
   ],
   ([
     $tabs,
@@ -629,20 +637,24 @@ export const visibleTabs = derived(
     $flows,
     $stock,
     $offers,
+    $app,
   ]) =>
-    $tabs.filter(
-      (t) =>
-        (t.id !== "tasks" || $tasks) &&
-        (t.id !== "calendar" || $calendar) &&
-        (t.id !== "library" || $library) &&
-        (t.id !== "checklists" || $checklists) &&
-        (t.id !== "roles" || $roles) &&
-        (t.id !== "shifts" || $shifts) &&
-        (t.id !== "status" || $status) &&
-        (t.id !== "flows" || $flows) &&
-        (t.id !== "stock" || $stock) &&
-        (t.id !== "offers" || $offers),
-    ),
+    // A Mini App is its one service, whatever this device's switches say.
+    $app
+      ? $tabs.filter((t) => t.id === $app)
+      : $tabs.filter(
+          (t) =>
+            (t.id !== "tasks" || $tasks) &&
+            (t.id !== "calendar" || $calendar) &&
+            (t.id !== "library" || $library) &&
+            (t.id !== "checklists" || $checklists) &&
+            (t.id !== "roles" || $roles) &&
+            (t.id !== "shifts" || $shifts) &&
+            (t.id !== "status" || $status) &&
+            (t.id !== "flows" || $flows) &&
+            (t.id !== "stock" || $stock) &&
+            (t.id !== "offers" || $offers),
+        ),
 );
 
 /** The tabs a caretaker could add back: in order, not currently shown. */
@@ -845,8 +857,9 @@ function armResume() {
   if (resumeTimer) clearTimeout(resumeTimer);
   resumeTimer = setTimeout(() => {
     rotating.set(true);
-    // A pinned kiosk snaps back to its view once everyone has walked away.
-    const pin = get(pinnedTab);
+    // A pinned kiosk snaps back to its view once everyone has walked away
+    // (a Mini App to its service, over any pin this device holds).
+    const pin = get(appService) ?? get(pinnedTab);
     if (pin) activeTab.set(pin);
     scheduleFlip();
   }, RESUME_AFTER_IDLE_MS);
@@ -854,7 +867,7 @@ function armResume() {
 
 /** Begin the rotation loop. Returns a teardown function. */
 export function startRotation(): () => void {
-  autoRotates.set(!isPhoneDisplay());
+  autoRotates.set(!isPhoneDisplay() && !get(appService));
   // Boot counts as activity — someone just opened or woke the page — so start
   // attended and let the countdown promote the screen to unattended.
   pauseRotation();

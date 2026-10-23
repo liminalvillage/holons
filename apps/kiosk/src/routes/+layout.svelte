@@ -106,9 +106,11 @@
     selection,
     openQuest,
     openThing,
+    appService,
     type TabId,
   } from "$lib/stores";
   import { pathForTab, tabForPath } from "$lib/tabroute";
+  import { miniAppLaunch, settleMiniApp } from "$lib/miniapp";
   import {
     linkedCardFromSearch,
     searchWithCard,
@@ -669,6 +671,13 @@
     // data is still streaming in: register the ask so the tab claims the
     // screen the moment it appears instead of being reset to the fallback.
     const urlTab = tabForPath(location.pathname);
+    // Opened as a Telegram Mini App for one service (`t.me/<bot>/tasks` →
+    // /tasks): the screen IS that service — set before the tab logic below
+    // and before rotation starts, both of which read it.
+    if (miniAppLaunch()) {
+      settleMiniApp();
+      if (urlTab) appService.set(urlTab);
+    }
     // A deep-linked card (`?task=`, `?event=`, `?thing=`, `?item=`, `?offer=`,
     // see cardlink.ts) opens that card once its record streams in — and, when
     // the path names no tab, picks the card's tab as the starting view.

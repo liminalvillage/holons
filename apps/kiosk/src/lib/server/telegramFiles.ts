@@ -27,7 +27,7 @@ export interface ResolvedFile {
   path: string;
 }
 
-function botTokens(): string[] {
+export function botTokens(): string[] {
   // BOT_TOKENS lists every other bot whose file_ids are in the graph.
   const raw = [
     env.BOT_TOKEN,

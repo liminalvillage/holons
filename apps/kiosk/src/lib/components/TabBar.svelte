@@ -21,6 +21,7 @@
     reorderTabs,
     hiddenTabs,
     setTabShown,
+    appService,
   } from "$lib/stores";
   import type { TabId } from "$lib/stores";
   import { moveId } from "$lib/taborder";
@@ -292,7 +293,7 @@
     if (!resolveAddTipSeen()) {
       addTipTimer = setTimeout(() => {
         addTipTimer = null;
-        if ($hiddenTabs.length && !$rotating) addTip = true;
+        if ($hiddenTabs.length && !$rotating && !$appService) addTip = true;
       }, 900);
     }
     return () => {
@@ -361,9 +362,12 @@
   }
 </script>
 
+<!-- `solo`: a Telegram Mini App for one service (miniapp.ts) — the hub's
+     name, search and you; no strip, clock or window close to leave it by. -->
 <header
   class="bar"
   class:merged
+  class:solo={$appService != null}
   class:suggest-open={suggestOpen || addOpen || addTip}
 >
   <div class="top">
@@ -685,6 +689,12 @@
 {/if}
 
 <style>
+  .bar.solo .strip,
+  .bar.solo .clock,
+  .bar.solo .winclose {
+    display: none;
+  }
+
   .bar {
     flex: 0 0 auto;
     /* Sides align with the surface's frame below (`--frame` on .kiosk). */

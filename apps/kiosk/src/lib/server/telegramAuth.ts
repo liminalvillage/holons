@@ -21,7 +21,12 @@
 // Lives under $lib/server, so SvelteKit never bundles it into the client.
 
 import { env } from "$env/dynamic/private";
-import { createHash, randomBytes } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
 import { SignJWT, jwtVerify, createRemoteJWKSet } from "jose";
 import { deriveTelegramNostrKey } from "@holons/core/auth";
 
@@ -389,4 +394,67 @@ export async function verifySession(
 ): Promise<TelegramProfile | null> {
   const identity = await verifySessionIdentity(token, jwtSecret);
   return identity?.kind === "telegram" ? identity.profile : null;
+}
+
+// --- Telegram Mini App launch (initData) ---
+//
+// A Mini App (`t.me/<bot>/tasks?startapp=<holon>`) opens the kiosk inside
+// Telegram with `initData`: the launching user and the start param, signed by
+// the bot that opened it (HMAC-SHA256 keyed by HMAC("WebAppData", bot token),
+// per Telegram's docs). Verifying it is a login with no round-trip.
+
+/** How old a launch may be before it no longer logs anyone in. */
+export const INIT_DATA_MAX_AGE_S = 24 * 60 * 60;
+
+export interface MiniAppLaunch {
+  profile: TelegramProfile;
+  startParam: string | null;
+}
+
+/**
+ * Verify a Mini App's `initData` against each bot that may have opened it
+ * (the dev and prod bots share a deploy) and return who launched it, or null
+ * when no bot signed it, it is stale, or it names no user.
+ */
+export function verifyInitData(
+  initData: string,
+  botTokens: string[],
+  now = Date.now(),
+): MiniAppLaunch | null {
+  if (!initData || initData.length > 4096) return null;
+  const params = new URLSearchParams(initData);
+  const hash = params.get("hash") ?? "";
+  if (!/^[0-9a-f]{64}$/.test(hash)) return null;
+  params.delete("hash");
+  const checkString = [...params.entries()]
+    .map(([k, v]) => `${k}=${v}`)
+    .sort()
+    .join("\n");
+  const signed = botTokens.some((token) => {
+    const secret = createHmac("sha256", "WebAppData").update(token).digest();
+    const calc = createHmac("sha256", secret).update(checkString).digest();
+    return timingSafeEqual(calc, Buffer.from(hash, "hex"));
+  });
+  if (!signed) return null;
+  const authDate = Number(params.get("auth_date") ?? 0);
+  if (!authDate || Math.abs(now / 1000 - authDate) > INIT_DATA_MAX_AGE_S)
+    return null;
+  let user: Record<string, unknown> | null = null;
+  try {
+    user = JSON.parse(params.get("user") ?? "null");
+  } catch {
+    return null;
+  }
+  if (user?.id == null) return null;
+  const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+  return {
+    profile: {
+      id: String(user.id),
+      first_name: str(user.first_name),
+      last_name: str(user.last_name),
+      username: str(user.username),
+      photo_url: str(user.photo_url),
+    },
+    startParam: params.get("start_param"),
+  };
 }

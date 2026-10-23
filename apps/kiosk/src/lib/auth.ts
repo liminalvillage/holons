@@ -11,6 +11,8 @@
 //    key is resolved client-side, ownership is proven to the server with a
 //    NIP-98 event (POST /api/auth/key) for the same session cookie, and the
 //    key is adopted in-memory as this session's signing identity.
+//  - A Telegram Mini App launch (miniapp.ts): the signed `initData` is posted
+//    to /api/auth/telegram/webapp and yields the same session as Telegram.
 //
 // By default we never hold a Telegram user's signing key — writes are signed
 // by the kiosk's own device key (see holosphere.ts) and record the user as the
@@ -27,6 +29,7 @@ import { signAuthEvent } from "@holons/core/auth";
 import type { ProviderLogin } from "./login/types";
 import { importNostrKey } from "./login/nostrKey";
 import { forgetRememberedKey } from "./rememberKey";
+import { miniAppLaunch } from "./miniapp";
 import {
   isShortName,
   nameFor,
@@ -112,7 +115,17 @@ async function hydrateKeyUser(pubkey: string): Promise<void> {
 export async function initAuth(): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    const res = await fetch("/api/auth/session");
+    // Opened as a Telegram Mini App: the launch is the login — whoever
+    // opened it, whatever session this webview carried before.
+    const launch = miniAppLaunch();
+    let res = launch
+      ? await fetch("/api/auth/telegram/webapp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ initData: launch.initData }),
+        }).catch(() => null)
+      : null;
+    if (!res?.ok) res = await fetch("/api/auth/session");
     if (res.ok) {
       const { user, key, nostrPrivateKey } = await res.json();
       currentUser.set(

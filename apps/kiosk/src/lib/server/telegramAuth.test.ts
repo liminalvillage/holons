@@ -9,7 +9,10 @@ import {
   mintKeySession,
   verifySessionIdentity,
   returnDestination,
+  verifyInitData,
+  INIT_DATA_MAX_AGE_S,
 } from "./telegramAuth";
+import { createHmac } from "node:crypto";
 
 const JWT_SECRET = "a".repeat(48);
 
@@ -89,5 +92,65 @@ describe("returnDestination", () => {
     expect(returnDestination("http://hubs.network/")).toBe("/");
     expect(returnDestination("not a url")).toBe("/");
     expect(returnDestination(undefined)).toBe("/");
+  });
+});
+
+describe("verifyInitData", () => {
+  const TOKEN = "123456:test-bot-token";
+  const NOW = 1_800_000_000_000;
+
+  /** initData exactly as Telegram signs it for a bot token. */
+  function sign(fields: Record<string, string>, token = TOKEN): string {
+    const check = Object.entries(fields)
+      .map(([k, v]) => `${k}=${v}`)
+      .sort()
+      .join("\n");
+    const secret = createHmac("sha256", "WebAppData").update(token).digest();
+    const hash = createHmac("sha256", secret).update(check).digest("hex");
+    return new URLSearchParams({ ...fields, hash }).toString();
+  }
+  const launch = (over: Record<string, string> = {}) => ({
+    auth_date: String(NOW / 1000 - 60),
+    user: JSON.stringify({
+      id: 235114395,
+      first_name: "Roberto",
+      username: "rv",
+    }),
+    start_param: "-1001234567890",
+    ...over,
+  });
+
+  it("returns the launching user and the start param", () => {
+    expect(verifyInitData(sign(launch()), [TOKEN], NOW)).toEqual({
+      profile: {
+        id: "235114395",
+        first_name: "Roberto",
+        last_name: undefined,
+        username: "rv",
+        photo_url: undefined,
+      },
+      startParam: "-1001234567890",
+    });
+  });
+
+  it("accepts whichever configured bot signed it", () => {
+    const data = sign(launch(), "999:other-bot");
+    expect(
+      verifyInitData(data, [TOKEN, "999:other-bot"], NOW)?.profile.id,
+    ).toBe("235114395");
+    expect(verifyInitData(data, [TOKEN], NOW)).toBeNull();
+  });
+
+  it("rejects tampering, staleness and launches without a user", () => {
+    const tampered = sign(launch()).replace("Roberto", "Mallory");
+    expect(verifyInitData(tampered, [TOKEN], NOW)).toBeNull();
+    const stale = launch({
+      auth_date: String(NOW / 1000 - INIT_DATA_MAX_AGE_S - 1),
+    });
+    expect(verifyInitData(sign(stale), [TOKEN], NOW)).toBeNull();
+    const { user: _user, ...anonymous } = launch();
+    expect(verifyInitData(sign(anonymous), [TOKEN], NOW)).toBeNull();
+    expect(verifyInitData("", [TOKEN], NOW)).toBeNull();
+    expect(verifyInitData(sign(launch()), [], NOW)).toBeNull();
   });
 });
