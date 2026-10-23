@@ -97,6 +97,8 @@
         "openOffersApp": "Apri bisogni e offerte",
         "openFlowsApp": "Apri flussi",
         "openStatusApp": "Apri stato",
+        "appsPinned": "📱 Le app di questo holon — toccane una per aprirla.",
+        "appsNone": "Questo bot non ha ancora app configurate.",
         "Open in Holons": "Apri in Holons",
         "more_actions": "Altre Azioni",
         "less_actions": "Meno Azioni",

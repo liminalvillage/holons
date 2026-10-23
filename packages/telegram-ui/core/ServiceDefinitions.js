@@ -25,6 +25,7 @@ import Shifts from '../src/Shifts.js';
 import Keys from '../src/Keys.js';
 import JoinRequests from '../src/JoinRequests.js';
 import FederationRequests from '../src/FederationRequests.js';
+import AppsPin from '../src/AppsPin.js';
 import { linkHolons, unlinkHolons } from '../src/federationLinks.js';
 import { invalidateLinkedKeys } from '../src/createHoloSphere.js';
 import Roles from '../src/Roles.js';
@@ -531,6 +532,14 @@ export const serviceDefinitions = {
       new FederationRequests(telebot, database, settings),
     singleton: true,
     dependencies: ['telebot', 'database', 'settings'],
+  },
+
+  // The pinned apps list: every registered Mini App one tap from the top of
+  // the chat (MINI_APPS) — posted on join, pinned once the bot may pin.
+  appsPin: {
+    factory: ({ telebot, settings }) => new AppsPin(telebot, settings),
+    singleton: true,
+    dependencies: ['telebot', 'settings'],
   },
 
   rounds: {

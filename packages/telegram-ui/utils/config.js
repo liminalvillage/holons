@@ -25,6 +25,7 @@ dotenv.config();
  * @property {boolean} isDevelopment - Whether running in development mode
  * @property {number} port - Server port
  * @property {string} dashboardAddress - Dashboard URL
+ * @property {string} kioskAddress - Kiosk URL (the Mini Apps' host)
  *
  * @example
  * import { config } from './utils/config.js';
@@ -161,6 +162,10 @@ class Config {
   // Dashboard Configuration
   get dashboardAddress() {
     return this.getString('DASHBOARD_ADDRESS', 'https://dashboard.holons.io');
+  }
+
+  get kioskAddress() {
+    return this.getString('KIOSK_ADDRESS', 'https://hubs.network');
   }
 
   // Feature Flags

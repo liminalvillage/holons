@@ -389,7 +389,8 @@ export default class Settings {
     });
 
     // Handle bot being added to a group
-    this.bot.on('my_chat_member', async ctx => {
+    // Passes the update on: AppsPin posts the pinned apps list on the same join.
+    this.bot.on('my_chat_member', async (ctx, next) => {
       try {
         const update = ctx.myChatMember;
         const newStatus = update.new_chat_member?.status;
@@ -419,6 +420,7 @@ export default class Settings {
       } catch (error) {
         console.error('Error handling my_chat_member event:', error);
       }
+      return next();
     });
 
     // ================= ADMIN ===========================

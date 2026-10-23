@@ -23,3 +23,4 @@ holosphere/
 logs/*
 dist/
 *.tsbuildinfo
+data/appspins.json

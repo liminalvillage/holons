@@ -110,6 +110,8 @@
         "openOffersApp": "Open needs & offers",
         "openFlowsApp": "Open flows",
         "openStatusApp": "Open status",
+        "appsPinned": "📱 Apps for this holon — tap one to open it.",
+        "appsNone": "No apps are set up for this bot yet.",
         "Open in Holons": "Open in Holons",
         "more_actions": "More Actions",
         "less_actions": "Less Actions",

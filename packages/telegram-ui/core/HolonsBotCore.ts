@@ -4,6 +4,7 @@ import ServiceContainer, { errorMessage } from './ServiceContainer.js';
 import { serviceDefinitions, postInitHooks } from './ServiceDefinitions.js';
 import { log } from '../utils/logger.js';
 import { config } from '../utils/config.js';
+import { miniApps } from '../src/MiniApps.js';
 
 /** Shape of an entry in {@link serviceDefinitions}. */
 interface ServiceDefinitionEntry {
@@ -178,33 +179,38 @@ class HolonsBot {
   private async launchBot(): Promise<void> {
     try {
       const telebot = await this.container.get<TelebotLike>('telebot');
+      // Before launch: Telegraf 4.16's launch() only settles when polling
+      // stops, so nothing awaited after it ever runs.
+      await this.setupMenuButton(telebot);
       // `handlerTimeout` is a runtime option supported by Telegraf but absent
       // from the public LaunchOptions type — preserve the original behavior.
-      await telebot.launch({ handlerTimeout: Infinity } as Parameters<typeof telebot.launch>[0]);
-      log.info('Telegram bot launched successfully');
-
-      // Set the bot menu button to open dashboard webapp
-      await this.setupMenuButton(telebot);
+      await telebot.launch(
+        { handlerTimeout: Infinity } as Parameters<typeof telebot.launch>[0],
+        () => log.info('Telegram bot launched successfully')
+      );
     } catch (error) {
       log.error('Failed to launch Telegram bot', { error: errorMessage(error) });
       throw error;
     }
   }
 
-  /** Sets up the bot menu button to open the dashboard webapp. */
+  /**
+   * The private-chat menu button: with Mini Apps registered (MINI_APPS) it
+   * opens the kiosk on the person's own holon, every service a tab away;
+   * otherwise the dashboard.
+   */
   private async setupMenuButton(telebot: TelebotLike): Promise<void> {
     try {
-      const dashboardUrl = config.dashboardAddress;
+      const apps = miniApps().size > 0;
       // Telegraf accepts the underlying Bot API shape (snake_case `menu_button`).
-      // Preserve the exact payload used by the original JS module.
       await telebot.telegram.setChatMenuButton({
         menu_button: {
           type: 'web_app',
-          text: 'Dashboard',
-          web_app: { url: dashboardUrl },
+          text: apps ? 'Apps' : 'Dashboard',
+          web_app: { url: apps ? config.kioskAddress : config.dashboardAddress },
         },
       } as unknown as Parameters<typeof telebot.telegram.setChatMenuButton>[0]);
-      log.info('Bot menu button configured for dashboard webapp');
+      log.info(`Bot menu button opens the ${apps ? 'kiosk apps' : 'dashboard'}`);
     } catch (error) {
       log.warn('Failed to set menu button (non-critical)', { error: errorMessage(error) });
     }

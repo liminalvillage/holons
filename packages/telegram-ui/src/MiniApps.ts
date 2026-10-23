@@ -71,10 +71,43 @@ export function miniAppButton(
   lng: string
 ): InlineKeyboardButton.UrlButton | null {
   const url = miniAppUrl(ctx.botInfo?.username, service, holonId);
-  if (!url) return null;
+  return url ? openButton(service, url, lng) : null;
+}
+
+function openButton(
+  service: string,
+  url: string,
+  lng: string
+): InlineKeyboardButton.UrlButton {
   const [key, defaultValue] = LABEL_KEYS[service] ?? [
     'openApp',
     `Open ${service}`,
   ];
   return Markup.button.url(`✅ ${i18next.t(key, { lng, defaultValue })}`, url);
+}
+
+/**
+ * Every registered service's Open button for `holonId`, two to a row — the
+ * pinned apps message (AppsPin.ts) — in the order the kiosk lists its tabs,
+ * then any other registered short name. Empty when nothing is registered.
+ */
+export function miniAppsKeyboard(
+  botUsername: string | undefined,
+  holonId: string | number,
+  lng: string,
+  env: NodeJS.ProcessEnv = process.env
+): InlineKeyboardButton.UrlButton[][] {
+  const registered = miniApps(env);
+  const ordered = [
+    ...Object.keys(LABEL_KEYS).filter(s => registered.has(s)),
+    ...[...registered].filter(s => !(s in LABEL_KEYS)),
+  ];
+  const buttons = ordered.flatMap(service => {
+    const url = miniAppUrl(botUsername, service, holonId, env);
+    return url ? [openButton(service, url, lng)] : [];
+  });
+  const rows: InlineKeyboardButton.UrlButton[][] = [];
+  for (let i = 0; i < buttons.length; i += 2)
+    rows.push(buttons.slice(i, i + 2));
+  return rows;
 }
