@@ -5,6 +5,7 @@ import { generateSecretKey, getPublicKey } from '../nostr-events.js';
 import { isSealed, unsealSelf, kidOf } from '../store/sealed.js';
 import { isLocked } from '../store/index.js';
 
+import { withoutClock } from './helpers/clock.js';
 afterAll(cleanupTestEnv);
 
 const H = '-100777';
@@ -24,7 +25,7 @@ describe('privacy: private scopes', () => {
         expect(holo.privacy.owned({ holon: H, lens: 'quests' })).toBe(true);
 
         await holo.put(H, 'quests', { id: 'q1', title: 'secret plan' });
-        expect(await holo.get(H, 'quests', 'q1')).toEqual({ id: 'q1', title: 'secret plan' });
+        expect(withoutClock(await holo.get(H, 'quests', 'q1'))).toEqual({ id: 'q1', title: 'secret plan' });
         for (const id of ['q0', 'q1']) {
             const [evt] = holo.store.getEvents(H, 'quests', id);
             expect(isSealed(JSON.parse(evt.content))).toBe(true);
@@ -179,7 +180,7 @@ describe('privacy: private scopes', () => {
         await holo.privacy.lock({ holon: me, lens: 'notes' });
         await holo.put(me, 'notes', { id: 'n1', body: 'diary' });
         expect(JSON.parse(holo.store.getEvents(me, 'notes', 'n1')[0].content).ct).toBeDefined();
-        expect(await holo.get(me, 'notes', 'n1')).toEqual({ id: 'n1', body: 'diary' });
+        expect(withoutClock(await holo.get(me, 'notes', 'n1'))).toEqual({ id: 'n1', body: 'diary' });
         expect(holo.privacy.ownedScopes(me)).toEqual([{ holon: me, lens: 'notes' }]);
     });
 });

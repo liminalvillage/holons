@@ -8,6 +8,7 @@
 
 import { warnHologramUnresolvedOnce, clearHologramUnresolvedWarning } from './hologram.js';
 import { isTombstone, isLocked } from './store/store.js';
+import { stampClock, clockAddress } from './store/clock.js';
 import * as PrivateOps from './private-ops.js';
 
 const isGlobalHolon = (holon) => holon === null || holon === undefined || holon === '';
@@ -355,6 +356,21 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
         if (String(dataToStore.id) !== String(targetKey)) dataToStore.id = targetKey;
 
         const wireHolon = normHolon(targetHolon);
+        // Field clock (store/clock.js): a signed write claims only the fields
+        // it changed, so a stale copy re-put by another device cannot revert
+        // a reschedule or resurrect a delete. Pointers stay bare `{id, soul}`
+        // and stay whole-record. Stamped before sealing: the clock travels
+        // inside the sealed item.
+        if (!isHologram && holoInstance._signer && !options.local && !options._skipSign) {
+            const store = holoInstance.store;
+            const key = String(targetKey);
+            dataToStore._clock = stampClock(dataToStore, store.get(wireHolon, targetLens, key),
+                store.nextCreatedAt(wireHolon, targetLens, key), clockAddress(wireHolon, targetLens, key),
+                { own: store.fieldsBy(wireHolon, targetLens, key, holoInstance._signer.pubkey) });
+            // The caller's object now describes what was written, so saving it
+            // again after a further edit is not mistaken for an outdated copy.
+            if (data && typeof data === 'object') data._clock = dataToStore._clock;
+        }
         // Private scope (a lens or this one item, see privacy.js): the envelope
         // carries ciphertext. A tombstone stays plain — it says nothing but
         // "gone". Projections are off for a sealed write: a standard-kind twin

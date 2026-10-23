@@ -391,6 +391,17 @@ export function createRelayTransport(holo, {
     return r;
   }
 
+  /**
+   * Did the store account for this event? Only such events may move a sync
+   * cursor — an allow-list: any other reason ('future', 'kind', 'closed', a
+   * forged signature) advancing it would silently skip history on the next
+   * catch-up. A single far-future event used to drag a backfill's cursor past
+   * everything published until that date.
+   */
+  function accounted(r) {
+    return !!r?.record && (r.applied || r.reason === 'seen' || r.reason === 'stale');
+  }
+
   // ---- pairs: one state per (holon, lens) ever touched --------------------------
 
   const pairs = new Map(); // key -> state
@@ -458,8 +469,7 @@ export function createRelayTransport(holo, {
       let oldest = Infinity;
       for (const e of events) {
         if (e.created_at < oldest) oldest = e.created_at;
-        if (e.created_at > newest) newest = e.created_at;
-        ingest(e);
+        if (accounted(ingest(e)) && e.created_at > newest) newest = e.created_at;
       }
       return oldest;
     };
@@ -484,8 +494,7 @@ export function createRelayTransport(holo, {
     const events = await query({ ...filter, since });
     let newest = 0;
     for (const e of events) {
-      if (e.created_at > newest) newest = e.created_at;
-      ingest(e);
+      if (accounted(ingest(e)) && e.created_at > newest) newest = e.created_at;
     }
     return newest;
   }
@@ -658,7 +667,7 @@ export function createRelayTransport(holo, {
       // store actually accounted for. A deny-list let every reason nobody had
       // thought of yet ('kind', 'untrusted', 'closed') advance the cursor,
       // which silently skips that history on the next catch-up.
-      if (r.record && (r.applied || r.reason === 'seen' || r.reason === 'stale')) {
+      if (accounted(r)) {
         const st = pairs.get(pairKey(r.record.holon, r.record.lens));
         const w = st?.wires.find((x) => (x.filter.kinds || []).includes(evt.kind));
         if (w?.synced) store.setCursor(st.holon, st.lens, evt.created_at, w.wire);

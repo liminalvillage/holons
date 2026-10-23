@@ -41,6 +41,39 @@ need no dedup set. Local writes always become current because `nextCreatedAt`
 bumps one second past whatever is current when the clock has not moved
 (relays keep the first of two equal timestamps).
 
+## Field clocks
+
+Record-level LWW let any device holding a stale copy undo other people's
+edits: joining a task re-put the whole item, old date and missing `_deleted`
+included, and the newest envelope won every field. So every signed `put`
+stamps `_clock: { '@': 'holon/lens/id', field: seconds }` (`store/clock.js`)
+— when each field last CHANGED as far as the writer knew:
+
+- a field equal to the base record keeps the base's stamp;
+- a changed field gets the write's `created_at`, unless the writer's own copy
+  (its `_clock`, read from this same address) predates the base's stamp for
+  that field and someone else set it — then it keeps the old stamp and loses;
+- a writer is never stale against its own key, and `put` writes the new clock
+  back onto the caller's object.
+
+When any claim at an address carries a clock, `store.apply` (and the signer's
+enforced reads, over the counted claims) folds every author's claim field by
+field: highest stamp wins, ties by the newer envelope. A claim without a clock
+(older clients, `delete()`'s bare tombstone, hologram pointers, locked stubs)
+asserts every field, present or absent, at its own `created_at` — so a set of
+unclocked claims folds to exactly the newest item, as before. Reads return the
+`_clock`; carry it back on writes. Two people editing the SAME field still
+resolve last-writer-wins on that field.
+
+The clock is the author's word, so it is never trusted past what they
+signed: a stamp later than its own event's `created_at` counts as that
+`created_at`. And `created_at` itself is bounded — `store.apply` refuses a
+received event dated more than `maxFutureSkew` (900 s, strfry's own default)
+ahead of this clock with reason `future`; our own writes are exempt. A
+refused event never moves a sync cursor: backfill, catch-up and the live
+subscription all advance only on events the store accounted for
+(applied / seen / stale).
+
 ## Append-only lenses
 
 A lens registered as append-only (`appendLenses` in the store options, or

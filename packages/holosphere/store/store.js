@@ -25,7 +25,9 @@
 //             This is the `_holograms` cascade index, no longer a sub-node.
 //
 // Ordering: `apply(event)` is the ONE place last-writer-wins is decided
-// (lww.js). Everything else is bookkeeping and the change feed.
+// (lww.js). Everything else is bookkeeping and the change feed. Once a claim
+// at an address carries a field clock, the record is the field-by-field fold
+// of every author's claim there (clock.js) rather than the newest envelope.
 
 import { HOLOSPHERE_KIND, verifyEvent, eventToItem, tag } from '../nostr-events.js';
 import { isHologram } from '../hologram.js';
@@ -33,11 +35,21 @@ import {
     GLOBAL_HOLON, CAPABILITIES_HOLON, holonKey, holonFromKey, lensKey, cursorKey, addr, lensKeyOfAddr, soulOf,
 } from './address.js';
 import { wins, newestFirst } from './lww.js';
+import { hasClock, foldClaims, fieldsBy, sameItem, clockAddress } from './clock.js';
 import { createWireRegistry, decodeEvent } from './wire.js';
 import { privateKeyOf, privateLensPrefix } from './private.js';
 import { isLocked } from './sealed.js';
 
 const nowSec = () => Math.floor(Date.now() / 1000);
+
+/**
+ * How far ahead of this clock a RECEIVED event may be dated: strfry's own
+ * default (`rejectEventsNewerThanSeconds`). `created_at` decides last-writer-
+ * wins and caps every field-clock stamp, so an event dated next year would
+ * outrank every honest write until then. Our own writes are exempt — a burst
+ * of same-second writes legitimately runs ahead (see `nextCreatedAt`).
+ */
+export const MAX_FUTURE_SKEW = 900;
 
 /** Is this item a tombstone? */
 export function isTombstone(item) {
@@ -86,8 +98,9 @@ export class Store {
      * @param {object} [opts.wire]           wire registry; defaults to the legacy envelope alone
      * @param {Function} [opts.unseal]       opens sealed envelopes (see sealed.js); installable later via `setUnseal`
      * @param {number} [opts.compactAfter]   ops appended before the log is compacted (default 50000)
+     * @param {number} [opts.maxFutureSkew]  seconds a received event may be dated ahead of this clock (default 900)
      */
-    constructor({ appName, adapter, kind = HOLOSPHERE_KIND, wire, unseal, compactAfter = 50000 } = {}) {
+    constructor({ appName, adapter, kind = HOLOSPHERE_KIND, wire, unseal, compactAfter = 50000, maxFutureSkew = MAX_FUTURE_SKEW } = {}) {
         if (!appName) throw new Error('store: appName is required');
         this.appName = String(appName);
         this.kind = kind;
@@ -97,6 +110,7 @@ export class Store {
         this.wire = wire || createWireRegistry({ legacyKind: kind });
         if (typeof unseal === 'function') this.wire.setUnseal?.(unseal);
         this.compactAfter = compactAfter;
+        this.maxFutureSkew = maxFutureSkew;
 
         this._adapterInit = adapter;
         this.adapter = null;
@@ -114,6 +128,7 @@ export class Store {
         this.lensIndex = new Map();      // lens key → Map<id, record>
         this.holonIndex = new Map();     // holon key → Set<lens>
         this.watchers = new Map();       // lens key → Set<entry>
+        this._decoded = new WeakMap();   // event → its decoded claims (see _decode)
 
         this._ops = [];
         this._flushQueued = false;
@@ -204,8 +219,9 @@ export class Store {
 
     /**
      * Apply a signed event. Returns `{ applied, reason, record, records }`;
-     * `reason` is one of seen | kind | foreign | malformed | invalid | stale
-     * when nothing was applied.
+     * `reason` is one of seen | kind | foreign | malformed | future | invalid |
+     * stale when nothing was applied. `future`: a received (non-local) event
+     * dated more than `maxFutureSkew` seconds ahead of this clock.
      *
      * An event may claim SEVERAL addresses — a NIP-09 kind 5 retracts every
      * coordinate in its `a` tags — so the address work runs per claim and
@@ -222,6 +238,8 @@ export class Store {
 
         const first = this.records.get(addr(claims[0].holon, claims[0].lens, claims[0].id));
         if (this.events.has(event.id)) return { applied: false, reason: 'seen', record: first };
+        if (origin !== 'local' && Number.isFinite(this.maxFutureSkew)
+            && event.created_at > nowSec() + this.maxFutureSkew) return { applied: false, reason: 'future' };
         if (verify && !verifyEvent(event)) return { applied: false, reason: 'invalid' };
 
         const records = [];
@@ -230,6 +248,14 @@ export class Store {
             const a = addr(decoded.holon, decoded.lens, decoded.id);
             const current = this.records.get(a);
             this._storeEvent(a, decoded, event);
+            const folded = this._foldAt(a, current);
+            if (folded) {
+                if (!folded.changed) { staleAt++; continue; }
+                const record = { ...folded.record, origin };
+                this._setRecord(record);
+                records.push(record);
+                continue;
+            }
             if (!wins({ created_at: event.created_at, eventId: event.id }, current)) {
                 staleAt++;
                 continue;
@@ -351,6 +377,11 @@ export class Store {
             if (e) out.push(e);
         }
         return out.sort(newestFirst);
+    }
+
+    /** The fields of a record whose current value `pubkey` signed (see clock.js). */
+    fieldsBy(holon, lens, id, pubkey) {
+        return fieldsBy(this._claimsAt(addr(holon, lens, id)), pubkey);
     }
 
     /** Ids that have at least one signed claim in a lens. */
@@ -504,6 +535,7 @@ export class Store {
     /** Install the function that opens sealed envelopes (see wire.js). */
     setUnseal(fn) {
         this.wire.setUnseal?.(fn);
+        this._decoded = new WeakMap();
     }
 
     /**
@@ -515,10 +547,20 @@ export class Store {
      */
     rescan({ holon, lens } = {}) {
         let changed = 0;
+        this._decoded = new WeakMap();                        // keys moved: decode afresh
         const wantLk = lens !== undefined ? lensKey(holon, lens) : null;
         for (const rec of Array.from(this.records.values())) {
             if (wantLk !== null && lensKeyOfAddr(rec.addr) !== wantLk) continue;
             if (!rec.eventId) continue;                       // raw local writes have no envelope
+            const atAddr = this._claimsAt(rec.addr);
+            if (atAddr.some((c) => c.decoded.sealed) && atAddr.some((c) => hasClock(c.item))) {
+                const folded = this._foldAt(rec.addr, rec);
+                if (folded?.changed) {
+                    this._setRecord({ ...folded.record, origin: rec.origin });
+                    changed++;
+                }
+                continue;
+            }
             const event = this.events.get(rec.eventId);
             if (!event) continue;
             const claims = this.wire.decode(event);
@@ -571,6 +613,57 @@ export class Store {
     }
 
     // ------------------------------------------------------------------ internals
+
+    /** An event's address claims, decoded once per event (rescan and setUnseal reset it). */
+    _decode(event) {
+        let claims = this._decoded.get(event);
+        if (claims === undefined) {
+            claims = this.wire.decode(event);
+            this._decoded.set(event, claims);
+        }
+        return claims;
+    }
+
+    /** Every author's current claim at an address. */
+    _claimsAt(a) {
+        const byAuthor = this.eventsByAddr.get(a);
+        if (!byAuthor) return [];
+        const out = [];
+        for (const eid of byAuthor.values()) {
+            const e = this.events.get(eid);
+            if (!e) continue;
+            const decoded = (this._decode(e) || []).find((c) => addr(c.holon, c.lens, c.id) === a);
+            if (decoded) out.push({ item: decoded.item, created_at: e.created_at, eventId: e.id, pubkey: e.pubkey, decoded });
+        }
+        return out;
+    }
+
+    /**
+     * The field-clock fold at an address, or null when no claim there carries
+     * a clock (plain last-writer-wins applies). `changed` says whether the
+     * fold differs from `current`.
+     */
+    _foldAt(a, current) {
+        const claims = this._claimsAt(a);
+        if (!claims.some((c) => hasClock(c.item))) return null;
+        let newest = claims[0];
+        for (const c of claims) if (wins(c, newest)) newest = c;
+        // An unsigned local write newer than every signed claim stays current.
+        if (current && !current.eventId && !wins(newest, current)) return { changed: false };
+        const item = foldClaims(claims, clockAddress(newest.decoded.holon, newest.decoded.lens, newest.decoded.id));
+        const record = {
+            addr: a,
+            holon: newest.decoded.holon,
+            lens: newest.decoded.lens,
+            id: newest.decoded.id,
+            item,
+            created_at: newest.created_at,
+            pubkey: newest.pubkey,
+            eventId: newest.eventId,
+        };
+        const changed = !current || current.eventId !== record.eventId || !sameItem(current.item, item);
+        return { changed, record };
+    }
 
     _storeEvent(a, decoded, event) {
         let byAuthor = this.eventsByAddr.get(a);

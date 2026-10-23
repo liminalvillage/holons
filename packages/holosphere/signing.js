@@ -21,6 +21,7 @@ import { buildEvent, eventToItem, getPublicKey, HOLOSPHERE_KIND } from './nostr-
 import { isHologram } from './hologram.js';
 import { isLocked } from './store/sealed.js';
 import { GLOBAL_HOLON } from './store/address.js';
+import { hasClock, foldClaims, clockAddress } from './store/clock.js';
 import { GUARDED_SETTINGS_FIELDS } from './capabilities.js';
 
 const MEMBERSHIP_LENS = '_members'; // signed membership log lens
@@ -152,6 +153,25 @@ export function createSigner({
     return hit ? hit.item : null;
   };
   const lensIds = (holo, holon, lens) => holo.store.listEventIds(normHolon(holon), lens);
+
+  /**
+   * The current value of an address from its counted envelopes (newest
+   * first): the newest claim, or — once any of them carries a field clock —
+   * their field-by-field fold (store/clock.js), so a counted author's stale
+   * copy only wins the fields they changed. Vouched pointers and copies stand
+   * for something else entirely and never take part in a fold.
+   */
+  const currentClaim = (holo, holon, events, lens, id, vouched = null) => {
+    const newest = claimAt(holo, events[0], lens, id);
+    if (!newest || (vouched && vouched.has(events[0].id)) || isHologram(newest)) return newest;
+    const claims = [];
+    for (const e of events) {
+      if (vouched && vouched.has(e.id)) continue;
+      const item = claimAt(holo, e, lens, id);
+      if (item) claims.push({ item, created_at: e.created_at, eventId: e.id });
+    }
+    return claims.some((c) => hasClock(c.item)) ? foldClaims(claims, clockAddress(normHolon(holon), lens, id)) : newest;
+  };
 
   async function resolveMembership(holo, holon) {
     const events = [];
@@ -340,7 +360,7 @@ export function createSigner({
         report.items++;
         const { events: authorized, resolved } = await countedEvents(holo, holon, lens, id, isAuth, rawById.get(id));
         if (authorized.length) {
-          const claim = claimAt(holo, authorized[0], lens, id);
+          const claim = currentClaim(holo, holon, authorized, lens, id, resolved);
           if (claim && claim._deleted && !opts.includeDeleted) {
             // authorized SIGNED delete — omit from the view (not pending)
             continue;
@@ -379,9 +399,9 @@ export function createSigner({
     async resolveItem(holo, holon, lens, key, opts = {}) {
       const isAuth = await authPredicate(holo, holon);
       if (!isAuth) return undefined;   // no authority defined: the caller keeps its plain read
-      const { events } = await countedEvents(holo, holon, lens, key, isAuth);
+      const { events, resolved } = await countedEvents(holo, holon, lens, key, isAuth);
       if (!events.length) return null;
-      const item = materialize(claimAt(holo, events[0], lens, key), opts);
+      const item = materialize(currentClaim(holo, holon, events, lens, key, resolved), opts);
       return guardSettings(holo, holon, lens, key, item, events, isAuth);
     },
 
@@ -401,7 +421,7 @@ export function createSigner({
         : (e) => isAuth(e.pubkey, e.created_at);
       const events = envelopes(holo, null, lens, id).filter(admits).sort(newestFirst);
       if (!events.length) return null;
-      return materialize(claimAt(holo, events[0], lens, id));
+      return materialize(currentClaim(holo, null, events, lens, id));
     },
 
     /**
