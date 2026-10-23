@@ -10,6 +10,7 @@
 import { Markup } from 'telegraf';
 import i18next from 'i18next';
 import * as utils from './utilities.js';
+import { miniApps, miniAppButton } from './MiniApps.js';
 import {
     CHECKLIST_TYPES as CHECKLIST_TYPES_CORE,
     createChecklistObject as coreCreateChecklistObject,
@@ -220,6 +221,15 @@ class Checklists {
                 Markup.button.callback('➕ New Checklist', 'new_checklist'),
                 Markup.button.callback('🗑️ Delete Checklists', 'enter_delete_checklists_mode')
             ]);
+        }
+
+        // The lists Mini App, when this bot has it registered (MiniApps.ts):
+        // the overview's last row, also with no lists yet. This module gets no
+        // Settings, so the holon's language is read from its settings record.
+        if (miniApps().has('checklists')) {
+            const settings = await this.db.get(holonId.toString(), 'settings', holonId).catch(() => null);
+            const openApp = miniAppButton(ctx, 'checklists', holonId, settings?.language || 'en');
+            if (openApp) buttons.push([openApp]);
         }
 
         const message = deleteMode ? 'Select checklists to delete:' : 'Available Checklists:';

@@ -18,6 +18,7 @@ import QRCode from 'qrcode';
 import { colorFromCategory } from '@holons/core/categories';
 import { hostsOf } from '@holons/core/tasks';
 import { normalizeOffer, remainingSupply } from '@holons/core/offers';
+import { miniAppButton } from './MiniApps.js';
 
 const DASHBOARD_ADDRESS =
   process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
@@ -394,10 +395,11 @@ class UI {
               {
                 caption: createPaddedCaption(''),
                 ...Markup.inlineKeyboard([
-                  Markup.button.url(
-                    i18next.t('Open Dashboard', { lng: language }),
-                    `${DASHBOARD_ADDRESS}/${holonId}/status`
-                  ),
+                  miniAppButton(ctx, 'status', holonId, language) ??
+                    Markup.button.url(
+                      i18next.t('Open Dashboard', { lng: language }),
+                      `${DASHBOARD_ADDRESS}/${holonId}/status`
+                    ),
                 ]),
               }
             )
@@ -595,10 +597,11 @@ class UI {
         {
           caption: createPaddedCaption(''),
           ...Markup.inlineKeyboard([
-            Markup.button.url(
-              i18next.t('Open in Holons', { lng: language }),
-              `${DASHBOARD_ADDRESS}/${holonId}/offers`
-            ),
+            miniAppButton(ctx, 'offers', holonId, language) ??
+              Markup.button.url(
+                i18next.t('Open in Holons', { lng: language }),
+                `${DASHBOARD_ADDRESS}/${holonId}/offers`
+              ),
           ]),
         }
       );
@@ -756,10 +759,11 @@ class UI {
         {
           caption: createPaddedCaption(''),
           ...Markup.inlineKeyboard([
-            Markup.button.url(
-              i18next.t('Open Dashboard', { lng: language }),
-              `${DASHBOARD_ADDRESS}/${holonId}/needs/`
-            ),
+            miniAppButton(ctx, 'offers', holonId, language) ??
+              Markup.button.url(
+                i18next.t('Open Dashboard', { lng: language }),
+                `${DASHBOARD_ADDRESS}/${holonId}/needs/`
+              ),
           ]),
         }
       );
@@ -812,10 +816,17 @@ class UI {
         quests = quests.filter(quest => quest.message_thread_id === threadId);
       }
 
+      // The tasks Mini App, when this bot has it registered (MiniApps.ts):
+      // the board's one way in — and still offered on an empty board, where
+      // the first task gets added.
+      const openApp = miniAppButton(ctx, 'tasks', holonId, language);
+      const appButton = openApp ? [openApp] : null;
+
       // Check if there are any quests to display
       if (!quests || quests.length === 0) {
         await ctx.reply(
-          i18next.t('noquests', { lng: language }) || 'No tasks to display.'
+          i18next.t('noquests', { lng: language }) || 'No tasks to display.',
+          appButton ? Markup.inlineKeyboard([appButton]) : undefined
         );
         return;
       }
@@ -846,12 +857,14 @@ class UI {
         return [Markup.button.callback(title, cbData)];
       });
 
-      inline_keyboard_buttons.push([
-        Markup.button.url(
-          i18next.t('Open Dashboard', { lng: language }),
-          `${DASHBOARD_ADDRESS}/${holonId}/tasks`
-        ),
-      ]);
+      inline_keyboard_buttons.push(
+        appButton ?? [
+          Markup.button.url(
+            i18next.t('Open Dashboard', { lng: language }),
+            `${DASHBOARD_ADDRESS}/${holonId}/tasks`
+          ),
+        ]
+      );
 
       // Try to generate the table image
       try {
@@ -932,10 +945,11 @@ class UI {
         {
           caption: createPaddedCaption(''),
           ...Markup.inlineKeyboard([
-            Markup.button.url(
-              i18next.t('Open Dashboard', { lng: language }),
-              `${DASHBOARD_ADDRESS}/${holonId}/offers`
-            ),
+            miniAppButton(ctx, 'offers', holonId, language) ??
+              Markup.button.url(
+                i18next.t('Open Dashboard', { lng: language }),
+                `${DASHBOARD_ADDRESS}/${holonId}/offers`
+              ),
           ]),
         }
       );
@@ -996,10 +1010,11 @@ class UI {
         {
           caption: createPaddedCaption(''),
           ...Markup.inlineKeyboard([
-            Markup.button.url(
-              i18next.t('Open Dashboard', { lng: language }),
-              `${DASHBOARD_ADDRESS}/${holonId}/offers/`
-            ),
+            miniAppButton(ctx, 'offers', holonId, language) ??
+              Markup.button.url(
+                i18next.t('Open Dashboard', { lng: language }),
+                `${DASHBOARD_ADDRESS}/${holonId}/offers/`
+              ),
           ]),
         }
       );
@@ -2731,12 +2746,18 @@ class UI {
         return 0;
       });
 
+      // The calendar Mini App, when registered (MiniApps.ts) — also on an
+      // empty board, where the first event gets added.
+      const openApp = miniAppButton(ctx, 'calendar', holonId, language);
+      const appButton = openApp ? [openApp] : null;
+
       if (!events || events.length === 0) {
         await ctx.reply(
           i18next.t('noevents', {
             lng: language,
             defaultValue: 'No upcoming events.',
-          })
+          }),
+          appButton ? Markup.inlineKeyboard([appButton]) : undefined
         );
         return;
       }
@@ -2759,12 +2780,14 @@ class UI {
         ];
       });
 
-      inline_keyboard_buttons.push([
-        Markup.button.url(
-          i18next.t('Open Dashboard', { lng: language }),
-          `${DASHBOARD_ADDRESS}/${holonId}/events`
-        ),
-      ]);
+      inline_keyboard_buttons.push(
+        appButton ?? [
+          Markup.button.url(
+            i18next.t('Open Dashboard', { lng: language }),
+            `${DASHBOARD_ADDRESS}/${holonId}/events`
+          ),
+        ]
+      );
 
       await ctx.reply(
         i18next.t('eventboard', {

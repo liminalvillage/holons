@@ -52,6 +52,7 @@ import {
   toRsvp,
 } from '@holons/core/shifts';
 import { getDisplayName, getParseModeHTML, getholonId } from './utilities.js';
+import { miniAppButton, miniApps } from './MiniApps.js';
 
 const DAY_S = 86400;
 const DEFAULT_RELAY = 'wss://relay.holons.io';
@@ -283,6 +284,25 @@ export default class Shifts {
     return { text: lines.join('\n'), keyboard };
   }
 
+  /**
+   * The shifts Mini App's Open row, when this bot has it registered
+   * (MiniApps.ts) — `[]` otherwise, so the keyboard stays as it was. The
+   * holon's settings are only read for the label's language once the app is
+   * live.
+   */
+  async appRows(ctx, holonId) {
+    if (!miniApps().has('shifts')) return [];
+    let language = 'en';
+    try {
+      const settings = await this.db.get(String(holonId), 'settings', holonId);
+      if (settings?.language) language = settings.language;
+    } catch {
+      // the default label is fine
+    }
+    const openApp = miniAppButton(ctx, 'shifts', holonId, language);
+    return openApp ? [[openApp]] : [];
+  }
+
   // ---------------------------------------------------------------------
   // Commands
   // ---------------------------------------------------------------------
@@ -303,6 +323,7 @@ export default class Shifts {
           ? `Shifts ${arg}`
           : 'Shifts this week';
       const { text, keyboard } = this.render(schedule, names, title, identity);
+      keyboard.push(...(await this.appRows(ctx, holonId)));
       await ctx.reply(text, {
         ...getParseModeHTML(),
         ...Markup.inlineKeyboard(keyboard),
@@ -336,6 +357,7 @@ export default class Shifts {
         'My shifts',
         identity
       );
+      keyboard.push(...(await this.appRows(ctx, holonId)));
       await ctx.reply(text, {
         ...getParseModeHTML(),
         ...Markup.inlineKeyboard(keyboard),
@@ -447,6 +469,8 @@ export default class Shifts {
         );
       }
       const { text, keyboard } = this.render(schedule, names, title, identity);
+      // The Open row rides along, or the refresh would drop it.
+      keyboard.push(...(await this.appRows(ctx, holonId)));
       await ctx.editMessageText(text, {
         ...getParseModeHTML(),
         ...Markup.inlineKeyboard(keyboard),

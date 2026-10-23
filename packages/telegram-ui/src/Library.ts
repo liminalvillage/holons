@@ -8,6 +8,7 @@ import { REAEventStore, REAEventFactory } from '@holons/core/rea';
 import { REAAggregator } from '@holons/core/scoring';
 import { extractItemsFromImage } from './AI.js';
 import { Calendar } from './Calendar.js';
+import { miniApps, miniAppButton } from './MiniApps.js';
 import {
     LIBRARY_TYPES as LIBRARY_TYPES_CORE,
     bookItem as coreBookItem,
@@ -670,7 +671,7 @@ class Library {
             // Show updated library
             let list = await this.getLibraryItems(ctx);
             const icon = this.getItemIcon(freshItem);
-            const keyboard = this.getLibraryKeyboard(list, false, 0, now);
+            const keyboard = this.getLibraryKeyboard(list, false, 0, now, await this.openAppButton(ctx, holonId));
 
             // Build confirmation message with credit info if applicable
             let confirmMsg = `${icon} ${firstName || username} borrowed ${itemName}\n📅 ${when}`;
@@ -877,18 +878,23 @@ class Library {
         let list = await this.db.getAll(holonId.toString(), 'library');
         list.sort((a, b) => a.id.localeCompare(b.id));
 
+        // The library Mini App, when this bot has it registered (MiniApps.ts):
+        // the listing's last row, on every page and on the empty library.
+        const openApp = await this.openAppButton(ctx, holonId);
+
         if (list.length === 0 && !removeMode) {
             await ctx.reply('📦 The library is empty.\n\nUse /libadd to add items or send a photo to add items from a picture.',
                 Markup.inlineKeyboard([
                     [Markup.button.callback('📷 Add from Photo', 'library_add_photo')],
-                    [Markup.button.callback('➕ Add Manually', 'library_add_manual')]
+                    [Markup.button.callback('➕ Add Manually', 'library_add_manual')],
+                    ...(openApp ? [[openApp]] : [])
                 ]));
             return;
         }
 
         const totalPages = Math.ceil(list.length / ITEMS_PER_PAGE);
         const currentPage = Math.min(Math.max(0, page), totalPages - 1);
-        const keyboard = this.getLibraryKeyboard(list, removeMode, currentPage, await this.holonNow(holonId));
+        const keyboard = this.getLibraryKeyboard(list, removeMode, currentPage, await this.holonNow(holonId), openApp);
 
         const pageInfo = totalPages > 1 ? ` (${currentPage + 1}/${totalPages})` : '';
         const headerText = `📦 Library${pageInfo}:`;
@@ -902,7 +908,15 @@ class Library {
         }
     }
 
-    getLibraryKeyboard(list: any[], removeMode: boolean = false, page: number = 0, now: Date = new Date()) {
+    // The library Mini App's Open button, or null when this bot hasn't
+    // registered it (MINI_APPS) — the holon's language is only read then.
+    async openAppButton(ctx: any, holonId: number | string) {
+        if (!miniApps().has('library')) return null;
+        const language = this.settings ? await this.settings.getLanguage(holonId).catch(() => 'en') : 'en';
+        return miniAppButton(ctx, 'library', holonId, language || 'en');
+    }
+
+    getLibraryKeyboard(list: any[], removeMode: boolean = false, page: number = 0, now: Date = new Date(), openApp: any = null) {
         let buttons = [];
 
         // Calculate pagination
@@ -970,6 +984,10 @@ class Library {
                     Markup.button.callback('🗑️ Remove Items', 'library_enter_remove_mode')
                 ]);
             }
+        }
+
+        if (openApp) {
+            buttons.push([openApp]);
         }
 
         return Markup.inlineKeyboard(buttons);

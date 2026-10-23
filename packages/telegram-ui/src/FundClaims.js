@@ -34,7 +34,9 @@
 // merkle root of the entries that counted in the closed lunar cycle — so
 // other readers can compare their fold with the holon's.
 
+import { Markup } from 'telegraf';
 import { getholonId, getUserId } from './utilities.js';
+import { miniAppButton } from './MiniApps.js';
 import { createIdentityContext } from '@holons/core/holosphere';
 import { ethers } from 'ethers';
 import {
@@ -494,12 +496,17 @@ export default class FundClaims {
 
   async list(ctx) {
     const holon = getholonId(ctx);
+    // The Flows Mini App (fund claims live on the kiosk's Flows board), when
+    // this bot has it registered (MiniApps.ts). These replies are English.
+    const openApp = miniAppButton(ctx, 'flows', holon, 'en');
+    const appKeyboard = openApp ? Markup.inlineKeyboard([[openApp]]) : null;
     try {
       const { folded, actors, policy } = await this.context(holon);
-      if (!folded.claims.length && !folded.transfers.length)
-        return ctx.reply(
-          'No claims on this fund yet. Raise one with /fundclaim <amount>, or pass access on with /fundgive.'
-        );
+      if (!folded.claims.length && !folded.transfers.length) {
+        const empty =
+          'No claims on this fund yet. Raise one with /fundclaim <amount>, or pass access on with /fundgive.';
+        return appKeyboard ? ctx.reply(empty, appKeyboard) : ctx.reply(empty);
+      }
       const names = await this.names(holon, [
         ...folded.claims.map(c => c.party),
         ...folded.transfers.flatMap(t => [t.party, t.to]),
@@ -523,7 +530,10 @@ export default class FundClaims {
         (actors.source === 'bootstrap'
           ? ' · <i>provisional signer set</i>'
           : '');
-      return ctx.replyWithHTML([head, ...lines].join('\n'));
+      const html = [head, ...lines].join('\n');
+      return appKeyboard
+        ? ctx.replyWithHTML(html, appKeyboard)
+        : ctx.replyWithHTML(html);
     } catch (err) {
       return ctx.reply(`Could not read the claims: ${err?.message || err}`);
     }

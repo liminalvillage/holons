@@ -29,6 +29,7 @@ import {
 } from '@holons/core/tasks';
 import { DEFAULT_EQUATION } from '@holons/core/scoring';
 import { hostTelegramPicture } from './Pictures.js';
+import { miniAppButton } from './MiniApps.js';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
@@ -514,11 +515,16 @@ export default class Events {
             const events = await this.db.getAll(holonId.toString(), 'events');
             const openEvents = events.filter(e => e.status === 'ongoing' || e.status === 'scheduled');
 
+            // The calendar Mini App, when this bot has it registered (MiniApps.ts):
+            // the listing's way in — offered on an empty list too.
+            const openApp = miniAppButton(ctx, 'calendar', holonId, language);
+            const appKeyboard = openApp ? Markup.inlineKeyboard([[openApp]]) : null;
+
             if (!openEvents.length) {
                 return ctx.reply(i18next.t('no_events', {
                     lng: language,
                     defaultValue: 'No upcoming events found.'
-                }));
+                }), appKeyboard ?? undefined);
             }
 
             let message = `*${i18next.t('events', { lng: language, defaultValue: 'Events' })}*:\n\n`;
@@ -527,7 +533,7 @@ export default class Events {
                 message += `- ${e.title} ${dateStr ? `(${dateStr})` : ''} - ${e.participants?.length || 0} participants\n`;
             });
 
-            ctx.reply(message, { parse_mode: 'Markdown' });
+            ctx.reply(message, { parse_mode: 'Markdown', ...(appKeyboard ?? {}) });
         } catch (error) {
             log.error('Error listing events', error);
             ctx.reply('Error fetching events');

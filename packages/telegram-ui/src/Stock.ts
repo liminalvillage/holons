@@ -24,6 +24,7 @@
 import { Markup } from 'telegraf';
 import * as utils from './utilities.js';
 import { nameResolver } from './protocolContext.js';
+import { miniAppButton } from './MiniApps.js';
 import { REAEventStore } from '@holons/core/rea';
 import { syncSurplusFromShelf } from '@holons/core/offers';
 import { getFederationSnapshot } from '@holons/core/federation';
@@ -81,6 +82,7 @@ interface AnyCtx {
   message?: { text?: string };
   reply: (text: string, extra?: unknown) => Promise<unknown>;
   answerCbQuery?: (text?: string) => Promise<unknown>;
+  botInfo?: { username?: string };
 }
 
 // ----------------------------------------------------------------------------
@@ -611,8 +613,14 @@ class Stock {
 
   async showShelf(ctx: AnyCtx, holonId: string, language: string) {
     const specs = await this.readSpecs(holonId);
+    // The stock Mini App, when this bot has it registered (MiniApps.ts): the
+    // shelf's Open button — also on an empty shelf, where stocking starts.
+    const openApp = miniAppButton(ctx, 'stock', holonId, language);
+    const appKeyboard = openApp ? Markup.inlineKeyboard([[openApp]]) : null;
     if (specs.length === 0) {
-      return ctx.reply(this.t('stockempty', language));
+      return appKeyboard
+        ? ctx.reply(this.t('stockempty', language), appKeyboard)
+        : ctx.reply(this.t('stockempty', language));
     }
     const { levels } = await this.readLevels(holonId);
     const byItem = new Map(levels.map(l => [l.itemId, l]));
@@ -663,7 +671,10 @@ class Stock {
       }
     }
     lines.push('', `<i>${escapeHtml(this.t('stockhint', language))}</i>`);
-    return ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
+    return ctx.reply(lines.join('\n'), {
+      parse_mode: 'HTML',
+      ...(appKeyboard ?? {}),
+    });
   }
 
   // ── /stock add ───────────────────────────────────────────────────────────

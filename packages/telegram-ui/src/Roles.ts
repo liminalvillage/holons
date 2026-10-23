@@ -11,6 +11,7 @@ import { Markup } from 'telegraf';
 import * as utils from './utilities.js';
 import { createPaddedCaption } from './utilities.js';
 import fs from 'fs';
+import { miniAppButton, miniApps } from './MiniApps.js';
 import {
     normalizeParticipants,
     toggleParticipant as coreToggleRoleParticipant,
@@ -40,11 +41,13 @@ export default class Roles {
      * @param {Telegraf} bot - The Telegraf bot instance
      * @param {DB} db - The database instance
      * @param {UI} ui - The UI module instance
+     * @param {Settings} [settings] - The settings module (the Open button's language)
      */
-    constructor(bot, db, ui) {
+    constructor(bot, db, ui, settings) {
         this.bot = bot;
         this.db = db;
         this.ui = ui;
+        this.settings = settings || ui?.settings || null;
         this.checklists = null;
 
         // Scenes migrated to InputScene - no custom scenes needed
@@ -87,14 +90,26 @@ export default class Roles {
     }
 
 
+    // The roles Mini App, when this bot has it registered (MiniApps.ts): the
+    // roles board's one Open button, or null to keep today's keyboard.
+    async openApp(ctx, holonId) {
+        if (!miniApps().has('roles')) return null; // no settings read while off
+        let language = 'en';
+        try {
+            language = (await this.settings?.getLanguage(holonId)) || 'en';
+        } catch (error) { }
+        return miniAppButton(ctx, 'roles', holonId, language);
+    }
+
     async roles(ctx) {
         // Load all users
         let holonId = ctx.chat.id;
         let roles = await this.db.getAll(holonId.toString(), 'roles');
+        const openApp = await this.openApp(ctx, holonId);
         //let users = await this.db.getAll(holonId.toString(), 'users');
         if (roles.length == 0) {
             // Show role management interface when there are no roles
-            await this.showRoleManagement(ctx, { holonId: holonId });
+            await this.showRoleManagement(ctx, { holonId: holonId, openApp: openApp });
             return;
         }
         
@@ -122,7 +137,7 @@ export default class Roles {
                 { source: fs.createReadStream(path) }, 
                 { 
                     caption: createPaddedCaption(''),
-                    ...Markup.inlineKeyboard(createroles(roles))
+                    ...Markup.inlineKeyboard(createroles(roles, undefined, openApp))
                 }
              ).catch((error) => { console.log(error) });
             // ctx.replyWithPhoto({ source: fs.createReadStream(path) }, Markup.inlineKeyboard([
@@ -212,13 +227,14 @@ export default class Roles {
         }
 
         roles = await this.db.getAll(holonId.toString(), 'roles');
+        const openApp = await this.openApp(ctx, holonId);
 
         //update picture:
         this.ui.getRolesTable(roles, holonId).then((path) => {
             //send the image
             ctx.editMessageMedia(
                 { type: 'photo', media: { source: path }, caption: createPaddedCaption('') }, 
-                Markup.inlineKeyboard(createroles(roles, messageId))
+                Markup.inlineKeyboard(createroles(roles, messageId, openApp))
             ).catch((error) => { });
         }) //update message
 
@@ -415,6 +431,7 @@ export default class Roles {
                 Markup.button.callback('🗑️ Delete Roles', 'enter_delete_roles_mode'),
                 Markup.button.callback('🔙 Back to Roles', 'back_to_all_roles')
             ]);
+            if (options.openApp) buttons.push([options.openApp]);
         }
 
         let message;
@@ -628,6 +645,7 @@ export default class Roles {
                 await this.db.put(holonId.toString(), 'roles', role);
             }
         }
+        const openApp = await this.openApp(ctx, holonId);
 
         this.ui.getRolesTable(roles, holonId).then((path) => {
             // Delete the management message and show main roles view
@@ -636,7 +654,7 @@ export default class Roles {
                 { source: fs.createReadStream(path) }, 
                 { 
                     caption: createPaddedCaption(''),
-                    ...Markup.inlineKeyboard(createroles(roles))
+                    ...Markup.inlineKeyboard(createroles(roles, undefined, openApp))
                 }
             ).catch((error) => { console.log(error) });
         });
@@ -720,13 +738,14 @@ export default class Roles {
 
 
         let roles = await this.db.getAll(holonId.toString(), 'roles');
+        const openApp = await this.openApp(ctx, holonId);
 
         //update picture and markup:
         this.ui.getRolesTable(roles, holonId).then((path) => {
             //send the image
             ctx.editMessageMedia(
                 { type: 'photo', media: { source: path }, caption: createPaddedCaption('') }, 
-                Markup.inlineKeyboard(createroles(roles, messageId))
+                Markup.inlineKeyboard(createroles(roles, messageId, openApp))
             ).catch((error) => { console.log(error) });
         })
 
@@ -850,12 +869,13 @@ export default class Roles {
 
             // Send roles view again
             let roles = await this.db.getAll(holonId.toString(), 'roles');
+            const openApp = await this.openApp(ctx, holonId);
             this.ui.getRolesTable(roles, holonId).then((path) => {
                 ctx.replyWithPhoto(
                     { source: fs.createReadStream(path) }, 
                     { 
                         caption: createPaddedCaption(''),
-                        ...Markup.inlineKeyboard(createroles(roles))
+                        ...Markup.inlineKeyboard(createroles(roles, undefined, openApp))
                     }
                 ).catch((error) => { console.log(error) });
             });
@@ -893,7 +913,7 @@ export default class Roles {
     }
 }
 
-function createroles(roles, messageId) {
+function createroles(roles, messageId, openApp) {
     let mu = []
     roles.forEach(function (role) {
         // Add checklist indicator if role has a checklist
@@ -926,6 +946,9 @@ function createroles(roles, messageId) {
         Markup.button.callback('⚙️ Manage Roles', 'manage_roles'),
         Markup.button.callback('🧹 Clear all roles', `clearroles_${messageId}`)
     ]);
+
+    // The roles Mini App's Open button, when it is registered
+    if (openApp) mu.push([openApp]);
     
     return mu;
 }
