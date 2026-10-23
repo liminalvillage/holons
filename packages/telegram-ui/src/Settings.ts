@@ -74,7 +74,7 @@ function welcomeText(holonId: string | number, language: string): string {
   return i18next.t('holonWelcome', {
     lng: language,
     id,
-    defaultValue: `🔑 Holon ID: \`${id}\`\n\nOpen its board, the dashboard or its settings below — or tap 📖 for how it works.`,
+    defaultValue: `🔑 Holon ID: \`${id}\`\n\nOpen its board or its settings below — or tap 📖 for the guide.`,
   });
 }
 
@@ -104,13 +104,14 @@ function translated(
 
 /** The welcome's 📖 button: posts the /help guide in the chat. */
 const WELCOME_GUIDE_ACTION = 'welcome_guide';
+/** The welcome's ⚙️ button: opens the bot's /settings menu in the chat. */
+const WELCOME_SETTINGS_ACTION = 'welcome_settings';
 
 function boardButtons(holonId: string | number, language: string) {
   const raw = String(holonId ?? '').trim();
   // `getholonId` falls back to "0" when it can't read the chat — a link built
   // from that would 404 on arrival, so post the welcome without buttons.
   if (!/^-?\d+$/.test(raw) || raw === '0') return undefined;
-  const id = encodeURIComponent(raw);
   return {
     inline_keyboard: [
       [
@@ -121,17 +122,11 @@ function boardButtons(holonId: string | number, language: string) {
       ],
       [
         {
-          text: `🔍 ${i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' })}`,
-          url: `${DASHBOARD_ADDRESS}/${id}`,
-        },
-      ],
-      [
-        {
           text: `⚙️ ${i18next.t('openSettings', { lng: language, defaultValue: 'Settings' })}`,
-          url: `${DASHBOARD_ADDRESS}/${id}/settings`,
+          callback_data: WELCOME_SETTINGS_ACTION,
         },
         {
-          text: `📖 ${i18next.t('howItWorks', { lng: language, defaultValue: 'How it works' })}`,
+          text: `📖 ${i18next.t('howItWorks', { lng: language, defaultValue: 'Guide' })}`,
           callback_data: WELCOME_GUIDE_ACTION,
         },
       ],
@@ -375,6 +370,22 @@ export default class Settings {
     this.bot.action(WELCOME_GUIDE_ACTION, async ctx => {
       await ctx.answerCbQuery().catch(() => {});
       await sendGuide(ctx);
+    });
+    // The welcome's ⚙️ button: the same menu as /settings, posted below the
+    // welcome (not over it), and only for the chat's admins.
+    this.bot.action(WELCOME_SETTINGS_ACTION, async ctx => {
+      if (!(await utils.isAdmin(ctx))) {
+        await ctx
+          .answerCbQuery('Only a chat admin can perform this action', {
+            show_alert: true,
+          })
+          .catch(() => {});
+        return;
+      }
+      await ctx.answerCbQuery().catch(() => {});
+      await this.showSettingsMenu(ctx, false).catch(e =>
+        console.log('Error opening settings from the welcome:', e)
+      );
     });
 
     // Handle bot being added to a group
