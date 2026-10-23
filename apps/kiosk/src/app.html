@@ -32,9 +32,9 @@
     <title>Holons</title>
     <!-- Telegram WebApp SDK: enables identity when the kiosk is opened inside
          Telegram. The Login Widget (regular web) is injected on demand.
-         `defer` keeps it off the critical rendering path while still running
-         (in document order) before the SvelteKit app module, so window.Telegram
-         is ready at mount. -->
+         `defer` keeps it off the critical rendering path — but SvelteKit
+         boots from an inline import() that doesn't wait for it, so the app
+         may mount first: lib/miniapp.ts reads the launch from the URL. -->
     <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
     <!-- Chromium's install event fires once, possibly before the app bundle
          has hydrated — keep it for lib/install.ts ("Add to Home Screen"). -->

@@ -34,16 +34,75 @@ function webApp(): TelegramWebApp | null {
   return tg?.WebApp?.initData ? tg.WebApp : null;
 }
 
+/** Where Telegram's SDK keeps the launch params across reloads of the app. */
+const SDK_PARAMS_KEY = "__telegram__initParams";
+
+/**
+ * A launch read straight from the URL Telegram opened (`#tgWebAppData=…`),
+ * or from the SDK's copy of it when a reload dropped the fragment. The SDK
+ * loads `defer` but SvelteKit boots from an inline `import()`, which doesn't
+ * wait for it — so on a cached bundle `window.Telegram` is often not there
+ * yet at mount, and the URL is the only reliable source.
+ */
+export function launchFromUrl(
+  hash: string,
+  stored: string | null = null,
+): MiniAppLaunch | null {
+  let initData = new URLSearchParams(hash.replace(/^#/, "")).get(
+    "tgWebAppData",
+  );
+  if (!initData && stored) {
+    try {
+      const saved = JSON.parse(stored) as { tgWebAppData?: unknown };
+      if (typeof saved?.tgWebAppData === "string")
+        initData = saved.tgWebAppData;
+    } catch {
+      /* not the SDK's shape: no launch */
+    }
+  }
+  if (!initData) return null;
+  const fields = new URLSearchParams(initData);
+  let userId: string | null = null;
+  try {
+    const user = JSON.parse(fields.get("user") ?? "null") as {
+      id?: number;
+    } | null;
+    if (user?.id != null) userId = String(user.id);
+  } catch {
+    /* no readable user: routing falls back to the start param alone */
+  }
+  return {
+    initData,
+    startParam: fields.get("start_param")?.trim() || null,
+    userId,
+  };
+}
+
+let urlLaunch: MiniAppLaunch | null | undefined;
+
 /** The current Mini App launch, or null when not opened inside Telegram. */
 export function miniAppLaunch(): MiniAppLaunch | null {
   const app = webApp();
-  if (!app) return null;
-  const unsafe = app.initDataUnsafe ?? {};
-  return {
-    initData: app.initData,
-    startParam: unsafe.start_param?.trim() || null,
-    userId: unsafe.user?.id != null ? String(unsafe.user.id) : null,
-  };
+  if (app) {
+    const unsafe = app.initDataUnsafe ?? {};
+    return {
+      initData: app.initData,
+      startParam: unsafe.start_param?.trim() || null,
+      userId: unsafe.user?.id != null ? String(unsafe.user.id) : null,
+    };
+  }
+  if (typeof window === "undefined") return null;
+  // Read once: later navigation may rewrite the fragment.
+  if (urlLaunch === undefined) {
+    let stored: string | null = null;
+    try {
+      stored = sessionStorage.getItem(SDK_PARAMS_KEY);
+    } catch {
+      /* storage blocked */
+    }
+    urlLaunch = launchFromUrl(location.hash, stored);
+  }
+  return urlLaunch;
 }
 
 /**
@@ -58,11 +117,21 @@ export function holonForLaunch(launch: MiniAppLaunch | null): string | null {
   return named ?? launch.userId;
 }
 
-/** Tell Telegram the app is up: full height, and no swipe-to-close stealing drags. */
+/**
+ * Tell Telegram the app is up: full height, and no swipe-to-close stealing
+ * drags — now, or as soon as the deferred SDK arrives.
+ */
 export function settleMiniApp(): void {
-  const app = webApp();
-  if (!app) return;
-  app.ready();
-  app.expand();
-  app.disableVerticalSwipes?.();
+  if (typeof document === "undefined") return;
+  const settle = () => {
+    const app = webApp();
+    if (!app) return;
+    app.ready();
+    app.expand();
+    app.disableVerticalSwipes?.();
+  };
+  if (webApp()) return settle();
+  document
+    .querySelector('script[src*="telegram-web-app.js"]')
+    ?.addEventListener("load", settle, { once: true });
 }
