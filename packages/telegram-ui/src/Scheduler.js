@@ -90,7 +90,7 @@ class Scheduler {
     });
 
     // Calendar navigation handler
-    this.bot.action(/n_(.+)/, async ctx => {
+    this.bot.action(/^n_(.+)/, async ctx => {
       return await this.handleCalendarNavigation(ctx);
     });
 

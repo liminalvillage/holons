@@ -7,6 +7,7 @@
 // the partner's admins unless the person is an admin there too
 // (src/federationLinks.js).
 
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { bytesToHex } from 'nostr-tools/utils';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
@@ -251,5 +252,39 @@ describe('who decides for the partner', () => {
     expect(
       outcomeText({ self: 'linked', partner: 'unchanged' }, 'Liminal')
     ).toBeNull();
+  });
+});
+
+describe('the Accept / Decline buttons reach this service', () => {
+  // Telegraf runs the first matching bot.action; an unanchored pattern
+  // elsewhere (the calendar's `n_…` once matched "holo**n_**z6s…") swallowed
+  // the press and nothing happened.
+  const actionPatterns = () => {
+    const dir = new URL('../src/', import.meta.url);
+    const out = [];
+    for (const file of readdirSync(dir)) {
+      if (!/\.(js|ts)$/.test(file) || file === 'FederationRequests.js')
+        continue;
+      const src = readFileSync(new URL(file, dir), 'utf8');
+      for (const m of src.matchAll(
+        /\.action\(\s*\/((?:\\\/|[^/\n])+)\/([a-z]*)/g
+      )) {
+        out.push({ file, re: new RegExp(m[1], m[2]) });
+      }
+    }
+    return out;
+  };
+
+  it('no other handler matches a press for a keyed or Telegram holon', () => {
+    const presses = ['holon_z6sdwna7ahqeps29', '-1004438000774'].flatMap(id => [
+      `fedok:${id}`,
+      `fedno:${id}`,
+    ]);
+    const patterns = actionPatterns();
+    expect(patterns.length).toBeGreaterThan(20);
+    const clashes = patterns.flatMap(({ file, re }) =>
+      presses.filter(p => re.test(p)).map(p => `${file} ${re} ← ${p}`)
+    );
+    expect(clashes).toEqual([]);
   });
 });

@@ -158,7 +158,7 @@ export class Calendar {
 
     if (this.bot && !Calendar.actionsRegistered) {
       Calendar.actionsRegistered = true;
-      this.bot.action(/n_(.+)_(?:--|\+\+|\+|-|0)/, async (ctx) => {
+      this.bot.action(/^n_(.+)_(?:--|\+\+|\+|-|0)$/, async (ctx) => {
         const result = await this.clickButtonCalendar(ctx);
         if (result !== -1) {
           const timeMarkup = this.createTimeSelector(
