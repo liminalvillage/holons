@@ -4,7 +4,9 @@
 /**
  * @fileoverview The bot's AI: Claude, through @holons/core/ai — the same
  * key (ANTHROPIC_API_KEY), model (HOLONS_AI_MODEL, default claude-opus-5-5),
- * refusal fallback and error kinds as every other Holons surface.
+ * refusal fallback and error kinds as every other Holons surface. The one
+ * exception is the onboarding Q&A, which runs on OpenAI (OPENAI_API_KEY,
+ * OPENAI_MODEL) and answers from docs.liminalvillage.com.
  * @module src/AI
  */
 
@@ -24,12 +26,13 @@ function claude() {
   return { client: createClaude(process.env), model: aiModel(process.env) };
 }
 
-/** The bot's guide to itself — the /help text — is what the agent knows. */
+/** The bot's guide to itself — the /help text — and the Liminal Village docs
+ * are what the agent knows. */
 const ONBOARDING_SYSTEM = `You are the Holons Bot's onboarding guide, answering newcomers in a Telegram private chat.
 
-Answer questions about Holons, holons, and how to use the bot, using the guide below as your source. Keep answers warm, brief and practical: a few short sentences in plain text without Markdown, because Telegram shows them as-is. Reply in the language the person writes in.
+Answer questions about Holons, how to use the bot, and Liminal Village (the community, its onboarding, protocols and daily life), using the guide and the docs below as your only sources. Keep answers warm, brief and practical: a few short sentences in plain text without Markdown, because Telegram shows them as-is. Reply in the language the person writes in. When an answer comes from the docs, end with the link to the page it came from.
 
-When a command helps, name it (for example /task or /settings). If the guide does not cover something, say you do not know and point them to the @HolonicDAO community chat, rather than describing a feature that may not exist.
+When a command helps, name it (for example /task or /settings). If neither the guide nor the docs cover something, say you do not know and point them to the @HolonicDAO community chat, rather than describing a feature that may not exist.
 
 They can type /done whenever they are ready to continue; mention it when they seem finished.
 
@@ -37,31 +40,106 @@ They can type /done whenever they are ready to continue; mention it when they se
 ${locale.translation.guide}
 </guide>`;
 
+/** The whole of docs.liminalvillage.com as one markdown file (GitBook). */
+const LIMINAL_DOCS_URL = 'https://docs.liminalvillage.com/llms-full.txt';
+const LIMINAL_DOCS_TTL_MS = 6 * 60 * 60 * 1000;
+const LIMINAL_DOCS_MAX_CHARS = 400_000;
+
+let liminalDocsCache = null; // { text, at }
+
+/**
+ * The Liminal Village docs, fetched at most every six hours. A failed fetch
+ * keeps the last good copy (or none — the agent then answers from the guide)
+ * and is retried after five minutes.
+ *
+ * @returns {Promise<string>}
+ */
+export async function liminalDocs() {
+  const now = Date.now();
+  if (liminalDocsCache && now - liminalDocsCache.at < LIMINAL_DOCS_TTL_MS) {
+    return liminalDocsCache.text;
+  }
+  try {
+    const res = await fetch(LIMINAL_DOCS_URL, {
+      signal: globalThis.AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    let text = await res.text();
+    // GitBook prefixes "Agent Instructions" for crawlers; the docs start
+    // after the first rule.
+    const rule = text.indexOf('\n---\n');
+    if (text.startsWith('# Agent Instructions') && rule !== -1) {
+      text = text.slice(rule + 5);
+    }
+    text = text.trim().slice(0, LIMINAL_DOCS_MAX_CHARS);
+    liminalDocsCache = { text, at: now };
+  } catch (error) {
+    console.warn('Could not fetch the Liminal Village docs:', error.message);
+    // Try again in five minutes rather than six hours.
+    liminalDocsCache = {
+      text: liminalDocsCache?.text ?? '',
+      at: now - LIMINAL_DOCS_TTL_MS + 5 * 60 * 1000,
+    };
+  }
+  return liminalDocsCache.text;
+}
+
+/** Drop the cached docs (tests). */
+export function forgetLiminalDocs() {
+  liminalDocsCache = null;
+}
+
+async function onboardingSystem() {
+  const docs = await liminalDocs();
+  return docs
+    ? `${ONBOARDING_SYSTEM}\n\n<docs source="https://docs.liminalvillage.com">\n${docs}\n</docs>`
+    : ONBOARDING_SYSTEM;
+}
+
 /** How many questions one onboarding conversation takes before /done. */
 export const ONBOARDING_MAX_QUESTIONS = 15;
 
+/** The onboarding agent runs on OpenAI (chat completions), unlike the rest. */
+const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
+const ONBOARDING_OPENAI_MODEL = 'gpt-4o-mini';
+
 /**
  * The onboarding agent: answer `prompt`, continuing `history` (the messages
- * of this conversation so far, as returned last time — append-only, so the
- * model's own thinking travels back unchanged).
+ * of this conversation so far, as returned last time — append-only).
  *
- * @param {Array<object>} history
+ * @param {Array<{role: string, content: string}>} history
  * @param {string} prompt
- * @returns {Promise<{history: Array<object>, text: string}>}
+ * @returns {Promise<{history: Array<{role: string, content: string}>, text: string}>}
  */
 export async function onboarding(history, prompt) {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) throw new AIError('not_configured', 'OPENAI_API_KEY is not set.');
   const messages = [...(history ?? []), { role: 'user', content: prompt }];
-  const answer = await complete({
-    ...claude(),
-    system: ONBOARDING_SYSTEM,
-    cacheSystem: true,
-    messages,
-    effort: 'low',
-    maxTokens: 4000,
+  const res = await fetch(OPENAI_CHAT_URL, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model: process.env.OPENAI_MODEL || ONBOARDING_OPENAI_MODEL,
+      messages: [
+        { role: 'system', content: await onboardingSystem() },
+        ...messages,
+      ],
+      max_tokens: 1000,
+    }),
+    signal: globalThis.AbortSignal.timeout(60_000),
   });
+  if (!res.ok) {
+    throw new Error(`OpenAI onboarding answer failed: HTTP ${res.status}`);
+  }
+  const data = await res.json();
+  const text = (data.choices?.[0]?.message?.content ?? '').trim();
+  if (!text) throw new Error('OpenAI onboarding answer was empty');
   return {
-    history: [...messages, { role: 'assistant', content: answer.content }],
-    text: answer.text,
+    history: [...messages, { role: 'assistant', content: text }],
+    text,
   };
 }
 

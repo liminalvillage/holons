@@ -9,8 +9,13 @@ vi.mock('@holons/core/ai', async importOriginal => ({
   createClaude: () => ({ beta: { messages: { create } } }),
 }));
 
-const { onboarding, getQuestions, summarize, extractItemsFromImage } =
-  await import('../src/AI.js');
+const {
+  onboarding,
+  forgetLiminalDocs,
+  getQuestions,
+  summarize,
+  extractItemsFromImage,
+} = await import('../src/AI.js');
 
 const reply = (text, over = {}) => ({
   id: 'msg',
@@ -24,42 +29,101 @@ const reply = (text, over = {}) => ({
   ...over,
 });
 
+// Network: the docs (offline unless a test serves them) and OpenAI.
+const fetchMock = vi.fn();
+let docs = null;
+const openaiAnswers = [];
+const textResponse = text => ({ ok: true, text: async () => text });
+const openaiReply = content => ({
+  ok: true,
+  json: async () => ({ choices: [{ message: { content } }] }),
+});
+
 beforeEach(() => {
   create.mockReset();
   delete process.env.HOLONS_AI_MODEL;
+  delete process.env.OPENAI_MODEL;
+  process.env.OPENAI_API_KEY = 'sk-test';
+  forgetLiminalDocs();
+  docs = null;
+  openaiAnswers.length = 0;
+  fetchMock.mockReset();
+  fetchMock.mockImplementation(async url => {
+    if (url.startsWith('https://docs.liminalvillage.com/')) {
+      if (docs === null) throw new Error('offline');
+      return textResponse(docs);
+    }
+    return openaiReply(openaiAnswers.shift() ?? 'ok');
+  });
+  vi.stubGlobal('fetch', fetchMock);
 });
 
+const openaiCalls = () =>
+  fetchMock.mock.calls
+    .filter(([url]) => url === 'https://api.openai.com/v1/chat/completions')
+    .map(([, init]) => ({ init, body: JSON.parse(init.body) }));
+
 describe('onboarding agent', () => {
-  it('answers from the guide and carries the whole conversation forward', async () => {
-    create
-      .mockResolvedValueOnce(reply(' Use /task. '))
-      .mockResolvedValueOnce(reply('Yes.'));
+  it('answers on OpenAI and carries the whole conversation forward', async () => {
+    openaiAnswers.push(' Use /task. ', 'Yes.');
 
     const first = await onboarding([], 'How do I add a task?');
     expect(first.text).toBe('Use /task.');
-    const [firstReq] = create.mock.calls[0];
-    expect(firstReq.model).toBe('claude-opus-5-5');
-    expect(firstReq.output_config).toEqual({ effort: 'low' });
-    expect(firstReq.system[0].text).toContain('/appreciate');
-    expect(firstReq.system[0].cache_control).toEqual({ type: 'ephemeral' });
+    const [firstReq] = openaiCalls();
+    expect(firstReq.init.headers.authorization).toBe('Bearer sk-test');
+    expect(firstReq.body.model).toBe('gpt-4o-mini');
+    expect(firstReq.body.messages[0].role).toBe('system');
+    expect(firstReq.body.messages[0].content).toContain('/appreciate');
+    expect(create).not.toHaveBeenCalled();
 
     const second = await onboarding(first.history, 'And in a group?');
-    const [secondReq] = create.mock.calls[1];
-    // Append-only: the first answer goes back whole, thinking included.
-    expect(secondReq.messages.map(m => m.role)).toEqual([
+    expect(second.text).toBe('Yes.');
+    expect(openaiCalls()[1].body.messages.map(m => m.role)).toEqual([
+      'system',
       'user',
       'assistant',
       'user',
     ]);
-    expect(secondReq.messages[1].content[0].type).toBe('thinking');
     expect(second.history).toHaveLength(4);
   });
 
-  it('uses HOLONS_AI_MODEL when set', async () => {
-    process.env.HOLONS_AI_MODEL = 'claude-sonnet-5-5';
-    create.mockResolvedValueOnce(reply('ok'));
+  it('answers from docs.liminalvillage.com, fetched once and cached', async () => {
+    docs =
+      '# Agent Instructions\nGET https://docs.liminalvillage.com/index.md?ask=\n\n---\n\n# Kitchen\nWash your dishes.';
+
+    await onboarding([], 'Who washes the dishes?');
+    await onboarding([], 'And the pots?');
+
+    const docFetches = fetchMock.mock.calls.filter(([url]) =>
+      url.startsWith('https://docs.liminalvillage.com/')
+    );
+    expect(docFetches.map(([url]) => url)).toEqual([
+      'https://docs.liminalvillage.com/llms-full.txt',
+    ]);
+    const system = openaiCalls()[0].body.messages[0].content;
+    expect(system).toContain('/appreciate');
+    expect(system).toContain('# Kitchen\nWash your dishes.');
+    expect(system).not.toContain('Agent Instructions');
+  });
+
+  it('falls back to the guide alone when the docs are unreachable', async () => {
+    openaiAnswers.push('Use /task.');
+    const answer = await onboarding([], 'How do I add a task?');
+    expect(answer.text).toBe('Use /task.');
+    expect(openaiCalls()[0].body.messages[0].content).not.toContain('<docs');
+  });
+
+  it('uses OPENAI_MODEL when set', async () => {
+    process.env.OPENAI_MODEL = 'gpt-4.1';
     await onboarding([], 'hi');
-    expect(create.mock.calls[0][0].model).toBe('claude-sonnet-5-5');
+    expect(openaiCalls()[0].body.model).toBe('gpt-4.1');
+  });
+
+  it('refuses without OPENAI_API_KEY', async () => {
+    delete process.env.OPENAI_API_KEY;
+    await expect(onboarding([], 'hi')).rejects.toMatchObject({
+      kind: 'not_configured',
+    });
   });
 });
 
