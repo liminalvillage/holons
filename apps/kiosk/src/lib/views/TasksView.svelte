@@ -7,6 +7,7 @@
   import { autoScrollToEnd } from "$lib/autoscroll";
   import {
     backlog,
+    completedGraphTasks,
     now,
     openQuest,
     holonId,
@@ -831,7 +832,7 @@
     <!-- The graph pans/zooms itself, so it takes the whole board area like
          the swipe deck (no scroll pane). Empty states fall through below. -->
     <TaskGraphView
-      tasks={shownTasks}
+      tasks={[...shownTasks, ...$completedGraphTasks]}
       colorFor={noteColorFor}
       {dueLabel}
       {completing}

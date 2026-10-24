@@ -3,11 +3,13 @@
   import Icon from "$lib/components/Icon.svelte";
   // Graph mode for the Tasks view: the backlog as its dependency DAG, arranged
   // automatically — predecessors above, the tasks that wait on them below, one
-  // arrow per still-open dependency. Same data and open handler as the wall
-  // (TasksView owns those); this component only arranges and renders.
+  // arrow per dependency. Completed tasks still wired to the board stay on it,
+  // faded (and their arrows with them), instead of vanishing. Same data and
+  // open handler as the wall (TasksView owns those); this component only
+  // arranges and renders.
   //
   // Nothing here decides what an edge MEANS: edges are the quests' stored
-  // `dependencies` lists, verbatim; ones that lead nowhere (a settled quest,
+  // `dependencies` lists, verbatim; ones that lead nowhere (a cancelled quest,
   // an id not on the board, a self reference) are dropped by `layoutDag`'s
   // normalization and never rendered. The layering/crossing-reduction is
   // lib/graphlayout's `layoutDag`, and the pixel boxes are its `placeDag`.
@@ -368,7 +370,9 @@
       clientY,
     ) as HTMLElement | null;
     const id = el?.closest<HTMLElement>("[data-node]")?.dataset.node;
-    return (id && byId.get(id)) || null;
+    const task = id ? byId.get(id) : undefined;
+    // A completed card is history: nothing comes to wait on it by a drop.
+    return task && !task.completed ? task : null;
   }
 
   /**
@@ -400,7 +404,8 @@
         "[data-node]",
       )?.dataset.node;
       const task = hit ? byId.get(hit) : undefined;
-      if (task) {
+      // A completed card is a tap (open it) or a pan, never a link-drag.
+      if (task && !task.completed) {
         // Started on a card: this gesture is a link-drag (or a tap), never a pan.
         const v = userView ?? fitted;
         grab = { task, cx: (p.x - v.tx) / v.s, cy: (p.y - v.ty) / v.s };
@@ -665,6 +670,7 @@
           {#if a && b}
             <path
               class="wire"
+              class:met={!!byId.get(edge.from)?.completed}
               d={edgePath(a, b)}
               marker-end="url(#kiosk-dep-arrow)"
             />
@@ -696,6 +702,7 @@
           class="node"
           class:blocked={task.unmetDeps > 0}
           class:done={!!completing[task.id]}
+          class:completed={!!task.completed}
           class:is-foreign={!!task.sourceColor}
           class:holo={!!task.hologram}
           class:lifted={link?.task.id === task.id}
@@ -915,8 +922,9 @@
     stroke: currentColor;
     stroke-width: 2.5;
     stroke-linecap: round;
-    /* Every edge drawn is a dependency still OPEN (settled ones stop
-       blocking), so the flow reads as work waiting to move down the graph. */
+    /* An edge out of an open card is a dependency still blocking, so the
+       flow reads as work waiting to move down the graph (`.met` below stills
+       the ones whose predecessor is done). */
     stroke-dasharray: 7 6;
     animation: kiosk-wire 1.4s linear infinite;
   }
@@ -927,6 +935,13 @@
   }
   /* The edge a drop would create: brighter and solid, so it reads as a promise
      rather than as one of the links already in the graph. */
+  /* Out of a completed card: met, so it no longer flows — just a faint trace
+     of where the finished step sat. */
+  .wire.met {
+    opacity: 0.35;
+    stroke-dasharray: none;
+    animation: none;
+  }
   .wire.preview {
     stroke-dasharray: none;
     stroke-width: 3;
@@ -960,6 +975,12 @@
      leaves above it, the same rank the wall gives it by sorting it last. */
   .node.blocked {
     opacity: 0.86;
+  }
+  /* Completed, kept in place so the breakdown still reads — faded back, and
+     still tappable to open. */
+  .node.completed {
+    opacity: 0.4;
+    filter: saturate(0.5);
   }
   .node.done {
     opacity: 0.35;

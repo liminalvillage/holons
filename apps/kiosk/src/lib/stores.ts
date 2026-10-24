@@ -14,6 +14,7 @@ import type { ShiftOccurrence, ShiftRsvp } from "@holons/core/shifts";
 import {
   toEvents,
   toBacklog,
+  toCompletedGraphTasks,
   toBookingEvents,
   toThings,
   toRoles,
@@ -356,6 +357,19 @@ export const backlog = derived(
   ],
   ([$q, $n, $query, $s, $sort, $t, $c]) =>
     filterBySearch(toBacklog(scopeLocal($q, $s), $n, $sort, $t, $c), $query),
+);
+// The completed tasks the graph view keeps (faded) next to the backlog: those
+// still wired to an open card. Same inputs as the backlog, minus the sort.
+export const completedGraphTasks = derived(
+  [backlog, rawQuests, partnerNames, scope, t, holonColors, names],
+  ([$b, $q, $n, $s, $t, $c]) =>
+    toCompletedGraphTasks(
+      scopeLocal($q, $s),
+      $b.map((task) => task.id),
+      $n,
+      $t,
+      $c,
+    ),
 );
 // The clock (ticked by `startClock`, below) — declared here because the
 // library's cards follow it.

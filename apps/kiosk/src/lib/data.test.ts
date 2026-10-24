@@ -6,6 +6,7 @@ import {
   dueLabelFor,
   personName,
   toBacklog,
+  toCompletedGraphTasks,
   toBookingEvents,
   toChecklists,
   toEvents,
@@ -129,6 +130,42 @@ describe("toEvents — recurring series", () => {
     );
     expect(ev.id).toBe("once");
     expect(ev.occurrence).toBeUndefined();
+  });
+});
+
+describe("toCompletedGraphTasks", () => {
+  const done = (id: string, extra: Partial<Quest> = {}) =>
+    quest(id, { status: "completed", ...extra });
+
+  it("keeps completed tasks wired to an open card, through other completed ones", () => {
+    const quests = [
+      quest("open", { dependencies: ["a"] }),
+      done("a", { dependencies: ["b"] }),
+      done("b"),
+      done("after", { dependencies: ["open"] }),
+    ];
+    const ids = toCompletedGraphTasks(quests, ["open"])
+      .map((t) => t.id)
+      .sort();
+    expect(ids).toEqual(["a", "after", "b"]);
+    expect(
+      toCompletedGraphTasks(quests, ["open"]).every((t) => t.completed),
+    ).toBe(true);
+  });
+
+  it("leaves out unlinked, cancelled and deleted quests", () => {
+    const quests = [
+      quest("open", { dependencies: ["gone", "dropped"] }),
+      done("loose"),
+      quest("dropped", { status: "cancelled" }),
+      done("gone", { _deleted: true }),
+    ];
+    expect(toCompletedGraphTasks(quests, ["open"])).toEqual([]);
+  });
+
+  it("drops a completed chain no open card reaches", () => {
+    const quests = [done("x", { dependencies: ["y"] }), done("y")];
+    expect(toCompletedGraphTasks(quests, [])).toEqual([]);
   });
 });
 

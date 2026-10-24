@@ -10,6 +10,7 @@
 import { userName } from "@holons/core/identity";
 import { nameFor } from "$lib/names";
 import {
+  isAgendaQuest,
   isQuestCompleted,
   isQuestSettled,
   isRecurring,
@@ -310,6 +311,8 @@ export interface BacklogTask {
    * drops dangling endpoints). `unmetDeps` counts the still-open subset.
    */
   dependencies: string[];
+  /** Completed — only the graph shows these (faded); the wall never does. */
+  completed?: boolean;
 }
 
 /**
@@ -543,42 +546,16 @@ export function toBacklog(
     const id = String(q.id ?? q.title);
     if (seen.has(id)) continue; // dedupe federated copies of the same quest
     seen.add(id);
-    // A recurring card is due when its next open occurrence is, not on the
-    // day the series began (core walks the cadence past the ticked-off ones).
-    const frequency = isRecurring(q) ? questFrequency(q) : null;
-    const due = placement.due;
-    out.push({
-      id,
-      title: q.title || (t ? t("common.untitled") : "Untitled"),
-      category: q.category,
-      description: q.description || undefined,
-      picture: q.picture ?? null,
-      due,
-      frequency,
-      participants: countOf(q.participants),
-      people: toPeople(q.participants),
-      appreciation: countOf(q.appreciation),
-      appreciatedBy: idsOf(q.appreciation),
-      source: sourceLabel(q, names),
-      sourceId: sourceHolonId(q),
-      sourceColor: sourceGlow(q, colors),
-      hologram: isHologram(q),
-      initiator: toInitiator(q),
-      // Tolerate a string round-trip from the store (e.g. "3") so manual order
-      // survives a reload.
-      orderIndex:
-        q.orderIndex != null && Number.isFinite(Number(q.orderIndex))
-          ? Number(q.orderIndex)
-          : undefined,
-      created: (() => {
-        const t = Date.parse(String(q.created ?? ""));
-        return Number.isFinite(t) ? t : 0;
-      })(),
-      unmetDeps: unmet.get(id)?.length ?? 0,
-      dependencies: ((q.dependencies as string[] | undefined) ?? []).map(
-        String,
+    out.push(
+      toBacklogTask(
+        q,
+        placement.due,
+        unmet.get(id)?.length ?? 0,
+        names,
+        t,
+        colors,
       ),
-    });
+    );
   }
   // Current leaves first — a task blocked by open dependencies can't be acted
   // on yet, so it never outranks actionable work regardless of the chosen
@@ -605,6 +582,102 @@ export function toBacklog(
     }
     return a.title.localeCompare(b.title);
   });
+}
+
+/** One quest as a backlog card — shared by the wall and the graph's settled nodes. */
+function toBacklogTask(
+  q: Quest,
+  due: Date | null,
+  unmetDeps: number,
+  names?: Names,
+  t?: Translator,
+  colors?: HolonColors,
+): BacklogTask {
+  const id = String(q.id ?? q.title);
+  // A recurring card is due when its next open occurrence is, not on the
+  // day the series began (core walks the cadence past the ticked-off ones).
+  const frequency = isRecurring(q) ? questFrequency(q) : null;
+  return {
+    id,
+    title: q.title || (t ? t("common.untitled") : "Untitled"),
+    category: q.category,
+    description: q.description || undefined,
+    picture: q.picture ?? null,
+    due,
+    frequency,
+    participants: countOf(q.participants),
+    people: toPeople(q.participants),
+    appreciation: countOf(q.appreciation),
+    appreciatedBy: idsOf(q.appreciation),
+    source: sourceLabel(q, names),
+    sourceId: sourceHolonId(q),
+    sourceColor: sourceGlow(q, colors),
+    hologram: isHologram(q),
+    initiator: toInitiator(q),
+    // Tolerate a string round-trip from the store (e.g. "3") so manual order
+    // survives a reload.
+    orderIndex:
+      q.orderIndex != null && Number.isFinite(Number(q.orderIndex))
+        ? Number(q.orderIndex)
+        : undefined,
+    created: (() => {
+      const t = Date.parse(String(q.created ?? ""));
+      return Number.isFinite(t) ? t : 0;
+    })(),
+    unmetDeps,
+    dependencies: ((q.dependencies as string[] | undefined) ?? []).map(String),
+  };
+}
+
+/**
+ * The completed tasks the graph keeps on its canvas, drawn faded: every
+ * completed task or event still wired — directly or through other completed
+ * ones — to a card in `open` (the backlog's ids). A finished step stays where
+ * it was in its breakdown instead of vanishing; a completed task linked to
+ * nothing on the board is history and stays off (it would only flood the
+ * drawer). Cancelled/deleted quests are settled but not done, so never shown.
+ */
+export function toCompletedGraphTasks(
+  quests: Quest[],
+  open: Iterable<string>,
+  names?: Names,
+  t?: Translator,
+  colors?: HolonColors,
+): BacklogTask[] {
+  const done = new Map<string, Quest>();
+  for (const q of quests) {
+    if (q.id == null && !q.title) continue;
+    if (!isQuestCompleted(q) || !isAgendaQuest(q)) continue;
+    const id = String(q.id ?? q.title);
+    if (!done.has(id)) done.set(id, q);
+  }
+  if (!done.size) return [];
+  // Undirected adjacency over the stored edges, so reachability runs both
+  // ways: a done predecessor of an open task, and a done successor of one.
+  const links = new Map<string, string[]>();
+  const link = (a: string, b: string) => {
+    if (a === b) return;
+    (links.get(a) ?? links.set(a, []).get(a)!).push(b);
+    (links.get(b) ?? links.set(b, []).get(b)!).push(a);
+  };
+  for (const q of quests) {
+    const id = String(q.id ?? q.title);
+    for (const dep of (q.dependencies as string[] | undefined) ?? [])
+      link(id, String(dep));
+  }
+  const keep = new Set<string>();
+  const queue = [...open];
+  while (queue.length) {
+    for (const next of links.get(queue.pop()!) ?? []) {
+      if (!done.has(next) || keep.has(next)) continue;
+      keep.add(next);
+      queue.push(next);
+    }
+  }
+  return [...keep].map((id) => ({
+    ...toBacklogTask(done.get(id)!, null, 0, names, t, colors),
+    completed: true,
+  }));
 }
 
 export interface LibraryThing {
