@@ -16,6 +16,7 @@ import {
   laneState,
   markFederationRequestAnnounced,
   pendingFederationRequests,
+  settleOwnFederationRequests,
   watchAllFederationRequests,
 } from './requests.js';
 import { getFederationSnapshot } from './snapshot.js';
@@ -165,6 +166,39 @@ describe('who may decide', () => {
     sync();
     const [req] = await pendingFederationRequests(a, B);
     expect(req).toMatchObject({ from: A, messageId: 4242, status: 'pending' });
+  });
+});
+
+describe('settling what this key asked itself', () => {
+  it("accepts alice's own ask once she speaks for B too — and nobody else's", async () => {
+    const { A, B, a, b, o, sync } = await world('40');
+    expect(await setFederationPartner(a, A, B, { inbound: ['library'], outbound: [] })).toEqual({ self: 'linked', partner: 'requested' });
+    sync();
+    const [req] = await pendingFederationRequests(b, B);
+    expect(req.signer).toBe((a as unknown as { currentPubkey: string }).currentPubkey.toLowerCase());
+
+    // Not yet B's admin: nothing to settle.
+    expect(await settleOwnFederationRequests(a, B)).toEqual([]);
+    // Bob speaks for B but did not ask.
+    expect(await settleOwnFederationRequests(b, B)).toEqual([]);
+
+    await o.addMember(B, (a as unknown as { currentPubkey: string }).currentPubkey, 'admin', { at: T0 + 2 });
+    sync();
+    const settled = await settleOwnFederationRequests(a, B);
+    expect(settled).toHaveLength(1);
+    expect(settled[0]).toMatchObject({ from: A, status: 'accepted', by: 'self' });
+    expect(settled[0].signer).toBeUndefined();
+    sync();
+    expect((await getFederationSnapshot(b, B)).lensConfig[A]).toEqual({ inbound: [], outbound: ['library'] });
+    expect(await pendingFederationRequests(b, B)).toEqual([]);
+  });
+
+  it("leaves another key's ask waiting, the bot's included", async () => {
+    const { A, B, b, o, sync } = await world('41');
+    await setFederationPartner(o, A, B, { inbound: ['stock'], outbound: [], askPartner: true });
+    sync();
+    expect(await settleOwnFederationRequests(b, B)).toEqual([]);
+    expect(await pendingFederationRequests(b, B)).toHaveLength(1);
   });
 });
 

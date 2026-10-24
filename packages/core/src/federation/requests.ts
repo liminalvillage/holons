@@ -23,7 +23,7 @@
 import type { HoloSphere } from 'holosphere';
 import { eventToItem } from 'holosphere/nostr-events.js';
 import { verifyEvent } from 'nostr-tools/pure';
-import { resolveHolonAuthority } from '../holosphere/authority.js';
+import { resolveHolonAuthority, writeAcceptance } from '../holosphere/authority.js';
 import { may } from '../holosphere/capabilities.js';
 import type { NostrEventLike } from '../nostr/types.js';
 import type { FederationLensDirections } from './snapshot.js';
@@ -63,6 +63,10 @@ export interface FederationRequest {
   messageId?: number;
   /** Who settled it, in the surface's own terms (a Telegram user id). */
   by?: string;
+  /** The key that signed the record that counts — read off the envelope, never stored. */
+  signer?: string;
+  /** Unix seconds that envelope was signed. */
+  signedAt?: number;
 }
 
 type StoreHost = HoloSphere & {
@@ -141,7 +145,16 @@ export async function federationRequestRecords(hs: HoloSphere, holon: string): P
     const item = eventToItem(newest as never) as (FederationRequest & { _deleted?: boolean }) | null;
     if (!item || item._deleted === true) continue;
     if (String(item.from) !== from || String(item.to) !== to) continue;
-    out.set(from, { ...item, id: from, from, to, kind: item.kind === 'unlink' ? 'unlink' : 'link', ...normalizeDirections(item) });
+    out.set(from, {
+      ...item,
+      id: from,
+      from,
+      to,
+      kind: item.kind === 'unlink' ? 'unlink' : 'link',
+      ...normalizeDirections(item),
+      signer: String(newest.pubkey).toLowerCase(),
+      signedAt: newest.created_at,
+    });
   }
   return out;
 }
@@ -203,7 +216,8 @@ export async function askFederation(hs: HoloSphere, from: string, to: string, in
 
 /** Rewrite a request the store holds with new fields (status, announcement). */
 async function rewrite(hs: HoloSphere, current: FederationRequest, patch: Partial<FederationRequest>, now?: () => number): Promise<FederationRequest> {
-  const record: FederationRequest = { ...current, ...patch, at: (now ?? nowSec)() };
+  const { signer: _signer, signedAt: _signedAt, ...stored } = current;
+  const record: FederationRequest = { ...stored, ...patch, at: (now ?? nowSec)() };
   await hs.put(current.to, FEDERATION_REQUESTS_LENS, record as never);
   return record;
 }
@@ -294,6 +308,37 @@ export async function answerFederationRequest(
     { status: decision === 'accept' ? 'accepted' : 'declined', ...(opts.by !== undefined ? { by: String(opts.by) } : {}) },
     opts.now,
   );
+}
+
+/**
+ * Accept the pending requests this key asked of `holon` itself: the signer
+ * spoke for the asking holon then and speaks for `holon` now, so both halves
+ * are already its word — usually a link made before it was `holon`'s admin.
+ * Only a request THIS key signed: another admin's ask still waits for a
+ * person. A service key that asks on purpose (the bot's `askPartner`) must
+ * not call this. Returns the requests it accepted.
+ */
+export async function settleOwnFederationRequests(
+  hs: HoloSphere,
+  holon: string,
+  opts: { now?: () => number } = {},
+): Promise<FederationRequest[]> {
+  const me = String((hs as StoreHost & { currentPubkey?: string }).currentPubkey ?? '').toLowerCase();
+  if (!me) return [];
+  const mine = (await pendingFederationRequests(hs, holon)).filter((r) => r.signer === me);
+  if (!mine.length) return [];
+  try {
+    if (!may(await writeAcceptance(hs, holon), 'federation')) return [];
+  } catch {
+    return [];
+  }
+  const settled: FederationRequest[] = [];
+  for (const r of mine) {
+    if (!federationVoice(hs, r.from)(me, r.signedAt ?? 0)) continue;
+    const done = await answerFederationRequest(hs, holon, r.from, 'accept', { by: 'self', now: opts.now });
+    if (done) settled.push(done);
+  }
+  return settled;
 }
 
 // ── Where a link stands ────────────────────────────────────────────────────

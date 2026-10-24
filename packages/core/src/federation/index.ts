@@ -60,6 +60,7 @@ export {
 	normalizeDirections,
 	pendingFederationRequests,
 	sameDirections,
+	settleOwnFederationRequests,
 	watchAllFederationRequests,
 	type AnswerFederationOptions,
 	type AskFederationInput,

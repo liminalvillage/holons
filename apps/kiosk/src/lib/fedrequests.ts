@@ -13,6 +13,7 @@ import {
   FEDERATION_REQUESTS_LENS,
   answerFederationRequest,
   pendingFederationRequests,
+  settleOwnFederationRequests,
   type FederationRequest,
 } from "@holons/core/federation";
 import type { HoloSphere } from "holosphere";
@@ -37,6 +38,37 @@ export interface WatchOptions {
 }
 
 /**
+ * The requests to show: first accept the ones this key asked of the board
+ * itself (it now speaks for both halves — core decides), then list what
+ * still waits for a person. A settle announces the changed link.
+ */
+export async function loadFedRequests(
+  hs: HoloSphere,
+  holon: string,
+  deps: {
+    settle?: typeof settleOwnFederationRequests;
+    list?: Loader;
+    target?: Pick<EventTarget, "dispatchEvent"> | null;
+  } = {},
+): Promise<FederationRequest[]> {
+  const settle = deps.settle ?? settleOwnFederationRequests;
+  const target =
+    deps.target === undefined
+      ? typeof window !== "undefined"
+        ? window
+        : null
+      : deps.target;
+  try {
+    const settled = await settle(hs, holon);
+    if (settled.length)
+      target?.dispatchEvent(new CustomEvent("kiosk:federation-changed"));
+  } catch {
+    /* offline or not ours to write: the list still shows them */
+  }
+  return (deps.list ?? pendingFederationRequests)(hs, holon);
+}
+
+/**
  * Keep `onChange` fed with `holon`'s pending requests: one read now, one
  * after every change to the lens or a local federation edit. Returns a stop
  * function that drops the subscription, the listener and any timer.
@@ -47,7 +79,7 @@ export function watchFedRequests(
   onChange: (requests: FederationRequest[]) => void,
   opts: WatchOptions = {},
 ): () => void {
-  const load = opts.load ?? pendingFederationRequests;
+  const load = opts.load ?? loadFedRequests;
   const target =
     opts.target === undefined
       ? typeof window !== "undefined"

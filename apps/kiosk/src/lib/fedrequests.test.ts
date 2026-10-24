@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { HoloSphere } from "holosphere";
 import type { FederationRequest } from "@holons/core/federation";
-import { watchFedRequests } from "./fedrequests";
+import { loadFedRequests, watchFedRequests } from "./fedrequests";
 
 const req = (from: string): FederationRequest => ({
   id: from,
@@ -91,5 +91,50 @@ describe("watchFedRequests", () => {
     });
     await new Promise((r) => setTimeout(r, 0));
     expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("loadFedRequests", () => {
+  const hs = {} as HoloSphere;
+
+  test("settles this key's own asks first and says the link changed", async () => {
+    const order: string[] = [];
+    const target = new EventTarget();
+    const changed = vi.fn();
+    target.addEventListener("kiosk:federation-changed", changed);
+    const list = await loadFedRequests(hs, "-1", {
+      settle: async () => {
+        order.push("settle");
+        return [{ ...req("-2"), status: "accepted" }];
+      },
+      list: async () => {
+        order.push("list");
+        return [req("-3")];
+      },
+      target,
+    });
+    expect(order).toEqual(["settle", "list"]);
+    expect(list).toEqual([req("-3")]);
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+
+  test("nothing settled: no announcement; a failed settle still lists", async () => {
+    const target = new EventTarget();
+    const changed = vi.fn();
+    target.addEventListener("kiosk:federation-changed", changed);
+    await loadFedRequests(hs, "-1", {
+      settle: async () => [],
+      list: async () => [],
+      target,
+    });
+    const list = await loadFedRequests(hs, "-1", {
+      settle: async () => {
+        throw new Error("offline");
+      },
+      list: async () => [req("-2")],
+      target,
+    });
+    expect(changed).not.toHaveBeenCalled();
+    expect(list).toEqual([req("-2")]);
   });
 });
