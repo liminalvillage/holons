@@ -3,9 +3,9 @@
   import Icon from "$lib/components/Icon.svelte";
   //
   // Voice overlay: owns the WS session lifecycle (via the controller) and
-  // renders the transcript bubble + paste-a-transcript panel above the views'
-  // fab row. The buttons themselves live inline in each view (VoiceButtons),
-  // in the same row as the ＋ fab.
+  // renders the transcript bubble + paste-a-transcript panel centred above
+  // the views' fab row. The buttons themselves live inline in each view
+  // (VoiceButtons), centred in the same row as the ＋ fab.
   import { onDestroy, onMount } from "svelte";
   import { holonId } from "$lib/stores";
   import { t } from "$lib/i18n";
@@ -120,15 +120,17 @@
 {/if}
 
 <style>
-  /* Anchored above the views' fab row (fab is 3.4rem at bottom 1.3rem). */
+  /* Centred above the views' fab row, over its buttons (fab is 3.4rem
+     at bottom 1.3rem). */
   .voice-overlay {
     position: fixed;
-    right: calc(1.3rem + env(safe-area-inset-right));
-    bottom: calc(1.3rem + 3.4rem + 0.8rem + env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(1.3rem + 3.4rem + 1.6rem + env(safe-area-inset-bottom));
     z-index: 70; /* above modals (50) so it works while editing a record */
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
+    align-items: center;
     gap: 0.6rem;
   }
 

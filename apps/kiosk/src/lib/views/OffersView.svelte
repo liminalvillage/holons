@@ -2370,12 +2370,20 @@
   }
   .fabrow {
     position: absolute;
+    /* Spans the board so the voice buttons and the ＋ sit together at its
+       centre. The strip itself lets taps through. */
+    left: 1.3rem;
     right: 1.3rem;
     bottom: 1.3rem;
     display: flex;
     align-items: center;
+    justify-content: center;
+    pointer-events: none;
     gap: 0.8rem;
     z-index: 6;
+  }
+  .fabrow > :global(*) {
+    pointer-events: auto;
   }
   .fab {
     width: 3.4rem;

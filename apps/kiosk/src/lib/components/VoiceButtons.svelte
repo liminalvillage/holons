@@ -2,9 +2,10 @@
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import Icon from "$lib/components/Icon.svelte";
   //
-  // Inline voice controls, rendered by each view INSIDE its fab row so the
-  // cluster reads [⌨] [🎤] [＋]. Renders nothing unless a voice server is
-  // reachable — a kiosk without one shows just the ＋ as before. Styling
+  // Inline voice controls, rendered by each view INSIDE its fab row. The row
+  // spans the board and centres its buttons, so the cluster reads
+  // [⌨] [🎤] [＋] in the middle, clear of any drawer the row avoids.
+  // Renders nothing unless a voice server is reachable — a kiosk without one shows just the ＋ as before. Styling
   // mirrors the views' .fab exactly (size, color, shadow). Mute lives in the
   // chat popup (VoiceWidget), next to its close button.
   import { holonId } from "$lib/stores";
@@ -19,36 +20,43 @@
 </script>
 
 {#if $available && $holonId}
-  <button
-    class="fab-btn"
-    class:open={$typeOpen}
-    aria-label={$t("voice.typeAria")}
-    title={$t("voice.typeAria")}
-    on:click={() => typeOpen.update((v) => !v)}
-  >
-    <Icon name="keyboard" />
-  </button>
-  <button
-    class="fab-btn mic"
-    class:live={$recording}
-    aria-label={$t("voice.holdToTalk")}
-    title={$t("voice.holdToTalk")}
-    on:pointerdown|preventDefault={() => startRecording()}
-    on:pointerup={() => stopRecording()}
-    on:pointercancel={() => stopRecording()}
-    on:pointerleave={() => stopRecording()}
-    on:contextmenu|preventDefault
-  >
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Zm5.6-3a.9.9 0 1 1 1.8.1A7.5 7.5 0 0 1 13 17.9V20h2.1a.9.9 0 1 1 0 1.8H8.9a.9.9 0 1 1 0-1.8H11v-2.1A7.5 7.5 0 0 1 4.6 11a.9.9 0 1 1 1.8-.1 5.6 5.6 0 0 0 11.2.1Z"
-        fill="currentColor"
-      />
-    </svg>
-  </button>
+  <div class="voice-dock">
+    <button
+      class="fab-btn"
+      class:open={$typeOpen}
+      aria-label={$t("voice.typeAria")}
+      title={$t("voice.typeAria")}
+      on:click={() => typeOpen.update((v) => !v)}
+    >
+      <Icon name="keyboard" />
+    </button>
+    <button
+      class="fab-btn mic"
+      class:live={$recording}
+      aria-label={$t("voice.holdToTalk")}
+      title={$t("voice.holdToTalk")}
+      on:pointerdown|preventDefault={() => startRecording()}
+      on:pointerup={() => stopRecording()}
+      on:pointercancel={() => stopRecording()}
+      on:pointerleave={() => stopRecording()}
+      on:contextmenu|preventDefault
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Zm5.6-3a.9.9 0 1 1 1.8.1A7.5 7.5 0 0 1 13 17.9V20h2.1a.9.9 0 1 1 0 1.8H8.9a.9.9 0 1 1 0-1.8H11v-2.1A7.5 7.5 0 0 1 4.6 11a.9.9 0 1 1 1.8-.1 5.6 5.6 0 0 0 11.2.1Z"
+          fill="currentColor"
+        />
+      </svg>
+    </button>
+  </div>
 {/if}
 
 <style>
+  .voice-dock {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+  }
   .fab-btn {
     width: 3.4rem;
     height: 3.4rem;

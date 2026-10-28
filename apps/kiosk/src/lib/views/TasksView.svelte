@@ -1201,15 +1201,23 @@
      only while a voice server is reachable). */
   .fabrow {
     position: absolute;
+    /* Spans the board so the voice buttons and the ＋ sit together at its
+       centre. The strip itself lets taps through. */
+    left: 1.3rem;
     right: 1.3rem;
     bottom: 1.3rem;
     display: flex;
     align-items: center;
+    justify-content: center;
+    pointer-events: none;
     gap: 0.8rem;
     /* Above the swipe deck's cards (z-index 8) — a card dragged toward the
        corner passes under the controls instead of hiding them. */
     z-index: 12;
     transition: bottom 0.18s ease;
+  }
+  .fabrow > :global(*) {
+    pointer-events: auto;
   }
   /* Graph layout: the unlinked drawer takes the bottom of the board in
      portrait and the right-hand side in landscape — keep the buttons clear of
