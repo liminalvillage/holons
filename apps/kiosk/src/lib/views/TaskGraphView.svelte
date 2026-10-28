@@ -3,8 +3,8 @@
   import Icon from "$lib/components/Icon.svelte";
   // Graph mode for the Tasks view: the backlog as its dependency DAG, arranged
   // automatically — predecessors above, the tasks that wait on them below, one
-  // arrow per dependency. Completed tasks still wired to the board stay on it,
-  // faded (and their arrows with them), instead of vanishing. Same data and
+  // arrow per dependency. With the Done switch on, completed tasks come along
+  // faded (and the arrows out of them drawn as met). Same data and
   // open handler as the wall (TasksView owns those); this component only
   // arranges and renders.
   //
@@ -804,6 +804,7 @@
             class:is-foreign={!!task.sourceColor}
             class:holo={!!task.hologram}
             class:dragging={chip?.task.id === task.id}
+            class:completed={!!task.completed}
             class:target={held?.ok && held.over?.id === task.id}
             class:reject={held != null && !held.ok && held.over?.id === task.id}
             data-node={task.id}
@@ -814,8 +815,9 @@
             role="button"
             tabindex="0"
             title={task.title}
-            on:pointerdown={(e) => onChipDown(e, task)}
-            on:click={() => onChipClick(task.id)}
+            on:pointerdown={(e) => !task.completed && onChipDown(e, task)}
+            on:click={() =>
+              task.completed ? onOpen(task.id) : onChipClick(task.id)}
             on:keydown={(e) => e.key === "Enter" && onOpen(task.id)}
             >{task.title}</span
           >
@@ -1100,6 +1102,13 @@
     /* Swipes scroll the drawer; a drag lifts a chip out onto the board. */
     touch-action: pan-x;
     cursor: grab;
+  }
+  /* A completed task with no links (the Done switch is on): faded like its
+     canvas cousins, and only tappable — it carries nowhere. */
+  .tray-chip.completed {
+    opacity: 0.4;
+    filter: saturate(0.5);
+    cursor: pointer;
   }
   /* Same drop affordances the canvas cards get, so a chip-onto-chip link (the
      way the first dependency is ever made) reads identically. */

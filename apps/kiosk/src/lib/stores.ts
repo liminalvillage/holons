@@ -14,7 +14,7 @@ import type { ShiftOccurrence, ShiftRsvp } from "@holons/core/shifts";
 import {
   toEvents,
   toBacklog,
-  toCompletedGraphTasks,
+  toCompletedTasks,
   toBookingEvents,
   toThings,
   toRoles,
@@ -203,6 +203,13 @@ export const taskViewMode = writable<TaskViewMode>("cards");
  */
 export const taskSort = writable<TaskSort>("loved");
 
+/**
+ * The Done switch: whether the Tasks views (wall, list, graph) show completed
+ * tasks too, faded, after the open ones. Persisted per device via config;
+ * initialized in `+layout.svelte`.
+ */
+export const showCompleted = writable<boolean>(false);
+
 /** Library layout: card grid / compact list / the user's borrowed things. */
 export const libraryViewMode = writable<LibraryViewMode>("cards");
 
@@ -358,18 +365,23 @@ export const backlog = derived(
   ([$q, $n, $query, $s, $sort, $t, $c]) =>
     filterBySearch(toBacklog(scopeLocal($q, $s), $n, $sort, $t, $c), $query),
 );
-// The completed tasks the graph view keeps (faded) next to the backlog: those
-// still wired to an open card. Same inputs as the backlog, minus the sort.
-export const completedGraphTasks = derived(
-  [backlog, rawQuests, partnerNames, scope, t, holonColors, names],
-  ([$b, $q, $n, $s, $t, $c]) =>
-    toCompletedGraphTasks(
-      scopeLocal($q, $s),
-      $b.map((task) => task.id),
-      $n,
-      $t,
-      $c,
-    ),
+// The completed tasks, while the Done switch is on (empty otherwise, so the
+// views pay nothing for it). Scope and search narrow them like the backlog.
+export const completedTasks = derived(
+  [
+    showCompleted,
+    rawQuests,
+    partnerNames,
+    searchQuery,
+    scope,
+    t,
+    holonColors,
+    names,
+  ],
+  ([$on, $q, $n, $query, $s, $t, $c]) =>
+    $on
+      ? filterBySearch(toCompletedTasks(scopeLocal($q, $s), $n, $t, $c), $query)
+      : [],
 );
 // The clock (ticked by `startClock`, below) — declared here because the
 // library's cards follow it.

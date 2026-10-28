@@ -6,7 +6,7 @@ import {
   dueLabelFor,
   personName,
   toBacklog,
-  toCompletedGraphTasks,
+  toCompletedTasks,
   toBookingEvents,
   toChecklists,
   toEvents,
@@ -133,39 +133,38 @@ describe("toEvents — recurring series", () => {
   });
 });
 
-describe("toCompletedGraphTasks", () => {
+describe("toCompletedTasks", () => {
   const done = (id: string, extra: Partial<Quest> = {}) =>
     quest(id, { status: "completed", ...extra });
 
-  it("keeps completed tasks wired to an open card, through other completed ones", () => {
+  it("lists every completed task, newest first, marked completed", () => {
     const quests = [
-      quest("open", { dependencies: ["a"] }),
-      done("a", { dependencies: ["b"] }),
-      done("b"),
-      done("after", { dependencies: ["open"] }),
+      quest("open"),
+      done("old", { created: "2026-01-01T00:00:00Z" }),
+      done("new", { created: "2026-10-01T00:00:00Z" }),
+      done("flag", { status: "ongoing", completed: true }),
     ];
-    const ids = toCompletedGraphTasks(quests, ["open"])
-      .map((t) => t.id)
-      .sort();
-    expect(ids).toEqual(["a", "after", "b"]);
-    expect(
-      toCompletedGraphTasks(quests, ["open"]).every((t) => t.completed),
-    ).toBe(true);
+    const tasks = toCompletedTasks(quests);
+    expect(tasks.map((t) => t.id)).toEqual(["new", "old", "flag"]);
+    expect(tasks.every((t) => t.completed && t.due === null)).toBe(true);
   });
 
-  it("leaves out unlinked, cancelled and deleted quests", () => {
+  it("leaves out open, cancelled, deleted and non-agenda quests", () => {
     const quests = [
-      quest("open", { dependencies: ["gone", "dropped"] }),
-      done("loose"),
+      quest("open"),
       quest("dropped", { status: "cancelled" }),
       done("gone", { _deleted: true }),
+      done("offer", { type: "offer" }),
     ];
-    expect(toCompletedGraphTasks(quests, ["open"])).toEqual([]);
+    expect(toCompletedTasks(quests)).toEqual([]);
   });
 
-  it("drops a completed chain no open card reaches", () => {
-    const quests = [done("x", { dependencies: ["y"] }), done("y")];
-    expect(toCompletedGraphTasks(quests, [])).toEqual([]);
+  it("dedupes federated copies of one quest", () => {
+    const quests = [
+      done("a"),
+      done("a", { _holon: "partner" } as Partial<Quest>),
+    ];
+    expect(toCompletedTasks(quests)).toHaveLength(1);
   });
 });
 

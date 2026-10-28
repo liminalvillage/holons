@@ -311,7 +311,7 @@ export interface BacklogTask {
    * drops dangling endpoints). `unmetDeps` counts the still-open subset.
    */
   dependencies: string[];
-  /** Completed — only the graph shows these (faded); the wall never does. */
+  /** Completed — shown (faded) only while the Tasks views' Done switch is on. */
   completed?: boolean;
 }
 
@@ -584,7 +584,7 @@ export function toBacklog(
   });
 }
 
-/** One quest as a backlog card — shared by the wall and the graph's settled nodes. */
+/** One quest as a backlog card — shared by the open backlog and the completed list. */
 function toBacklogTask(
   q: Quest,
   due: Date | null,
@@ -630,54 +630,35 @@ function toBacklogTask(
 }
 
 /**
- * The completed tasks the graph keeps on its canvas, drawn faded: every
- * completed task or event still wired — directly or through other completed
- * ones — to a card in `open` (the backlog's ids). A finished step stays where
- * it was in its breakdown instead of vanishing; a completed task linked to
- * nothing on the board is history and stays off (it would only flood the
- * drawer). Cancelled/deleted quests are settled but not done, so never shown.
+ * The completed tasks, for the Tasks views' Done switch: every completed task
+ * or event, newest first, each marked `completed` so the views draw it faded
+ * after the open ones. Cancelled/deleted quests are settled but not done, so
+ * they never show; a recurring series shows here once the series itself is
+ * completed (its ticked-off occurrences stay on the series' open card).
  */
-export function toCompletedGraphTasks(
+export function toCompletedTasks(
   quests: Quest[],
-  open: Iterable<string>,
   names?: Names,
   t?: Translator,
   colors?: HolonColors,
 ): BacklogTask[] {
-  const done = new Map<string, Quest>();
+  const out: BacklogTask[] = [];
+  const seen = new Set<string>();
   for (const q of quests) {
-    if (q.id == null && !q.title) continue;
+    if (q.id == null && !q.title) continue; // a hard-delete husk, see toBacklog
     if (!isQuestCompleted(q) || !isAgendaQuest(q)) continue;
     const id = String(q.id ?? q.title);
-    if (!done.has(id)) done.set(id, q);
+    if (seen.has(id)) continue; // dedupe federated copies of the same quest
+    seen.add(id);
+    out.push({
+      // No due date: on a done card it would only read as overdue.
+      ...toBacklogTask(q, null, 0, names, t, colors),
+      completed: true,
+    });
   }
-  if (!done.size) return [];
-  // Undirected adjacency over the stored edges, so reachability runs both
-  // ways: a done predecessor of an open task, and a done successor of one.
-  const links = new Map<string, string[]>();
-  const link = (a: string, b: string) => {
-    if (a === b) return;
-    (links.get(a) ?? links.set(a, []).get(a)!).push(b);
-    (links.get(b) ?? links.set(b, []).get(b)!).push(a);
-  };
-  for (const q of quests) {
-    const id = String(q.id ?? q.title);
-    for (const dep of (q.dependencies as string[] | undefined) ?? [])
-      link(id, String(dep));
-  }
-  const keep = new Set<string>();
-  const queue = [...open];
-  while (queue.length) {
-    for (const next of links.get(queue.pop()!) ?? []) {
-      if (!done.has(next) || keep.has(next)) continue;
-      keep.add(next);
-      queue.push(next);
-    }
-  }
-  return [...keep].map((id) => ({
-    ...toBacklogTask(done.get(id)!, null, 0, names, t, colors),
-    completed: true,
-  }));
+  return out.sort(
+    (a, b) => b.created - a.created || a.title.localeCompare(b.title),
+  );
 }
 
 export interface LibraryThing {

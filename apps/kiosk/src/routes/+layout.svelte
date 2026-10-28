@@ -41,6 +41,7 @@
     resolveLangMode,
     resolveTaskView,
     resolveTaskSort,
+    resolveShowCompleted,
     resolveLibraryView,
     resolveRolesView,
     resolveFlowsView,
@@ -84,6 +85,7 @@
     tabOrder,
     taskViewMode,
     taskSort,
+    showCompleted,
     libraryViewMode,
     rolesViewMode,
     flowsViewMode,
@@ -704,6 +706,7 @@
     tabOrder.set(resolveTabOrder());
     taskViewMode.set(resolveTaskView());
     taskSort.set(resolveTaskSort());
+    showCompleted.set(resolveShowCompleted());
     libraryViewMode.set(resolveLibraryView());
     rolesViewMode.set(resolveRolesView());
     flowsViewMode.set(resolveFlowsView());

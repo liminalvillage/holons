@@ -389,6 +389,8 @@ export const en = {
   "pills.sort": "Sort",
   "pills.tasksLayout": "Tasks layout",
   "pills.tasksOrder": "Tasks order",
+  "pills.done": "Done",
+  "pills.doneAria": "Show completed tasks too",
   "pills.libraryLayout": "Library layout",
   "pills.rolesLayout": "Roles layout",
   "pills.balances": "All balances",

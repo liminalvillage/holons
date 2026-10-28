@@ -21,7 +21,7 @@
   // Layout adapts to the width available, one pill at a time: every pill
   // starts unpacked — full segments, each carrying its option name — and as
   // the row runs out of room they collapse into the small cycling toggle
-  // RIGHT to LEFT (Sort first, the Show pill last), so the leftmost pills
+  // RIGHT to LEFT (the rightmost first, the Show pill last), so the leftmost pills
   // keep their names as long as they fit. The row stays in the same spread
   // arrangement throughout — Show pinned left, the tab's pills and the gear
   // pinned right — so nothing jumps sideways as tabs switch. Only when even
@@ -42,6 +42,7 @@
     type TabId,
     taskViewMode,
     taskSort,
+    showCompleted,
     libraryViewMode,
     libraryCalendarMode,
     rolesViewMode,
@@ -53,6 +54,7 @@
   import {
     setTaskView,
     setTaskSort,
+    setShowCompleted,
     setLibraryView,
     setRolesView,
     setFlowsView,
@@ -74,6 +76,7 @@
   import { t, type MessageKey, type Translator } from "$lib/i18n";
   import PillSwitch from "./PillSwitch.svelte";
   import ScopePill from "./ScopePill.svelte";
+  import SwitchPill from "./SwitchPill.svelte";
   import Icon from "./Icon.svelte";
   import { fedRequests } from "$lib/fedrequests";
 
@@ -159,6 +162,11 @@
     taskSort.set(s as TaskSort);
     setTaskSort(s as TaskSort);
   }
+  function toggleShowCompleted() {
+    const next = !$showCompleted;
+    showCompleted.set(next);
+    setShowCompleted(next);
+  }
   function pickLibraryMode(m: string) {
     libraryViewMode.set(m as LibraryViewMode);
     setLibraryView(m as LibraryViewMode);
@@ -194,7 +202,9 @@
 
   // The active tab's own pills, as data, so the visible row and the hidden
   // measuring row render from the same list.
-  interface OwnPill {
+  type OwnPill = SegmentPill | TogglePill;
+  interface SegmentPill {
+    kind?: "segments";
     key: string;
     options: { id: string; label: string; icon?: IconName }[];
     value: string;
@@ -204,11 +214,22 @@
     label: string;
     showText?: boolean;
   }
+  /** An on/off switch among the tab's pills (the Tasks views' Done). */
+  interface TogglePill {
+    kind: "switch";
+    key: string;
+    on: boolean;
+    onToggle: () => void;
+    icon: IconName;
+    label: string;
+    aria: string;
+  }
   function ownPillsFor(
     tr: Translator,
     tab: string,
     taskMode: string,
     sort: string,
+    done: boolean,
     libMode: string,
     libCalMode: string,
     rolesMode: string,
@@ -236,6 +257,15 @@
           icon: "sort",
           title: tr("pills.sort"),
           label: tr("pills.tasksOrder"),
+        },
+        {
+          kind: "switch",
+          key: "done",
+          on: done,
+          onToggle: toggleShowCompleted,
+          icon: "check",
+          label: tr("pills.done"),
+          aria: tr("pills.doneAria"),
         },
       ];
     if (tab === "library")
@@ -333,6 +363,7 @@
     $activeTab,
     $taskViewMode,
     $taskSort,
+    $showCompleted,
     $libraryViewMode,
     $libraryCalendarMode,
     $rolesViewMode,
@@ -436,17 +467,29 @@
       <div class="own">
         {#each ownPills as p, i (p.key)}
           {@const packed = ownPacked(i, packCount, ownPills.length)}
-          <PillSwitch
-            compact={packed}
-            expanded={!packed}
-            options={p.options}
-            value={p.value}
-            onChange={p.onChange}
-            icon={p.icon}
-            title={p.title}
-            label={p.label}
-            showText={packed ? (p.showText ?? false) : true}
-          />
+          {#if p.kind === "switch"}
+            <SwitchPill
+              compact={packed}
+              expanded={!packed}
+              on={p.on}
+              icon={p.icon}
+              label={p.label}
+              aria={p.aria}
+              onToggle={p.onToggle}
+            />
+          {:else}
+            <PillSwitch
+              compact={packed}
+              expanded={!packed}
+              options={p.options}
+              value={p.value}
+              onChange={p.onChange}
+              icon={p.icon}
+              title={p.title}
+              label={p.label}
+              showText={packed ? (p.showText ?? false) : true}
+            />
+          {/if}
         {/each}
         {#if lens && $holonId}
           <button
@@ -477,15 +520,25 @@
     <div class="row centered">
       <ScopePill />
       {#each ownPills as p (p.key)}
-        <PillSwitch
-          options={p.options}
-          value={p.value}
-          onChange={p.onChange}
-          icon={p.icon}
-          title={p.title}
-          label={p.label}
-          showText={p.showText ?? false}
-        />
+        {#if p.kind === "switch"}
+          <SwitchPill
+            on={p.on}
+            icon={p.icon}
+            label={p.label}
+            aria={p.aria}
+            onToggle={p.onToggle}
+          />
+        {:else}
+          <PillSwitch
+            options={p.options}
+            value={p.value}
+            onChange={p.onChange}
+            icon={p.icon}
+            title={p.title}
+            label={p.label}
+            showText={p.showText ?? false}
+          />
+        {/if}
       {/each}
       {#if lens && $holonId}
         <button
@@ -525,17 +578,29 @@
       <ScopePill compact={k >= total} expanded={k < total} />
       {#each ownPills as p, i (p.key)}
         {@const packed = ownPacked(i, k, ownPills.length)}
-        <PillSwitch
-          compact={packed}
-          expanded={!packed}
-          options={p.options}
-          value={p.value}
-          onChange={p.onChange}
-          icon={p.icon}
-          title={p.title}
-          label={p.label}
-          showText={packed ? (p.showText ?? false) : true}
-        />
+        {#if p.kind === "switch"}
+          <SwitchPill
+            compact={packed}
+            expanded={!packed}
+            on={p.on}
+            icon={p.icon}
+            label={p.label}
+            aria={p.aria}
+            onToggle={p.onToggle}
+          />
+        {:else}
+          <PillSwitch
+            compact={packed}
+            expanded={!packed}
+            options={p.options}
+            value={p.value}
+            onChange={p.onChange}
+            icon={p.icon}
+            title={p.title}
+            label={p.label}
+            showText={packed ? (p.showText ?? false) : true}
+          />
+        {/if}
       {/each}
       {#if lens && $holonId}<span class="gear"><Icon name="lock" /></span>{/if}
       <span class="gear"><Icon name="gear" /></span>

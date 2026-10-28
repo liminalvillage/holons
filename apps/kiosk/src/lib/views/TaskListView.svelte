@@ -56,6 +56,7 @@
       <li
         animate:glide={{ duration: 220 }}
         class:done={!!completing[task.id]}
+        class:completed={!!task.completed}
         class:ghost={dragId === task.id}
         data-task={task.id}
       >
@@ -130,15 +131,20 @@
               ><Avatars people={task.people} size="1.4rem" /></span
             >
           {/if}
-          <button
-            class="tool check"
-            on:pointerdown|stopPropagation
-            on:click|stopPropagation={() => onComplete(task)}
-            aria-label={$t("tasks.markComplete")}
-            title={$t("tasks.markComplete")}
-          >
-            <Icon name="check" />
-          </button>
+          {#if task.completed}
+            <!-- Already done: the check's slot stays, so the rows line up. -->
+            <span class="tool check spacer" aria-hidden="true"></span>
+          {:else}
+            <button
+              class="tool check"
+              on:pointerdown|stopPropagation
+              on:click|stopPropagation={() => onComplete(task)}
+              aria-label={$t("tasks.markComplete")}
+              title={$t("tasks.markComplete")}
+            >
+              <Icon name="check" />
+            </button>
+          {/if}
           <button
             class="tool del"
             on:pointerdown|stopPropagation
@@ -175,6 +181,14 @@
     flex-direction: column;
     gap: 0.5rem;
     animation: kiosk-rise 0.42s ease both;
+  }
+  /* Completed (the Done switch is on): faded back behind the open rows. */
+  li.completed .row {
+    opacity: 0.45;
+    filter: saturate(0.5);
+  }
+  .tool.spacer {
+    visibility: hidden;
   }
   li.done {
     pointer-events: none;

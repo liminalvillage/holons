@@ -398,6 +398,8 @@ export const it: Record<MessageKey, Msg> = {
   "pills.sort": "Ordina",
   "pills.tasksLayout": "Disposizione delle attività",
   "pills.tasksOrder": "Ordine delle attività",
+  "pills.done": "Fatte",
+  "pills.doneAria": "Mostra anche le attività completate",
   "pills.libraryLayout": "Disposizione della biblioteca",
   "pills.rolesLayout": "Disposizione dei ruoli",
   "pills.balances": "Tutti i saldi",

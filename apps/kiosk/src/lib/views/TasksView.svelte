@@ -7,7 +7,8 @@
   import { autoScrollToEnd } from "$lib/autoscroll";
   import {
     backlog,
-    completedGraphTasks,
+    completedTasks,
+    showCompleted,
     now,
     openQuest,
     holonId,
@@ -231,9 +232,14 @@
   $: orderedTasks = order
     .map((id) => byId.get(id))
     .filter((t): t is BacklogTask => t != null);
-  // What every layout renders. (Whether partners' tasks are in is decided
-  // upstream, in the derived stores; here it is everything that arrived.)
-  $: shownTasks = orderedTasks;
+  // What the wall, list and graph render: the open tasks, then — while the
+  // Done switch is on — the completed ones, faded and out of the reorder.
+  // (Whether partners' tasks are in is decided upstream, in the derived
+  // stores; here it is everything that arrived.) The swipe deck deals open
+  // tasks only: joining or liking a finished task is no decision to make.
+  $: shownTasks = $showCompleted
+    ? [...orderedTasks, ...$completedTasks]
+    : orderedTasks;
 
   // Until the user drags this session, follow the backlog's order (which
   // `toBacklog` sorts by the persisted `orderIndex`) — so a reload shows the
@@ -818,7 +824,7 @@
   {#if $taskViewMode === "swipe"}
     <div class="deckwrap">
       <TaskSwipeView
-        tasks={shownTasks}
+        tasks={orderedTasks}
         colorFor={noteColorFor}
         {lockedIds}
         {dueLabel}
@@ -832,7 +838,7 @@
     <!-- The graph pans/zooms itself, so it takes the whole board area like
          the swipe deck (no scroll pane). Empty states fall through below. -->
     <TaskGraphView
-      tasks={[...shownTasks, ...$completedGraphTasks]}
+      tasks={shownTasks}
       colorFor={noteColorFor}
       {dueLabel}
       {completing}
@@ -866,6 +872,7 @@
               class="note-wrap"
               class:ghost={drag?.id === task.id}
               class:done={completing[task.id]}
+              class:completed={!!task.completed}
               data-task={task.id}
               animate:glide={{ duration: 220 }}
             >
@@ -904,17 +911,19 @@
                       <Icon name="close" />
                     </button>
                   </div>
-                  <div class="tools">
-                    <button
-                      class="tool check"
-                      on:pointerdown|stopPropagation
-                      on:click|stopPropagation={() => onComplete(task)}
-                      aria-label={$t("tasks.markComplete")}
-                      title={$t("tasks.markComplete")}
-                    >
-                      <Icon name="check" />
-                    </button>
-                  </div>
+                  {#if !task.completed}
+                    <div class="tools">
+                      <button
+                        class="tool check"
+                        on:pointerdown|stopPropagation
+                        on:click|stopPropagation={() => onComplete(task)}
+                        aria-label={$t("tasks.markComplete")}
+                        title={$t("tasks.markComplete")}
+                      >
+                        <Icon name="check" />
+                      </button>
+                    </div>
+                  {/if}
                   <h3>{task.title}</h3>
                   {#if task.initiator}
                     <div
@@ -1274,6 +1283,11 @@
   }
   .note-wrap.done {
     pointer-events: none;
+  }
+  /* Completed (the Done switch is on): faded back behind the open notes. */
+  .note-wrap.completed .lift {
+    opacity: 0.45;
+    filter: saturate(0.5);
   }
   .lift {
     display: block;

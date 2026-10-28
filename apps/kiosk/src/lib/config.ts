@@ -51,6 +51,7 @@ const THEME_RESOLVED_KEY = "kiosk_theme_resolved";
 const GEO_KEY = "kiosk_geo";
 const TASK_VIEW_KEY = "kiosk_task_view";
 const TASK_SORT_KEY = "kiosk_task_sort";
+const TASK_DONE_KEY = "kiosk_task_show_completed";
 const LIBRARY_VIEW_KEY = "kiosk_library_view";
 const ROLES_VIEW_KEY = "kiosk_roles_view";
 const FLOWS_VIEW_KEY = "kiosk_flows_view";
@@ -658,6 +659,16 @@ export function resolveTaskSort(): TaskSort {
 /** Persist the Tasks backlog ordering. */
 export function setTaskSort(sort: TaskSort): void {
   persist(TASK_SORT_KEY, sort);
+}
+
+/** Whether the Tasks views show completed tasks too (faded); off unless chosen. */
+export function resolveShowCompleted(): boolean {
+  return persisted(TASK_DONE_KEY) === "1";
+}
+
+/** Persist the Tasks views' Done switch. */
+export function setShowCompleted(on: boolean): void {
+  persist(TASK_DONE_KEY, on ? "1" : "0");
 }
 
 /**
