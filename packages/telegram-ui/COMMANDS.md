@@ -57,6 +57,7 @@ Linked keys are published in the kind-31926 attestation for `telegram:<your id>`
 - `/values [@users]` - Visualizes the shared values of the specified users, or of all users
 - `/ineed` - Allows to specify the list of needs for the user
 - `/needs [@users]` - Visualizes the shared needs of the specified users, or of all users
+- `/ikigai [text]` - Sets your ikigai in your profile; on its own, shows the saved one and asks for a new one
 
 ## Holon Management
 - `/restart` - Resets everything

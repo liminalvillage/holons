@@ -286,6 +286,73 @@ describe('/onboarding — ikigai and LinkedIn', () => {
   });
 });
 
+describe('/ikigai', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('sets the ikigai from the command text, keeping the rest of the DNA', async () => {
+    const bot = harness();
+    bot.seed('42', 'dna', { id: '42', category: 'Steward', public: true });
+
+    const calls = await bot.text('/ikigai I make bread for the village.');
+
+    expect(sent(calls, 'Your ikigai is saved')).toBeDefined();
+    expect(bot.errors).toEqual([]);
+    expect(bot.puts.at(-1)).toEqual([
+      '42',
+      'dna',
+      {
+        id: '42',
+        category: 'Steward',
+        public: true,
+        ikigai: 'I make bread for the village.',
+      },
+    ]);
+  });
+
+  it('on its own shows the saved ikigai and updates it from the reply', async () => {
+    const bot = harness();
+    bot.seed('42', 'dna', { id: '42', ikigai: 'Old answer.' });
+
+    const prompt = await bot.text('/ikigai');
+    expect(sent(prompt, 'What is your ikigai?')).toBeDefined();
+    expect(sent(prompt, 'Old answer.')).toBeDefined();
+
+    const reply = await bot.text('I hold space for people to grow.');
+    expect(sent(reply, 'Your ikigai is saved')).toBeDefined();
+    expect(bot.puts.at(-1)[2]).toMatchObject({
+      ikigai: 'I hold space for people to grow.',
+    });
+
+    // The scene is left: the next message is not taken as an ikigai.
+    const puts = bot.puts.length;
+    await bot.text('hello');
+    expect(bot.puts.length).toBe(puts);
+    expect(bot.errors).toEqual([]);
+  });
+
+  it('cancel leaves the ikigai unchanged', async () => {
+    const bot = harness();
+    bot.seed('42', 'dna', { id: '42', ikigai: 'Old answer.' });
+
+    await bot.text('/ikigai');
+    const cancelled = await bot.tap('input_scene_cancel');
+
+    expect(sent(cancelled, 'unchanged')).toBeDefined();
+    expect(bot.puts).toEqual([]);
+    expect(bot.errors).toEqual([]);
+  });
+
+  it('refuses an ikigai that is too long', async () => {
+    const bot = harness();
+    const calls = await bot.text(`/ikigai ${'x'.repeat(1001)}`);
+
+    expect(sent(calls, 'under 1000 characters')).toBeDefined();
+    expect(bot.puts).toEqual([]);
+  });
+});
+
 describe('t.me/<bot>?start=onboarding', () => {
   afterEach(() => {
     vi.restoreAllMocks();

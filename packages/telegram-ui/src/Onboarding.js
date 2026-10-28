@@ -10,7 +10,11 @@ import {
 } from '../scenes/bookingScenes.js';
 import videoScene from '../scenes/videoScene.js';
 import valuesScene from '../scenes/valuesScene.js';
-import { ikigaiScene, linkedinScene } from '../scenes/ikigaiScenes.js';
+import {
+  ikigaiCommand,
+  ikigaiScene,
+  linkedinScene,
+} from '../scenes/ikigaiScenes.js';
 import categoriesScene from '../scenes/categoriesScene.js';
 import {
   questionsScene,
@@ -74,6 +78,8 @@ export default class Onboarding {
     });
 
     bot.command('onboarding', ctx => startOnboarding(ctx, this.db));
+
+    bot.command('ikigai', ikigaiCommand(this.db));
 
     bot.command('summarize', ctx => {
       ctx.session.db = this.db;
