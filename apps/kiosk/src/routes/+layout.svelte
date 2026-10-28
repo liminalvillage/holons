@@ -158,6 +158,7 @@
   import VoiceDrawer from "$lib/components/VoiceDrawer.svelte";
   import { swallowsContextMenu } from "$lib/holdmenu";
   import { lockPageZoom } from "$lib/nozoom";
+  import { boardFullscreen, fullscreenMotion } from "$lib/fullscreen";
 
   let booting = true;
   let mounted = false;
@@ -1179,12 +1180,21 @@
   {/if}
 
   {#if $dockState !== "dock" && $holonIdStore}
-    <div class="kiosk" bind:this={windowEl}>
+    <div class="kiosk" class:full={$boardFullscreen} bind:this={windowEl}>
       <!-- The whole tab interface is one card floating in the space — the
            same sky the dock shows — so closing it into a circle reads as
            the card shrinking into its place among the others. -->
       <div class="card">
-        <TabBar />
+        <!-- Full screen folds the header away (lib/fullscreen.ts); it is
+             clipped only while folded or moving, so its suggestions can
+             hang below it the rest of the time. -->
+        <div
+          class="chrome"
+          class:clip={$boardFullscreen || $fullscreenMotion}
+          inert={$boardFullscreen}
+        >
+          <div class="chrome__in"><TabBar /></div>
+        </div>
         <main class="stage">
           <slot />
         </main>
@@ -1293,6 +1303,50 @@
       0 22px 54px rgba(0, 0, 0, 0.3),
       var(--shadow-soft);
     overflow: hidden;
+  }
+
+  /* Full screen: the sky and the card's edge go, the header folds up. */
+  .kiosk,
+  .card {
+    transition:
+      padding 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+      border-radius 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+      border-color 0.45s ease;
+  }
+  .kiosk.full {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+      env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .kiosk.full .card {
+    border-radius: 0;
+    border-color: transparent;
+  }
+  .chrome {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-rows: 1fr;
+    transition:
+      grid-template-rows 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+      opacity 0.3s ease,
+      transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .chrome.clip .chrome__in {
+    overflow: hidden;
+  }
+  .chrome__in {
+    min-height: 0;
+  }
+  .kiosk.full .chrome {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transform: translateY(-0.8rem);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .kiosk,
+    .card,
+    .chrome {
+      transition: none;
+    }
   }
 
   .stage {

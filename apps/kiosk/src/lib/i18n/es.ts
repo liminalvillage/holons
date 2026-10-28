@@ -397,6 +397,8 @@ export const es: Record<MessageKey, Msg> = {
   "pills.new": "Nuevas",
   "pills.manual": "Manual",
   "pills.view": "Vista",
+  "pills.fullscreen": "Pantalla completa",
+  "pills.exitFullscreen": "Salir de pantalla completa",
   "pills.sort": "Ordenar",
   "pills.tasksLayout": "Disposición de las tareas",
   "pills.tasksOrder": "Orden de las tareas",
@@ -421,6 +423,7 @@ export const es: Record<MessageKey, Msg> = {
   "tabbar.categories": "Categorías",
   "tabbar.people": "Personas",
   "tabbar.menu": "Menú",
+  "tabbar.holonSettings": "Ajustes del holón",
   "tabbar.login": "Entrar",
   "tabbar.views": "Vistas",
   "tabbar.pinnedHint":

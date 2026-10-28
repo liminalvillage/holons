@@ -395,6 +395,8 @@ export const it: Record<MessageKey, Msg> = {
   "pills.new": "Nuove",
   "pills.manual": "Manuale",
   "pills.view": "Vista",
+  "pills.fullscreen": "Schermo intero",
+  "pills.exitFullscreen": "Esci dallo schermo intero",
   "pills.sort": "Ordina",
   "pills.tasksLayout": "Disposizione delle attività",
   "pills.tasksOrder": "Ordine delle attività",
@@ -419,6 +421,7 @@ export const it: Record<MessageKey, Msg> = {
   "tabbar.categories": "Categorie",
   "tabbar.people": "Persone",
   "tabbar.menu": "Menu",
+  "tabbar.holonSettings": "Impostazioni dell'holon",
   "tabbar.login": "Accedi",
   "tabbar.views": "Viste",
   "tabbar.pinnedHint":

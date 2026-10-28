@@ -12,6 +12,7 @@
     holonName,
     brandLogo,
     userMenuOpen,
+    settingsOpen,
     searchQuery,
     searchSuggestions,
     now,
@@ -493,6 +494,21 @@
           >
         {/if}
       </button>
+      <!-- The holon's general settings (name, logo, accent, federation…) —
+           apart from a view's own settings, which are the sliders in the
+           pills band. Dotted while a federation request waits in it. -->
+      <button
+        class="holonset"
+        on:click={() => settingsOpen.set(true)}
+        aria-label={$fedRequests.length
+          ? `${$t("tabbar.holonSettings")} — ${$t("fed.requestsBadge", { n: $fedRequests.length })}`
+          : $t("tabbar.holonSettings")}
+        title={$t("tabbar.holonSettings")}
+      >
+        <Icon name="gear" />
+        {#if $fedRequests.length}<span class="dot" aria-hidden="true"
+          ></span>{/if}
+      </button>
       <div class="clock">
         <span class="time">{timeLabel}</span>
         <span class="date">{dateLabel}</span>
@@ -953,6 +969,45 @@
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 48vw;
+  }
+  .holonset {
+    position: relative;
+    flex: 0 0 auto;
+    width: 2.6rem;
+    height: 2.6rem;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 1.15rem;
+    color: var(--ink-soft);
+    background: var(--paper);
+    transition:
+      color 0.15s ease,
+      background 0.15s ease,
+      transform 0.25s ease;
+  }
+  .holonset:hover {
+    color: var(--ink);
+    background: var(--line);
+  }
+  .holonset:hover :global(svg) {
+    transform: rotate(45deg);
+  }
+  .holonset :global(svg) {
+    transition: transform 0.35s ease;
+  }
+  .holonset:active {
+    transform: scale(0.92);
+  }
+  .holonset .dot {
+    position: absolute;
+    top: 0.1rem;
+    right: 0.1rem;
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 50%;
+    background: var(--caution);
+    border: 2px solid var(--paper);
   }
   .winclose {
     flex: 0 0 auto;

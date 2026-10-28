@@ -3,20 +3,19 @@
   //
   // The single pills band for the whole kiosk: one Show federated switch, the
   // active tab's own Layout/Sort segments, and — at the right edge — the
-  // active tab's settings gear. Rendered once by the page shell — outside the
-  // tab-keyed view mount, so switching tabs swaps the segments without
-  // replaying the entrance animation.
+  // active tab's settings and the full-screen toggle. Rendered once by the
+  // page shell — outside the tab-keyed view mount, so switching tabs swaps
+  // the segments without replaying the entrance animation.
   //
-  // Settings live here, not in the boards: a view that has something to set
-  // (the calendar's feeds, the allocation split, the shift plan, the value
-  // equation) registers its opener in `viewSettings` while it is mounted,
-  // and the band shows one gear for it. The view keeps the sheet itself and
-  // any gate in front of it (a login prompt, say) — the band only offers
-  // the tap. A view with nothing of its own to set still gets the gear: it
-  // opens the kiosk's caretaker settings (the same sheet as the user menu),
-  // so the band reads the same on every tab — Show on the left, the tab's
-  // pills and one gear on the right — and never comes and goes between
-  // tabs or while a board opens one of its own items.
+  // A view's settings live here, not in the boards: a view that has
+  // something to set (the calendar's feeds, the allocation split, the shift
+  // plan, the value equation) registers its opener in `viewSettings` while
+  // it is mounted, and the band shows one sliders button for it. The view
+  // keeps the sheet itself and any gate in front of it (a login prompt,
+  // say) — the band only offers the tap. A view with nothing of its own to
+  // set shows none: the holon's general settings are the header's gear,
+  // beside the account chip. The full-screen toggle is always last, so the
+  // right edge reads the same on every tab.
   //
   // Layout adapts to the width available, one pill at a time: every pill
   // starts unpacked — full segments, each carrying its option name — and as
@@ -36,7 +35,6 @@
   import {
     activeTab,
     holonId,
-    settingsOpen,
     viewSettings,
     TABS,
     type TabId,
@@ -78,7 +76,7 @@
   import ScopePill from "./ScopePill.svelte";
   import SwitchPill from "./SwitchPill.svelte";
   import Icon from "./Icon.svelte";
-  import { fedRequests } from "$lib/fedrequests";
+  import { boardFullscreen, toggleFullscreen } from "$lib/fullscreen";
 
   // Module consts carry catalog keys only; `ownPillsFor` resolves them with
   // the reactive translator so a language switch re-labels every pill live.
@@ -374,20 +372,14 @@
   );
 
   // Status and Shifts have no layout pill of their own.
-  // The gear: the view's own settings while it offers them, else the kiosk's
-  // caretaker settings, so every tab has one.
-  const kioskGear = {
-    labelKey: "menu.settings" as MessageKey,
-    open: () => settingsOpen.set(true),
-  };
-  $: gear = $viewSettings ?? kioskGear;
-  // The kiosk gear carries a dot while a federation request waits there.
-  $: gearDot = gear === kioskGear && $fedRequests.length > 0;
-  $: gearLabel =
-    $t(gear.labelKey) +
-    (gearDot
-      ? ` — ${$t("fed.requestsBadge", { n: $fedRequests.length })}`
-      : "");
+  // The gear: the view's OWN settings, only while it offers them. The
+  // holon's general settings are not here — they sit beside the account
+  // chip in the header (TabBar), with their own gear; this one wears the
+  // sliders so the two never read as the same door.
+  $: gear = $viewSettings;
+  $: fsLabel = $t(
+    $boardFullscreen ? "pills.exitFullscreen" : "pills.fullscreen",
+  );
 
   // The lock beside the gear: who can read the board on screen. Shown on
   // every tab whose board is one lens that can be sealed (quests, library,
@@ -504,15 +496,25 @@
             <Icon name={locked ? "lock" : "unlock"} />
           </button>
         {/if}
+        {#if gear}
+          <button
+            type="button"
+            class="gear"
+            on:click={gear.open}
+            aria-label={$t(gear.labelKey)}
+            title={$t(gear.labelKey)}
+          >
+            <Icon name="sliders" />
+          </button>
+        {/if}
         <button
           type="button"
-          class="gear"
-          on:click={gear.open}
-          aria-label={gearLabel}
-          title={gearLabel}
+          class="gear fs"
+          on:click={toggleFullscreen}
+          aria-label={fsLabel}
+          title={fsLabel}
         >
-          <Icon name="gear" />
-          {#if gearDot}<span class="dot" aria-hidden="true"></span>{/if}
+          <Icon name="expand" />
         </button>
       </div>
     </div>
@@ -553,15 +555,25 @@
           <Icon name={locked ? "lock" : "unlock"} />
         </button>
       {/if}
+      {#if gear}
+        <button
+          type="button"
+          class="gear"
+          on:click={gear.open}
+          aria-label={$t(gear.labelKey)}
+          title={$t(gear.labelKey)}
+        >
+          <Icon name="sliders" />
+        </button>
+      {/if}
       <button
         type="button"
-        class="gear"
-        on:click={gear.open}
-        aria-label={gearLabel}
-        title={gearLabel}
+        class="gear fs"
+        on:click={toggleFullscreen}
+        aria-label={fsLabel}
+        title={fsLabel}
       >
-        <Icon name="gear" />
-        {#if gearDot}<span class="dot" aria-hidden="true"></span>{/if}
+        <Icon name="expand" />
       </button>
     </div>
   {/if}
@@ -603,7 +615,8 @@
         {/if}
       {/each}
       {#if lens && $holonId}<span class="gear"><Icon name="lock" /></span>{/if}
-      <span class="gear"><Icon name="gear" /></span>
+      {#if gear}<span class="gear"><Icon name="sliders" /></span>{/if}
+      <span class="gear"><Icon name="expand" /></span>
     </div>
   {/each}
 </div>
@@ -667,16 +680,6 @@
   }
   .gear {
     position: relative;
-  }
-  .gear .dot {
-    position: absolute;
-    top: 0.3rem;
-    right: 0.3rem;
-    width: 0.65rem;
-    height: 0.65rem;
-    border-radius: 50%;
-    background: var(--caution);
-    border: 2px solid var(--paper);
   }
   .gear:active {
     transform: scale(0.92);

@@ -1,6 +1,16 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
-  import { activeTab, boardReady } from "$lib/stores";
+  import { onDestroy } from "svelte";
+  import { scale } from "svelte/transition";
+  import { backOut } from "svelte/easing";
+  import { activeTab, boardReady, holonId } from "$lib/stores";
+  import {
+    boardFullscreen,
+    fullscreenMotion,
+    setFullscreen,
+  } from "$lib/fullscreen";
+  import { t } from "$lib/i18n";
+  import Icon from "$lib/components/Icon.svelte";
   import GlobalPills from "$lib/components/GlobalPills.svelte";
   import CalendarView from "$lib/views/CalendarView.svelte";
   import ShiftsView from "$lib/views/ShiftsView.svelte";
@@ -12,9 +22,28 @@
   import FlowsView from "$lib/views/FlowsView.svelte";
   import StockView from "$lib/views/StockView.svelte";
   import OffersView from "$lib/views/OffersView.svelte";
+
+  // Full screen belongs to the board on screen: another holon (or leaving
+  // the board) starts with the chrome back.
+  let shownHolon = $holonId;
+  $: if ($holonId !== shownHolon) {
+    shownHolon = $holonId;
+    setFullscreen(false);
+  }
+  onDestroy(() => setFullscreen(false));
+
+  // Escape leaves full screen — unless a sheet or modal is open over the
+  // board: that Escape is theirs.
+  function onKey(e: KeyboardEvent) {
+    if (e.key !== "Escape" || !$boardFullscreen || e.defaultPrevented) return;
+    if (document.querySelector('[aria-modal="true"]')) return;
+    setFullscreen(false);
+  }
 </script>
 
-<div class="surface">
+<svelte:window on:keydown={onKey} />
+
+<div class="surface" class:full={$boardFullscreen}>
   <!-- Mount the view only once the holon's initial data has settled (see
        boardReady): a fresh mount on the full set plays the entrance animation
        cleanly, the same way switching tabs does. Keyed on the tab so each
@@ -22,7 +51,13 @@
   {#if $boardReady}
     <!-- The pills band sits OUTSIDE the tab key: switching tabs swaps its
          segments in place instead of remounting/re-animating the bar. -->
-    <GlobalPills />
+    <div
+      class="band"
+      class:clip={$boardFullscreen || $fullscreenMotion}
+      inert={$boardFullscreen}
+    >
+      <div class="band__in"><GlobalPills /></div>
+    </div>
     {#key $activeTab}
       <div class="view">
         {#if $activeTab === "tasks"}
@@ -49,10 +84,26 @@
       </div>
     {/key}
   {/if}
+  <!-- The band's full-screen button, turned into the way back: it pops in
+       at the corner once the chrome has folded away. -->
+  {#if $boardFullscreen}
+    <button
+      type="button"
+      class="unfull"
+      on:click={() => setFullscreen(false)}
+      aria-label={$t("pills.exitFullscreen")}
+      title={$t("pills.exitFullscreen")}
+      in:scale={{ start: 0.4, duration: 380, delay: 180, easing: backOut }}
+      out:scale={{ start: 0.4, duration: 160 }}
+    >
+      <Icon name="close" />
+    </button>
+  {/if}
 </div>
 
 <style>
   .surface {
+    position: relative;
     flex: 1;
     min-height: 0;
     background: var(--card);
@@ -64,6 +115,71 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
+  }
+  /* Full screen: the frame around the board goes, edge to edge. */
+  .surface {
+    transition:
+      margin 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+      border-radius 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .surface.full {
+    margin: 0;
+    border-radius: 0;
+  }
+  /* The pills band folds up with the header (see the layout's .chrome). */
+  .band {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-rows: 1fr;
+    transition:
+      grid-template-rows 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+      opacity 0.3s ease;
+  }
+  .band__in {
+    min-height: 0;
+  }
+  .band.clip .band__in {
+    overflow: hidden;
+  }
+  .surface.full .band {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+  .unfull {
+    position: absolute;
+    top: 0.7rem;
+    right: 0.7rem;
+    z-index: 30;
+    width: calc(2.5rem + 8px);
+    height: calc(2.5rem + 8px);
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 1.25rem;
+    background: color-mix(in srgb, var(--paper) 88%, transparent);
+    color: var(--ink);
+    box-shadow: var(--shadow-soft);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    touch-action: manipulation;
+    transition:
+      background 0.2s ease,
+      transform 0.25s ease;
+  }
+  .unfull :global(svg) {
+    transition: transform 0.3s ease;
+  }
+  .unfull:hover :global(svg) {
+    transform: rotate(90deg);
+  }
+  .unfull:active {
+    transform: scale(0.9);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .surface,
+    .band {
+      transition: none;
+    }
   }
   .view {
     flex: 1;
