@@ -32,6 +32,7 @@
     noteRiseDelay,
     type RoleCard,
     holoSeed,
+    personName,
   } from "$lib/data";
   import {
     avatarUrl,
@@ -51,6 +52,8 @@
     isPermanentHolder,
     isHolderOnDate,
     toggleDayUser,
+    setDayUsers,
+    clearDay,
     setPermanent,
     clearPermanent,
     type Role,
@@ -58,6 +61,10 @@
     type ScheduledUser,
   } from "@holons/core/roles";
   import Modal from "$lib/components/Modal.svelte";
+  import PeoplePicker from "$lib/components/PeoplePicker.svelte";
+  import PersonSelect, {
+    type PersonOption as Member,
+  } from "$lib/components/PersonSelect.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
 
   // Layout is chosen in the shell's global pills band (see GlobalPills);
@@ -129,15 +136,6 @@
       assignedVia: "kiosk",
     };
   }
-  function meParticipant(): RoleParticipant {
-    const u = get(currentUser)!;
-    return {
-      id: u.id,
-      username: u.username ?? null,
-      first_name: u.first_name ?? null,
-      last_name: u.last_name ?? null,
-    };
-  }
 
   // ── Writes ──────────────────────────────────────────────────────────────────
   let busy: string | null = null;
@@ -167,6 +165,97 @@
     } finally {
       busy = null;
     }
+  }
+
+  /** A member picked from the dropdown, as a day's scheduled holder. */
+  function asScheduled(m: Member): ScheduledUser {
+    return {
+      id: m.id,
+      username: personName(m),
+      assignedAt: new Date().toISOString(),
+      assignedVia: "kiosk",
+    };
+  }
+  function asParticipant(m: Member): RoleParticipant {
+    return {
+      id: m.id,
+      username: m.username ?? null,
+      first_name: m.first_name ?? null,
+      last_name: m.last_name ?? null,
+    };
+  }
+
+  /** Put `m` on the role: the fixed holder of a fixed role, else `day`'s. */
+  async function assign(raw: Role, day: Date, m: Member, token: string) {
+    if (!get(currentUser)) {
+      loginOpen.set(true);
+      return;
+    }
+    busy = token;
+    try {
+      await persist(
+        hasPermanent(raw)
+          ? setPermanent(raw, asParticipant(m))
+          : setDayUsers(raw, day, [asScheduled(m)]),
+      );
+    } catch (err) {
+      console.error("[kiosk] role assign failed", err);
+    } finally {
+      busy = null;
+    }
+  }
+
+  // ── Week cell sheet: join the day, or assign someone to it ─────────────────
+  let dayCard: RoleCard | null = null;
+  let dayDate: Date | null = null;
+  $: dayRaw = dayCard ? (byId.get(dayCard.id) ?? null) : null;
+  $: dayHolder =
+    dayRaw && dayDate ? (holdersForDate(dayRaw, dayDate)[0] ?? null) : null;
+  $: dayMine =
+    !!dayRaw &&
+    !!dayDate &&
+    myId != null &&
+    isHolderOnDate(dayRaw, dayDate, myId);
+
+  function openDay(card: RoleCard, raw: Role, day: Date) {
+    if (!get(currentUser)) {
+      loginOpen.set(true);
+      return;
+    }
+    if (hasPermanent(raw)) {
+      showNotice($t("rolesv.fixedReleaseFirst"));
+      return;
+    }
+    dayCard = card;
+    dayDate = day;
+  }
+  function closeDay() {
+    dayCard = null;
+    dayDate = null;
+  }
+  async function joinDay() {
+    if (!dayCard || !dayRaw || !dayDate) return;
+    await takeDay(
+      dayCard,
+      dayRaw,
+      dayDate,
+      `${dayCard.id}|${isoDateOf(dayDate)}`,
+    );
+    closeDay();
+  }
+  async function assignDay(m: Member) {
+    if (!dayCard || !dayRaw || !dayDate) return;
+    await assign(dayRaw, dayDate, m, `${dayCard.id}|${isoDateOf(dayDate)}`);
+    closeDay();
+  }
+  async function clearTheDay() {
+    if (!dayRaw || !dayDate) return;
+    try {
+      await persist(clearDay(dayRaw, dayDate));
+    } catch (err) {
+      console.error("[kiosk] role clear day failed", err);
+    }
+    closeDay();
   }
 
   async function releaseFixed(card: RoleCard, raw: Role) {
@@ -224,8 +313,9 @@
   let editCard: RoleCard | null = null;
   let editTitle = "";
   let editDesc = "";
+  /** The fixed holder picked in the form — none, or exactly one (core's rule). */
+  let editFixed: RoleParticipant[] = [];
   let deleting = false;
-  let fixedBusy = false;
   $: editRaw = editCard ? (byId.get(editCard.id) ?? null) : null;
   // The role the form is editing, kept past the modal's close so a write that
   // is still waiting lands on it.
@@ -241,12 +331,17 @@
     editCard = card;
     editTitle = card.title;
     editDesc = card.description ?? "";
+    const raw = byId.get(card.id);
+    editFixed = raw ? permanentHolders(raw).slice(0, 1) : [];
   }
 
   /** The role with the form's fields on it (its id/key stay put on rename). */
   function withForm(raw: Role): Role {
     const title = editTitle.trim();
-    return title ? { ...raw, title, description: editDesc.trim() } : raw;
+    const base = title ? { ...raw, title, description: editDesc.trim() } : raw;
+    return editFixed[0]
+      ? setPermanent(base, editFixed[0])
+      : clearPermanent(base);
   }
 
   // The form saves itself as you type; a blank title is not written.
@@ -259,44 +354,16 @@
       return writer.put("roles", role);
     },
   );
-  $: autosave.watch(editCard ? JSON.stringify([editTitle, editDesc]) : null);
+  $: autosave.watch(
+    editCard
+      ? JSON.stringify([editTitle, editDesc, editFixed.map((p) => p.id)])
+      : null,
+  );
   onDestroy(() => void autosave.flush());
 
   function closeEdit() {
     void autosave.flush();
     editCard = null;
-  }
-
-  async function makeFixed() {
-    if (!editRaw) return;
-    if (!get(currentUser)) {
-      loginOpen.set(true);
-      return;
-    }
-    fixedBusy = true;
-    try {
-      autosave.cancel(); // this write carries the form too
-      await persist(setPermanent(withForm(editRaw), meParticipant()));
-      editCard = null;
-    } catch (err) {
-      console.error("[kiosk] make fixed failed", err);
-    } finally {
-      fixedBusy = false;
-    }
-  }
-
-  async function clearFixed() {
-    if (!editRaw) return;
-    fixedBusy = true;
-    try {
-      autosave.cancel();
-      await persist(clearPermanent(withForm(editRaw)));
-      editCard = null;
-    } catch (err) {
-      console.error("[kiosk] clear fixed failed", err);
-    } finally {
-      fixedBusy = false;
-    }
   }
 
   async function deleteRole() {
@@ -428,6 +495,13 @@
                   >
                 {/if}
                 {#if $isLoggedIn}
+                  <PersonSelect
+                    label={$t("rolesv.assign")}
+                    exclude={holder?.id != null ? [holder.id] : []}
+                    disabled={busy === `as:${card.id}`}
+                    on:pick={(e) =>
+                      assign(raw, todayCell, e.detail, `as:${card.id}`)}
+                  />
                   <button
                     class="tool rowtool"
                     on:click={() => openEdit(card)}
@@ -536,6 +610,15 @@
                         )}{/if}</button
                     >
                   {/if}
+                  {#if $isLoggedIn}
+                    <PersonSelect
+                      label={$t("rolesv.assign")}
+                      exclude={holder?.id != null ? [holder.id] : []}
+                      disabled={busy === `as:${card.id}`}
+                      on:pick={(e) =>
+                        assign(raw, todayCell, e.detail, `as:${card.id}`)}
+                    />
+                  {/if}
                 </div>
               </article>
             </span>
@@ -577,7 +660,7 @@
                 class:filled={!!holder}
                 class:mine
                 class:fixed
-                on:click={() => takeDay(card, raw, d, token)}
+                on:click={() => openDay(card, raw, d)}
                 disabled={busy === token}
                 title={holder ? holderName(holder) : $t("rolesv.takeThisDay")}
               >
@@ -650,6 +733,49 @@
   </Modal>
 {/if}
 
+{#if dayCard && dayDate}
+  <Modal on:close={closeDay}>
+    <div class="form">
+      <h3>{dayCard.title}</h3>
+      <p class="lead">
+        {dayDate.toLocaleDateString($locale, {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+        })} ·
+        {dayHolder ? holderName(dayHolder) : $t("rolesv.open")}
+      </p>
+      <div class="actions">
+        <button class="primary" on:click={joinDay}
+          >{dayMine ? $t("rolesv.drop") : $t("rolesv.takeThisDay")}</button
+        >
+        <PersonSelect
+          grow
+          label={$t("rolesv.assign")}
+          exclude={dayHolder?.id != null ? [dayHolder.id] : []}
+          on:pick={(e) => assignDay(e.detail)}
+        >
+          <button
+            slot="trigger"
+            let:toggle
+            let:open
+            type="button"
+            class="ghost"
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            on:click={toggle}>{$t("rolesv.assign")}</button
+          >
+        </PersonSelect>
+      </div>
+      {#if dayHolder && !dayMine}
+        <button class="danger" on:click={clearTheDay}
+          >{$t("rolesv.clearDay")}</button
+        >
+      {/if}
+    </div>
+  </Modal>
+{/if}
+
 {#if editCard}
   <Modal on:close={closeEdit}>
     <SaveState slot="corner" saver={autosave} />
@@ -671,21 +797,12 @@
 
       <div class="fixed-section">
         <span class="seclabel">{$t("rolesv.fixedHolderLabel")}</span>
-        {#if editRaw && hasPermanent(editRaw)}
-          <div class="fixrow">
-            <span class="fxname"
-              ><Icon name="lock" />
-              {holderName(permanentHolders(editRaw)[0])}</span
-            >
-            <button class="linkbtn" on:click={clearFixed} disabled={fixedBusy}
-              >{$t("rolesv.clearFixed")}</button
-            >
-          </div>
-        {:else}
-          <button class="ghost wide" on:click={makeFixed} disabled={fixedBusy}
-            >{$t("rolesv.makeMeFixed")}</button
-          >
-        {/if}
+        <PeoplePicker
+          single
+          bind:people={editFixed}
+          addLabel={$t("rolesv.pickFixed")}
+          removeLabel={(name) => $t("rolesv.removeFixed", { name })}
+        />
       </div>
 
       <div class="actions">
@@ -949,7 +1066,9 @@
 
   .cardfoot {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
+    gap: 0.4rem;
     margin-top: 0.8rem;
   }
   .fixednote {
@@ -1212,23 +1331,6 @@
     color: var(--muted);
     margin-bottom: 0.5rem;
   }
-  .fixrow {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.6rem;
-  }
-  .fxname {
-    font-size: 0.95rem;
-    font-weight: 700;
-    color: var(--ink);
-  }
-  .linkbtn {
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: var(--danger);
-    text-decoration: underline;
-  }
 
   .form .actions {
     display: flex;
@@ -1246,10 +1348,6 @@
   .form .actions .primary,
   .form .actions .ghost {
     flex: 1;
-  }
-  .form .ghost.wide {
-    width: 100%;
-    min-height: 46px;
   }
   .form .primary {
     background: var(--teal);

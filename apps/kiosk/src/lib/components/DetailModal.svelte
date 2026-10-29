@@ -37,7 +37,7 @@
     toggleJoin,
     toggleAppreciate,
   } from "$lib/membership";
-  import { loadMembers, members, type Member } from "$lib/members";
+  import { loadMembers, type Member } from "$lib/members";
   import {
     checkComplete,
     checkOccurrenceComplete,
@@ -109,7 +109,7 @@
     type SwitchableKind,
   } from "@holons/core/tasks";
   import PeoplePicker from "./PeoplePicker.svelte";
-  import FederationSearch from "./FederationSearch.svelte";
+  import PersonSelect from "./PersonSelect.svelte";
   import ProposalVote from "./ProposalVote.svelte";
   import { breakdownAvailable, requestBreakdownProposal } from "$lib/breakdown";
   import { t, locale, type MessageKey } from "$lib/i18n";
@@ -995,36 +995,12 @@
   // The roster loads once the card is up, so the control appears with it.
   $: if (quest && $isLoggedIn) void loadMembers();
   $: onRoster = new Set(people.map((p) => String(p.id)));
-  $: addable = $members.filter((m) => !onRoster.has(String(m.id)));
 
   /**
-   * Put a member of the holon on this card, straight from it — no edit form.
-   * The card stays up with the new roster so several people can be added in
-   * a row; core's write puts a hologram of the card in each one's own holon.
+   * Put someone on this card straight from it — no edit form. The card stays
+   * up with the new roster so several people can be added in a row; core's
+   * write puts a hologram of the card in each one's own holon.
    */
-  async function addSomeone(e: Event) {
-    const select = e.currentTarget as HTMLSelectElement;
-    const value = select.value;
-    select.value = ""; // back to the label so the next pick fires change too
-    if (value === FEDERATION) {
-      fedSearch = true;
-      return;
-    }
-    const m = $members.find((x) => String(x.id) === value);
-    if (m) await addPerson(m);
-  }
-
-  /** The dropdown's last entry: search the federation's people instead. */
-  const FEDERATION = "__federation";
-  let fedSearch = false;
-  // A different card closes the search; a new roster on the same one does not.
-  let fedSearchFor: unknown = null;
-  $: if ((quest?.id ?? null) !== fedSearchFor) {
-    fedSearchFor = quest?.id ?? null;
-    fedSearch = false;
-  }
-
-  /** Someone from the dropdown or the federation search, onto this card. */
   async function addPerson(m: Member) {
     if (!sel || sel.kind === "thing" || !$holonId) return;
     saving = true;
@@ -1998,27 +1974,31 @@
                 : ""}</button
             >
             {#if quest?.status !== "completed"}
-              <!-- Put anyone in the holon on the card: the members not yet on
-                   it, as a native dropdown laid invisibly over the button;
-                   its last entry searches the federation beyond the holon. -->
-              <span class="ghost addperson" class:busy={saving}>
-                <Icon name="plus" />
-                {$t("detail.addSomeone")}
-                <select
-                  on:change={addSomeone}
+              <!-- Put anyone on the card: the people selector lists the
+                   members not yet on it; a search reaches partner holons. -->
+              <PersonSelect
+                grow
+                label={$t("detail.addParticipant")}
+                exclude={[...onRoster]}
+                federation
+                disabled={saving}
+                on:pick={(e) => void addPerson(e.detail as Member)}
+              >
+                <button
+                  slot="trigger"
+                  let:toggle
+                  let:open
+                  type="button"
+                  class="ghost addperson"
+                  class:busy={saving}
                   disabled={saving}
-                  aria-label={$t("detail.addParticipant")}
-                  title={$t("detail.addParticipant")}
+                  aria-haspopup="listbox"
+                  aria-expanded={open}
+                  on:click={toggle}
+                  ><Icon name="plus" />
+                  {$t("detail.addSomeone")}</button
                 >
-                  <option value="">{$t("detail.addParticipant")}</option>
-                  {#each addable as m (m.id)}
-                    <option value={String(m.id)}>{personName(m)}</option>
-                  {/each}
-                  <option value={FEDERATION}
-                    >{$t("people.searchFederation")}</option
-                  >
-                </select>
-              </span>
+              </PersonSelect>
             {/if}
             {#if occurrenceWhen}
               <!-- Opened from one date of a repeating series: done means done
@@ -2076,13 +2056,6 @@
               >
             {/if}
           </div>
-          {#if fedSearch && quest?.status !== "completed"}
-            <FederationSearch
-              exclude={[...onRoster]}
-              on:pick={(e) => void addPerson(e.detail)}
-              on:close={() => (fedSearch = false)}
-            />
-          {/if}
 
           {#if breakdownSteps !== null}
             <div class="breakdown">
@@ -2956,27 +2929,13 @@
   .primary:disabled {
     opacity: 0.6;
   }
-  /* "Add someone": a ghost button whose whole face is a native dropdown. */
+  /* "Add someone": opens the people selector. */
   .addperson {
-    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.4rem;
     padding: 0 1rem;
-  }
-  .addperson select {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    cursor: pointer;
-    font-size: 1rem; /* keeps iOS from zooming the page when it opens */
-  }
-  .addperson:focus-within {
-    outline: 2px solid var(--teal-deep);
-    outline-offset: 2px;
   }
   .addperson.busy {
     opacity: 0.6;

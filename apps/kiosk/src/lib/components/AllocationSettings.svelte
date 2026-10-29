@@ -67,6 +67,7 @@
   import SidePanel from "./SidePanel.svelte";
   import ValueEquation from "./ValueEquation.svelte";
   import PartyFinder from "./PartyFinder.svelte";
+  import PersonSelect from "./PersonSelect.svelte";
 
   export let holonId = "";
   export let config: AllocationConfig;
@@ -201,9 +202,7 @@
   // company only in the digits nobody was going to type.
   let shareText: Record<string, string> = {};
   // The custom-split picker's choice.
-  let sharePick = "";
   // The picker's choice; placing it moves the person into the list below.
-  let pick = "";
   // Partner holons found with the finder and not yet in the federation
   // record: seated now, linked on Save (core `linkSplitPartner`), so the
   // split can name a holon the hub has no relationship with yet.
@@ -496,12 +495,6 @@
     shareText = text;
   }
 
-  function addShare() {
-    if (!sharePick) return;
-    seatShare(sharePick);
-    sharePick = "";
-  }
-
   function seatShare(id: string) {
     if (id in shareOf) return;
     shareOf = { ...shareOf, [id]: 0 };
@@ -539,13 +532,6 @@
     const next = { ...personZone };
     delete next[id];
     personZone = next;
-  }
-
-  /** The picker: choosing someone seats them on the first ring at once. */
-  function addPerson() {
-    if (!pick) return;
-    placePerson(pick, 1);
-    pick = "";
   }
 
   function failed(err: any) {
@@ -870,15 +856,25 @@
         <div class="rowactions">
           {#if shareable.length}
             <div class="picker">
-              <select bind:value={sharePick} aria-label={$t("alloc.addPerson")}>
-                <option value="">{$t("alloc.addPerson")}</option>
-                {#each shareable as c (c.id)}
-                  <option value={c.id}>{c.name}</option>
-                {/each}
-              </select>
-              <button class="add" disabled={!sharePick} on:click={addShare}
-                >＋</button
+              <PersonSelect
+                block
+                label={$t("alloc.addPerson")}
+                people={shareable}
+                on:pick={(e) => seatShare(String(e.detail.id))}
               >
+                <button
+                  slot="trigger"
+                  let:toggle
+                  let:open
+                  type="button"
+                  class="pick"
+                  aria-haspopup="listbox"
+                  aria-expanded={open}
+                  on:click={toggle}
+                  ><span class="plus">＋</span>
+                  {$t("alloc.addPerson")}</button
+                >
+              </PersonSelect>
             </div>
           {/if}
           <button
@@ -1082,15 +1078,27 @@
           </ul>
         {/if}
         {#if unplaced.length}
+          <!-- Choosing someone seats them on the first ring at once. -->
           <div class="picker">
-            <select bind:value={pick} aria-label={$t("alloc.addPerson")}>
-              <option value="">{$t("alloc.addPerson")}</option>
-              {#each unplaced as c (c.id)}
-                <option value={c.id}>{c.name}</option>
-              {/each}
-            </select>
-            <button class="add" disabled={!pick} on:click={addPerson}>＋</button
+            <PersonSelect
+              block
+              label={$t("alloc.addPerson")}
+              people={unplaced}
+              on:pick={(e) => placePerson(String(e.detail.id), 1)}
             >
+              <button
+                slot="trigger"
+                let:toggle
+                let:open
+                type="button"
+                class="pick"
+                aria-haspopup="listbox"
+                aria-expanded={open}
+                on:click={toggle}
+                ><span class="plus">＋</span>
+                {$t("alloc.addPerson")}</button
+              >
+            </PersonSelect>
           </div>
         {:else if !placedPeople.length}
           <p class="sub">{$t("alloc.noPeople")}</p>
@@ -1710,28 +1718,26 @@
     gap: 0.5rem;
     margin-top: 0.5rem;
   }
-  .picker select {
-    flex: 1;
+  .picker .pick {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     min-width: 0;
     min-height: 48px;
     padding: 0.4rem 0.7rem;
     font: inherit;
-    color: var(--ink);
+    text-align: left;
+    color: var(--ink-soft);
     background: var(--card);
     border: 1.5px solid var(--line);
     border-radius: 12px;
-  }
-  .picker .add {
-    flex: 0 0 48px;
-    min-height: 48px;
-    border-radius: 12px;
-    background: var(--teal);
-    color: var(--on-teal);
-    font-size: 1.2rem;
     touch-action: manipulation;
+    cursor: pointer;
   }
-  .picker .add:disabled {
-    opacity: 0.4;
+  .picker .plus {
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: var(--teal-ink);
   }
   .wide-ghost {
     width: 100%;

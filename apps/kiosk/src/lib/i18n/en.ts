@@ -21,16 +21,11 @@ export const en = {
   "common.untitled": "Untitled",
 
   // People pickers: the federation beyond the holon (FederationSearch)
-  "people.searchFederation": "Search the federation…",
-  "people.searchFederationPlaceholder": "Name or @username in partner holons",
-  "people.searchingFederation": "Reading the partner holons…",
-  "people.federationEmpty":
-    "No one else in the federation — this holon has no partners yet, or they list no one new.",
-  "people.federationNoHits": "No one in the federation by that name.",
-  "people.federationHint": {
-    one: "{n} person in partner holons — type a name.",
-    other: "{n} people in partner holons — type a name.",
-  },
+  "people.searchMembers": "Search members…",
+  "people.searchAnyone": "Search members and partner holons…",
+  "people.noMatch": "No one by that name.",
+  "people.typeToSearchFederation": "Type a name to search partner holons too.",
+  "people.noOneLeft": "Everyone is already on it.",
   "people.via": "in {name}",
 
   // Relative dates (calendar-day distances)
@@ -236,8 +231,10 @@ export const en = {
   "rolesv.titlePlaceholder": "Role title",
   "rolesv.descPlaceholder": "What does it involve? (optional)",
   "rolesv.fixedHolderLabel": "Fixed holder · holds it every day",
-  "rolesv.clearFixed": "Clear",
-  "rolesv.makeMeFixed": "Make me the fixed holder",
+  "rolesv.assign": "Assign",
+  "rolesv.clearDay": "Clear the day",
+  "rolesv.pickFixed": "Pick who holds it…",
+  "rolesv.removeFixed": "Remove {name} as the fixed holder",
   "rolesv.saving": "Saving…",
   "rolesv.deleteRole": "Delete role",
 

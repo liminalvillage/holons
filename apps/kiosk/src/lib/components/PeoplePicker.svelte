@@ -2,58 +2,36 @@
 <script lang="ts">
   // A roster of people on a card — the hosts of an event, or its participants.
   // Each person is a chip with a clear "×" badge to drop them; one round "+"
-  // opens the holon's members as a native dropdown (the select sits invisibly
-  // over the button, so the tap lands on it); its last entry opens a search
-  // of the federation's people below the row (FederationSearch), for someone
-  // from a partner holon. What the list *means* is core's
+  // opens the people selector (PersonSelect: search, avatars, members first,
+  // partner holons' people on a search). What the list *means* is core's
   // (`hostsOf`, `setParticipants`); this only edits the array the card form
   // will save.
-  import { onMount } from "svelte";
   import Icon from "$lib/components/Icon.svelte";
   import type { QuestParticipant } from "@holons/core/tasks";
-  import { loadMembers, members, type Member } from "$lib/members";
   import { personName } from "$lib/data";
   import { avatarUrl, avatarInitial, hideImg, showImg } from "./Avatars.svelte";
-  import FederationSearch from "./FederationSearch.svelte";
-  import { t } from "$lib/i18n";
+  import PersonSelect, { type PersonOption } from "./PersonSelect.svelte";
 
   export let people: QuestParticipant[] = [];
   /** The dropdown's accessible name and empty entry, e.g. "Add a host…". */
   export let addLabel = "";
   /** The remove badge's accessible name for one person. */
   export let removeLabel: (name: string) => string = (name) => name;
+  /** One person at most (a role's fixed holder): a pick replaces them. */
+  export let single = false;
 
-  onMount(() => void loadMembers());
-
-  const nameOf = (p: Member | QuestParticipant): string => personName(p);
+  const nameOf = (p: QuestParticipant): string => personName(p);
 
   $: taken = new Set(people.map((h) => String(h.id)));
-  $: available = $members.filter((m) => !taken.has(String(m.id)));
 
-  /** The select's last entry: open the federation search instead. */
-  const FEDERATION = "__federation";
-  let searching = false;
-
-  function add(e: Event) {
-    const select = e.currentTarget as HTMLSelectElement;
-    const value = select.value;
-    select.value = ""; // back to the "+" so the next pick fires change too
-    if (value === FEDERATION) {
-      searching = true;
-      return;
-    }
-    const m = $members.find((x) => String(x.id) === value);
-    if (m) put(m);
-  }
-
-  function put(m: Member) {
+  function put(m: PersonOption) {
     if (taken.has(String(m.id))) return;
     // The stored shape of a person on a card — see membership.ts `person`.
     const p: QuestParticipant = { id: m.id };
     if (m.username) p.username = m.username;
     if (m.first_name) p.first_name = m.first_name;
     if (m.last_name) p.last_name = m.last_name;
-    people = [...people, p];
+    people = single ? [p] : [...people, p];
   }
 
   function remove(id: string | number | undefined) {
@@ -90,25 +68,27 @@
     </li>
   {/each}
   <li class="add">
-    <span class="add-face" aria-hidden="true"><Icon name="plus" /></span>
-    <!-- The real control: a native dropdown of the rest of the holon,
-           drawn transparent over the "+" so the tap opens the list. -->
-    <select on:change={add} aria-label={addLabel} title={addLabel}>
-      <option value="">{addLabel}</option>
-      {#each available as m (m.id)}
-        <option value={String(m.id)}>{nameOf(m)}</option>
-      {/each}
-      <option value={FEDERATION}>{$t("people.searchFederation")}</option>
-    </select>
+    <PersonSelect
+      label={addLabel}
+      exclude={[...taken]}
+      federation
+      on:pick={(e) => put(e.detail)}
+    >
+      <button
+        slot="trigger"
+        let:toggle
+        let:open
+        type="button"
+        class="add-face"
+        aria-label={addLabel}
+        title={addLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        on:click={toggle}><Icon name="plus" /></button
+      >
+    </PersonSelect>
   </li>
 </ul>
-{#if searching}
-  <FederationSearch
-    exclude={[...taken]}
-    on:pick={(e) => put(e.detail)}
-    on:close={() => (searching = false)}
-  />
-{/if}
 
 <style>
   .roster {
@@ -196,8 +176,10 @@
     height: 44px;
   }
   .add-face {
-    position: absolute;
-    inset: 0;
+    width: 44px;
+    height: 44px;
+    cursor: pointer;
+    background: transparent;
     border-radius: 50%;
     display: grid;
     place-items: center;
@@ -205,16 +187,7 @@
     color: var(--teal-ink);
     font-size: 1.25rem;
   }
-  .add select {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    cursor: pointer;
-    font-size: 1rem; /* keeps iOS from zooming the page when it opens */
-  }
-  .add:active .add-face {
+  .add-face:active {
     background: var(--teal-deep);
     color: var(--on-teal);
   }

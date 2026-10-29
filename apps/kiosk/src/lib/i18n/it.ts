@@ -18,16 +18,12 @@ export const it: Record<MessageKey, Msg> = {
   "common.untitled": "Senza titolo",
 
   // People pickers: the federation beyond the holon (FederationSearch)
-  "people.searchFederation": "Cerca nella federazione…",
-  "people.searchFederationPlaceholder": "Nome o @username negli holon partner",
-  "people.searchingFederation": "Lettura degli holon partner…",
-  "people.federationEmpty":
-    "Nessun altro nella federazione — questo holon non ha ancora partner, o non elencano nessuno di nuovo.",
-  "people.federationNoHits": "Nessuno con questo nome nella federazione.",
-  "people.federationHint": {
-    one: "{n} persona negli holon partner — scrivi un nome.",
-    other: "{n} persone negli holon partner — scrivi un nome.",
-  },
+  "people.searchMembers": "Cerca membri…",
+  "people.searchAnyone": "Cerca membri e holon partner…",
+  "people.noMatch": "Nessuno con quel nome.",
+  "people.typeToSearchFederation":
+    "Scrivi un nome per cercare anche negli holon partner.",
+  "people.noOneLeft": "Ci sono già tutti.",
   "people.via": "in {name}",
 
   // Relative dates
@@ -245,8 +241,10 @@ export const it: Record<MessageKey, Msg> = {
   "rolesv.titlePlaceholder": "Titolo del ruolo",
   "rolesv.descPlaceholder": "In cosa consiste? (facoltativo)",
   "rolesv.fixedHolderLabel": "Titolare fisso · lo tiene ogni giorno",
-  "rolesv.clearFixed": "Rimuovi",
-  "rolesv.makeMeFixed": "Rendimi il titolare fisso",
+  "rolesv.assign": "Assegna",
+  "rolesv.clearDay": "Svuota il giorno",
+  "rolesv.pickFixed": "Scegli chi lo ricopre…",
+  "rolesv.removeFixed": "Rimuovi {name} come titolare fisso",
   "rolesv.saving": "Salvataggio…",
   "rolesv.deleteRole": "Elimina il ruolo",
 

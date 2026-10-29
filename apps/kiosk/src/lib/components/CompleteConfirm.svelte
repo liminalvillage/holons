@@ -4,19 +4,19 @@
   import { personName } from "$lib/data";
   // Confirm who took part before a completion is recorded — the participant set
   // drives the REA accounting, so this keeps credit honest. Toggle people off
-  // who didn't actually participate, and add anyone from the holon's members
-  // who isn't already listed — or, through "Search the federation…", someone
-  // from a partner holon (FederationSearch). This dialog IS the participation gate: you never
+  // who didn't actually participate, and add anyone not already listed through
+  // the people selector (PersonSelect: the holon's members, or a partner
+  // holon's people on a search). This dialog IS the participation gate: you never
   // have to join a task before you can complete it (see complete.ts), so the
   // current user is always one of the rows.
   // Avatars come from the kiosk's /api/avatar route.
   import { get } from "svelte/store";
   import Modal from "./Modal.svelte";
-  import FederationSearch from "./FederationSearch.svelte";
+  import PersonSelect from "./PersonSelect.svelte";
   import { avatarUrl } from "./Avatars.svelte";
-  import { completionRequest, holonId } from "$lib/stores";
+  import { completionRequest } from "$lib/stores";
   import { currentUser } from "$lib/auth";
-  import { loadMembers, type Member } from "$lib/members";
+  import type { Member } from "$lib/members";
   import { t } from "$lib/i18n";
   import { hostsOf, type Quest } from "@holons/core/tasks";
 
@@ -26,7 +26,6 @@
   let rows: Row[] = [];
   // The task is an event that names hosts: they are who gets credited.
   let hosted = false;
-  let members: Member[] = []; // the holon's `users` lens
 
   // Rebuild whenever a new request arrives.
   $: sync($completionRequest);
@@ -38,7 +37,6 @@
     }
     if (req.task === task) return;
     task = req.task;
-    searching = false;
     // An event that names hosts credits THEM (core's creditedMembers), so the
     // dialog confirms the hosts instead of the participants.
     const hostList = hostsOf(task) as Member[];
@@ -73,9 +71,6 @@
           user: me as Member,
         },
       ];
-    void loadMembers(get(holonId) ?? undefined).then((list) => {
-      members = list;
-    });
   }
 
   function partName(p: Member): string {
@@ -88,30 +83,9 @@
     return id != null ? avatarUrl(id) : "";
   }
 
-  // Members not already in the list, for the "add" dropdown.
-  $: available = members.filter(
-    (m) =>
-      m?.id != null && !rows.some((r) => String(r.user?.id) === String(m.id)),
-  );
-
   function toggle(i: number) {
     rows[i].on = !rows[i].on;
     rows = rows;
-  }
-  /** The select's last entry: open the federation search instead. */
-  const FEDERATION = "__federation";
-  let searching = false;
-
-  function addMember(e: Event) {
-    const id = (e.target as HTMLSelectElement).value;
-    (e.target as HTMLSelectElement).value = "";
-    if (!id) return;
-    if (id === FEDERATION) {
-      searching = true;
-      return;
-    }
-    const m = members.find((x) => String(x.id) === id);
-    if (m) addRow(m);
   }
   function addRow(m: Member) {
     if (rows.some((r) => String(r.user?.id) === String(m.id))) return;
@@ -184,23 +158,26 @@
         {/each}
       </ul>
 
-      <label class="add">
-        <span class="add-ico">＋</span>
-        <select on:change={addMember} aria-label={$t("complete.addMemberAria")}>
-          <option value="">{$t("complete.addMember")}</option>
-          {#each available as m (m.id)}
-            <option value={String(m.id)}>{partName(m)}</option>
-          {/each}
-          <option value={FEDERATION}>{$t("people.searchFederation")}</option>
-        </select>
-      </label>
-      {#if searching}
-        <FederationSearch
-          exclude={rows.map((r) => r.user?.id)}
-          on:pick={(e) => addRow(e.detail)}
-          on:close={() => (searching = false)}
-        />
-      {/if}
+      <PersonSelect
+        block
+        label={$t("complete.addMemberAria")}
+        exclude={rows.map((r) => r.user?.id)}
+        federation
+        on:pick={(e) => addRow(e.detail as Member)}
+      >
+        <button
+          slot="trigger"
+          let:toggle
+          let:open
+          type="button"
+          class="add"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          on:click={toggle}
+          ><span class="add-ico">＋</span>
+          {$t("complete.addMember")}</button
+        >
+      </PersonSelect>
 
       <div class="actions">
         <button class="primary" on:click={confirm}
@@ -314,24 +291,19 @@
     border: 1.5px dashed var(--line);
     border-radius: 14px;
     margin-bottom: 0.2rem;
+    min-height: 48px;
+    background: transparent;
+    font: inherit;
+    font-size: 1rem;
+    color: var(--ink-soft);
+    text-align: left;
+    cursor: pointer;
   }
   .add-ico {
     flex: 0 0 auto;
     font-size: 1.2rem;
     font-weight: 800;
     color: var(--teal-ink);
-  }
-  .add select {
-    flex: 1;
-    min-height: 44px;
-    border: none;
-    background: transparent;
-    font-size: 1rem;
-    font-family: inherit;
-    color: var(--ink);
-  }
-  .add select:focus {
-    outline: none;
   }
 
   .actions {

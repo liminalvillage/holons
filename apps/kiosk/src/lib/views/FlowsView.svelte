@@ -154,6 +154,7 @@
   import { bindEquation, equation as equationStore } from "$lib/equation";
   import type { AllocationDraft } from "$lib/allocation";
   import Icon from "$lib/components/Icon.svelte";
+  import PersonSelect from "$lib/components/PersonSelect.svelte";
   import SankeyChart from "$lib/components/SankeyChart.svelte";
   import ChordChart from "$lib/components/ChordChart.svelte";
   import Modal from "$lib/components/Modal.svelte";
@@ -2209,18 +2210,36 @@
                       class="claim-form give-form"
                       on:submit|preventDefault={submitGive}
                     >
-                      <label class="claim-field grow">
+                      <div class="claim-field grow">
                         <span class="k">{$t("flows.giveTo")}</span>
-                        <select bind:value={giveTo} required>
-                          <option value="" disabled selected hidden></option>
-                          {#each giveCandidates as id (id)}
-                            <option value={id}>{partyName(id)}</option>
-                          {/each}
-                          <option value="__other"
-                            >{$t("flows.giveToOther")}</option
+                        <PersonSelect
+                          block
+                          label={$t("flows.giveTo")}
+                          people={giveCandidates.map((id) => ({
+                            id,
+                            name: partyName(id),
+                          }))}
+                          otherLabel={$t("flows.giveToOther")}
+                          on:pick={(e) => (giveTo = String(e.detail.id))}
+                          on:other={() => (giveTo = "__other")}
+                        >
+                          <button
+                            slot="trigger"
+                            let:toggle
+                            let:open
+                            type="button"
+                            class="giveto"
+                            aria-haspopup="listbox"
+                            aria-expanded={open}
+                            on:click={toggle}
+                            >{giveTo === "__other"
+                              ? $t("flows.giveToOther")
+                              : giveTo
+                                ? partyName(giveTo)
+                                : "—"}<Icon name="chevron-down" /></button
                           >
-                        </select>
-                      </label>
+                        </PersonSelect>
+                      </div>
                       {#if giveTo === "__other"}
                         <label class="claim-field grow">
                           <span class="k">{$t("flows.giveToOther")}</span>
@@ -3462,7 +3481,13 @@
     color: inherit;
     border: 1px solid var(--line, rgba(128, 128, 128, 0.35));
   }
-  .claim-field select {
+  .giveto {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    text-align: left;
+    cursor: pointer;
     min-height: 44px;
     box-sizing: border-box;
     padding: 0.4rem 0.6rem;
