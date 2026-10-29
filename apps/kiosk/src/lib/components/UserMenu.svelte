@@ -4,8 +4,8 @@
   import { shortId } from "@holons/core/identity";
   // The single entry point behind the header account chip: identity, the
   // dashboard link, and Settings — everything that used to clutter the
-  // header, now in one menu. (Federated visibility lives in each view's Show
-  // pill — see ScopePill.)
+  // header, now in one menu. (Federated visibility lives in the pills
+  // band's Filters sheet — see FilterSheet.)
   import { currentUser, displayName, loginOpen, logout } from "$lib/auth";
   import {
     showNotice,

@@ -45,18 +45,18 @@ matter.
   standard Nostr kind (NIP-52 / NIP-99 / NIP-51 / NIP-58 / NIP-29) so any
   Nostr client can read it. Shifts come straight from the relay via
   `@holons/core/shifts` (see [`docs/shifts-elinor.md`](../../docs/shifts-elinor.md)).
-- **Show & Layout pills:** one global pills band under the tabs adapts to the
-  active tab. Its **Show** pill chooses whose items appear — **Personal**
-  (only the logged-in user's), **Local** (this holon), or **Global** (this
-  holon plus its federation partners, folded in live by HoloSphere's
-  `subscribeFederated`; partner items carry a small `⇄ <partner>` source
-  chip) — and, where a tab has more than one layout, it adds the tab's
-  **Layout** (and, on Tasks, **Sort**) pill. Whenever the pills fit on one
-  row they render as small tap-to-cycle toggles, Show pinned left and the
-  tab's pills right; only when even those outgrow the row do the full
-  segmented pills appear, centred and wrapping. The band hides together with
-  the header chrome when the screen goes idle; all choices are remembered on
-  the device.
+- **Filters & Layout pills:** one global pills band under the tabs adapts to
+  the active tab. Its **Filters** button (pinned left, counting the choices
+  that differ from the defaults) opens one sheet with everything that decides
+  what the board shows and in which order: **Federated** (this holon plus its
+  federation partners, folded in live; partner items carry a source chip) on
+  every tab, and on Tasks also **Done** (completed tasks too) and **Sort by**
+  (Loved / New / Manual). Where a tab has more than one layout the band adds
+  its **Layout** pill on the right. Pills shrink to small tap-to-cycle toggles
+  right-to-left as the row runs out of room; only when even those outgrow the
+  row do the full segmented pills appear, centred and wrapping. The band hides
+  together with the header chrome when the screen goes idle; all choices are
+  remembered on the device.
 - **Settings:** the ⚙ button opens a panel to choose which holon the screen
   shows, set a **display name** and **logo** for the header (logo uploaded and
   stored on the device), and jump to the full dashboard. Choices are

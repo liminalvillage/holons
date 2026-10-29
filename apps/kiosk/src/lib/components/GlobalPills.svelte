@@ -1,9 +1,11 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
-  // The single pills band for the whole kiosk: one Show federated switch, the
-  // active tab's own Layout/Sort segments, and — at the right edge — the
-  // active tab's settings and the full-screen toggle. Rendered once by the
+  // The single pills band for the whole kiosk: one Filters button (what the
+  // board shows and in which order — Federated, the Tasks views' Done and
+  // Sort — gathered in FilterSheet), the active tab's own Layout segments,
+  // and — at the right edge — the active tab's settings and the full-screen
+  // toggle. Rendered once by the
   // page shell — outside the tab-keyed view mount, so switching tabs swaps
   // the segments without replaying the entrance animation.
   //
@@ -20,9 +22,9 @@
   // Layout adapts to the width available, one pill at a time: every pill
   // starts unpacked — full segments, each carrying its option name — and as
   // the row runs out of room they collapse into the small cycling toggle
-  // RIGHT to LEFT (the rightmost first, the Show pill last), so the leftmost pills
+  // RIGHT to LEFT (the rightmost first, the Filters button last), so the leftmost pills
   // keep their names as long as they fit. The row stays in the same spread
-  // arrangement throughout — Show pinned left, the tab's pills and the gear
+  // arrangement throughout — Filters pinned left, the tab's pills and the gear
   // pinned right — so nothing jumps sideways as tabs switch. Only when even
   // the all-compact row can't fit does the band fall back to the full
   // segmented pills, centred and wrapping. One hidden copy of the row per
@@ -41,6 +43,7 @@
     taskViewMode,
     taskSort,
     showCompleted,
+    scope,
     libraryViewMode,
     libraryCalendarMode,
     rolesViewMode,
@@ -51,8 +54,6 @@
   } from "$lib/stores";
   import {
     setTaskView,
-    setTaskSort,
-    setShowCompleted,
     setLibraryView,
     setRolesView,
     setFlowsView,
@@ -68,13 +69,11 @@
     type OffersViewMode,
     type CalendarMode,
   } from "$lib/config";
-  import type { TaskSort } from "$lib/data";
-  import { LAYOUT_SEGMENTS, SORT_SEGMENTS } from "$lib/pills";
+  import { LAYOUT_SEGMENTS } from "$lib/pills";
   import type { IconName } from "$lib/icons";
   import { t, type MessageKey, type Translator } from "$lib/i18n";
   import PillSwitch from "./PillSwitch.svelte";
-  import ScopePill from "./ScopePill.svelte";
-  import SwitchPill from "./SwitchPill.svelte";
+  import FilterSheet from "./FilterSheet.svelte";
   import Icon from "./Icon.svelte";
   import { boardFullscreen, toggleFullscreen } from "$lib/fullscreen";
 
@@ -84,7 +83,8 @@
   type Segment = { id: string; icon: IconName; labelKey: MessageKey };
 
   // ── Tasks: swipe deck / compact list / post-it wall. Whether partners'
-  // tasks come along is the orthogonal Show federated switch — see ScopePill.
+  // tasks come along, done ones too, and their order are filters — see
+  // FilterSheet.
   const TASK_MODES: (Segment & { id: TaskViewMode })[] = [
     { id: "swipe", ...LAYOUT_SEGMENTS.card },
     { id: "list", ...LAYOUT_SEGMENTS.list },
@@ -156,15 +156,6 @@
     taskViewMode.set(m as TaskViewMode);
     setTaskView(m as TaskViewMode);
   }
-  function pickTaskSort(s: string) {
-    taskSort.set(s as TaskSort);
-    setTaskSort(s as TaskSort);
-  }
-  function toggleShowCompleted() {
-    const next = !$showCompleted;
-    showCompleted.set(next);
-    setShowCompleted(next);
-  }
   function pickLibraryMode(m: string) {
     libraryViewMode.set(m as LibraryViewMode);
     setLibraryView(m as LibraryViewMode);
@@ -200,34 +191,20 @@
 
   // The active tab's own pills, as data, so the visible row and the hidden
   // measuring row render from the same list.
-  type OwnPill = SegmentPill | TogglePill;
-  interface SegmentPill {
-    kind?: "segments";
+  interface OwnPill {
     key: string;
     options: { id: string; label: string; icon?: IconName }[];
     value: string;
     onChange: (id: string) => void;
-    icon: "eye" | "sort";
+    icon: "eye";
     title: string;
     label: string;
     showText?: boolean;
-  }
-  /** An on/off switch among the tab's pills (the Tasks views' Done). */
-  interface TogglePill {
-    kind: "switch";
-    key: string;
-    on: boolean;
-    onToggle: () => void;
-    icon: IconName;
-    label: string;
-    aria: string;
   }
   function ownPillsFor(
     tr: Translator,
     tab: string,
     taskMode: string,
-    sort: string,
-    done: boolean,
     libMode: string,
     libCalMode: string,
     rolesMode: string,
@@ -246,24 +223,6 @@
           icon: "eye",
           title: tr("pills.view"),
           label: tr("pills.tasksLayout"),
-        },
-        {
-          key: "sort",
-          options: resolve(tr, SORT_SEGMENTS),
-          value: sort,
-          onChange: pickTaskSort,
-          icon: "sort",
-          title: tr("pills.sort"),
-          label: tr("pills.tasksOrder"),
-        },
-        {
-          kind: "switch",
-          key: "done",
-          on: done,
-          onToggle: toggleShowCompleted,
-          icon: "check",
-          label: tr("pills.done"),
-          aria: tr("pills.doneAria"),
         },
       ];
     if (tab === "library")
@@ -354,14 +313,12 @@
           showText: true,
         },
       ];
-    return []; // checklists: the Show pill alone
+    return []; // checklists: the Filters button alone
   }
   $: ownPills = ownPillsFor(
     $t,
     $activeTab,
     $taskViewMode,
-    $taskSort,
-    $showCompleted,
     $libraryViewMode,
     $libraryCalendarMode,
     $rolesViewMode,
@@ -372,6 +329,21 @@
   );
 
   // Status and Shifts have no layout pill of their own.
+
+  // The Filters button counts the choices that differ from the defaults
+  // (Federated off; on Tasks, Done off and the Loved order), so a narrowed
+  // or reordered board is never a surprise.
+  let filtersOpen = false;
+  $: filterCount =
+    ($scope === "networked" ? 1 : 0) +
+    ($activeTab === "tasks"
+      ? ($showCompleted ? 1 : 0) + ($taskSort !== "loved" ? 1 : 0)
+      : 0);
+  $: filtersLabel = $t("filters.title");
+  $: filtersAria =
+    filterCount > 0
+      ? $t("filters.aria", { n: filterCount })
+      : $t("filters.title");
   // The gear: the view's OWN settings, only while it offers them. The
   // holon's general settings are not here — they sit beside the account
   // chip in the header (TabBar), with their own gear; this one wears the
@@ -429,14 +401,14 @@
   // How many pills, counting from the RIGHT, collapse into the cycling
   // toggle. Level 0 is everything unpacked, level `total` everything
   // compact; the first level whose hidden copy fits the band wins, so pills
-  // give up their names right-to-left and the Show pill packs last. -1
+  // give up their names right-to-left and the Filters button packs last. -1
   // means even all-compact overflows → the wrapped fallback. Before the
   // widths are known, assume all-compact (the common case — no flash of a
   // row that's about to collapse). The gear never packs: it is already as
   // small as it gets, and it is measured with every level.
   let bandWidth = 0;
   let levelWidths: number[] = [];
-  $: total = ownPills.length + 1; // the tab's own pills + the Show pill
+  $: total = ownPills.length + 1; // the tab's own pills + Filters
   $: levels = Array.from({ length: total + 1 }, (_, k) => k);
   $: packCount = pickLevel(bandWidth, levelWidths, total);
   function pickLevel(band: number, widths: number[], all: number): number {
@@ -447,41 +419,43 @@
   }
   $: oneRow = packCount >= 0;
   // Which pill packs at the current level: the combined row is
-  // [Show, ...ownPills], so own pill i packs once i >= ownPills.length - k,
-  // and Show (leftmost) only at k === total.
+  // [Filters, ...ownPills], so own pill i packs once i >= ownPills.length - k,
+  // and Filters (leftmost) only at k === total.
   const ownPacked = (i: number, k: number, count: number) => i >= count - k;
 </script>
 
 <div class="gpills" bind:clientWidth={bandWidth}>
   {#if oneRow}
     <div class="row spread">
-      <ScopePill compact={packCount >= total} expanded={packCount < total} />
+      <button
+        type="button"
+        class="filters"
+        class:compact={packCount >= total}
+        class:expanded={packCount < total}
+        class:on={filterCount > 0}
+        aria-haspopup="dialog"
+        aria-label={filtersAria}
+        title={filtersLabel}
+        on:click={() => (filtersOpen = true)}
+      >
+        <Icon name="filter" class="picon" />
+        <span class="txt">{filtersLabel}</span>
+        {#if filterCount > 0}<span class="count">{filterCount}</span>{/if}
+      </button>
       <div class="own">
         {#each ownPills as p, i (p.key)}
           {@const packed = ownPacked(i, packCount, ownPills.length)}
-          {#if p.kind === "switch"}
-            <SwitchPill
-              compact={packed}
-              expanded={!packed}
-              on={p.on}
-              icon={p.icon}
-              label={p.label}
-              aria={p.aria}
-              onToggle={p.onToggle}
-            />
-          {:else}
-            <PillSwitch
-              compact={packed}
-              expanded={!packed}
-              options={p.options}
-              value={p.value}
-              onChange={p.onChange}
-              icon={p.icon}
-              title={p.title}
-              label={p.label}
-              showText={packed ? (p.showText ?? false) : true}
-            />
-          {/if}
+          <PillSwitch
+            compact={packed}
+            expanded={!packed}
+            options={p.options}
+            value={p.value}
+            onChange={p.onChange}
+            icon={p.icon}
+            title={p.title}
+            label={p.label}
+            showText={packed ? (p.showText ?? false) : true}
+          />
         {/each}
         {#if lens && $holonId}
           <button
@@ -520,27 +494,29 @@
     </div>
   {:else}
     <div class="row centered">
-      <ScopePill />
+      <button
+        type="button"
+        class="filters"
+        class:on={filterCount > 0}
+        aria-haspopup="dialog"
+        aria-label={filtersAria}
+        title={filtersLabel}
+        on:click={() => (filtersOpen = true)}
+      >
+        <Icon name="filter" class="picon" />
+        <span class="txt">{filtersLabel}</span>
+        {#if filterCount > 0}<span class="count">{filterCount}</span>{/if}
+      </button>
       {#each ownPills as p (p.key)}
-        {#if p.kind === "switch"}
-          <SwitchPill
-            on={p.on}
-            icon={p.icon}
-            label={p.label}
-            aria={p.aria}
-            onToggle={p.onToggle}
-          />
-        {:else}
-          <PillSwitch
-            options={p.options}
-            value={p.value}
-            onChange={p.onChange}
-            icon={p.icon}
-            title={p.title}
-            label={p.label}
-            showText={p.showText ?? false}
-          />
-        {/if}
+        <PillSwitch
+          options={p.options}
+          value={p.value}
+          onChange={p.onChange}
+          icon={p.icon}
+          title={p.title}
+          label={p.label}
+          showText={p.showText ?? false}
+        />
       {/each}
       {#if lens && $holonId}
         <button
@@ -587,32 +563,28 @@
       inert
       bind:clientWidth={levelWidths[k]}
     >
-      <ScopePill compact={k >= total} expanded={k < total} />
+      <span
+        class="filters"
+        class:compact={k >= total}
+        class:expanded={k < total}
+        ><Icon name="filter" class="picon" /><span class="txt"
+          >{filtersLabel}</span
+        >{#if filterCount > 0}<span class="count">{filterCount}</span
+          >{/if}</span
+      >
       {#each ownPills as p, i (p.key)}
         {@const packed = ownPacked(i, k, ownPills.length)}
-        {#if p.kind === "switch"}
-          <SwitchPill
-            compact={packed}
-            expanded={!packed}
-            on={p.on}
-            icon={p.icon}
-            label={p.label}
-            aria={p.aria}
-            onToggle={p.onToggle}
-          />
-        {:else}
-          <PillSwitch
-            compact={packed}
-            expanded={!packed}
-            options={p.options}
-            value={p.value}
-            onChange={p.onChange}
-            icon={p.icon}
-            title={p.title}
-            label={p.label}
-            showText={packed ? (p.showText ?? false) : true}
-          />
-        {/if}
+        <PillSwitch
+          compact={packed}
+          expanded={!packed}
+          options={p.options}
+          value={p.value}
+          onChange={p.onChange}
+          icon={p.icon}
+          title={p.title}
+          label={p.label}
+          showText={packed ? (p.showText ?? false) : true}
+        />
       {/each}
       {#if lens && $holonId}<span class="gear"><Icon name="lock" /></span>{/if}
       {#if gear}<span class="gear"><Icon name="sliders" /></span>{/if}
@@ -620,6 +592,10 @@
     </div>
   {/each}
 </div>
+
+{#if filtersOpen}
+  <FilterSheet on:close={() => (filtersOpen = false)} />
+{/if}
 
 {#if privacyOpen && lens && $holonId}
   <LensPrivacy
@@ -684,6 +660,62 @@
   .gear:active {
     transform: scale(0.92);
     background: var(--paper-deep);
+  }
+  /* The Filters button: a paper pill like the segmented pills, the word
+     dropping on small screens or when the band packs; teal and counted
+     while any filter differs from the defaults. */
+  .filters {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    height: calc(2.5rem + 8px);
+    min-width: calc(2.5rem + 8px);
+    justify-content: center;
+    padding: 0 0.85rem;
+    border-radius: 999px;
+    background: var(--paper);
+    color: var(--ink);
+    touch-action: manipulation;
+    transition:
+      background 0.2s ease,
+      transform 0.1s ease;
+  }
+  .filters:active {
+    transform: scale(0.95);
+  }
+  .filters.on {
+    color: var(--teal-ink);
+  }
+  .filters :global(.picon) {
+    width: 1.1rem;
+    height: 1.1rem;
+  }
+  .filters .txt {
+    font-size: 0.86rem;
+    font-weight: 700;
+  }
+  .filters .count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.3rem;
+    height: 1.3rem;
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    background: var(--teal-deep);
+    color: var(--on-teal);
+    font-size: 0.75rem;
+    font-weight: 800;
+  }
+  @media (max-width: 560px) {
+    .filters .txt {
+      display: none;
+    }
+  }
+  .filters.compact .txt {
+    display: none;
+  }
+  .filters.expanded .txt {
+    display: inline;
   }
   .gear.lock.on {
     background: var(--teal-deep);

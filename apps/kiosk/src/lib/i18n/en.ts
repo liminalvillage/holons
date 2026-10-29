@@ -385,9 +385,7 @@ export const en = {
   "pills.view": "View",
   "pills.fullscreen": "Full screen",
   "pills.exitFullscreen": "Exit full screen",
-  "pills.sort": "Sort",
   "pills.tasksLayout": "Tasks layout",
-  "pills.tasksOrder": "Tasks order",
   "pills.done": "Done",
   "pills.doneAria": "Show completed tasks too",
   "pills.libraryLayout": "Library layout",
@@ -400,6 +398,15 @@ export const en = {
   // Show (scope) pill
   "scope.federated": "Federated",
   "scope.aria": "Show the federated holons' items too",
+
+  // Filters sheet (pills band)
+  "filters.title": "Filters",
+  "filters.show": "Show",
+  "filters.sortBy": "Sort by",
+  "filters.aria": {
+    one: "Filters — {n} filter on",
+    other: "Filters — {n} filters on",
+  },
 
   // Header bar
   "tabbar.search": "Search…",

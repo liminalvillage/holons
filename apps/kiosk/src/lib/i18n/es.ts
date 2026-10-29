@@ -396,9 +396,7 @@ export const es: Record<MessageKey, Msg> = {
   "pills.view": "Vista",
   "pills.fullscreen": "Pantalla completa",
   "pills.exitFullscreen": "Salir de pantalla completa",
-  "pills.sort": "Ordenar",
   "pills.tasksLayout": "Disposición de las tareas",
-  "pills.tasksOrder": "Orden de las tareas",
   "pills.done": "Hechas",
   "pills.doneAria": "Mostrar también las tareas completadas",
   "pills.libraryLayout": "Disposición de la biblioteca",
@@ -411,6 +409,15 @@ export const es: Record<MessageKey, Msg> = {
   // Show (scope) pill
   "scope.federated": "Federados",
   "scope.aria": "Mostrar también los elementos de los holones federados",
+
+  // Filters sheet (pills band)
+  "filters.title": "Filtros",
+  "filters.show": "Mostrar",
+  "filters.sortBy": "Ordenar por",
+  "filters.aria": {
+    one: "Filtros — {n} filtro activo",
+    other: "Filtros — {n} filtros activos",
+  },
 
   // Header bar
   "tabbar.search": "Buscar…",
