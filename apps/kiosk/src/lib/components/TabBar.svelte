@@ -1050,6 +1050,14 @@
     font-size: 0.78rem;
   }
 
+  /* A phone held sideways: the row is wide enough for the title, but the
+     clock would wrap into a tall column and push the board down. */
+  @media (max-height: 560px) {
+    .clock {
+      display: none;
+    }
+  }
+
   /* Narrow portrait screens: strip the header down to search + account —
      the clock and the title go, so the search bar owns the row. */
   @media (max-width: 560px) {

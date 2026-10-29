@@ -1325,6 +1325,11 @@
     flex: 0 0 auto;
     display: grid;
     grid-template-rows: 1fr;
+    /* The column is the window's width, never the header's content width:
+       an implicit (auto) column grew to the header's max-content on a phone,
+       pushing its right side off screen and widening iOS Safari's layout
+       viewport (taps landed offset after a rotation). */
+    grid-template-columns: minmax(0, 1fr);
     transition:
       grid-template-rows 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
       opacity 0.3s ease,
@@ -1335,6 +1340,7 @@
   }
   .chrome__in {
     min-height: 0;
+    min-width: 0;
   }
   .kiosk.full .chrome {
     grid-template-rows: 0fr;
