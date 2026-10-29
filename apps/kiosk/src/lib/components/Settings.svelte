@@ -89,6 +89,7 @@
     type OnboardingView,
   } from "$lib/onboarding";
   import FederationLens from "./FederationLens.svelte";
+  import OnboardingEditor from "./OnboardingEditor.svelte";
   import { isHolonId, isTelegramChatId } from "@holons/core/protocol";
   import { keyLoginOffered } from "$lib/login/providers";
   import { linkedTelegramChats, type LinkRecord } from "@holons/core/linking";
@@ -319,6 +320,7 @@
   let onbConfig: OnboardingConfig | null = null;
   let onbPeople: OnboardingView[] = [];
   let onbBusy = false;
+  let onbEditing = false;
   async function loadOnb(id: string) {
     try {
       const { config, people } = await loadOnboardingAdmin(id);
@@ -364,6 +366,7 @@
     joinRequests = [];
     onbConfig = null;
     onbPeople = [];
+    onbEditing = false;
     if (role !== "admin" || !keyed(id)) return;
     void loadOnb(id);
     stopRequests = watchRequests(id, (r) => {
@@ -1185,26 +1188,49 @@
           <!-- Admins: who asked, who is linked, link one more. -->
           {#if hubRole === "admin"}
             {#if onbConfig}
-              <div class="map-row">
-                <span class="map-lens key-label"
-                  >{$t("onb.enable")}<span class="shared"
-                    >{$t("onb.settingsHint", {
-                      steps: onbConfig.steps.map((st) => st.title).join(" → "),
-                    })}</span
-                  ></span
-                >
-                <div class="map-lanes">
+              <div class="onb">
+                <div class="onb-head">
+                  <span class="onb-text">
+                    <span class="onb-name" id="onb-switch-label"
+                      >{$t("onb.enable")}</span
+                    >
+                    <span class="onb-steps"
+                      >{$t("onb.settingsHint", {
+                        steps: onbConfig.steps
+                          .map((st) => st.title)
+                          .join(" → "),
+                      })}</span
+                    >
+                  </span>
                   <button
                     type="button"
-                    class="lane"
+                    role="switch"
+                    class="onb-switch"
                     class:on={onbConfig.enabled}
-                    aria-pressed={onbConfig.enabled}
-                    aria-label={$t("onb.enable")}
+                    aria-checked={onbConfig.enabled}
+                    aria-labelledby="onb-switch-label"
                     disabled={onbBusy}
-                    on:click={toggleOnb}><Icon name="key" /></button
+                    on:click={toggleOnb}><span class="knob"></span></button
                   >
                 </div>
+                <button
+                  type="button"
+                  class="found ghost"
+                  on:click={() => (onbEditing = true)}
+                  ><Icon name="pencil" /> {$t("onb.edit")}</button
+                >
               </div>
+              {#if onbEditing && $holonId}
+                <OnboardingEditor
+                  holon={$holonId}
+                  config={onbConfig}
+                  walking={onbPeople.length}
+                  on:close={() => {
+                    onbEditing = false;
+                    if ($holonId) void loadOnb($holonId);
+                  }}
+                />
+              {/if}
               {#if onbConfig.enabled}
                 <p class="hex-note">
                   {onbPeople.length ? $t("onb.people") : $t("onb.none")}
@@ -1927,6 +1953,67 @@
     background: transparent;
     color: var(--teal-ink);
     border: 1.5px solid var(--teal);
+  }
+  /* The holon's onboarding: what it is, on/off, and its steps to edit. */
+  .onb {
+    margin: 0.9rem 0 0.4rem;
+    padding: 0.8rem 0.9rem 0.9rem;
+    border-radius: 16px;
+    background: var(--paper);
+  }
+  .onb-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.8rem;
+  }
+  .onb-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .onb-name {
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .onb-steps {
+    font-size: 0.85rem;
+    line-height: 1.4;
+    color: var(--muted);
+  }
+  .onb-switch {
+    flex: 0 0 auto;
+    position: relative;
+    width: 52px;
+    height: 32px;
+    margin-top: 0.1rem;
+    border-radius: 999px;
+    background: var(--line);
+    transition: background 0.18s ease;
+    touch-action: manipulation;
+  }
+  .onb-switch .knob {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--card);
+    box-shadow: var(--shadow-soft);
+    transition: transform 0.18s ease;
+  }
+  .onb-switch.on {
+    background: var(--teal);
+  }
+  .onb-switch.on .knob {
+    transform: translateX(20px);
+  }
+  .onb-switch:disabled {
+    opacity: 0.55;
   }
   .map-lens.fed-req {
     text-transform: none;

@@ -15,13 +15,14 @@
   import { sessionKeyPub } from "$lib/sessionKey";
   import {
     loadMyOnboarding,
+    previewSteps,
     saveMyProfile,
     tickCard,
     type MyOnboarding,
     type OnboardingCardView,
   } from "$lib/onboarding";
   import { t } from "$lib/i18n";
-  import Icon from "$lib/components/Icon.svelte";
+  import OnboardingSteps from "$lib/components/OnboardingSteps.svelte";
 
   let mine: MyOnboarding | null = null;
   let busy = false;
@@ -146,98 +147,52 @@
           on:click={start}>{asking ? $t("onb.asked") : $t("onb.ask")}</button
         >
       </p>
-      <ol class="steps">
-        {#each mine.config.steps as step}
-          <li class="step later"><span class="stitle">{step.title}</span></li>
-        {/each}
-      </ol>
+      <OnboardingSteps steps={previewSteps($holonId ?? "", mine.config, -1)} />
     {:else}
       <p class="intro">{$t("onb.intro", { holon: holonLabel })}</p>
-      <ol class="steps">
-        {#each mine.view.steps as step (step.id)}
-          <li class="step {step.state}">
-            <span class="stitle">
-              {#if step.state === "done"}<Icon name="check" />{/if}
-              {step.title}
-            </span>
-            {#if step.state === "current"}
-              <ul class="cards">
-                {#each step.cards as card (card.id)}
-                  <li class="card" class:done={card.done}>
-                    <div class="ctitle">
-                      <span class="mark" aria-hidden="true"
-                        ><Icon
-                          name={card.done ? "check-square" : "disc"}
-                        /></span
-                      >
-                      {card.title}
-                    </div>
-                    {#if card.description}<p class="desc">
-                        {card.description}
-                      </p>{/if}
-                    {#if card.link}
-                      <a
-                        class="link"
-                        href={card.link}
-                        target="_blank"
-                        rel="noopener noreferrer">{card.link}</a
-                      >
-                    {/if}
-                    {#if !card.done}
-                      {#if card.confirm === "admin"}
-                        <p class="hint">{$t("onb.adminTicks")}</p>
-                      {:else if card.confirm === "profile"}
-                        {#if mine.canTick}
-                          <form
-                            class="profile"
-                            on:submit|preventDefault={saveProfileForm}
-                          >
-                            <label>
-                              {$t("onb.profileName")}
-                              <input
-                                bind:value={profileName}
-                                on:input={() => (profileTouched = true)}
-                                autocomplete="name"
-                              />
-                            </label>
-                            <label>
-                              {$t("onb.profileOffer")}
-                              <textarea
-                                rows="3"
-                                bind:value={profileOffer}
-                                on:input={() => (profileTouched = true)}
-                              ></textarea>
-                            </label>
-                            <button
-                              class="cta"
-                              type="submit"
-                              disabled={busy ||
-                                !profileName.trim() ||
-                                !profileOffer.trim()}
-                              >{$t("onb.profileSave")}</button
-                            >
-                          </form>
-                        {:else}
-                          <p class="hint">{$t("onb.profileInTelegram")}</p>
-                        {/if}
-                      {:else if mine.canTick}
-                        <button
-                          class="cta"
-                          type="button"
-                          disabled={busy}
-                          on:click={() => tick(card)}>{$t("onb.tick")}</button
-                        >
-                      {:else}
-                        <p class="hint">{$t("onb.tickInTelegram")}</p>
-                      {/if}
-                    {/if}
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-          </li>
-        {/each}
-      </ol>
+      <OnboardingSteps steps={mine.view.steps} let:card>
+        {#if card.confirm === "admin"}
+          <p class="hint">{$t("onb.adminTicks")}</p>
+        {:else if card.confirm === "profile"}
+          {#if mine.canTick}
+            <form class="profile" on:submit|preventDefault={saveProfileForm}>
+              <label>
+                {$t("onb.profileName")}
+                <input
+                  bind:value={profileName}
+                  on:input={() => (profileTouched = true)}
+                  autocomplete="name"
+                />
+              </label>
+              <label>
+                {$t("onb.profileOffer")}
+                <textarea
+                  rows="3"
+                  bind:value={profileOffer}
+                  on:input={() => (profileTouched = true)}
+                ></textarea>
+              </label>
+              <button
+                class="cta"
+                type="submit"
+                disabled={busy || !profileName.trim() || !profileOffer.trim()}
+                >{$t("onb.profileSave")}</button
+              >
+            </form>
+          {:else}
+            <p class="hint">{$t("onb.profileInTelegram")}</p>
+          {/if}
+        {:else if mine.canTick}
+          <button
+            class="cta"
+            type="button"
+            disabled={busy}
+            on:click={() => tick(card)}>{$t("onb.tick")}</button
+          >
+        {:else}
+          <p class="hint">{$t("onb.tickInTelegram")}</p>
+        {/if}
+      </OnboardingSteps>
     {/if}
   </div>
 </div>
@@ -276,67 +231,10 @@
     color: var(--ink-soft);
     line-height: 1.5;
   }
-  .steps {
-    list-style: none;
-    margin: 0.8rem 0 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  .step {
-    padding: 0.6rem 0.9rem;
-    border-radius: 14px;
-    background: var(--paper);
-  }
-  .step.later .stitle {
-    color: var(--ink-soft);
-  }
-  .step.done .stitle {
-    color: var(--teal-ink);
-  }
-  .stitle {
-    font-weight: 700;
-    color: var(--ink);
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-  .cards {
-    list-style: none;
-    margin: 0.6rem 0 0.2rem;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  .card {
-    padding: 0.7rem 0.9rem;
-    border-radius: 12px;
-    background: var(--glass);
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-  }
-  .ctitle {
-    font-weight: 600;
-    color: var(--ink);
-    display: flex;
-    gap: 0.5rem;
-  }
-  .card.done .ctitle {
-    color: var(--teal-ink);
-  }
-  .desc,
   .hint {
     margin: 0;
     font-size: 0.9rem;
     color: var(--ink-soft);
-  }
-  .link {
-    font-size: 0.9rem;
-    color: var(--teal-ink);
-    word-break: break-all;
   }
   .profile {
     display: flex;

@@ -20,6 +20,7 @@ import {
   dealCards,
   listOnboarding,
   onboardingView,
+  previewSteps,
   readOnboarding,
   readProfile,
   saveOnboarding,
@@ -27,6 +28,8 @@ import {
   type OnboardingCardView,
   type OnboardingConfig,
   type OnboardingProfile,
+  type OnboardingStep,
+  type OnboardingStepView,
   type OnboardingView,
 } from "@holons/core/onboarding";
 import { resolveAppName } from "./config";
@@ -34,7 +37,14 @@ import { getHolosphere } from "./holosphere";
 import { sessionSigner } from "./hubmembers";
 import { sessionKeyPub } from "./sessionKey";
 
-export type { OnboardingCardView, OnboardingConfig, OnboardingView };
+export type {
+  OnboardingCardView,
+  OnboardingConfig,
+  OnboardingStep,
+  OnboardingStepView,
+  OnboardingView,
+};
+export { previewSteps };
 
 /** Where the session key stands with a holon's onboarding. */
 export type MyOnboarding =
@@ -145,6 +155,16 @@ export async function setOnboardingEnabled(
   const hs = await getHolosphere();
   const config = await readOnboarding(hs, holon);
   return saveOnboarding(hs, holon, { ...config, enabled });
+}
+
+/** Save the holon's steps as an admin edited them, keeping on/off as is. */
+export async function saveOnboardingSteps(
+  holon: string,
+  steps: OnboardingStep[],
+): Promise<OnboardingConfig> {
+  const hs = await getHolosphere();
+  const config = await readOnboarding(hs, holon);
+  return saveOnboarding(hs, holon, { ...config, steps });
 }
 
 /** Vouch for an admin card; the key is linked when that was the last one. */

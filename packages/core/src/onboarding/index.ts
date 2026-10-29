@@ -29,11 +29,12 @@ import { JOIN_REQUESTS_LENS, joinRequestRecords, type JoinRequestRecord, type Jo
 import { cleanName } from '../identity/ids.js';
 import { readHolonSettings } from '../settings/persistence.js';
 import { completedCards, dealCards, onboardingCardId } from './cards.js';
-import { readOnboarding, type OnboardingCard, type OnboardingConfig } from './config.js';
+import { normalizeOnboarding, readOnboarding, type OnboardingCard, type OnboardingConfig } from './config.js';
 import { readProfile, profileReady } from './profile.js';
 import { advance, cardDone, cardKey, confirmable, stepDone, type OnboardingFacts } from './reducer.js';
 
 export * from './config.js';
+export * from './edit.js';
 export * from './reducer.js';
 export * from './profile.js';
 export * from './cards.js';
@@ -94,6 +95,20 @@ export function viewOf(holon: string, config: OnboardingConfig, record: JoinRequ
       })),
     })),
   };
+}
+
+/**
+ * The steps as a newcomer would see them standing on step `at` (an index):
+ * what an admin previews while editing. Saved as it is — untitled cards and
+ * empty steps left out, as a save would.
+ */
+export function previewSteps(holon: string, config: OnboardingConfig, at = 0): OnboardingStepView[] {
+  return normalizeOnboarding(config).steps.map((step, i) => ({
+    id: step.id,
+    title: step.title,
+    state: i < at ? 'done' : i === at ? 'current' : 'later',
+    cards: step.cards.map((card) => ({ ...card, step: step.id, questId: onboardingCardId(holon, step.id, card.id), done: i < at })),
+  }));
 }
 
 async function factsFor(hs: HoloSphere, holon: string, home: string, config: OnboardingConfig): Promise<OnboardingFacts> {

@@ -2116,4 +2116,38 @@ export const en = {
   "onb.saveFailed": "Couldn't save: {reason}",
 } as const satisfies Record<string, Msg>;
 
+  "onb.edit": "Edit steps",
+  "onb.editTitle": "Onboarding steps",
+  "onb.tabSteps": "Steps",
+  "onb.tabPreview": "Preview",
+  "onb.stepN": "Step {n}",
+  "onb.stepTitle": "Name this step",
+  "onb.cardTitle": "What to do",
+  "onb.addStep": "Add a step",
+  "onb.addCard": "Add a card",
+  "onb.more": "Description or link",
+  "onb.description": "Description",
+  "onb.link": "Link",
+  "onb.who": "Who ticks it",
+  "onb.whoSelf": "Newcomer",
+  "onb.whoAdmin": "An admin",
+  "onb.whoProfile": "Profile",
+  "onb.whoSelfHint": "The newcomer ticks it themselves.",
+  "onb.whoAdminHint":
+    "An admin ticks it once it happened, like a call or meeting a buddy.",
+  "onb.whoProfileHint":
+    "Ticks itself once their profile has a name and what they offer.",
+  "onb.moveUp": "Move up",
+  "onb.moveDown": "Move down",
+  "onb.removeStep": "Remove step",
+  "onb.removeCard": "Remove card",
+  "onb.removeSure": "Remove?",
+  "onb.untitled": "Not saved until it has a title.",
+  "onb.emptyStep": "This step is not saved until one of its cards has a title.",
+  "onb.empty": "No steps yet.",
+  "onb.useSuggested": "Start from the suggested steps",
+  "onb.walkingNote":
+    "Walking these steps now: {n}. Renaming is safe; if you remove the step someone is on, they move to the next open one.",
+  "onb.previewNote": "What a newcomer sees. Pick a step to stand on.",
+  "onb.previewAt": "Stand on step",
 export type MessageKey = keyof typeof en;
