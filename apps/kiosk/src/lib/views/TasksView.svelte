@@ -924,7 +924,7 @@
                       </button>
                     </div>
                   {/if}
-                  <h3>{task.title}</h3>
+                  <h3 title={task.title}>{task.title}</h3>
                   {#if task.initiator}
                     <div
                       class="initiator"
@@ -1346,9 +1346,27 @@
        delete (top-left) / complete (top-right) buttons — a finger on the
        title's edge must not land on ✕. */
     padding: 0 2rem;
-    font-size: 0.98rem;
+    font-size: 0.82rem;
     line-height: 1.25;
     color: var(--ink);
+    /* Long titles clamp to three lines so more notes fit on the wall; the
+       full text shows on hover/focus (and in the native tooltip). */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+  @media (hover: hover) {
+    .note:hover h3 {
+      -webkit-line-clamp: unset;
+      line-clamp: none;
+    }
+  }
+  .note:focus-visible h3 {
+    -webkit-line-clamp: unset;
+    line-clamp: none;
   }
 
   /* Initiator chip — who proposed the idea: a lightbulb, their avatar, name. */
