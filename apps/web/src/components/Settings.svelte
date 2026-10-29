@@ -14,7 +14,7 @@
     type LinkAccept,
     type LinkRecord,
   } from '@holons/core/linking';
-  import { telegramDeepLinks } from '@holons/core/onboarding';
+  import { telegramDeepLinks } from '@holons/core/claims';
   import { isHolonId, isTelegramChatId } from '@holons/core/protocol';
   import { signerFromSecretKey, writeAcceptance } from '@holons/core/holosphere';
   import { nostrPrivateKey } from '$lib/stores/nostr';

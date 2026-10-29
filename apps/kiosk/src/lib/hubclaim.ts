@@ -5,7 +5,7 @@
 // A hub is a Telegram chat, so "start a new hub" leaves for Telegram — and
 // Telegram cannot hand anything back to the tab it left. The deep link CAN
 // carry something out, though: a one-time claim token, which the bot
-// redeems on the relay as "<token> → this chat" (`@holons/core/onboarding`).
+// redeems on the relay as "<token> → this chat" (`@holons/core/claims`).
 // This module is the screen's side of that loop: mint the token, remember it
 // while the person is away, build the two deep links, and watch the relay
 // for the redemption so the hub docks itself the moment the bot answers.
@@ -23,7 +23,7 @@ import {
   watchHolonClaim,
   type ClaimWatchStore,
   type HolonClaim,
-} from "@holons/core/onboarding";
+} from "@holons/core/claims";
 import { addToGroupUrl, botChatUrl, markBotHandoff } from "./config";
 
 const CLAIM_KEY = "kiosk_hub_claim";

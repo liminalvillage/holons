@@ -49,12 +49,15 @@ export const CAPABILITIES = Object.freeze({
  * never from a plain member's, whose settings write still counts for every
  * other field. Without this a member could seat themselves as admin, weigh
  * the equation or the split in their favour, or point the payout at their
- * own wallet, since the lens is last-writer-wins.
+ * own wallet, since the lens is last-writer-wins. `onboarding` is the path
+ * a newcomer walks before their key is linked: a member who could rewrite it
+ * could wave anyone in.
  */
 export const GUARDED_SETTINGS_FIELDS = Object.freeze([
   'holonPubkey', 'admin', 'nostrTrustedPubkeys', 'identityProviders',
   'valueEquation', 'equation',
   'allocation', 'pot', 'payout', 'bundle', 'treasury',
+  'onboarding',
 ]);
 
 /**

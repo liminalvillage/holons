@@ -516,7 +516,8 @@ export const serviceDefinitions = {
 
   // A join request from the kiosk or the dashboard (NIP-29 kind 9021) for a
   // holon that is a Telegram group: a proven group member is linked at
-  // once, anyone else is announced in the group for its admins to decide.
+  // once, anyone else is announced in the group for its admins to decide —
+  // or, when the holon has an onboarding, walked through it first.
   joinRequests: {
     factory: ({ telebot, database, settings }) =>
       new JoinRequests(telebot, database, settings),
@@ -578,13 +579,22 @@ export const serviceDefinitions = {
 
   // Web Server (should be last to avoid port conflicts during development)
   server: {
-    factory: ({ telebot, quests, expenses, events, database, settings }) => {
+    factory: ({
+      telebot,
+      quests,
+      expenses,
+      events,
+      database,
+      settings,
+      joinRequests,
+    }) => {
       return new Server(telebot, {
         quests,
         expenses,
         events,
         database,
         settings,
+        joinRequests,
       });
     },
     singleton: true,
@@ -595,6 +605,7 @@ export const serviceDefinitions = {
       'events',
       'database',
       'settings',
+      'joinRequests',
     ],
   },
 };
@@ -643,6 +654,9 @@ export const postInitHooks = {
     }
     if (typeof settings.setKeysInstance === 'function') {
       settings.setKeysInstance(await container.get('keys'));
+    }
+    if (typeof settings.setJoinRequestsInstance === 'function') {
+      settings.setJoinRequestsInstance(await container.get('joinRequests'));
     }
   },
 };

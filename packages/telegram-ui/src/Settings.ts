@@ -33,7 +33,7 @@ import {
 import { REAEventStore } from '@holons/core/rea';
 import { registerHolon } from '@holons/core/holosphere';
 import { audience, lock, share, unlock, unshare } from '@holons/core/privacy';
-import { parseClaimPayload, recordHolonClaim } from '@holons/core/onboarding';
+import { parseClaimPayload, recordHolonClaim } from '@holons/core/claims';
 import { KEY_LINK_DEEPLINK_PREFIX } from '@holons/core/users';
 import {
   acceptTelegramLink,
@@ -176,6 +176,7 @@ export default class Settings {
     this.quests = null;
     /** The /key service, for `/start keylink_…` (set by the container). */
     this.keys = null;
+    this.joinRequests = null;
 
     this._settingsCache = new Map();
     this._cacheTTL = 60 * 1000;
@@ -288,6 +289,13 @@ export default class Settings {
 
         // Handle deeplink payloads (e.g. /start join_-1002282981272_quests_itemId)
         const payload = ctx.message.text.split(' ')[1];
+        // `onboard_<holon>`: ask to link your key to a holon from Telegram;
+        // a holon with an onboarding walks you through it first.
+        const onboard = /^onboard_(-?\d{1,20})$/.exec(payload ?? '');
+        if (onboard && chatType === 'private' && this.joinRequests) {
+          await this.joinRequests.askFromTelegram(ctx, onboard[1]);
+          return;
+        }
         if (payload && payload.startsWith('join_') && chatType === 'private') {
           await this._handleJoinDeeplink(ctx, payload, language);
           return;
@@ -2701,6 +2709,11 @@ export default class Settings {
   /** The /key service answers `/start keylink_…` deep links. */
   setKeysInstance(keys) {
     this.keys = keys;
+  }
+
+  /** The join-request service answers `/start onboard_<holon>` deep links. */
+  setJoinRequestsInstance(joinRequests) {
+    this.joinRequests = joinRequests;
   }
 
   setHolonsInstance(holonsInstance) {
@@ -5498,7 +5511,7 @@ export default class Settings {
 
   /**
    * Redeem a hub-claim token carried by a `/start` payload (see
-   * `@holons/core/onboarding`): record `<token> → this chat` so the screen
+   * `@holons/core/claims`): record `<token> → this chat` so the screen
    * that minted it docks this hub without anyone copying an id. Returns
    * true when a claim was written. Never throws — the welcome must post
    * regardless.

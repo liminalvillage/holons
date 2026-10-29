@@ -685,6 +685,27 @@ class Server {
         )
       );
     });
+
+    // Someone ticked an onboarding card on another screen (the kiosk). Only a
+    // hint: the bot re-reads the person's holon before it moves them on.
+    app.post('/notify/onboarding', (req, res) => {
+      const { holon, pubkey } = req.body || {};
+      if (!holon || !/^[0-9a-f]{64}$/i.test(String(pubkey ?? ''))) {
+        return res
+          .status(400)
+          .json({ error: 'holon and pubkey (64 hex) required' });
+      }
+      const onboarding = this.services.joinRequests?.onboarding;
+      if (!onboarding) return res.status(503).json({ error: 'no onboarding' });
+      res.status(202).json({ scheduled: true });
+      onboarding
+        .nudge(String(holon), String(pubkey).toLowerCase())
+        .catch(err =>
+          log.warn(
+            `notify onboarding ${holon}/${pubkey} failed: ${err?.message || err}`
+          )
+        );
+    });
   }
 
   /**

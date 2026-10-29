@@ -28,7 +28,7 @@ import {
   type LinkAccept,
   type LinkRecord,
 } from "@holons/core/linking";
-import { isClaimToken, type ClaimWatchStore } from "@holons/core/onboarding";
+import { isClaimToken, type ClaimWatchStore } from "@holons/core/claims";
 import { isHolonId } from "@holons/core/protocol";
 import { addToGroupUrl, botChatUrl, markBotHandoff } from "./config";
 import { rememberBoard } from "./dock";

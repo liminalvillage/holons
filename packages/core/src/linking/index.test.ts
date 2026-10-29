@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { bytesToHex } from '@noble/hashes/utils';
 import { createHoloSphere } from '../holosphere/factory.js';
-import { isClaimToken, readHolonClaim } from '../onboarding/index.js';
+import { isClaimToken, readHolonClaim } from '../claims/index.js';
 import { addHolonMember, foundHolon, holonMembers, newHolonId } from '../protocol/founding.js';
 import { readMembersLog } from '../protocol/membership.js';
 import { testKey } from '../protocol/testing.js';

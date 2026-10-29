@@ -5,7 +5,7 @@
 // it notices the bot redeeming the token.
 
 import { describe, it as spec, expect, vi } from "vitest";
-import { CLAIM_MAX_AGE_MS } from "@holons/core/onboarding";
+import { CLAIM_MAX_AGE_MS } from "@holons/core/claims";
 import { hubClaimUrls, parsePendingClaim, watchHubClaim } from "./hubclaim";
 
 const TOKEN = "ABCDEFGHIJKLMNOPQRSTUV";

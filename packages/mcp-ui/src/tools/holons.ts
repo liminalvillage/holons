@@ -2,8 +2,9 @@
 //
 // Thin MCP wrappers around @holons/core/holons and @holons/core/linking:
 // founding a holon with this instance's key, seating keys (NIP-29 shaped
-// join requests), the holons this key keeps, and the challenge–response
-// link to a Telegram chat. Every write is signed by the MCP key; it counts
+// join requests), the onboarding a holon walks newcomers through
+// (@holons/core/onboarding), the holons this key keeps, and the
+// challenge–response link to a Telegram chat. Every write is signed by the MCP key; it counts
 // where that key is seated (an admin, for seating and linking).
 
 import { z } from 'zod';
@@ -29,7 +30,8 @@ import {
   unfederateLinkedChat,
   unlinkTelegram,
 } from '@holons/core/linking';
-import { readHolonClaim, telegramDeepLinks } from '@holons/core/onboarding';
+import { readHolonClaim, telegramDeepLinks } from '@holons/core/claims';
+import { confirmCard, listOnboarding, onboardingView, readOnboarding, refreshOnboarding, saveOnboarding } from '@holons/core/onboarding';
 import { addHolonMember, holonMembers, myHolonRole, removeHolonMember, syncFoundingAuthority } from '@holons/core/protocol';
 import type { ToolDeps } from './index.js';
 import { namesFor } from './names.js';
@@ -161,6 +163,87 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
         const hs = await deps.getHoloSphere();
         const requests = await listJoinRequests(hs, args.holon, { windowMs: args.windowMs });
         return ok({ holon: args.holon, requests, names: await namesFor(hs, args.holon, requests.map((r) => r.pubkey)) });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+  server.registerTool(
+    'onboarding_get',
+    {
+      description:
+        "A holon's onboarding: the steps a newcomer walks before their key is linked (`settings.onboarding`), and who is walking them now. With `pubkey`: that one person's progress, card by card.",
+      inputSchema: { holon: z.string(), pubkey: z.string().optional() },
+    },
+    async (args) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        if (args.pubkey) {
+          const view = await onboardingView(hs, args.holon, args.pubkey);
+          return view ? ok(view) : fail('That key is not onboarding in this holon.');
+        }
+        const [config, people] = await Promise.all([readOnboarding(hs, args.holon), listOnboarding(hs, args.holon)]);
+        return ok({ holon: args.holon, config, onboarding: people.map((v) => ({ pubkey: v.pubkey, name: v.name, step: v.step, home: v.home })) });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+  server.registerTool(
+    'onboarding_config_save',
+    {
+      description:
+        "Set a holon's onboarding (admins only — a guarded settings field). Steps in order, each a list of cards; a card's `confirm` says who ticks it: `self` (the person), `admin` (someone from the holon vouches, e.g. the call) or `profile` (done once their profile has a name and what they offer). `enabled: false` answers join requests at once again.",
+      inputSchema: {
+        holon: z.string(),
+        enabled: z.boolean(),
+        steps: z
+          .array(
+            z.object({
+              id: z.string().optional(),
+              title: z.string(),
+              cards: z.array(
+                z.object({
+                  id: z.string().optional(),
+                  title: z.string(),
+                  description: z.string().optional(),
+                  link: z.string().optional(),
+                  confirm: z.enum(['self', 'admin', 'profile']).optional(),
+                }),
+              ),
+            }),
+          )
+          .optional()
+          .describe('Leave out to keep the steps as they are.'),
+      },
+    },
+    async (args) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        const steps = args.steps ?? (await readOnboarding(hs, args.holon)).steps;
+        return ok({ success: true, holon: args.holon, config: await saveOnboarding(hs, args.holon, { enabled: args.enabled, steps }) });
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+    },
+  );
+  server.registerTool(
+    'onboarding_confirm',
+    {
+      description:
+        "Vouch for an `admin` card of someone's onboarding (the call happened, the buddy met them), as an admin of the holon; they move on, and once every step is done their key is linked. Without `step`/`card`, only re-reads where they stand (and links them when they are through).",
+      inputSchema: { holon: z.string(), pubkey: z.string(), step: z.string().optional(), card: z.string().optional() },
+    },
+    async (args) => {
+      try {
+        const hs = await deps.getHoloSphere();
+        const run = { signer: signerOf(), ...opts(hs) };
+        const result =
+          args.step && args.card
+            ? await confirmCard(hs, args.holon, args.pubkey, args.step, args.card, run)
+            : await refreshOnboarding(hs, args.holon, args.pubkey, run);
+        if (!result) return fail('Nothing to confirm: not onboarding here, or not a card an admin ticks.');
+        return ok({ success: true, linked: result.linked, passed: result.passed, view: result.view });
       } catch (err) {
         return fail((err as Error).message);
       }

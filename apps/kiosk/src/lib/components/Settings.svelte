@@ -80,6 +80,14 @@
     fedRequests,
     type FederationRequest,
   } from "$lib/fedrequests";
+  import {
+    confirmOnboardingCard,
+    loadOnboardingAdmin,
+    setOnboardingEnabled,
+    type OnboardingCardView,
+    type OnboardingConfig,
+    type OnboardingView,
+  } from "$lib/onboarding";
   import FederationLens from "./FederationLens.svelte";
   import { isHolonId, isTelegramChatId } from "@holons/core/protocol";
   import { keyLoginOffered } from "$lib/login/providers";
@@ -306,11 +314,58 @@
     }
   }
 
+  // The holon's onboarding (@holons/core/onboarding), for its admins: on or
+  // off, who is walking it, and the cards only someone from the holon ticks.
+  let onbConfig: OnboardingConfig | null = null;
+  let onbPeople: OnboardingView[] = [];
+  let onbBusy = false;
+  async function loadOnb(id: string) {
+    try {
+      const { config, people } = await loadOnboardingAdmin(id);
+      if (id !== $holonId) return;
+      onbConfig = config;
+      onbPeople = people;
+    } catch (err) {
+      console.warn("[kiosk] onboarding read failed", err);
+    }
+  }
+  async function toggleOnb() {
+    if (!$holonId || !onbConfig || onbBusy) return;
+    onbBusy = true;
+    try {
+      onbConfig = await setOnboardingEnabled($holonId, !onbConfig.enabled);
+    } catch (err) {
+      showNotice(tr("onb.saveFailed", { reason: reasonOf(err) }));
+    } finally {
+      onbBusy = false;
+    }
+  }
+  async function confirmOnb(view: OnboardingView, card: OnboardingCardView) {
+    if (!$holonId || onbBusy) return;
+    onbBusy = true;
+    try {
+      if (await confirmOnboardingCard($holonId, view, card))
+        showNotice(tr("onb.confirmed"));
+      await loadOnb($holonId);
+    } catch (err) {
+      showNotice(tr("onb.saveFailed", { reason: reasonOf(err) }));
+    } finally {
+      onbBusy = false;
+    }
+  }
+  const openAdminCards = (v: OnboardingView) =>
+    (v.steps.find((s) => s.id === v.step)?.cards ?? []).filter(
+      (c) => c.confirm === "admin" && !c.done,
+    );
+
   function watchJoins(id: string, role: "admin" | "member" | null) {
     stopRequests?.();
     stopRequests = null;
     joinRequests = [];
+    onbConfig = null;
+    onbPeople = [];
     if (role !== "admin" || !keyed(id)) return;
+    void loadOnb(id);
     stopRequests = watchRequests(id, (r) => {
       if (id === $holonId) joinRequests = r;
     });
@@ -1129,6 +1184,59 @@
 
           <!-- Admins: who asked, who is linked, link one more. -->
           {#if hubRole === "admin"}
+            {#if onbConfig}
+              <div class="map-row">
+                <span class="map-lens key-label"
+                  >{$t("onb.enable")}<span class="shared"
+                    >{$t("onb.settingsHint", {
+                      steps: onbConfig.steps.map((st) => st.title).join(" → "),
+                    })}</span
+                  ></span
+                >
+                <div class="map-lanes">
+                  <button
+                    type="button"
+                    class="lane"
+                    class:on={onbConfig.enabled}
+                    aria-pressed={onbConfig.enabled}
+                    aria-label={$t("onb.enable")}
+                    disabled={onbBusy}
+                    on:click={toggleOnb}><Icon name="key" /></button
+                  >
+                </div>
+              </div>
+              {#if onbConfig.enabled}
+                <p class="hex-note">
+                  {onbPeople.length ? $t("onb.people") : $t("onb.none")}
+                </p>
+                {#each onbPeople as view (view.pubkey)}
+                  <div class="map-row">
+                    <span class="map-lens key-label" title={view.pubkey}
+                      >{view.name || $nameOf(view.pubkey)}<span class="shared"
+                        >{$t("onb.atStep", {
+                          step:
+                            view.steps.find((st) => st.id === view.step)
+                              ?.title ?? "",
+                        })}</span
+                      ></span
+                    >
+                    <div class="map-lanes">
+                      {#each openAdminCards(view) as card (card.id)}
+                        <button
+                          type="button"
+                          class="lane"
+                          aria-label={$t("onb.confirm", { card: card.title })}
+                          title={$t("onb.confirm", { card: card.title })}
+                          disabled={onbBusy}
+                          on:click={() => confirmOnb(view, card)}
+                          ><Icon name="check" /></button
+                        >
+                      {/each}
+                    </div>
+                  </div>
+                {/each}
+              {/if}
+            {/if}
             {#if joinRequests.length}
               <p class="hex-note">
                 {$t("members.pending", { n: joinRequests.length })}

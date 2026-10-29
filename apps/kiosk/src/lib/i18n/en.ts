@@ -2080,6 +2080,38 @@ export const en = {
   "pot.copy": "Copy address",
   "pot.copied": "Copied",
   "pot.posted": "Root posted; it applies after the challenge window.",
+  // Onboarding into a holon
+  "tabs.onboarding": "Onboarding",
+  "onb.title": "Onboarding into {holon}",
+  "onb.intro":
+    "Walk these steps; your key is linked to {holon} once you finish.",
+  "onb.loginFirst": "Log in to start the onboarding.",
+  "onb.login": "Log in",
+  "onb.loading": "Loading…",
+  "onb.ask": "Start the onboarding",
+  "onb.asked": "Asked. Your first cards arrive in a moment.",
+  "onb.off": "{holon} has no onboarding: ask to link your key from Settings.",
+  "onb.linked": "Your key is linked to {holon}. Welcome in!",
+  "onb.tick": "Done",
+  "onb.tickFailed": "Couldn't save that: {reason}",
+  "onb.adminTicks": "Someone from the holon ticks this once it happened.",
+  "onb.tickInTelegram": "Tick it in your chat with the bot.",
+  "onb.profileInTelegram":
+    "Send /onboarding to the bot to fill in your profile.",
+  "onb.profileName": "Your name",
+  "onb.profileOffer": "What you can offer and give",
+  "onb.profileSave": "Save profile",
+  "onb.profileSaved": "Profile saved.",
+  "onb.settingsTitle": "Onboarding",
+  "onb.settingsHint":
+    "Newcomers walk these steps before their key is linked: {steps}.",
+  "onb.enable": "Walk newcomers through an onboarding",
+  "onb.people": "Onboarding now",
+  "onb.none": "Nobody is onboarding.",
+  "onb.atStep": "At: {step}",
+  "onb.confirm": "Tick “{card}”",
+  "onb.confirmed": "Ticked.",
+  "onb.saveFailed": "Couldn't save: {reason}",
 } as const satisfies Record<string, Msg>;
 
 export type MessageKey = keyof typeof en;

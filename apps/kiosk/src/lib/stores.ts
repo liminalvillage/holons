@@ -528,6 +528,7 @@ export const TABS = [
   { id: "flows", labelKey: "tabs.flows", icon: "swap" },
   { id: "stock", labelKey: "tabs.stock", icon: "shelf" },
   { id: "offers", labelKey: "tabs.offers", icon: "target" },
+  { id: "onboarding", labelKey: "tabs.onboarding", icon: "key" },
 ] as const satisfies readonly {
   id: string;
   labelKey: MessageKey;
@@ -632,6 +633,13 @@ export const offersEnabled = derived(
 export const appService = writable<TabId | null>(null);
 
 /**
+ * The newcomer's view of a holon's onboarding is not a board tab: it shows
+ * when the screen was opened for it — its Mini App, or a link to
+ * `/<holon>/onboarding` (set once on boot).
+ */
+export const onboardingOpened = writable(false);
+
+/**
  * Tabs actually shown: Tasks unless the caretaker switched it off; Library,
  * Lists, Roles, and Shifts per their (possibly content-driven) visibility
  * above; Status and Flows only when the caretaker enabled them.
@@ -650,6 +658,7 @@ export const visibleTabs = derived(
     stockEnabled,
     offersEnabled,
     appService,
+    onboardingOpened,
   ],
   ([
     $tabs,
@@ -664,6 +673,7 @@ export const visibleTabs = derived(
     $stock,
     $offers,
     $app,
+    $onboarding,
   ]) =>
     // A Mini App is its one service, whatever this device's switches say.
     $app
@@ -679,7 +689,8 @@ export const visibleTabs = derived(
             (t.id !== "status" || $status) &&
             (t.id !== "flows" || $flows) &&
             (t.id !== "stock" || $stock) &&
-            (t.id !== "offers" || $offers),
+            (t.id !== "offers" || $offers) &&
+            (t.id !== "onboarding" || $onboarding),
         ),
 );
 
@@ -739,6 +750,9 @@ export function setTabShown(id: TabId, on: boolean): void {
     case "calendar":
       setCalendarEnabled(on);
       calendarEnabled.set(on);
+      break;
+    case "onboarding":
+      onboardingOpened.set(on);
       break;
   }
 }

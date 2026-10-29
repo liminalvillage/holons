@@ -103,7 +103,7 @@ is the `/about` page. It closes a round trip that leaves the web entirely:
    (Telegram's own group chooser, with "create a new group" right there) or
    `t.me/<bot>?start=claim_<token>` (a private chat: a personal hub). The
    group _is_ the holon, so there is nothing to sign up for. The token is a
-   one-time claim minted by the screen (`@holons/core/onboarding`); the same
+   one-time claim minted by the screen (`@holons/core/claims`); the same
    two links sit behind the dock's **+** → **Start a new hub**.
 2. **Over.** Telegram delivers the payload to the bot as the chat's first
    `/start claim_<token>`. The bot records `<token> → this chat` on the relay

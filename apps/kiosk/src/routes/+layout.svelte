@@ -109,6 +109,7 @@
     openQuest,
     openThing,
     appService,
+    onboardingOpened,
     type TabId,
   } from "$lib/stores";
   import { pathForTab, tabForPath } from "$lib/tabroute";
@@ -674,6 +675,7 @@
     // data is still streaming in: register the ask so the tab claims the
     // screen the moment it appears instead of being reset to the fallback.
     const urlTab = tabForPath(location.pathname);
+    if (urlTab === "onboarding") onboardingOpened.set(true);
     // Opened as a Telegram Mini App for one service (`t.me/<bot>/tasks` →
     // /tasks): the screen IS that service — set before the tab logic below
     // and before rotation starts, both of which read it.

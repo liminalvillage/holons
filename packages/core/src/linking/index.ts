@@ -38,7 +38,7 @@ import { bytesToHex } from '@noble/hashes/utils';
 import { holonAnchor, itemByAuthor, itemsByAuthor } from 'holosphere/authority.js';
 import { eventToItem } from 'holosphere/nostr-events.js';
 import { resolveHolonAuthority } from '../holosphere/authority.js';
-import { CLAIM_MAX_AGE_MS, isClaimToken, newClaimToken, readHolonClaim, recordHolonClaim, watchHolonClaim, type ChatLike, type ClaimWatchStore, type HolonKind } from '../onboarding/index.js';
+import { CLAIM_MAX_AGE_MS, isClaimToken, newClaimToken, readHolonClaim, recordHolonClaim, watchHolonClaim, type ChatLike, type ClaimWatchStore, type HolonKind } from '../claims/index.js';
 import { removeFederationPartner, setFederationPartner } from '../federation/partners.js';
 import { HOLON_ID_RE, addHolonMember, isHolonId, myHolonRole, removeHolonMember } from '../protocol/founding.js';
 import { actorsFromMembersLog, nextMembersAt, readMembersLog, syncMembersLog } from '../protocol/membership.js';

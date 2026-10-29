@@ -1,277 +1,252 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 //
-// Starting a Telegram-born holon from a screen: the claim round trip.
+// @holons/core/onboarding — onboarding into a holon: finish its steps, then
+// your key is linked.
 //
-// A holon the bot serves is a Telegram chat — a group, or a person's private
-// chat with the bot — so "create one" leaves the screen for Telegram, and
-// Telegram has no way to hand anything back. What it CAN do is carry a payload out:
-// `t.me/<bot>?startgroup=<payload>` (add the bot to a group) and
-// `t.me/<bot>?start=<payload>` (chat with it) both deliver the payload to the
-// bot as the chat's first `/start <payload>`.
+// Any holon can switch an onboarding on (`settings.onboarding`, see
+// config.ts). From then on a request to link a key (a kind-9021,
+// `@holons/core/holons` requestToJoin) is not answered at once. Instead:
 //
-// So the screen mints a one-time CLAIM TOKEN, sends it out in the payload,
-// and the bot, on receiving it, records "<token> → this chat" on the relay
-// under a well-known namespace. The screen, watching that key, learns the
-// holon's id without anyone copying anything. The token is the only secret in
-// the loop: random enough that no one guesses it, useless once redeemed.
+//   1. Whoever answers for the holon (its bot, or an admin's screen) starts
+//      the person's onboarding on the request's record — `startOnboarding`.
+//   2. The current step's cards are dealt into the person's OWN holon
+//      (`home`): their Telegram id when the request proved one, else their
+//      key. They are ordinary cards, so the person ticks them like any card.
+//   3. `refreshOnboarding` reads what they did, moves them on (the reducer),
+//      deals the next step, and once every step is done links the key
+//      (`approveJoin`). An admin card counts only by `confirmCard`.
 //
-// Pure, store-agnostic: the bot and the kiosk both call in with their own
-// holosphere handle.
+// Progress lives on the holon's `joinrequests` record, which counts only
+// from an admin's key — the person's ticks are facts read from their holon,
+// never a claim they make about themselves to the holon.
 
-/** The namespace (holon) the claim records live under — a live relay namespace; the value never changes. */
-export const CLAIM_NAMESPACE = 'hubclaims';
-/** The lens inside it. One record per token, keyed by the token. */
-export const CLAIM_LENS = 'claims';
-/** Payload prefix that tells the bot a `/start` carries a claim token. */
-export const CLAIM_PREFIX = 'claim_';
-/** A claim older than this is stale: the screen that minted it has moved on. */
-export const CLAIM_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+import type { HoloSphere } from 'holosphere';
+import { writeAcceptance } from '../holosphere/authority.js';
+import type { NostrSigner } from '../holosphere/signers.js';
+import { approveJoin, type JoinRequest } from '../holons/index.js';
+import { JOIN_REQUESTS_LENS, joinRequestRecords, type JoinRequestRecord, type JoinRequestStatus } from '../holons/requests.js';
+import { cleanName } from '../identity/ids.js';
+import { readHolonSettings } from '../settings/persistence.js';
+import { completedCards, dealCards, onboardingCardId } from './cards.js';
+import { readOnboarding, type OnboardingCard, type OnboardingConfig } from './config.js';
+import { readProfile, profileReady } from './profile.js';
+import { advance, cardDone, cardKey, confirmable, stepDone, type OnboardingFacts } from './reducer.js';
 
-/**
- * Token alphabet and length. Telegram start payloads allow `[A-Za-z0-9_-]`,
- * at most 64 characters; 22 characters of a 64-symbol alphabet is 132 bits.
- */
-const TOKEN_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-';
-const TOKEN_LENGTH = 22;
-const TOKEN_RE = /^[A-Za-z0-9_-]{16,48}$/;
+export * from './config.js';
+export * from './reducer.js';
+export * from './profile.js';
+export * from './cards.js';
 
-/** What kind of chat a claim resolved to. */
-export type HolonKind = 'group' | 'personal';
+/** Where a person's onboarding cards live: their proven Telegram id, else their key. */
+export function onboardingHome(request: Pick<JoinRequest, 'pubkey'>, verifiedTelegramId?: string | null): string {
+  return verifiedTelegramId && /^\d{1,20}$/.test(verifiedTelegramId) ? verifiedTelegramId : request.pubkey.toLowerCase();
+}
 
-/** The record the bot writes: `<token> → this chat`. */
-export interface HolonClaim {
-  /** The token, which is also the record key. */
+export interface OnboardingCardView extends OnboardingCard {
+  step: string;
+  /** The card's id in the person's holon. */
+  questId: string;
+  done: boolean;
+}
+
+export interface OnboardingStepView {
   id: string;
-  /** The holon id — the chat id, as the board keys on it. */
+  title: string;
+  state: 'done' | 'current' | 'later';
+  cards: OnboardingCardView[];
+}
+
+/** One person's onboarding, as every surface shows it. */
+export interface OnboardingView {
   holon: string;
-  kind: HolonKind;
-  /** The chat's title (a group) or the person's name, when known. */
+  pubkey: string;
+  name: string;
+  home: string;
+  status: JoinRequestStatus;
+  /** The step they are on; null once through. */
+  step: string | null;
+  finished: boolean;
+  steps: OnboardingStepView[];
+}
+
+/** The view of a record, given what the person did. Pure. */
+export function viewOf(holon: string, config: OnboardingConfig, record: JoinRequestRecord, facts: OnboardingFacts): OnboardingView {
+  const at = advance(config, record, facts);
+  const current = at.step === null ? config.steps.length : config.steps.findIndex((s) => s.id === at.step);
+  return {
+    holon,
+    pubkey: record.id,
+    name: record.name,
+    home: record.home ?? record.id,
+    status: record.status,
+    step: at.step,
+    finished: at.finished,
+    steps: config.steps.map((step, i) => ({
+      id: step.id,
+      title: step.title,
+      state: i < current || stepDone(step, record, facts) ? 'done' : i === current ? 'current' : 'later',
+      cards: step.cards.map((card) => ({
+        ...card,
+        step: step.id,
+        questId: onboardingCardId(holon, step.id, card.id),
+        done: cardDone(step, card, record, facts),
+      })),
+    })),
+  };
+}
+
+async function factsFor(hs: HoloSphere, holon: string, home: string, config: OnboardingConfig): Promise<OnboardingFacts> {
+  const [completed, profile] = await Promise.all([completedCards(hs, holon, home, config), readProfile(hs, home)]);
+  return { completed, profileReady: profileReady(profile) };
+}
+
+const isOnboarding = (r: JoinRequestRecord | undefined): r is JoinRequestRecord & { home: string } => !!r?.home;
+
+/** One person's onboarding in a holon, or null when they are not onboarding there. */
+export async function onboardingView(hs: HoloSphere, holon: string, pubkey: string): Promise<OnboardingView | null> {
+  const record = (await joinRequestRecords(hs, holon)).get(String(pubkey).toLowerCase());
+  if (!isOnboarding(record)) return null;
+  const config = await readOnboarding(hs, holon);
+  return viewOf(holon, config, record, await factsFor(hs, holon, record.home, config));
+}
+
+/** Everyone onboarding in a holon now (still pending), newest first. */
+export async function listOnboarding(hs: HoloSphere, holon: string): Promise<OnboardingView[]> {
+  const records = [...(await joinRequestRecords(hs, holon)).values()].filter(isOnboarding).filter((r) => r.status === 'pending');
+  if (!records.length) return [];
+  const config = await readOnboarding(hs, holon);
+  const views = await Promise.all(records.map(async (r) => viewOf(holon, config, r, await factsFor(hs, holon, r.home, config))));
+  return views.sort((a, b) => (records.find((r) => r.id === b.pubkey)?.at ?? 0) - (records.find((r) => r.id === a.pubkey)?.at ?? 0));
+}
+
+export interface OnboardingRunOptions {
+  /** The holon's admin signer: without it a finished onboarding waits to be linked. */
+  signer?: NostrSigner | null;
+  appName?: string;
+  /** Deal the current step's cards when this instance's key counts in the person's holon (default true). */
+  deal?: boolean;
+  /** Unix seconds; injectable for tests. */
+  now?: () => number;
+}
+
+export interface OnboardingResult {
+  view: OnboardingView;
+  record: JoinRequestRecord;
+  /** Steps finished since the holon last noted where the person was. */
+  passed: string[];
+  /** Card ids written into the person's holon. */
+  dealt: string[];
+  /** The key was linked by this call. */
+  linked: boolean;
+}
+
+const nowSec = (): number => Math.floor(Date.now() / 1000);
+
+/**
+ * Move a pending record on and keep it: ONE write of the record per call,
+ * since two in the same second would race on the relay. Then deal the
+ * current step and, when every step is done, link the key.
+ */
+async function run(
+  hs: HoloSphere,
+  holon: string,
+  config: OnboardingConfig,
+  record: JoinRequestRecord & { home: string },
+  opts: OnboardingRunOptions,
+  dirty: boolean,
+): Promise<OnboardingResult> {
+  const facts = await factsFor(hs, holon, record.home, config);
+  const at = advance(config, record, facts);
+  let next: JoinRequestRecord = { ...record, step: at.step ?? DONE };
+  let linked = false;
+  if (at.finished && opts.signer) {
+    await approveJoin(hs, holon, record.id, opts.signer, { appName: opts.appName, name: record.name, now: opts.now });
+    next = { ...next, status: 'approved', by: 'onboarding' };
+    linked = true;
+  }
+  if (dirty || at.changed || linked) {
+    next = { ...next, at: (opts.now ?? nowSec)() };
+    await hs.put(holon, JOIN_REQUESTS_LENS, next);
+  }
+
+  let dealt: string[] = [];
+  const current = config.steps.find((s) => s.id === at.step);
+  if (current && opts.deal !== false && (await writeAcceptance(hs, record.home)).status !== 'held') {
+    const holonName = String((await readHolonSettings(hs, holon))?.name ?? '');
+    dealt = await dealCards(hs, holon, record.home, current, { holonName, name: record.name });
+  }
+  return { view: viewOf(holon, config, next, facts), record: next, passed: at.passed, dealt, linked };
+}
+
+/** The step a finished onboarding is noted at. */
+const DONE = 'done';
+
+export interface StartOnboardingOptions extends OnboardingRunOptions {
+  /** The person's holon (see `onboardingHome`). */
+  home: string;
   name?: string;
-  /** When the bot redeemed the token (ms epoch). */
-  at: number;
-}
-
-/** The slice of a holosphere the claim round trip needs. */
-export interface ClaimStore {
-  get(holon: string, lens: string, key: string): Promise<unknown>;
-  put(holon: string, lens: string, data: object): Promise<unknown>;
-}
-
-/** Random bytes; injectable so specs can pin the token. */
-export type RandomBytes = (n: number) => Uint8Array;
-
-function defaultRandomBytes(n: number): Uint8Array {
-  const buf = new Uint8Array(n);
-  const c = (globalThis as { crypto?: { getRandomValues?: (b: Uint8Array) => Uint8Array } }).crypto;
-  if (!c?.getRandomValues) throw new Error('No secure random source available');
-  c.getRandomValues(buf);
-  return buf;
-}
-
-/** Mint a fresh claim token. */
-export function newClaimToken(randomBytes: RandomBytes = defaultRandomBytes): string {
-  const bytes = randomBytes(TOKEN_LENGTH);
-  let out = '';
-  for (let i = 0; i < TOKEN_LENGTH; i++) out += TOKEN_ALPHABET[bytes[i] & 63];
-  return out;
-}
-
-/** Is this a token this module could have minted (shape only)? */
-export function isClaimToken(value: unknown): value is string {
-  return typeof value === 'string' && TOKEN_RE.test(value);
-}
-
-/** The `/start` payload that carries a token out to the bot. */
-export function claimPayload(token: string): string {
-  if (!isClaimToken(token)) throw new Error('Not a claim token');
-  return `${CLAIM_PREFIX}${token}`;
+  telegramId?: string;
+  /** Where the surface announced it (a Telegram message id). */
+  messageId?: number;
 }
 
 /**
- * The token a `/start` payload carries, or null when it is not a claim. The
- * whole message text is accepted too (`/start claim_x`, `/start@Bot claim_x`),
- * so a bot handler can pass either.
+ * Start a person's onboarding: the holon notes their request at the first
+ * step with where their cards live, moves them past anything already done
+ * (a profile they brought) and deals the cards. Admin key only.
  */
-export function parseClaimPayload(input: string | null | undefined): string | null {
-  const raw = String(input ?? '').trim();
-  if (!raw) return null;
-  const payload = /^\/start(@\S+)?\s+/i.test(raw) ? raw.replace(/^\/start(@\S+)?\s+/i, '').trim() : raw;
-  if (!payload.startsWith(CLAIM_PREFIX)) return null;
-  const token = payload.slice(CLAIM_PREFIX.length);
-  return isClaimToken(token) ? token : null;
-}
-
-/** A Telegram chat, as the bot sees it in `ctx.chat`. */
-export interface ChatLike {
-  id: string | number;
-  type?: string;
-  title?: string;
-  first_name?: string;
-  last_name?: string;
-  username?: string;
-}
-
-/** What a chat claims: its id as the holon, and a name to dock it under. */
-export function holonClaimFromChat(chat: ChatLike): Pick<HolonClaim, 'holon' | 'kind' | 'name'> {
-  const holon = String(chat.id ?? '').trim();
-  const kind: HolonKind = chat.type === 'private' ? 'personal' : 'group';
-  const name =
-    kind === 'group'
-      ? String(chat.title ?? '').trim()
-      : [chat.first_name, chat.last_name]
-          .map((s) => String(s ?? '').trim())
-          .filter(Boolean)
-          .join(' ') || String(chat.username ?? '').trim();
-  return name ? { holon, kind, name } : { holon, kind };
-}
-
-/** Is `value` a claim record, shape-wise? */
-export function isHolonClaim(value: unknown): value is HolonClaim {
-  const c = value as HolonClaim;
-  return (
-    !!c &&
-    typeof c === 'object' &&
-    isClaimToken(c.id) &&
-    typeof c.holon === 'string' &&
-    /^-?\d+$/.test(c.holon) &&
-    c.holon !== '0' &&
-    (c.kind === 'group' || c.kind === 'personal') &&
-    typeof c.at === 'number' &&
-    Number.isFinite(c.at) &&
-    (c.name === undefined || typeof c.name === 'string')
-  );
-}
-
-/** A claim the screen should still honour: recent, and not from the future. */
-export function isFreshClaim(claim: HolonClaim, now = Date.now(), maxAgeMs = CLAIM_MAX_AGE_MS): boolean {
-  return claim.at <= now + 60_000 && now - claim.at <= maxAgeMs;
-}
-
-/**
- * The bot's half: redeem `token` for `chat`. Writes the claim record; the
- * screen that minted the token is watching for it. A malformed token or a
- * chat without a usable id is refused (returns null) rather than written.
- */
-export async function recordHolonClaim(
-  store: ClaimStore,
-  token: string,
-  chat: ChatLike,
-  now = Date.now(),
-): Promise<HolonClaim | null> {
-  if (!isClaimToken(token)) return null;
-  const claim: HolonClaim = { id: token, ...holonClaimFromChat(chat), at: now };
-  if (!isHolonClaim(claim)) return null;
-  await store.put(CLAIM_NAMESPACE, CLAIM_LENS, claim);
-  return claim;
-}
-
-/**
- * The screen's half: the claim for `token`, or null when the bot has not
- * redeemed it yet (or redeemed it too long ago to trust).
- */
-export async function readHolonClaim(
-  store: ClaimStore,
-  token: string,
-  opts: { now?: number; maxAgeMs?: number } = {},
-): Promise<HolonClaim | null> {
-  if (!isClaimToken(token)) return null;
-  const raw = await store.get(CLAIM_NAMESPACE, CLAIM_LENS, token);
-  return claimFor(raw, token, opts);
-}
-
-/**
- * Filter one record (a read, or a subscription emission) down to the claim
- * for `token`, or null. Shared by `readHolonClaim` and live watchers.
- */
-export function claimFor(
-  raw: unknown,
-  token: string,
-  opts: { now?: number; maxAgeMs?: number } = {},
-): HolonClaim | null {
-  if (!isHolonClaim(raw) || raw.id !== token) return null;
-  return isFreshClaim(raw, opts.now, opts.maxAgeMs) ? raw : null;
-}
-
-// ── Deep links and the watch ───────────────────────────────────────────────
-
-/** The two Telegram deep links that carry a `/start` payload out: a chat with the bot, or a group. */
-export function telegramDeepLinks(botUsername: string, payload: string): { personal: string; group: string } {
-  const bot = String(botUsername ?? '').trim().replace(/^@/, '');
-  if (!/^[A-Za-z0-9_]{3,64}$/.test(bot)) throw new Error('telegramDeepLinks: not a bot username');
-  const p = encodeURIComponent(payload);
-  return { personal: `https://t.me/${bot}?start=${p}`, group: `https://t.me/${bot}?startgroup=${p}` };
-}
-
-/** What a live watch needs beyond `ClaimStore`: holosphere's `subscribe`. */
-export interface ClaimWatchStore extends ClaimStore {
-  subscribe(holon: string, lens: string, callback: (data: unknown, key?: string) => void): unknown;
-}
-
-function stopper(raw: unknown): () => void {
-  return () => {
-    const r = raw as { unsubscribe?: () => void } | (() => void) | null;
-    if (r && typeof (r as { unsubscribe?: unknown }).unsubscribe === 'function') (r as { unsubscribe: () => void }).unsubscribe();
-    else if (typeof r === 'function') r();
+export async function startOnboarding(hs: HoloSphere, holon: string, request: JoinRequest, opts: StartOnboardingOptions): Promise<OnboardingResult> {
+  const config = await readOnboarding(hs, holon);
+  const record: JoinRequestRecord & { home: string } = {
+    id: request.pubkey.toLowerCase(),
+    eventId: request.eventId,
+    name: cleanName(opts.name ?? request.reason),
+    status: 'pending',
+    at: (opts.now ?? nowSec)(),
+    home: opts.home,
+    step: config.steps[0]?.id ?? DONE,
+    confirmed: [],
+    ...(opts.telegramId ? { telegramId: opts.telegramId } : {}),
+    ...(typeof opts.messageId === 'number' ? { messageId: opts.messageId } : {}),
   };
+  return run(hs, holon, config, record, opts, true);
 }
 
 /**
- * Watch for the bot to redeem `token`; `onClaim` fires at most once. A live
- * subscription carries the record the moment it lands, and a slow poll
- * backs it up (a cold read can race the relay's catch-up). Returns a stop
- * function; stopping after the claim arrived is a no-op.
+ * Bring a person's onboarding up to date: move them past what they did,
+ * deal what comes next, and link their key once every step is done. Run by
+ * whoever answers for the holon; safe to repeat. Null when they are not
+ * onboarding there; a settled one is only viewed.
  */
-export function watchHolonClaim(
-  store: ClaimWatchStore | Promise<ClaimWatchStore>,
-  token: string,
-  onClaim: (claim: HolonClaim) => void,
-  opts: { pollMs?: number; now?: () => number; maxAgeMs?: number } = {},
-): () => void {
-  let active = true;
-  let unsub: (() => void) | null = null;
-  let timer: ReturnType<typeof setInterval> | null = null;
-  const stop = () => {
-    active = false;
-    unsub?.();
-    unsub = null;
-    if (timer) clearInterval(timer);
-    timer = null;
-  };
-  const found = (claim: HolonClaim) => {
-    if (!active) return;
-    stop();
-    onClaim(claim);
-  };
-  const filterOpts = () => ({ now: opts.now?.(), maxAgeMs: opts.maxAgeMs });
-  void (async () => {
-    let db: ClaimWatchStore;
-    try {
-      db = await store;
-    } catch {
-      return;
-    }
-    if (!active) return;
-    const raw = db.subscribe(CLAIM_NAMESPACE, CLAIM_LENS, (data: unknown) => {
-      const claim = claimFor(data, token, filterOpts());
-      if (claim) found(claim);
-    });
-    if (!active) {
-      stopper(raw)();
-      return;
-    }
-    unsub = stopper(raw);
-    const poll = async () => {
-      if (!active) return;
-      try {
-        const claim = await readHolonClaim(db, token, filterOpts());
-        if (claim) found(claim);
-      } catch {
-        /* relay hiccup — the next tick retries */
-      }
-    };
-    void poll();
-    timer = setInterval(poll, opts.pollMs ?? 5000);
-  })();
-  return stop;
+export async function refreshOnboarding(hs: HoloSphere, holon: string, pubkey: string, opts: OnboardingRunOptions = {}): Promise<OnboardingResult | null> {
+  const record = (await joinRequestRecords(hs, holon)).get(String(pubkey).toLowerCase());
+  if (!isOnboarding(record)) return null;
+  const config = await readOnboarding(hs, holon);
+  if (record.status !== 'pending') {
+    const facts = await factsFor(hs, holon, record.home, config);
+    return { view: viewOf(holon, config, record, facts), record, passed: [], dealt: [], linked: false };
+  }
+  return run(hs, holon, config, record, opts, false);
+}
+
+/**
+ * An admin vouches for an admin card (the call happened, the buddy met
+ * them), then the onboarding moves on. Null when they are not onboarding
+ * there or the card is not one an admin confirms.
+ */
+export async function confirmCard(
+  hs: HoloSphere,
+  holon: string,
+  pubkey: string,
+  step: string,
+  card: string,
+  opts: OnboardingRunOptions = {},
+): Promise<OnboardingResult | null> {
+  const record = (await joinRequestRecords(hs, holon)).get(String(pubkey).toLowerCase());
+  if (!isOnboarding(record) || record.status !== 'pending') return null;
+  const config = await readOnboarding(hs, holon);
+  if (!confirmable(config, step, card)) return null;
+  const confirmed = [...new Set([...(record.confirmed ?? []), cardKey(step, card)])];
+  return run(hs, holon, config, { ...record, confirmed }, opts, true);
 }

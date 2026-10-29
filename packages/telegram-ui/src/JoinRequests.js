@@ -13,7 +13,9 @@
 //     Telegram itself says whether that user is in the chat. No admin step.
 //   • Anyone else (their own Nostr key, or a Telegram user outside the
 //     group) → one post in the group naming them, with Approve / Decline
-//     that only the chat's admins can press.
+//     that only the chat's admins can press — unless the holon switched an
+//     onboarding on: then they walk its steps first (HolonOnboarding.js)
+//     and the key is linked when they finish.
 //
 // One relay filter serves every chat (watchAllJoinRequests). What was
 // announced and decided lives in the holon's `joinrequests` lens, so a
@@ -29,13 +31,18 @@ import {
   approveJoin,
   describeApplicant,
   joinRequestRecords,
+  parseJoinRequest,
   recordJoinRequest,
+  requestToJoin,
   settleJoinRequest,
   watchAllJoinRequests,
 } from '@holons/core/holons';
+import { deriveTelegramNostrKey } from '@holons/core/auth';
+import { signerFromSecretKey } from '@holons/core/holosphere';
 import { holonMembers, isTelegramChatId } from '@holons/core/protocol';
 import { toNpub } from '@holons/core/nostr';
 import { holonSigner } from './createHoloSphere.js';
+import HolonOnboarding from './HolonOnboarding.js';
 import { isAdmin as isChatAdmin } from './utilities.js';
 
 const ACTION = { approve: 'joinok', decline: 'joinno' };
@@ -85,6 +92,7 @@ export default class JoinRequests {
    * @param {number} [options.lookbackSec] how far back a start catches up (default 7 d)
    * @param {(ctx: object) => Promise<boolean>} [options.isAdmin]
    * @param {() => number} [options.now] unix seconds, for tests
+   * @param {number} [options.onboardingSweepMs] see HolonOnboarding
    */
   constructor(bot, db, settings = null, options = {}) {
     this.bot = bot;
@@ -109,6 +117,11 @@ export default class JoinRequests {
     this.seen = new Set();
     this.timers = new Set();
     this.stop = null;
+    this.onboarding = new HolonOnboarding(bot, db, settings, {
+      signer: () => this._signer(),
+      isAdmin: ctx => this.isAdmin(ctx),
+      sweepMs: this.enabled ? options.onboardingSweepMs : 0,
+    });
 
     if (bot) {
       bot.action(new RegExp(`^${ACTION.approve}:([0-9a-f]{${PREFIX}})$`), ctx =>
@@ -136,6 +149,7 @@ export default class JoinRequests {
     this.stop = null;
     for (const t of this.timers) clearTimeout(t);
     this.timers.clear();
+    this.onboarding.shutdown();
   }
 
   onRequest(request) {
@@ -165,7 +179,7 @@ export default class JoinRequests {
 
   /**
    * Answer one request. Returns what was done:
-   * 'seated' | 'known' | 'limited' | 'linked' | 'posted'.
+   * 'seated' | 'known' | 'limited' | 'linked' | 'onboarding' | 'posted'.
    */
   async handle(request) {
     const holon = String(request.holon);
@@ -175,8 +189,12 @@ export default class JoinRequests {
     const cur = (await joinRequestRecords(this.db, holon)).get(request.pubkey);
     if (cur) {
       // One post stands per asking key; a settled key may ask again a day on.
-      if (cur.eventId === request.eventId || cur.status === 'pending')
+      if (cur.eventId === request.eventId || cur.status === 'pending') {
+        // An onboarding under way survives a restart: keep re-reading it.
+        if (cur.home && cur.status === 'pending')
+          this.onboarding.track(holon, cur.id);
         return 'known';
+      }
       if (this.now() - cur.at < DAY) return 'limited';
     }
 
@@ -200,11 +218,16 @@ export default class JoinRequests {
       }
     }
 
-    const language = await this.language(holon);
-    const name = esc(
+    const fullName =
       [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') ||
-        who.name
-    );
+      who.name;
+    if (await this.onboarding.enabled(holon)) {
+      await this.onboarding.begin(request, { name: fullName, tgId });
+      return 'onboarding';
+    }
+
+    const language = await this.language(holon);
+    const name = esc(fullName);
     const handle = tgUser?.username ? ` (@${esc(tgUser.username)})` : '';
     const lines = [
       translated(
@@ -284,6 +307,78 @@ export default class JoinRequests {
     });
     console.log(`[join] ${holon}: linked Telegram member ${tgId} by proof`);
     return true;
+  }
+
+  /**
+   * `/start onboard_<holon>` in a private chat: the person asks from
+   * Telegram itself. Their request is signed with the key their Telegram id
+   * derives, so it is proven like a kiosk login's, and answered at once.
+   */
+  async askFromTelegram(ctx, holon) {
+    const language = await this.language(holon);
+    const from = ctx.from;
+    if (!from?.id || !this.secret || !isTelegramGroup(holon)) {
+      await ctx.reply(
+        translated(
+          language,
+          'onbCannotAsk',
+          "This holon can't be joined from here."
+        )
+      );
+      return 'refused';
+    }
+    const key = deriveTelegramNostrKey(String(from.id), this.secret);
+    const event = requestToJoin(
+      this.db,
+      holon,
+      signerFromSecretKey(key.privateKey),
+      {
+        appName: this.db.appname,
+        reason: [from.first_name, from.last_name].filter(Boolean).join(' '),
+        telegramId: from.id,
+      }
+    );
+    const request = parseJoinRequest(event, holon);
+    if (!request) return 'refused';
+    this.seen.add(request.eventId);
+    const outcome = await this.handle(request);
+    if (outcome === 'known') {
+      const result = await this.onboarding.nudge(holon, request.pubkey);
+      if (result) await this.onboarding.announce(holon, result, true);
+      else
+        await ctx.reply(
+          translated(
+            language,
+            'onbAlreadyAsked',
+            'You already asked; the admins of this holon decide.'
+          )
+        );
+    } else if (outcome === 'seated' || outcome === 'linked') {
+      await ctx.reply(
+        translated(
+          language,
+          'onbAlreadyIn',
+          '✅ Your key is linked to this holon.'
+        )
+      );
+    } else if (outcome === 'posted') {
+      await ctx.reply(
+        translated(
+          language,
+          'onbAsked',
+          'Asked: the admins of this holon decide.'
+        )
+      );
+    } else if (outcome === 'limited') {
+      await ctx.reply(
+        translated(
+          language,
+          'onbLimited',
+          'You asked recently; try again tomorrow.'
+        )
+      );
+    }
+    return outcome;
   }
 
   /** Approve / Decline, pressed in the group. Chat admins only. */

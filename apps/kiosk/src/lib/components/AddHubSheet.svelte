@@ -21,7 +21,7 @@
   // The parent owns what "add" means (dock, home it on a cell, open it); this
   // sheet only names the hub.
   import { createEventDispatcher, onDestroy, tick } from "svelte";
-  import { newClaimToken } from "@holons/core/onboarding";
+  import { newClaimToken } from "@holons/core/claims";
   import { createHolon } from "@holons/core/holons";
   import { foundHolon, newHolonId } from "@holons/core/protocol";
   import { t, tr } from "$lib/i18n";

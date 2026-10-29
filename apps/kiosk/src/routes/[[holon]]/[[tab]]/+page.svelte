@@ -22,6 +22,7 @@
   import FlowsView from "$lib/views/FlowsView.svelte";
   import StockView from "$lib/views/StockView.svelte";
   import OffersView from "$lib/views/OffersView.svelte";
+  import OnboardingView from "$lib/views/OnboardingView.svelte";
 
   // Full screen belongs to the board on screen: another holon (or leaving
   // the board) starts with the chrome back.
@@ -80,6 +81,8 @@
           <StockView />
         {:else if $activeTab === "offers"}
           <OffersView />
+        {:else if $activeTab === "onboarding"}
+          <OnboardingView />
         {/if}
       </div>
     {/key}

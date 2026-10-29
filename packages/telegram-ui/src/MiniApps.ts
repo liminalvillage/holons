@@ -57,6 +57,7 @@ const LABEL_KEYS: Record<string, [key: string, fallback: string]> = {
   offers: ['openOffersApp', 'Open needs & offers'],
   flows: ['openFlowsApp', 'Open flows'],
   status: ['openStatusApp', 'Open status'],
+  onboarding: ['openOnboardingApp', 'Open onboarding'],
 };
 
 /**

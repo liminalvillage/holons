@@ -11,7 +11,9 @@
 //                   Telegram identity the request claims is PROVEN: the key a
 //                   Telegram login derives is the key that signed the request.
 //   what was said   the `joinrequests` lens — one record per asking key:
-//                   announced (pending), approved, declined. It is the memory
+//                   announced (pending), approved, declined — and, while a
+//                   holon with an onboarding walks them through it, where
+//                   they are (`@holons/core/onboarding`). It is the memory
 //                   that stops a second announcement, and `approvedJoinKeys`
 //                   is the list of keys an admin let in, which a roster sync
 //                   must keep seated.
@@ -49,6 +51,16 @@ export interface JoinRequestRecord {
   /** Who settled it, in the surface's own terms (a Telegram user id). */
   by?: string;
   telegramId?: string;
+  /**
+   * Onboarding progress (`@holons/core/onboarding`), present while the holon
+   * walks this key through its onboarding. `home` is the holon the person's
+   * onboarding cards live in, `step` the step they are on, `confirmed` the
+   * cards an admin vouched for. Admin-signed like the rest of the record, so
+   * nobody advances themselves.
+   */
+  home?: string;
+  step?: string;
+  confirmed?: string[];
 }
 
 type StoreHost = HoloSphere & {

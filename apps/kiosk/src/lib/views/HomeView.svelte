@@ -36,7 +36,7 @@
     SOURCE_URL,
   } from "$lib/config";
   import { parseHolonPaste } from "$lib/holons";
-  import { newClaimToken } from "@holons/core/onboarding";
+  import { newClaimToken } from "@holons/core/claims";
   import { getHolosphere } from "$lib/holosphere";
   import { labelFor, rememberBoard } from "$lib/dock";
   import {

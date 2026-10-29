@@ -6,7 +6,9 @@
 import { describe, expect, it } from 'vitest';
 import type { ZodTypeAny } from 'zod';
 import { createHoloSphere, signerFromSecretKey } from '@holons/core/holosphere';
+import { parseJoinRequest, requestToJoin } from '@holons/core/holons';
 import { acceptTelegramLink } from '@holons/core/linking';
+import { startOnboarding } from '@holons/core/onboarding';
 import { registerHolonsTools } from './holons.js';
 import type { ToolDeps } from './index.js';
 
@@ -83,6 +85,36 @@ describe('holon tools', () => {
     const gone = payload(await tools.get('holon_telegram_unlink')!({ holon: H, id: offer.id }));
     expect(gone.record.status).toBe('unlinked');
     expect(payload(await tools.get('holon_members')!({ holon: H })).members[bot.pk]).toBeUndefined();
+    await hs.close();
+  });
+
+  it('onboarding: set the steps, see who walks them, confirm the call, link at the end', async () => {
+    const me = key();
+    const ada = key();
+    const hs = createHoloSphere({ appName: 'mcp-onboarding-test', privateKey: me.sk, store: { adapter: 'memory' } });
+    (hs as unknown as { publishNostrEvents: () => void }).publishNostrEvents = () => {};
+    (hs as unknown as { subscribeNostr: () => () => void }).subscribeNostr = () => () => {};
+    const deps: ToolDeps = { getHoloSphere: async () => hs, resolveActor: () => ({ id: '7' }) as never, getSignerSecret: () => me.sk };
+    const { server, tools } = capture();
+    registerHolonsTools(server, deps);
+    const H = payload(await tools.get('holon_create')!({ name: 'Orto' })).holon as string;
+
+    const saved = payload(
+      await tools.get('onboarding_config_save')!({ holon: H, enabled: true, steps: [{ title: 'Call', cards: [{ title: 'Onboarding call', confirm: 'admin' }] }] }),
+    );
+    expect(saved.config).toEqual({ enabled: true, steps: [{ id: 'call', title: 'Call', cards: [{ id: 'onboarding_call', title: 'Onboarding call', confirm: 'admin' }] }] });
+    // Switching it off keeps the steps.
+    expect(payload(await tools.get('onboarding_config_save')!({ holon: H, enabled: false })).config.steps).toHaveLength(1);
+    await tools.get('onboarding_config_save')!({ holon: H, enabled: true });
+
+    const req = parseJoinRequest(requestToJoin(hs, H, signerFromSecretKey(ada.sk), { appName: 'mcp-onboarding-test', reason: 'Ada' }))!;
+    await startOnboarding(hs, H, req, { home: '4242', appName: 'mcp-onboarding-test' });
+    expect(payload(await tools.get('onboarding_get')!({ holon: H })).onboarding).toEqual([{ pubkey: ada.pk, name: 'Ada', step: 'call', home: '4242' }]);
+
+    expect((await tools.get('onboarding_confirm')!({ holon: H, pubkey: ada.pk, step: 'call', card: 'nope' })).isError).toBe(true);
+    const done = payload(await tools.get('onboarding_confirm')!({ holon: H, pubkey: ada.pk, step: 'call', card: 'onboarding_call' }));
+    expect(done).toMatchObject({ success: true, linked: true, view: { finished: true, status: 'approved' } });
+    expect(payload(await tools.get('holon_members')!({ holon: H })).members[ada.pk]).toBe('member');
     await hs.close();
   });
 });
