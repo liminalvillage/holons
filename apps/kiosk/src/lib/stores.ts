@@ -103,6 +103,28 @@ export const scope = writable<Scope>("all");
 export const federated = derived(scope, ($s) => $s === "networked");
 
 /**
+ * The Holograms switch (Filters sheet): whether cards other holons placed in
+ * this one by reference show on the boards. On by default; persisted per
+ * device, hydrated in `+layout.svelte`.
+ */
+export const showHolograms = writable<boolean>(true);
+
+/** The tabs whose boards the Holograms switch narrows (via `scopeView`). */
+export const HOLOGRAM_TABS: readonly TabId[] = [
+  "tasks",
+  "calendar",
+  "library",
+  "roles",
+  "checklists",
+];
+
+/** Scope + Holograms together, as `scopeLocal`'s trailing arguments. */
+export const scopeView = derived(
+  [scope, showHolograms],
+  ([$s, $h]) => [$s, $h] as const,
+);
+
+/**
  * Caretaker preference for the Library tab (persisted in config). `auto` — the
  * default — shows the tab exactly when the lens has content; an explicit
  * on/off wins. Anything but "off" keeps the library subscription alive in
@@ -339,7 +361,8 @@ export const lensEmitAt: Record<
 };
 
 // Scope narrows the raw records first (dropping partner copies outside the
-// networked scope, keeping holograms), then search filters the view models.
+// networked scope, and holograms while the Holograms switch is off), then
+// search filters the view models.
 // The translator is a derived input everywhere a view model bakes display
 // text ("Untitled" fallbacks), so a language switch recomputes the boards.
 // `holonColors` is a dep everywhere a foreign card carries its source holon's
@@ -347,23 +370,23 @@ export const lensEmitAt: Record<
 // `names` is a dep wherever a card carries people: the people are named at
 // mapping time, so a name learned later (a key's kind 0) re-maps the cards.
 export const events = derived(
-  [rawQuests, partnerNames, searchQuery, scope, t, holonColors, names],
+  [rawQuests, partnerNames, searchQuery, scopeView, t, holonColors, names],
   ([$q, $n, $query, $s, $t, $c]) =>
-    filterBySearch(toEvents(scopeLocal($q, $s), $n, $t, $c), $query),
+    filterBySearch(toEvents(scopeLocal($q, ...$s), $n, $t, $c), $query),
 );
 export const backlog = derived(
   [
     rawQuests,
     partnerNames,
     searchQuery,
-    scope,
+    scopeView,
     taskSort,
     t,
     holonColors,
     names,
   ],
   ([$q, $n, $query, $s, $sort, $t, $c]) =>
-    filterBySearch(toBacklog(scopeLocal($q, $s), $n, $sort, $t, $c), $query),
+    filterBySearch(toBacklog(scopeLocal($q, ...$s), $n, $sort, $t, $c), $query),
 );
 // The completed tasks, while the Done switch is on (empty otherwise, so the
 // views pay nothing for it). Scope and search narrow them like the backlog.
@@ -373,14 +396,17 @@ export const completedTasks = derived(
     rawQuests,
     partnerNames,
     searchQuery,
-    scope,
+    scopeView,
     t,
     holonColors,
     names,
   ],
   ([$on, $q, $n, $query, $s, $t, $c]) =>
     $on
-      ? filterBySearch(toCompletedTasks(scopeLocal($q, $s), $n, $t, $c), $query)
+      ? filterBySearch(
+          toCompletedTasks(scopeLocal($q, ...$s), $n, $t, $c),
+          $query,
+        )
       : [],
 );
 // The clock (ticked by `startClock`, below) — declared here because the
@@ -393,10 +419,19 @@ export const now = writable<Date>(new Date());
 export const minute = derived(now, ($n) => Math.floor($n.getTime() / 60_000));
 
 export const things = derived(
-  [rawLibrary, partnerNames, searchQuery, scope, t, holonColors, minute, names],
+  [
+    rawLibrary,
+    partnerNames,
+    searchQuery,
+    scopeView,
+    t,
+    holonColors,
+    minute,
+    names,
+  ],
   ([$l, $n, $query, $s, $t, $c, $m]) =>
     filterBySearch(
-      toThings(scopeLocal($l, $s), $n, $t, $c, new Date($m * 60_000)),
+      toThings(scopeLocal($l, ...$s), $n, $t, $c, new Date($m * 60_000)),
       $query,
     ),
 );
@@ -405,31 +440,31 @@ export const things = derived(
 // translator input: a booking's title is the item's own name, so there is no
 // display text to re-resolve on a language switch.
 export const bookingEvents = derived(
-  [rawLibrary, partnerNames, searchQuery, scope, holonColors, names],
+  [rawLibrary, partnerNames, searchQuery, scopeView, holonColors, names],
   ([$l, $n, $query, $s, $c]) =>
-    filterBySearch(toBookingEvents(scopeLocal($l, $s), $n, $c), $query),
+    filterBySearch(toBookingEvents(scopeLocal($l, ...$s), $n, $c), $query),
 );
 export const roleCards = derived(
-  [rawRoles, partnerNames, searchQuery, scope, t, holonColors, names],
+  [rawRoles, partnerNames, searchQuery, scopeView, t, holonColors, names],
   ([$r, $n, $query, $s, $t, $c]) =>
-    filterBySearch(toRoles(scopeLocal($r, $s), $n, $t, $c), $query),
+    filterBySearch(toRoles(scopeLocal($r, ...$s), $n, $t, $c), $query),
 );
 export const checklistCards = derived(
-  [rawChecklists, partnerNames, searchQuery, scope, holonColors],
+  [rawChecklists, partnerNames, searchQuery, scopeView, holonColors],
   ([$c, $n, $query, $s, $col]) =>
-    filterBySearch(toChecklists(scopeLocal($c, $s), $n, $col), $query),
+    filterBySearch(toChecklists(scopeLocal($c, ...$s), $n, $col), $query),
 );
 // Tap-to-filter chips for the search dropdown, derived from the *unqueried*
 // view models so the list stays stable while a query narrows the boards —
 // but scope-filtered, so local scopes don't suggest partner people/categories.
 export const searchSuggestions: Readable<SearchSuggestions> = derived(
-  [rawQuests, rawLibrary, rawRoles, rawStock, partnerNames, scope, t],
+  [rawQuests, rawLibrary, rawRoles, rawStock, partnerNames, scopeView, t],
   ([$q, $l, $r, $st, $n, $s, $t]) => {
     const base = toSuggestions(
-      toEvents(scopeLocal($q, $s), $n, $t),
-      toBacklog(scopeLocal($q, $s), $n, undefined, $t),
-      toRoles(scopeLocal($r, $s), $n, $t),
-      toThings(scopeLocal($l, $s), $n, $t),
+      toEvents(scopeLocal($q, ...$s), $n, $t),
+      toBacklog(scopeLocal($q, ...$s), $n, undefined, $t),
+      toRoles(scopeLocal($r, ...$s), $n, $t),
+      toThings(scopeLocal($l, ...$s), $n, $t),
     );
     // The shelf's categories join the chips so the Stock tab can be
     // narrowed by category with one tap, like the task wall.

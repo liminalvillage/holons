@@ -43,6 +43,8 @@
     taskViewMode,
     taskSort,
     showCompleted,
+    showHolograms,
+    HOLOGRAM_TABS,
     scope,
     libraryViewMode,
     libraryCalendarMode,
@@ -331,11 +333,12 @@
   // Status and Shifts have no layout pill of their own.
 
   // The Filters button counts the choices that differ from the defaults
-  // (Federated off; on Tasks, Done off and the Loved order), so a narrowed
-  // or reordered board is never a surprise.
+  // (Federated off, Holograms on; on Tasks, Done off and the Loved order),
+  // so a narrowed or reordered board is never a surprise.
   let filtersOpen = false;
   $: filterCount =
     ($scope === "networked" ? 1 : 0) +
+    (!$showHolograms && HOLOGRAM_TABS.includes($activeTab) ? 1 : 0) +
     ($activeTab === "tasks"
       ? ($showCompleted ? 1 : 0) + ($taskSort !== "loved" ? 1 : 0)
       : 0);

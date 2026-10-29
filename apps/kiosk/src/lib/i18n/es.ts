@@ -413,6 +413,8 @@ export const es: Record<MessageKey, Msg> = {
   // Filters sheet (pills band)
   "filters.title": "Filtros",
   "filters.show": "Mostrar",
+  "filters.holograms": "Hologramas",
+  "filters.hologramsSub": "Tarjetas que otros holones colocaron aquí",
   "filters.sortBy": "Ordenar por",
   "filters.aria": {
     one: "Filtros — {n} filtro activo",

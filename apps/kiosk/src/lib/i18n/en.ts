@@ -402,6 +402,8 @@ export const en = {
   // Filters sheet (pills band)
   "filters.title": "Filters",
   "filters.show": "Show",
+  "filters.holograms": "Holograms",
+  "filters.hologramsSub": "Cards other holons placed here",
   "filters.sortBy": "Sort by",
   "filters.aria": {
     one: "Filters — {n} filter on",

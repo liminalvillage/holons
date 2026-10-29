@@ -671,6 +671,18 @@ export function setShowCompleted(on: boolean): void {
   persist(TASK_DONE_KEY, on ? "1" : "0");
 }
 
+const HOLOGRAMS_KEY = "kiosk_holograms";
+
+/** Whether the boards show holograms; on unless switched off. */
+export function resolveShowHolograms(): boolean {
+  return persisted(HOLOGRAMS_KEY) !== "0";
+}
+
+/** Persist the Filters sheet's Holograms switch. */
+export function setShowHolograms(on: boolean): void {
+  persist(HOLOGRAMS_KEY, on ? "1" : "0");
+}
+
 /**
  * How the Library view lays out the things: the icon card grid, a compact
  * list, or the booking calendar (when each thing is out). Same Layout pill as

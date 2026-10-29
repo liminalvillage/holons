@@ -43,6 +43,11 @@ describe("scopeLocal", () => {
   test("all drops only partner copies, keeps holograms", () => {
     expect(scopeLocal(all, "all")).toEqual([local, hologram]);
   });
+
+  test("holograms off drops them in either scope", () => {
+    expect(scopeLocal(all, "networked", false)).toEqual([local, partner]);
+    expect(scopeLocal(all, "all", false)).toEqual([local]);
+  });
 });
 
 describe("scopeFromLegacy", () => {

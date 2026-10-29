@@ -3,8 +3,9 @@
   //
   // The pills band's Filters sheet: every choice of WHAT the board shows and
   // in which order, in one place. Federated (partners' items beside this
-  // holon's own) is device-wide and offered on every tab; the Tasks tab adds
-  // Done (completed tasks too) and Sort. How items are laid out is not a
+  // holon's own) is device-wide and offered on every tab; Holograms (cards
+  // other holons placed here by reference) on the boards built from them;
+  // the Tasks tab adds Done (completed tasks too) and Sort. How items are laid out is not a
   // filter — that stays the band's Layout pill.
   //
   // Kiosk rule: no Apply step. Every tap takes effect at once and is
@@ -12,10 +13,18 @@
   import { createEventDispatcher } from "svelte";
   import Modal from "./Modal.svelte";
   import Icon from "./Icon.svelte";
-  import { activeTab, scope, showCompleted, taskSort } from "$lib/stores";
+  import {
+    activeTab,
+    scope,
+    showCompleted,
+    showHolograms,
+    taskSort,
+    HOLOGRAM_TABS,
+  } from "$lib/stores";
   import {
     setScope,
     setShowCompleted,
+    setShowHolograms,
     setTaskSort,
     type Scope,
   } from "$lib/config";
@@ -27,11 +36,17 @@
 
   $: federated = $scope === "networked";
   $: tasks = $activeTab === "tasks";
+  $: holograms = HOLOGRAM_TABS.includes($activeTab);
 
   function toggleFederated() {
     const next: Scope = federated ? "all" : "networked";
     scope.set(next);
     setScope(next);
+  }
+  function toggleHolograms() {
+    const next = !$showHolograms;
+    showHolograms.set(next);
+    setShowHolograms(next);
   }
   function toggleDone() {
     const next = !$showCompleted;
@@ -70,6 +85,28 @@
           <span class="knob"></span>
         </button>
       </div>
+      {#if holograms}
+        <div class="row">
+          <span class="rowlabel"
+            ><Icon name="sparkles" class="ri" />
+            <span
+              >{$t("filters.holograms")}
+              <span class="sub">{$t("filters.hologramsSub")}</span></span
+            ></span
+          >
+          <button
+            type="button"
+            class="switch"
+            class:on={$showHolograms}
+            role="switch"
+            aria-checked={$showHolograms}
+            aria-label={$t("filters.hologramsSub")}
+            on:click={toggleHolograms}
+          >
+            <span class="knob"></span>
+          </button>
+        </div>
+      {/if}
       {#if tasks}
         <div class="row">
           <span class="rowlabel"

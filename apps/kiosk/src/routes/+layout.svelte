@@ -42,6 +42,7 @@
     resolveTaskView,
     resolveTaskSort,
     resolveShowCompleted,
+    resolveShowHolograms,
     resolveLibraryView,
     resolveRolesView,
     resolveFlowsView,
@@ -86,6 +87,7 @@
     taskViewMode,
     taskSort,
     showCompleted,
+    showHolograms,
     libraryViewMode,
     rolesViewMode,
     flowsViewMode,
@@ -710,6 +712,7 @@
     taskViewMode.set(resolveTaskView());
     taskSort.set(resolveTaskSort());
     showCompleted.set(resolveShowCompleted());
+    showHolograms.set(resolveShowHolograms());
     libraryViewMode.set(resolveLibraryView());
     rolesViewMode.set(resolveRolesView());
     flowsViewMode.set(resolveFlowsView());

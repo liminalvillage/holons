@@ -412,6 +412,8 @@ export const it: Record<MessageKey, Msg> = {
   // Filters sheet (pills band)
   "filters.title": "Filtri",
   "filters.show": "Mostra",
+  "filters.holograms": "Ologrammi",
+  "filters.hologramsSub": "Schede che altri holon hanno messo qui",
   "filters.sortBy": "Ordina per",
   "filters.aria": {
     one: "Filtri — {n} filtro attivo",
