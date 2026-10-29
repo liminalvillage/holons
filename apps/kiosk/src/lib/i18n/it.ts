@@ -2151,7 +2151,6 @@ export const it: Record<MessageKey, Msg> = {
   "onb.confirm": "Spunta “{card}”",
   "onb.confirmed": "Spuntata.",
   "onb.saveFailed": "Impossibile salvare: {reason}",
-};
   "onb.edit": "Modifica i passi",
   "onb.editTitle": "Passi di onboarding",
   "onb.tabSteps": "Passi",
@@ -2187,3 +2186,4 @@ export const it: Record<MessageKey, Msg> = {
     "Su questi passi ora: {n}. Rinominare è sicuro; se rimuovi il passo su cui si trova qualcuno, passa al successivo ancora aperto.",
   "onb.previewNote": "Ciò che vede chi arriva. Scegli un passo su cui stare.",
   "onb.previewAt": "Stai sul passo",
+};

@@ -2114,8 +2114,6 @@ export const en = {
   "onb.confirm": "Tick “{card}”",
   "onb.confirmed": "Ticked.",
   "onb.saveFailed": "Couldn't save: {reason}",
-} as const satisfies Record<string, Msg>;
-
   "onb.edit": "Edit steps",
   "onb.editTitle": "Onboarding steps",
   "onb.tabSteps": "Steps",
@@ -2150,4 +2148,6 @@ export const en = {
     "Walking these steps now: {n}. Renaming is safe; if you remove the step someone is on, they move to the next open one.",
   "onb.previewNote": "What a newcomer sees. Pick a step to stand on.",
   "onb.previewAt": "Stand on step",
+} as const satisfies Record<string, Msg>;
+
 export type MessageKey = keyof typeof en;
