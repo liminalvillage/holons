@@ -62,6 +62,7 @@
   } from "@holons/core/roles";
   import Modal from "$lib/components/Modal.svelte";
   import PeoplePicker from "$lib/components/PeoplePicker.svelte";
+  import type { QuestParticipant } from "@holons/core/tasks";
   import PersonSelect, {
     type PersonOption as Member,
   } from "$lib/components/PersonSelect.svelte";
@@ -314,7 +315,7 @@
   let editTitle = "";
   let editDesc = "";
   /** The fixed holder picked in the form — none, or exactly one (core's rule). */
-  let editFixed: RoleParticipant[] = [];
+  let editFixed: QuestParticipant[] = [];
   let deleting = false;
   $: editRaw = editCard ? (byId.get(editCard.id) ?? null) : null;
   // The role the form is editing, kept past the modal's close so a write that
@@ -332,15 +333,30 @@
     editTitle = card.title;
     editDesc = card.description ?? "";
     const raw = byId.get(card.id);
-    editFixed = raw ? permanentHolders(raw).slice(0, 1) : [];
+    editFixed = raw
+      ? permanentHolders(raw)
+          .slice(0, 1)
+          .map((p) => ({
+            id: p.id ?? undefined,
+            username: p.username ?? undefined,
+            first_name: p.first_name ?? undefined,
+            last_name: p.last_name ?? undefined,
+          }))
+      : [];
   }
 
   /** The role with the form's fields on it (its id/key stay put on rename). */
   function withForm(raw: Role): Role {
     const title = editTitle.trim();
     const base = title ? { ...raw, title, description: editDesc.trim() } : raw;
-    return editFixed[0]
-      ? setPermanent(base, editFixed[0])
+    const fixed = editFixed[0];
+    return fixed?.id != null
+      ? setPermanent(base, {
+          id: fixed.id,
+          username: fixed.username ?? null,
+          first_name: fixed.first_name ?? null,
+          last_name: fixed.last_name ?? null,
+        })
       : clearPermanent(base);
   }
 
