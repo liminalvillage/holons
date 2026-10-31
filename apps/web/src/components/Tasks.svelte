@@ -224,6 +224,9 @@
 	// Guards against double-submit (Enter + click, or a rapid double-click)
 	// creating duplicate/blank tasks. Set synchronously before any await.
 	let isAddingTask = $state(false);
+	// When the user double-clicks the canvas to create a task, this holds the
+	// canvas-space position so the new task lands where they clicked.
+	let pendingCanvasPosition: { x: number; y: number } | null = $state(null);
 
 	let questsUnsubscribe: (() => void) | undefined;
 	// Live federation-aware quests stream; `setFederated` toggles partners without
@@ -600,8 +603,10 @@
 				...draft,
 				initiator: initiatorInfo, // Use the determined initiatorInfo
 				created: new Date().toISOString(), // canonical, see taskCreatedAtMs
-				orderIndex: newOrderIndex // Assign orderIndex
-				// No position assigned - let CanvasView handle positioning in inbox
+				orderIndex: newOrderIndex, // Assign orderIndex
+				// When created from a canvas double-click, place at the click position;
+				// otherwise let CanvasView handle positioning in the inbox.
+				...(pendingCanvasPosition ? { position: pendingCanvasPosition } : {})
 			};
 
 			// Add the task to holosphere. Push-propagation to federation partners
@@ -612,6 +617,7 @@
 			// Reset form and close dialog
 			showTaskInput = false;
 			newTask = buildBlankNewTask();
+			pendingCanvasPosition = null;
 		} catch (error: any) {
 			if (error?.name === 'AuthorizationError') {
 				notifyWriteDenied('Unable to save - no write permission for this holon');
@@ -726,6 +732,7 @@
 
 	function hideDialog() {
 		showTaskInput = false;
+		pendingCanvasPosition = null;
 		// Reset the newTask object when closing
 		newTask = {
 			id: generateId(),
@@ -1324,6 +1331,10 @@
 							{showCompleted}
 							on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.quest)}
 							on:questPositionChanged={handleCanvasQuestPositionChange}
+							on:createTaskAtPosition={(e) => {
+								pendingCanvasPosition = { x: e.detail.x, y: e.detail.y };
+								showDialog();
+							}}
 						/>
 					{:else}
 						<div class="flex items-center justify-center py-12">

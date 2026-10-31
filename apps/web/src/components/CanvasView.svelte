@@ -557,6 +557,16 @@
             };
         });
 
+    /** Double-click on blank canvas → ask parent to create a task here. */
+    function handleCanvasDblClick(event: MouseEvent) {
+        // Only in task mode, when not drawing, and only on empty canvas space.
+        if (isStandalone || drawingEnabled) return;
+        const target = event.target as HTMLElement;
+        if (target.closest('.task-card') || target.closest('.canvas-action-bar')) return;
+        const point = getCanvasPoint(event.clientX, event.clientY);
+        dispatch('createTaskAtPosition', { x: point.x, y: point.y });
+    }
+
     function handleMouseDown(event: MouseEvent, card: typeof questCards[0] | null = null) {
         event.preventDefault();
         event.stopPropagation();
@@ -1096,9 +1106,27 @@
                 (d: string) => d !== id && byId.has(d),
             );
 
+        // Build childrenOf: prefer the explicit `children` field when any card
+        // populates it; otherwise fall back to inverting `dependencies` so the
+        // layout still works for data that pre-dates the children field.
+        const anyExplicitChildren = questCards.some(
+            (c) => Array.isArray(c.quest.children) && c.quest.children.length > 0,
+        );
+
         const childrenOf = new Map<string, string[]>(ids.map((id) => [id, []]));
-        for (const id of ids) {
-            for (const p of parentsOf(id)) childrenOf.get(p)!.push(id);
+        if (anyExplicitChildren) {
+            // Use explicit composition children — filtered to cards visible on
+            // the canvas and excluding self-references.
+            for (const card of questCards) {
+                const kids = (card.quest.children ?? [])
+                    .filter((c: string) => c !== card.key && byId.has(c));
+                childrenOf.set(card.key, kids);
+            }
+        } else {
+            // Legacy fallback: invert the dependency arrows.
+            for (const id of ids) {
+                for (const p of parentsOf(id)) childrenOf.get(p)!.push(id);
+            }
         }
 
         const hasEdge = (id: string) =>
@@ -2066,6 +2094,7 @@
     on:touchstart|preventDefault={handleTouchStart}
     on:touchmove|preventDefault={handleTouchMove}
     on:touchend|preventDefault={handleTouchEnd}
+    on:dblclick={handleCanvasDblClick}
     on:contextmenu|preventDefault
     on:dragover={handleCanvasDragOver}
     on:dragleave={handleCanvasDragLeave}
@@ -2450,6 +2479,18 @@
                     >
                         <polygon points="0 0, 9 5, 0 10" fill="#9ca3af" />
                     </marker>
+                    <!-- Composition (children) marker — a hollow diamond -->
+                    <marker
+                        id="comp-diamond"
+                        markerWidth="12"
+                        markerHeight="8"
+                        refX="6"
+                        refY="4"
+                        orient="auto"
+                        markerUnits="userSpaceOnUse"
+                    >
+                        <polygon points="0 4, 6 0, 12 4, 6 8" fill="none" stroke="#7c3aed" stroke-width="1.5" />
+                    </marker>
                 </defs>
                 {#each questCards as card (card.key)}
                     {#if card.quest.dependencies && card.quest.dependencies.length > 0}
@@ -2483,6 +2524,45 @@
                                     opacity="0.7"
                                     vector-effect="non-scaling-stroke"
                                     marker-end="url(#dep-arrowhead)"
+                                />
+                            {/if}
+                        {/each}
+                    {/if}
+                {/each}
+                <!-- Composition (children) links — dashed purple lines -->
+                {#each questCards as card (card.key)}
+                    {#if card.quest.children && card.quest.children.length > 0}
+                        {#each card.quest.children as childId}
+                            {@const childCard = questCards.find(c => c.key === childId)}
+                            {#if childCard}
+                                {@const parentX = draggedCardVisuals && draggedCardVisuals.key === card.key ? draggedCardVisuals.x : card.x}
+                                {@const parentY = draggedCardVisuals && draggedCardVisuals.key === card.key ? draggedCardVisuals.y : card.y}
+                                {@const chX = draggedCardVisuals && draggedCardVisuals.key === childCard.key ? draggedCardVisuals.x : childCard.x}
+                                {@const chY = draggedCardVisuals && draggedCardVisuals.key === childCard.key ? draggedCardVisuals.y : childCard.y}
+                                {@const parentCX = parentX + CARD_WIDTH / 2}
+                                {@const parentCY = parentY + CARD_HEIGHT_ESTIMATE / 2}
+                                {@const chCX = chX + CARD_WIDTH / 2}
+                                {@const chCY = chY + CARD_HEIGHT_ESTIMATE / 2}
+                                {@const start = borderPoint(parentX, parentY, CARD_WIDTH, CARD_HEIGHT_ESTIMATE, chCX, chCY)}
+                                {@const end = borderPoint(chX, chY, CARD_WIDTH, CARD_HEIGHT_ESTIMATE, parentCX, parentCY)}
+                                {@const cdx = end.x - start.x}
+                                {@const cdy = end.y - start.y}
+                                {@const cdist = Math.hypot(cdx, cdy)}
+                                {@const coff = Math.max(40, Math.min(120, cdist / 2.5))}
+                                {@const choriz = Math.abs(cdx) > Math.abs(cdy)}
+                                {@const cc1x = choriz ? start.x + Math.sign(cdx) * coff : start.x}
+                                {@const cc1y = choriz ? start.y : start.y + Math.sign(cdy) * coff}
+                                {@const cc2x = choriz ? end.x - Math.sign(cdx) * coff : end.x}
+                                {@const cc2y = choriz ? end.y : end.y - Math.sign(cdy) * coff}
+                                <path
+                                    d="M {start.x} {start.y} C {cc1x} {cc1y}, {cc2x} {cc2y}, {end.x} {end.y}"
+                                    stroke="#7c3aed"
+                                    stroke-width="1.5"
+                                    stroke-dasharray="6 4"
+                                    fill="none"
+                                    opacity="0.6"
+                                    vector-effect="non-scaling-stroke"
+                                    marker-end="url(#comp-diamond)"
                                 />
                             {/if}
                         {/each}
