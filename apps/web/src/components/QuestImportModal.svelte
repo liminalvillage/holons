@@ -433,10 +433,10 @@
 			return;
 		}
 
-		// Clean up quests for import (remove IDs, timestamps, etc.)
+		// Clean up quests for import — keep original IDs so the importer
+		// can remap dependency references when it assigns new ones.
 		const cleanQuests = questsToImport.map(quest => ({
 			...quest,
-			id: undefined, // Will be generated during import
 			created: undefined, // Will be generated during import
 			orderIndex: undefined // Will be generated during import
 		}));
