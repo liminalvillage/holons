@@ -431,6 +431,8 @@ export interface ApplyBreakdownResult {
   newQuests: Quest[];
   /** The parent's updated predecessor list (existing deps ∪ terminal steps). */
   parentDependencies: string[];
+  /** The parent's updated children list — all steps as composition members. */
+  parentChildren: string[];
   /** Existing task ids reused as steps (no new quest created for these). */
   reusedExistingIds: string[];
   warnings: string[];
@@ -465,10 +467,13 @@ export function applyBreakdownProposal(input: ApplyBreakdownInput): ApplyBreakdo
   const parentId = String(parent.id);
   const parentDeps = ((parent.dependencies as string[] | undefined) ?? []).map(String);
 
+  const parentChildren = ((parent.children as string[] | undefined) ?? []).map(String);
+
   if (proposal.atomic || proposal.steps.length === 0) {
     return {
       newQuests: [],
       parentDependencies: parentDeps,
+      parentChildren,
       reusedExistingIds: [],
       warnings,
     };
@@ -713,9 +718,14 @@ export function applyBreakdownProposal(input: ApplyBreakdownInput): ApplyBreakdo
     }
   }
 
+  // Every step (new or reused) belongs compositionally inside the parent.
+  const allStepIds = resolvedId.filter((_, i) => resolvedId[i]);
+  const updatedChildren = [...new Set([...parentChildren, ...allStepIds])];
+
   return {
     newQuests,
     parentDependencies,
+    parentChildren: updatedChildren,
     reusedExistingIds: [...new Set(reuseId.filter((r): r is string => r !== null))],
     warnings,
   };
