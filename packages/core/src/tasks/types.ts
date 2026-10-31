@@ -72,9 +72,22 @@ export interface Quest {
   created?: string;
   initiator?: QuestInitiator;
 
-  // Ordering / dependencies.
+  // Ordering / dependencies / composition.
   orderIndex?: number;
+  /**
+   * Gating: ids of predecessor quests that must complete before this one
+   * becomes actionable. Direction: "I wait on these." Pure sequencing —
+   * says nothing about containment.
+   */
   dependencies?: string[];
+  /**
+   * Composition: ids of quests that belong inside this one (sub-quests,
+   * steps of a larger quest). Direction: "these live inside me." Pure
+   * containment — says nothing about sequencing or gating. A child may
+   * also appear in another quest's `dependencies` when it genuinely
+   * blocks that quest, but tree position alone never implies gating.
+   */
+  children?: string[];
 
   _meta?: QuestMeta;
   _deleted?: boolean;

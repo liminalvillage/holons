@@ -128,3 +128,80 @@ export function findDependencyCycle(quests: Quest[]): string[] | null {
   }
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Composition helpers — the `children` relation (containment, no gating)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build an `id → child-ids` map from a list of quests, dropping self-references
+ * and ids that aren't present in the set. Mirrors `dependencyMap` but for the
+ * composition axis.
+ */
+function childrenMap(quests: Quest[]): Map<string, string[]> {
+  const ids = new Set(quests.map((q) => String(q.id)));
+  const map = new Map<string, string[]>();
+  for (const q of quests) {
+    const id = String(q.id);
+    const kids = ((q.children as string[] | undefined) ?? [])
+      .map(String)
+      .filter((c) => c !== id && ids.has(c));
+    map.set(id, kids);
+  }
+  return map;
+}
+
+/**
+ * Return the parent quest id for a given quest (i.e. the quest whose `children`
+ * array contains this quest's id), or `null` if it sits at the top level.
+ * A quest should have at most one composition parent — if multiple claim it,
+ * the first match wins.
+ */
+export function compositionParent(
+  quests: Quest[],
+  questId: string,
+): string | null {
+  for (const q of quests) {
+    const id = String(q.id);
+    if (id === questId) continue;
+    const kids = (q.children as string[] | undefined) ?? [];
+    if (kids.map(String).includes(questId)) return id;
+  }
+  return null;
+}
+
+/**
+ * Return the direct children of a quest (the quests it contains).
+ * Dangling refs and self-references are dropped.
+ */
+export function compositionChildren(
+  quests: Quest[],
+  questId: string,
+): string[] {
+  const map = childrenMap(quests);
+  return map.get(questId) ?? [];
+}
+
+/**
+ * Would adding `childId` to `parentId.children` create a composition cycle?
+ * True when they match, or when `parentId` already (transitively) sits inside
+ * `childId`'s subtree.
+ */
+export function wouldCreateCompositionCycle(
+  quests: Quest[],
+  parentId: string,
+  childId: string,
+): boolean {
+  if (parentId === childId) return true;
+  const map = childrenMap(quests);
+  const stack = [childId];
+  const seen = new Set<string>();
+  while (stack.length > 0) {
+    const cur = stack.pop()!;
+    if (cur === parentId) return true;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    for (const c of map.get(cur) ?? []) stack.push(c);
+  }
+  return false;
+}

@@ -4,6 +4,9 @@ import {
   findDependencyCycle,
   isQuestSettled,
   unmetDependencies,
+  compositionParent,
+  compositionChildren,
+  wouldCreateCompositionCycle,
 } from './dependencies.js';
 import type { Quest } from './types.js';
 
@@ -112,5 +115,54 @@ describe('unmetDependencies', () => {
     const unmet = unmetDependencies([q('a'), q('b', ['a']), q('c', ['b'])]);
     expect(unmet.get('b')).toEqual(['a']);
     expect(unmet.get('c')).toEqual(['b']);
+  });
+});
+
+// -- Composition helpers (children field) ------------------------------------
+
+// Quest with children (composition, no gating implied).
+function parent(id: string, children: string[], deps: string[] = []): Quest {
+  return { id, title: id, status: 'ongoing', participants: [], dependencies: deps, children };
+}
+
+describe('compositionParent', () => {
+  it('returns the quest whose children array contains the target', () => {
+    const quests = [parent('root', ['a', 'b']), q('a'), q('b')];
+    expect(compositionParent(quests, 'a')).toBe('root');
+    expect(compositionParent(quests, 'b')).toBe('root');
+  });
+
+  it('returns null for a top-level quest', () => {
+    const quests = [parent('root', ['a']), q('a'), q('b')];
+    expect(compositionParent(quests, 'root')).toBeNull();
+    expect(compositionParent(quests, 'b')).toBeNull();
+  });
+});
+
+describe('compositionChildren', () => {
+  it('returns the direct children, dropping dangling refs', () => {
+    const quests = [parent('root', ['a', 'missing']), q('a')];
+    expect(compositionChildren(quests, 'root')).toEqual(['a']);
+  });
+
+  it('returns empty for a childless quest', () => {
+    expect(compositionChildren([q('a')], 'a')).toEqual([]);
+  });
+});
+
+describe('wouldCreateCompositionCycle', () => {
+  it('flags a self-composition', () => {
+    expect(wouldCreateCompositionCycle([q('a')], 'a', 'a')).toBe(true);
+  });
+
+  it('flags nesting a quest inside its own descendant', () => {
+    // root contains a, a contains b — making b contain root closes a loop.
+    const quests = [parent('root', ['a']), parent('a', ['b']), q('b')];
+    expect(wouldCreateCompositionCycle(quests, 'b', 'root')).toBe(true);
+  });
+
+  it('allows valid nesting', () => {
+    const quests = [parent('root', ['a']), q('a'), q('b')];
+    expect(wouldCreateCompositionCycle(quests, 'root', 'b')).toBe(false);
   });
 });
