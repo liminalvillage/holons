@@ -753,18 +753,31 @@
 			// Calculate base orderIndex once, then increment for each import
 			const baseOrderIndex = filteredQuests.length;
 
-			// Import quests one by one with incrementing orderIndex
-			for (let i = 0; i < importedQuests.length; i++) {
-				const quest = importedQuests[i];
-				// Generate new ID and timestamp
-				const newQuest = {
+			// Pass 1: assign new IDs and build oldId → newId mapping
+			const idMap = new Map<string, string>();
+			const preparedQuests = importedQuests.map((quest, i) => {
+				const oldId = quest.id != null ? String(quest.id) : '';
+				const newId = generateId();
+				if (oldId) idMap.set(oldId, newId);
+				return {
 					...quest,
-					id: generateId(),
+					id: newId,
 					created: new Date().toISOString(), // canonical, see taskCreatedAtMs
 					orderIndex: baseOrderIndex + i
 				};
+			});
 
-				// Add to holosphere
+			// Pass 2: remap dependency references from old IDs to new IDs
+			for (const quest of preparedQuests) {
+				if (Array.isArray(quest.dependencies) && quest.dependencies.length > 0) {
+					quest.dependencies = quest.dependencies.map(
+						(dep: string) => idMap.get(dep) ?? dep
+					);
+				}
+			}
+
+			// Save all quests
+			for (const newQuest of preparedQuests) {
 				await holosphere.put(holonID, 'quests', newQuest);
 			}
 
