@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it } from "vitest";
-import { pathForTab, tabForPath } from "./tabroute";
+import { opensOnboarding, pathForTab, tabForPath } from "./tabroute";
 
 describe("tabForPath", () => {
   it("reads a bare tab path", () => {
@@ -41,5 +41,20 @@ describe("pathForTab", () => {
     const p = pathForTab("/-1001234567890", "status");
     expect(tabForPath(p)).toBe("status");
     expect(p).toBe("/-1001234567890/status");
+  });
+});
+
+describe("opensOnboarding", () => {
+  it("is the onboarding segment, which is no tab", () => {
+    expect(opensOnboarding("/liminal/onboarding")).toBe(true);
+    expect(opensOnboarding("/Onboarding/")).toBe(true);
+    expect(tabForPath("/liminal/onboarding")).toBeNull();
+    expect(opensOnboarding("/liminal/tasks")).toBe(false);
+  });
+
+  it("gives way to a tab once the board opens", () => {
+    expect(pathForTab("/liminal/onboarding", "calendar")).toBe(
+      "/liminal/calendar",
+    );
   });
 });

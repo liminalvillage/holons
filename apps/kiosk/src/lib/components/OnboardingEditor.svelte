@@ -13,19 +13,28 @@
   import { createEventDispatcher, onDestroy, tick } from "svelte";
   import {
     DEFAULT_ONBOARDING_STEPS,
+    DEFAULT_PROFILE_FIELDS,
+    PROFILE_FIELDS,
+    PROFILE_FIELD_TYPES,
     addCard,
+    addProfileField,
     addStep,
     draftIssues,
     moveCard,
     moveStep,
     removeCard,
+    removeProfileField,
     removeStep,
     updateCard,
+    updateProfileField,
     updateStep,
     type CardConfirm,
+    type OnboardingCard,
+    type ProfileFieldType,
   } from "@holons/core/onboarding";
   import { createAutosave } from "$lib/autosave";
   import {
+    fieldLabel,
     previewSteps,
     saveOnboardingSteps,
     type OnboardingConfig,
@@ -180,6 +189,31 @@
   $: emptySteps = new Set(
     issues.flatMap((i) => (i.kind === "empty-step" ? [i.step] : [])),
   );
+  $: unnamed = new Set(
+    issues.flatMap((i) =>
+      i.kind === "unnamed-field" ? [`${i.card}/${i.field}`] : [],
+    ),
+  );
+  const fieldsOf = (card: OnboardingCard) =>
+    card.fields ?? [...DEFAULT_PROFILE_FIELDS];
+  /** The known fields a profile card does not ask yet. */
+  const unasked = (card: OnboardingCard) =>
+    PROFILE_FIELDS.filter((k) => !fieldsOf(card).some((f) => f.key === k.key));
+  function askFor(stepId: string, card: OnboardingCard, e: Event) {
+    const el = e.currentTarget as HTMLSelectElement;
+    const key = el.value;
+    el.value = "";
+    if (!key) return;
+    edit(
+      addProfileField(
+        draft,
+        stepId,
+        card.id,
+        key === "custom" ? undefined : key,
+      ),
+    );
+  }
+
   // The step the preview stands on, kept inside the steps a save keeps.
   $: saved = previewSteps(holon, draft, -1).length;
   $: at = Math.min(previewAt, Math.max(0, saved - 1));
@@ -398,6 +432,104 @@
                       </div>
                       <p class="hint">{$t(hintOf(card.confirm))}</p>
 
+                      {#if card.confirm === "profile"}
+                        <fieldset class="pfields">
+                          <legend>{$t("onb.fields")}</legend>
+                          {#each fieldsOf(card) as f (f.key)}
+                            <div class="pfield">
+                              <input
+                                class="plabel"
+                                aria-label={$t("onb.fieldLabel")}
+                                placeholder={$t("onb.fieldLabel")}
+                                value={PROFILE_FIELDS.some(
+                                  (k) => k.key === f.key && k.label === f.label,
+                                )
+                                  ? fieldLabel(f, $t)
+                                  : f.label}
+                                on:input={(e) =>
+                                  edit(
+                                    updateProfileField(
+                                      draft,
+                                      step.id,
+                                      card.id,
+                                      f.key,
+                                      { label: value(e) },
+                                    ),
+                                  )}
+                              />
+                              <select
+                                aria-label={$t("onb.fieldType")}
+                                value={f.type}
+                                on:change={(e) =>
+                                  edit(
+                                    updateProfileField(
+                                      draft,
+                                      step.id,
+                                      card.id,
+                                      f.key,
+                                      { type: value(e) as ProfileFieldType },
+                                    ),
+                                  )}
+                              >
+                                {#each PROFILE_FIELD_TYPES as ty (ty)}
+                                  <option value={ty}
+                                    >{$t(`onb.type.${ty}`)}</option
+                                  >
+                                {/each}
+                              </select>
+                              <button
+                                type="button"
+                                class="chip req"
+                                class:on={f.required}
+                                aria-pressed={f.required}
+                                on:click={() =>
+                                  edit(
+                                    updateProfileField(
+                                      draft,
+                                      step.id,
+                                      card.id,
+                                      f.key,
+                                      { required: !f.required },
+                                    ),
+                                  )}>{$t("onb.required")}</button
+                              >
+                              <button
+                                type="button"
+                                class="pdrop"
+                                aria-label={$t("onb.removeField", {
+                                  field: fieldLabel(f, $t) || f.key,
+                                })}
+                                on:click={() =>
+                                  edit(
+                                    removeProfileField(
+                                      draft,
+                                      step.id,
+                                      card.id,
+                                      f.key,
+                                    ),
+                                  )}><Icon name="close" /></button
+                              >
+                            </div>
+                            {#if unnamed.has(`${card.id}/${f.key}`)}
+                              <p class="issue">{$t("onb.unnamedField")}</p>
+                            {/if}
+                          {/each}
+                          <select
+                            class="addfield"
+                            aria-label={$t("onb.addField")}
+                            on:change={(e) => askFor(step.id, card, e)}
+                          >
+                            <option value="">{$t("onb.addField")}</option>
+                            {#each unasked(card) as k (k.key)}
+                              <option value={k.key}>{fieldLabel(k, $t)}</option>
+                            {/each}
+                            <option value="custom"
+                              >{$t("onb.customField")}</option
+                            >
+                          </select>
+                        </fieldset>
+                      {/if}
+
                       {#if card.description || card.link || more.has(card.id)}
                         <label class="field">
                           <span>{$t("onb.description")}</span>
@@ -478,7 +610,14 @@
             {:else if card.confirm === "admin"}
               <p class="hint">{$t("onb.adminTicks")}</p>
             {:else}
-              <p class="hint">{$t("onb.whoProfileHint")}</p>
+              <ul class="faux-fields">
+                {#each card.fields ?? DEFAULT_PROFILE_FIELDS as f (f.key)}
+                  <li>
+                    {fieldLabel(f, $t)}{#if !f.required}
+                      <em>{$t("onb.optional")}</em>{/if}
+                  </li>
+                {/each}
+              </ul>
             {/if}
           </OnboardingSteps>
         </div>
@@ -843,6 +982,79 @@
     border-radius: 22px;
     background: var(--paper-deep);
     border: 1px solid var(--line);
+  }
+  /* What a profile card asks: one row per field. */
+  .pfields {
+    margin: 0.6rem 0 0;
+    padding: 0;
+    border: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+  }
+  .pfields legend {
+    padding: 0;
+    margin-bottom: 0.3rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--muted);
+  }
+  .pfield {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto 44px;
+    gap: 0.3rem;
+    align-items: center;
+  }
+  .pfield input,
+  .pfield select,
+  .addfield {
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 0.6rem;
+    font: inherit;
+    font-size: 0.9rem;
+    background: var(--paper);
+    color: var(--ink);
+    border: 1.5px solid transparent;
+    border-radius: 10px;
+  }
+  .pfield .req {
+    padding: 0 0.7rem;
+  }
+  .pdrop {
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    color: var(--muted);
+  }
+  .pdrop:hover {
+    color: var(--danger);
+  }
+  .addfield {
+    align-self: flex-start;
+    color: var(--ink-soft);
+    font-weight: 700;
+  }
+  @media (max-width: 480px) {
+    .pfield {
+      grid-template-columns: minmax(0, 1fr) auto 44px;
+    }
+    .pfield input {
+      grid-column: 1 / -1;
+    }
+  }
+  .faux-fields {
+    margin: 0.3rem 0 0;
+    padding-left: 1.1rem;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+  }
+  .faux-fields em {
+    font-style: normal;
+    opacity: 0.75;
   }
   .faux {
     align-self: flex-start;

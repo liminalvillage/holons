@@ -27,6 +27,7 @@
     hiddenTabs,
     setTabShown,
     appService,
+    onboardingGate,
   } from "$lib/stores";
   import type { TabId } from "$lib/stores";
   import { moveId } from "$lib/taborder";
@@ -420,6 +421,7 @@
   class="bar"
   class:merged
   class:solo={$appService != null}
+  class:gated={$onboardingGate}
   class:suggest-open={suggestOpen || addOpen || addTip}
 >
   <div class="top">
@@ -808,6 +810,13 @@
 {/if}
 
 <style>
+  /* The board is the onboarding (onboardingGate): the holon's name and you,
+     nothing to search, switch to or set up yet. */
+  .bar.gated .strip,
+  .bar.gated .search,
+  .bar.gated .holonset {
+    display: none;
+  }
   .bar.solo .strip,
   .bar.solo .clock,
   .bar.solo .winclose {

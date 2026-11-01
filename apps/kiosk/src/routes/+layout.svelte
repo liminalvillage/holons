@@ -114,9 +114,12 @@
     openThing,
     appService,
     onboardingOpened,
+    onboardingGate,
+    standingRecheck,
     type TabId,
   } from "$lib/stores";
-  import { pathForTab, tabForPath } from "$lib/tabroute";
+  import { opensOnboarding, pathForTab, tabForPath } from "$lib/tabroute";
+  import { onboardingView, readOnboarding } from "@holons/core/onboarding";
   import { miniAppLaunch, settleMiniApp } from "$lib/miniapp";
   import {
     linkedCardFromSearch,
@@ -312,6 +315,9 @@
         hiddenSet = hiddenIdSet(entries);
         emitQuests();
       });
+      // Another holon's onboarding is not this one's: the standing below
+      // decides afresh.
+      if (id !== boundHolon) onboardingGate.set(false);
       boundHolon = id;
       boundFed = fed;
       holonName.set("");
@@ -548,11 +554,18 @@
       if (id !== boundHolon || key !== hs.currentPubkey) return;
       writeStanding.set(status);
       standing.set(st);
+      void refreshGate(hs, id, key, status);
       if (!recheck) scheduleStandingRechecks(id, key);
       else if (status === "accepted")
         for (const t of standingTimers) clearTimeout(t);
       const mark = `${id}|${key}`;
-      if (status === "held" && get(currentUser) && !standingSaid.has(mark)) {
+      // The onboarding screen says it better than a notice.
+      if (
+        status === "held" &&
+        get(currentUser) &&
+        !get(onboardingGate) &&
+        !standingSaid.has(mark)
+      ) {
         standingSaid.add(mark);
         showNotice(tr("layout.notLinked"), 6000);
       }
@@ -581,6 +594,39 @@
   }
   $: if ($sessionKeyPub !== undefined && boundHolon)
     void refreshStanding(boundHolon);
+  $: if ($standingRecheck && boundHolon) void refreshStanding(boundHolon, true);
+
+  // ── Onboarding instead of the board ─────────────────────────────────────
+  //
+  // A logged-in key the holon has not seated sees only the holon's
+  // onboarding — no tasks, no calendar — when the holon walks newcomers
+  // through one, or the key is walking it already. A screen opened for the
+  // onboarding (its link, the bot's Mini App) shows it to anyone not seated.
+  // A wall display with nobody logged in keeps its board.
+  async function refreshGate(
+    hs: HoloSphere,
+    id: string,
+    key: string,
+    status: "accepted" | "held" | "open",
+  ) {
+    let gate = false;
+    if (status !== "accepted" && get(onboardingOpened)) gate = true;
+    else if (status === "held" && get(sessionKeyPub)) {
+      try {
+        const [config, mine] = await Promise.all([
+          readOnboarding(hs, id),
+          onboardingView(hs, id, get(sessionKeyPub)!),
+        ]);
+        gate =
+          (config.enabled && config.steps.length > 0) ||
+          mine?.status === "pending";
+      } catch {
+        gate = get(onboardingGate);
+      }
+    }
+    if (id !== boundHolon || key !== hs.currentPubkey) return;
+    onboardingGate.set(gate);
+  }
 
   // ── Write-echo watchdog ─────────────────────────────────────────────────--
   //
@@ -679,7 +725,7 @@
     // data is still streaming in: register the ask so the tab claims the
     // screen the moment it appears instead of being reset to the fallback.
     const urlTab = tabForPath(location.pathname);
-    if (urlTab === "onboarding") onboardingOpened.set(true);
+    if (opensOnboarding(location.pathname)) onboardingOpened.set(true);
     // Opened as a Telegram Mini App for one service (`t.me/<bot>/tasks` →
     // /tasks): the screen IS that service — set before the tab logic below
     // and before rotation starts, both of which read it.
@@ -1209,8 +1255,9 @@
       </div>
     </div>
 
-    <!-- Zoomed detail / edit overlay for the tapped post-it or card. -->
-    <DetailModal />
+    <!-- Zoomed detail / edit overlay for the tapped post-it or card — none
+         while the board is the onboarding. -->
+    {#if !$onboardingGate}<DetailModal />{/if}
   {/if}
 {/if}
 

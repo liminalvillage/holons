@@ -5,15 +5,20 @@
   // the one they are on, and its cards. Self cards are ticked right here
   // when the session key counts in the person's own holon; otherwise (a
   // Telegram holon the bot keeps) the card says to tick it in the bot chat.
-  // A card someone from the holon vouches for only says so. The bot moves
-  // them on (see $lib/onboarding) — this view re-reads every few seconds
-  // while they walk, so its moves show without a reload.
+  // A card someone from the holon vouches for only says so. A profile card
+  // asks the fields the holon put on it. The bot moves them on (see
+  // $lib/onboarding) — this view re-reads every few seconds while they
+  // walk, so its moves show without a reload.
+  //
+  // It is not a tab: while the key is not seated it IS the board (the
+  // layout's `onboardingGate`), and once linked the board opens.
   import { onDestroy } from "svelte";
-  import { holonId, holonName, showNotice } from "$lib/stores";
+  import { holonId, holonName, showNotice, standingRecheck } from "$lib/stores";
   import { currentUser, displayName, isLoggedIn, loginOpen } from "$lib/auth";
   import { askToJoin } from "$lib/hubmembers";
   import { sessionKeyPub } from "$lib/sessionKey";
   import {
+    fieldLabel,
     loadMyOnboarding,
     previewSteps,
     saveMyProfile,
@@ -21,6 +26,13 @@
     type MyOnboarding,
     type OnboardingCardView,
   } from "$lib/onboarding";
+  import {
+    DEFAULT_PROFILE_FIELDS,
+    fieldAccepts,
+    fieldText,
+    fieldValue,
+    type ProfileField,
+  } from "@holons/core/onboarding";
   import { t } from "$lib/i18n";
   import OnboardingSteps from "$lib/components/OnboardingSteps.svelte";
 
@@ -28,9 +40,10 @@
   let busy = false;
   let asking = false;
   let timer: ReturnType<typeof setInterval> | null = null;
-  let profileName = "";
-  let profileOffer = "";
-  let profileTouched = false;
+  /** What the person is typing, per profile field key. */
+  let answers: Record<string, string> = {};
+  /** Keys the person has typed into since the last read: kept as typed. */
+  let touched = new Set<string>();
 
   async function load(holon: string | null) {
     if (!holon) return;
@@ -38,13 +51,31 @@
       const next = await loadMyOnboarding(holon);
       if (holon !== $holonId) return;
       mine = next;
-      if (next.state === "walking" && !profileTouched) {
-        profileName = String(next.profile?.first_name ?? next.view.name ?? "");
-        profileOffer = String(next.profile?.ikigai ?? "");
+      if (next.state === "walking") {
+        const fill: Record<string, string> = {};
+        for (const f of fieldsOf(next)) {
+          if (touched.has(f.key)) continue;
+          const stored = fieldText(f, next.profile?.[f.key]);
+          fill[f.key] =
+            stored || (f.key === "first_name" ? String(next.view.name) : "");
+        }
+        answers = { ...answers, ...fill };
       }
+      // Linked: the board opens now, not at the next scheduled re-check.
+      if (next.state === "linked") standingRecheck.update((n) => n + 1);
     } catch (err) {
       console.warn("[kiosk] onboarding read failed", err);
     }
+  }
+
+  /** Every field the holon's profile cards ask. */
+  function fieldsOf(m: MyOnboarding): ProfileField[] {
+    if (m.state !== "walking") return [];
+    return m.view.steps.flatMap((s) =>
+      s.cards.flatMap((c) =>
+        c.confirm === "profile" ? (c.fields ?? DEFAULT_PROFILE_FIELDS) : [],
+      ),
+    );
   }
 
   // The session key lands a beat after the login: follow the key itself.
@@ -67,7 +98,7 @@
     try {
       if (await askToJoin($holonId, displayName($currentUser))) {
         asking = true;
-        showNotice($t("onb.asked"));
+        showNotice($t(mine?.state === "off" ? "onb.offAsked" : "onb.asked"));
       }
     } finally {
       busy = false;
@@ -91,15 +122,29 @@
     }
   }
 
-  async function saveProfileForm() {
+  const cardFields = (card: OnboardingCardView): ProfileField[] =>
+    card.fields ?? [...DEFAULT_PROFILE_FIELDS];
+
+  /** Every required field answered, and every answer one its field takes. */
+  const ready = (fields: ProfileField[], a: Record<string, string>) =>
+    fields.every((f) =>
+      (a[f.key] ?? "").trim() ? fieldAccepts(f, a[f.key]) : !f.required,
+    );
+
+  async function saveProfileForm(card: OnboardingCardView) {
     if (mine?.state !== "walking" || busy) return;
     busy = true;
     try {
-      await saveMyProfile(mine.view, {
-        first_name: profileName.trim(),
-        ikigai: profileOffer.trim(),
-      });
-      profileTouched = false;
+      const fields = cardFields(card);
+      await saveMyProfile(
+        mine.view,
+        Object.fromEntries(
+          fields
+            .filter((f) => (answers[f.key] ?? "").trim())
+            .map((f) => [f.key, fieldValue(f, answers[f.key])]),
+        ),
+      );
+      for (const f of fields) touched.delete(f.key);
       showNotice($t("onb.profileSaved"));
       await load($holonId);
     } catch (err) {
@@ -113,7 +158,21 @@
     }
   }
 
-  $: if (mine && mine.state !== "none") asking = false;
+  const INPUT: Record<string, string> = {
+    text: "text",
+    date: "date",
+    url: "url",
+    list: "text",
+  };
+  function typed(key: string, e: Event) {
+    answers = {
+      ...answers,
+      [key]: (e.currentTarget as HTMLInputElement | HTMLTextAreaElement).value,
+    };
+    touched.add(key);
+  }
+
+  $: if (mine && mine.state !== "none" && mine.state !== "off") asking = false;
 </script>
 
 <div class="onboarding">
@@ -135,7 +194,17 @@
     {:else if mine.state === "linked"}
       <p class="state">{$t("onb.linked", { holon: holonLabel })}</p>
     {:else if mine.state === "off"}
-      <p class="state">{$t("onb.off", { holon: holonLabel })}</p>
+      <p class="state">
+        {$t("onb.off", { holon: holonLabel })}
+        <br />
+        <button
+          class="cta"
+          type="button"
+          disabled={busy || asking}
+          on:click={start}
+          >{asking ? $t("onb.offAsked") : $t("onb.offAsk")}</button
+        >
+      </p>
     {:else if mine.state === "none"}
       <p class="state">
         {$t("onb.intro", { holon: holonLabel })}
@@ -155,27 +224,45 @@
           <p class="hint">{$t("onb.adminTicks")}</p>
         {:else if card.confirm === "profile"}
           {#if mine.canTick}
-            <form class="profile" on:submit|preventDefault={saveProfileForm}>
-              <label>
-                {$t("onb.profileName")}
-                <input
-                  bind:value={profileName}
-                  on:input={() => (profileTouched = true)}
-                  autocomplete="name"
-                />
-              </label>
-              <label>
-                {$t("onb.profileOffer")}
-                <textarea
-                  rows="3"
-                  bind:value={profileOffer}
-                  on:input={() => (profileTouched = true)}
-                ></textarea>
-              </label>
+            <form
+              class="profile"
+              on:submit|preventDefault={() => saveProfileForm(card)}
+            >
+              {#each cardFields(card) as f (f.key)}
+                <label class:missing={card.missing?.includes(f.key)}>
+                  <span
+                    >{fieldLabel(f, $t)}{#if !f.required}
+                      <em>{$t("onb.optional")}</em>{/if}</span
+                  >
+                  {#if f.type === "longtext"}
+                    <textarea
+                      rows="3"
+                      value={answers[f.key] ?? ""}
+                      on:input={(e) => typed(f.key, e)}
+                    ></textarea>
+                  {:else}
+                    <input
+                      type={INPUT[f.type]}
+                      value={answers[f.key] ?? ""}
+                      placeholder={f.type === "list"
+                        ? $t("onb.listHint")
+                        : f.type === "url"
+                          ? "https://"
+                          : ""}
+                      autocomplete={f.key === "first_name"
+                        ? "given-name"
+                        : f.key === "last_name"
+                          ? "family-name"
+                          : "off"}
+                      on:input={(e) => typed(f.key, e)}
+                    />
+                  {/if}
+                </label>
+              {/each}
               <button
                 class="cta"
                 type="submit"
-                disabled={busy || !profileName.trim() || !profileOffer.trim()}
+                disabled={busy || !ready(cardFields(card), answers)}
                 >{$t("onb.profileSave")}</button
               >
             </form>
@@ -240,6 +327,14 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+  }
+  .profile label em {
+    font-style: normal;
+    opacity: 0.75;
+  }
+  .profile label.missing span {
+    color: var(--ink);
+    font-weight: 600;
   }
   .profile label {
     display: flex;

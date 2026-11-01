@@ -3,7 +3,7 @@
   import { onDestroy } from "svelte";
   import { scale } from "svelte/transition";
   import { backOut } from "svelte/easing";
-  import { activeTab, boardReady, holonId } from "$lib/stores";
+  import { activeTab, boardReady, holonId, onboardingGate } from "$lib/stores";
   import {
     boardFullscreen,
     fullscreenMotion,
@@ -49,7 +49,11 @@
        boardReady): a fresh mount on the full set plays the entrance animation
        cleanly, the same way switching tabs does. Keyed on the tab so each
        switch remounts and re-animates. -->
-  {#if $boardReady}
+  {#if $onboardingGate}
+    <!-- A key the holon has not seated sees its onboarding and nothing
+         else until it is seated (the layout decides, see onboardingGate). -->
+    <div class="view"><OnboardingView /></div>
+  {:else if $boardReady}
     <!-- The pills band sits OUTSIDE the tab key: switching tabs swaps its
          segments in place instead of remounting/re-animating the bar. -->
     <div
@@ -81,8 +85,6 @@
           <StockView />
         {:else if $activeTab === "offers"}
           <OffersView />
-        {:else if $activeTab === "onboarding"}
-          <OnboardingView />
         {/if}
       </div>
     {/key}

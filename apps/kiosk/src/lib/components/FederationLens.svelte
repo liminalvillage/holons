@@ -36,8 +36,10 @@
   import { may, writeAcceptance } from "@holons/core/holosphere";
   import {
     audience as readAudience,
+    lensesToShare,
     privacyOfHolon,
     share,
+    shareWithPartner,
     unshare,
     type Audience,
     type LockedScopes,
@@ -107,6 +109,9 @@
   $: hasPrivate = ownedLenses.length > 0;
   const keyShared = (a: Record<string, Audience>, lens: string) =>
     !!a[lens]?.holons.some((h) => h.holon === partner);
+  // Locked lenses flowing out that the partner cannot open yet: federating
+  // hands out no key, so the popup offers to share them in one tap.
+  $: toShare = lensesToShare(auds, partner, cfg.outbound);
   const partnerEntry = (a: Record<string, Audience>) =>
     ownedLenses
       .map((l) => a[l]?.holons.find((h) => h.holon === partner))
@@ -362,6 +367,25 @@
     }
   }
 
+  /** Share every locked lens that flows out with the partner at once. */
+  async function shareOffered() {
+    if (!hs || keyBusy || !toShare.length) return;
+    keyBusy = "__offer__";
+    error = "";
+    try {
+      auds = {
+        ...auds,
+        ...(await shareWithPartner(hs, holon, partner, toShare)),
+      };
+      window.dispatchEvent(new CustomEvent("kiosk:privacy-changed"));
+    } catch (err) {
+      console.error("[kiosk] lens sharing change failed", err);
+      error = $t("fed.keyError");
+    } finally {
+      keyBusy = "";
+    }
+  }
+
   function toggle(lens: string, dir: Dir) {
     const inbound =
       dir === "in" ? !isOn(cfg, lens, "in") : isOn(cfg, lens, "in");
@@ -579,6 +603,26 @@
       </p>
     {/if}
     {#if notice}<p class="hint note" role="status">{notice}</p>{/if}
+    {#if toShare.length && canEdit}
+      <div class="offer" role="status">
+        <p>
+          <Icon name="lock" />
+          {$t("fed.shareOffer", {
+            lenses: toShare.map((l) => fedLensLabel($t, l)).join(", "),
+            name: nameB(),
+          })}
+        </p>
+        <button
+          type="button"
+          class="ask-btn accept"
+          disabled={busy || !!keyBusy}
+          on:click={shareOffered}
+        >
+          <Icon name="key" />
+          {$t("fed.shareOfferBtn", { n: toShare.length })}
+        </button>
+      </div>
+    {/if}
     {#if hasPrivate}
       <p class="hint">{$t("fed.privateHint")}</p>
       {#if partnerEntry(auds)}
@@ -917,6 +961,30 @@
     display: flex;
     gap: 0.5rem;
     margin-top: 0.55rem;
+  }
+  /* Locked lenses flowing out unshared: say so, share in one tap. */
+  .offer {
+    margin-top: 0.6rem;
+    padding: 0.6rem 0.7rem;
+    border-radius: 12px;
+    background: var(--glass);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .offer p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--ink);
+    display: flex;
+    gap: 0.4rem;
+    align-items: flex-start;
+  }
+  .offer p :global(svg) {
+    flex: none;
+    width: 1em;
+    height: 1em;
+    margin-top: 0.15em;
   }
   .ask-btn {
     flex: 1;

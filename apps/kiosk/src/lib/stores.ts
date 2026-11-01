@@ -625,7 +625,6 @@ export const TABS = [
   { id: "flows", labelKey: "tabs.flows", icon: "swap" },
   { id: "stock", labelKey: "tabs.stock", icon: "shelf" },
   { id: "offers", labelKey: "tabs.offers", icon: "target" },
-  { id: "onboarding", labelKey: "tabs.onboarding", icon: "key" },
 ] as const satisfies readonly {
   id: string;
   labelKey: MessageKey;
@@ -730,11 +729,27 @@ export const offersEnabled = derived(
 export const appService = writable<TabId | null>(null);
 
 /**
- * The newcomer's view of a holon's onboarding is not a board tab: it shows
- * when the screen was opened for it — its Mini App, or a link to
- * `/<holon>/onboarding` (set once on boot).
+ * Onboarding is not a tab: it IS the board for a key the holon has not
+ * seated yet. Opened for it — the bot's Mini App or a link to
+ * `/<holon>/onboarding` (set once on boot) — it shows until the key is
+ * seated, logged in or not.
  */
 export const onboardingOpened = writable(false);
+
+/**
+ * The board is the onboarding and nothing else: the logged-in key is not
+ * seated in a holon that walks newcomers through one (or is walking it
+ * already), or the screen was opened for it. Set by the layout from the
+ * key's standing; lifts the moment the key is seated.
+ */
+export const onboardingGate = writable(false);
+
+/**
+ * Ask the layout to re-read where this key stands now — the onboarding
+ * screen bumps it when it sees the key linked, so the board opens at once
+ * instead of at the next scheduled re-check.
+ */
+export const standingRecheck = writable(0);
 
 /**
  * Tabs actually shown: Tasks unless the caretaker switched it off; Library,
@@ -755,7 +770,6 @@ export const visibleTabs = derived(
     stockEnabled,
     offersEnabled,
     appService,
-    onboardingOpened,
   ],
   ([
     $tabs,
@@ -770,7 +784,6 @@ export const visibleTabs = derived(
     $stock,
     $offers,
     $app,
-    $onboarding,
   ]) =>
     // A Mini App is its one service, whatever this device's switches say.
     $app
@@ -786,8 +799,7 @@ export const visibleTabs = derived(
             (t.id !== "status" || $status) &&
             (t.id !== "flows" || $flows) &&
             (t.id !== "stock" || $stock) &&
-            (t.id !== "offers" || $offers) &&
-            (t.id !== "onboarding" || $onboarding),
+            (t.id !== "offers" || $offers),
         ),
 );
 
@@ -855,9 +867,6 @@ export function setTabShown(id: TabId, on: boolean): void {
     case "calendar":
       setCalendarEnabled(on);
       calendarEnabled.set(on);
-      break;
-    case "onboarding":
-      onboardingOpened.set(on);
       break;
   }
 }

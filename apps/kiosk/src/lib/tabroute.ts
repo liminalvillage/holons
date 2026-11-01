@@ -11,6 +11,13 @@ import { TABS, type TabId } from "./stores";
 
 const TAB_IDS = new Set<string>(TABS.map((t) => t.id));
 
+/**
+ * The path segment that opens a holon's onboarding (`/<holon>/onboarding`,
+ * the bot's Mini App). Not a tab: the onboarding replaces the board while
+ * the key is not seated (see `onboardingGate`).
+ */
+const ONBOARDING = "onboarding";
+
 /** A pathname's segments, decoded, without empty entries. */
 function segmentsOf(pathname: string): string[] {
   return pathname
@@ -30,13 +37,20 @@ export function tabForPath(pathname: string): TabId | null {
   return TAB_IDS.has(last) ? (last as TabId) : null;
 }
 
+/** Was this URL opened for the holon's onboarding? */
+export function opensOnboarding(pathname: string): boolean {
+  const segs = segmentsOf(pathname);
+  return (segs[segs.length - 1] ?? "").toLowerCase() === ONBOARDING;
+}
+
 /**
  * The pathname that shows `tab`, keeping whatever else the path carries (the
  * holon segment) and replacing any tab segment already there.
  */
 export function pathForTab(pathname: string, tab: TabId): string {
   const segs = segmentsOf(pathname);
-  if (TAB_IDS.has((segs[segs.length - 1] ?? "").toLowerCase())) segs.pop();
+  const last = (segs[segs.length - 1] ?? "").toLowerCase();
+  if (TAB_IDS.has(last) || last === ONBOARDING) segs.pop();
   segs.push(tab);
   return "/" + segs.map(encodeURIComponent).join("/");
 }

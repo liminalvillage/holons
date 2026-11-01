@@ -16,6 +16,7 @@ import { holonMembers } from "@holons/core/protocol";
 import { applyTaskCompletion, type Quest } from "@holons/core/tasks";
 import {
   CARDS_LENS,
+  PROFILE_FIELDS,
   confirmCard,
   dealCards,
   listOnboarding,
@@ -31,8 +32,10 @@ import {
   type OnboardingStep,
   type OnboardingStepView,
   type OnboardingView,
+  type ProfileField,
 } from "@holons/core/onboarding";
 import { resolveAppName } from "./config";
+import type { MessageKey } from "./i18n";
 import { getHolosphere } from "./holosphere";
 import { sessionSigner } from "./hubmembers";
 import { sessionKeyPub } from "./sessionKey";
@@ -45,6 +48,21 @@ export type {
   OnboardingView,
 };
 export { previewSteps };
+
+/**
+ * A profile field's question in the screen's language: a known field still
+ * asking its catalog question reads the translation; anything the holon
+ * worded itself reads as worded.
+ */
+export function fieldLabel(
+  f: ProfileField,
+  tr: (key: MessageKey) => string,
+): string {
+  const known = PROFILE_FIELDS.find((k) => k.key === f.key);
+  return known && (!f.label || f.label === known.label)
+    ? tr(`onb.field.${f.key}` as MessageKey)
+    : f.label;
+}
 
 /** Where the session key stands with a holon's onboarding. */
 export type MyOnboarding =
