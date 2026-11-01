@@ -29,7 +29,7 @@ import {
   type StockPosition,
   type StockTransfer,
 } from "@holons/core/inventory";
-import { filterBySearch } from "./data";
+import { filterBySearch, isFiltering, type SearchFilter } from "./data";
 
 /** Own specs beside each partner's, keyed by the partner holon id. */
 export interface SpecSets {
@@ -276,16 +276,22 @@ export function fmtQty(quantity: number, unit: string): string {
 /**
  * The shelf narrowed by the header search bar: every whitespace-separated
  * term must hit the item's name or its category (the shared `filterBySearch`
- * rule, so "food fl" finds Flour under food the way it finds a task). An
- * empty query returns the same array.
+ * rule, so "food fl" finds Flour under food the way it finds a task), and
+ * the facet chips apply as everywhere — `sourceId` names a partner's shelf
+ * for the holon chips. An empty query returns the same array.
  */
-export function filterShelf(rows: ShelfRow[], query: string): ShelfRow[] {
-  if (!query.trim()) return rows;
+export function filterShelf(
+  rows: ShelfRow[],
+  query: SearchFilter | string,
+  sourceId?: string,
+): ShelfRow[] {
+  if (!isFiltering(query)) return rows;
   const keep = new Set(
     filterBySearch(
       rows.map((r) => ({
         title: r.spec.name,
         category: r.spec.category,
+        sourceId,
         id: r.spec.id,
       })),
       query,
@@ -297,9 +303,9 @@ export function filterShelf(rows: ShelfRow[], query: string): ShelfRow[] {
 /** The reorder list narrowed the same way, by item name and category. */
 export function filterReorder(
   lines: ReorderLine[],
-  query: string,
+  query: SearchFilter | string,
 ): ReorderLine[] {
-  if (!query.trim()) return lines;
+  if (!isFiltering(query)) return lines;
   const keep = new Set(
     filterBySearch(
       lines.map((l) => ({ title: l.name, category: l.category, id: l.itemId })),

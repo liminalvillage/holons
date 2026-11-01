@@ -21,8 +21,9 @@ import {
   toChecklists,
   toSuggestions,
   filterBySearch,
+  HERE,
 } from "./data";
-import type { SearchSuggestions, TaskSort } from "./data";
+import type { SearchFilter, SearchSuggestions, TaskSort } from "./data";
 import type { LinkedCard } from "./cardlink";
 import type { DeckState } from "./deck";
 import {
@@ -55,7 +56,7 @@ import {
 } from "./config";
 import { scopeLocal } from "./scope";
 import { shelfCategories, splitSpecs } from "./stock";
-import { applyTabOrder, mergeTabOrder } from "./taborder";
+import { applyTabOrder, mergeTabOrder, moveId } from "./taborder";
 import { holonColors } from "./palette";
 import { t, type MessageKey } from "./i18n";
 import type { IconName } from "./icons";
@@ -210,6 +211,45 @@ export const names = writable<ReadonlyMap<string, string>>(new Map());
  * one query narrows whatever tab is on screen. Empty ⇒ no filtering.
  */
 export const searchQuery = writable<string>("");
+
+/**
+ * The facet chips toggled on in the search bar's dropdown — people,
+ * categories and holons (`HERE` for this holon's own). Each shows as a token
+ * in the bar; any number can be on at once (see `SearchFilter`).
+ */
+export const searchFacets = writable<Omit<SearchFilter, "text">>({
+  people: [],
+  categories: [],
+  holons: [],
+});
+
+/** Text + facets together: what every board narrows by. */
+export const searchFilter: Readable<SearchFilter> = derived(
+  [searchQuery, searchFacets],
+  ([$q, $f]) => ({ text: $q, ...$f }),
+);
+
+/** Turn one facet chip on or off. */
+export function toggleFacet(
+  kind: keyof Omit<SearchFilter, "text">,
+  value: string,
+): void {
+  searchFacets.update((f) => {
+    const on = f[kind].some((v) => v.toLowerCase() === value.toLowerCase());
+    return {
+      ...f,
+      [kind]: on
+        ? f[kind].filter((v) => v.toLowerCase() !== value.toLowerCase())
+        : [...f[kind], value],
+    };
+  });
+}
+
+/** Empty the search bar: text and every facet chip. */
+export function clearSearch(): void {
+  searchQuery.set("");
+  searchFacets.set({ people: [], categories: [], holons: [] });
+}
 
 /** Whether the Settings panel is open. */
 export const settingsOpen = writable<boolean>(false);
@@ -373,7 +413,7 @@ export const lensEmitAt: Record<
 // `names` is a dep wherever a card carries people: the people are named at
 // mapping time, so a name learned later (a key's kind 0) re-maps the cards.
 export const events = derived(
-  [rawQuests, partnerNames, searchQuery, scopeView, t, holonColors, names],
+  [rawQuests, partnerNames, searchFilter, scopeView, t, holonColors, names],
   ([$q, $n, $query, $s, $t, $c]) =>
     filterBySearch(toEvents(scopeLocal($q, ...$s), $n, $t, $c), $query),
 );
@@ -381,7 +421,7 @@ export const backlog = derived(
   [
     rawQuests,
     partnerNames,
-    searchQuery,
+    searchFilter,
     scopeView,
     taskSort,
     t,
@@ -398,7 +438,7 @@ export const completedTasks = derived(
     showCompleted,
     rawQuests,
     partnerNames,
-    searchQuery,
+    searchFilter,
     scopeView,
     t,
     holonColors,
@@ -425,7 +465,7 @@ export const things = derived(
   [
     rawLibrary,
     partnerNames,
-    searchQuery,
+    searchFilter,
     scopeView,
     t,
     holonColors,
@@ -443,17 +483,17 @@ export const things = derived(
 // translator input: a booking's title is the item's own name, so there is no
 // display text to re-resolve on a language switch.
 export const bookingEvents = derived(
-  [rawLibrary, partnerNames, searchQuery, scopeView, holonColors, names],
+  [rawLibrary, partnerNames, searchFilter, scopeView, holonColors, names],
   ([$l, $n, $query, $s, $c]) =>
     filterBySearch(toBookingEvents(scopeLocal($l, ...$s), $n, $c), $query),
 );
 export const roleCards = derived(
-  [rawRoles, partnerNames, searchQuery, scopeView, t, holonColors, names],
+  [rawRoles, partnerNames, searchFilter, scopeView, t, holonColors, names],
   ([$r, $n, $query, $s, $t, $c]) =>
     filterBySearch(toRoles(scopeLocal($r, ...$s), $n, $t, $c), $query),
 );
 export const checklistCards = derived(
-  [rawChecklists, partnerNames, searchQuery, scopeView, holonColors],
+  [rawChecklists, partnerNames, searchFilter, scopeView, holonColors],
   ([$c, $n, $query, $s, $col]) =>
     filterBySearch(toChecklists(scopeLocal($c, ...$s), $n, $col), $query),
 );
@@ -476,6 +516,25 @@ export const searchSuggestions: Readable<SearchSuggestions> = derived(
     ].sort((a, b) => a.localeCompare(b));
     return { ...base, categories };
   },
+);
+
+/** A facet holon chip's name: this holon's own name for `HERE`. */
+export const facetHolonName = derived(
+  [searchSuggestions, holonName],
+  ([$s, $h]) =>
+    (id: string): string =>
+      id === HERE
+        ? $h || "·"
+        : ($s.holons.find((x) => x.id === id)?.name ?? id.slice(0, 8)),
+);
+
+/** The search bar's text and chips in one line, for "nothing matches …". */
+export const searchLabel = derived(
+  [searchFilter, facetHolonName],
+  ([$f, $name]) =>
+    [$f.text.trim(), ...$f.holons.map($name), ...$f.categories, ...$f.people]
+      .filter(Boolean)
+      .join(" · "),
 );
 
 /**
@@ -748,6 +807,14 @@ export const hiddenTabs = derived(
  */
 export function setTabShown(id: TabId, on: boolean): void {
   const pref: TabPref = on ? "on" : "off";
+  // A tab that joins the strip always lands at its end, never back in its
+  // default (or remembered) slot in the middle.
+  if (on && !get(visibleTabs).some((t) => t.id === id)) {
+    const full = get(orderedTabs).map((t) => t.id);
+    const next = moveId(full, id, full.length);
+    tabOrder.set(next);
+    setTabOrder(next);
+  }
   switch (id) {
     case "library":
       setLibraryPref(pref);

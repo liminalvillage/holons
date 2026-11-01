@@ -14,7 +14,11 @@
     userMenuOpen,
     settingsOpen,
     searchQuery,
+    searchFacets,
     searchSuggestions,
+    facetHolonName,
+    toggleFacet,
+    clearSearch,
     now,
     autoRotates,
     rotating,
@@ -33,7 +37,6 @@
   import { resolveAddTipSeen, markAddTipSeen } from "$lib/config";
   import { t, locale } from "$lib/i18n";
   import { onMount, tick } from "svelte";
-  import { flip } from "svelte/animate";
   import StatusConfirm from "./StatusConfirm.svelte";
 
   // ── Hold to edit, drag to reorder, ✕ to remove, + to add ──────────────────
@@ -49,7 +52,7 @@
   // tab's pin button.
   const LONG_PRESS_MS = 480;
   const DRAG_SLOP = 6;
-  const FLIP_MS = 180;
+  const SWAP_GUARD_MS = 180;
   let pressTimer: ReturnType<typeof setTimeout> | null = null;
   let pressId: TabId | null = null;
   let pressX = 0;
@@ -149,8 +152,8 @@
     }
     if (held && Math.abs(e.clientX - pressX) >= DRAG_SLOP) held = false;
     // Where the pointer sits among the OTHER tabs decides the slot. A tab
-    // that just moved is still gliding (flip), so its box is ignored briefly
-    // — otherwise it swaps back and forth under a still pointer.
+    // that just swapped is ignored briefly — tabs of unequal width would
+    // otherwise swap back and forth under a still pointer.
     const order = $visibleTabs.map((t) => t.id);
     const els = Array.from(
       nav.querySelectorAll<HTMLElement>("[data-tab]"),
@@ -167,7 +170,7 @@
     const from = order.indexOf(dragId);
     if (next.indexOf(dragId) === from) return;
     const neighbour = els[Math.min(index, els.length - 1)]?.dataset.tab ?? "";
-    if (lastSwap?.id === neighbour && performance.now() - lastSwap.t < FLIP_MS)
+    if (lastSwap?.id === neighbour && performance.now() - lastSwap.t < SWAP_GUARD_MS)
       return;
     lastSwap = { id: neighbour, t: performance.now() };
     reorderTabs(next as TabId[]);
@@ -319,24 +322,69 @@
   }
   $: if (nav && !dragId) void reveal($activeTab);
 
-  // Search suggestions: focusing the field opens a dropdown of tappable
-  // category and people chips. Chip taps preventDefault on pointerdown so the
-  // input never blurs (blur is what closes the panel — tapping anywhere else
-  // dismisses it). A chip that already IS the query clears it (toggle).
+  // The search bar is also the filter bar. Focusing it opens a dropdown of
+  // holon, category and people chips; each tap toggles one on or off, and
+  // every chip that is on sits in the bar as a token (tap it to drop it,
+  // Backspace in an empty field drops the last). Typed text narrows the
+  // chips too, and picking one turns the text into that token. Chip taps
+  // preventDefault on pointerdown so the input never blurs (blur is what
+  // closes the panel — tapping anywhere else dismisses it).
+  type Facet = "holons" | "categories" | "people";
   let searchFocused = false;
   let searchInput: HTMLInputElement;
+  $: typed = $searchQuery.trim().toLowerCase();
+  const hit = (label: string) => !typed || label.toLowerCase().includes(typed);
+  $: holonName$ = $facetHolonName;
+  // The holon chips only earn their row when there is a choice (or one is on).
+  $: holonChips =
+    $searchSuggestions.holons.length > 1 || $searchFacets.holons.length
+      ? $searchSuggestions.holons
+          .map((h) => ({ id: h.id, name: holonName$(h.id) }))
+          .filter((h) => hit(h.name))
+      : [];
+  $: categoryChips = $searchSuggestions.categories.filter(hit);
+  $: peopleChips = $searchSuggestions.people.filter(hit);
   $: suggestOpen =
     searchFocused &&
-    ($searchSuggestions.categories.length > 0 ||
-      $searchSuggestions.people.length > 0);
+    (holonChips.length > 0 ||
+      categoryChips.length > 0 ||
+      peopleChips.length > 0);
+  $: tokens = [
+    ...$searchFacets.holons.map((v) => ({
+      kind: "holons" as Facet,
+      value: v,
+      label: holonName$(v),
+    })),
+    ...$searchFacets.categories.map((v) => ({
+      kind: "categories" as Facet,
+      value: v,
+      label: v,
+    })),
+    ...$searchFacets.people.map((v) => ({
+      kind: "people" as Facet,
+      value: v,
+      label: v,
+    })),
+  ];
+  $: searching = $searchQuery !== "" || tokens.length > 0;
   // Once the screen is left unattended, release focus so the panel doesn't
   // linger and the field re-opens cleanly on the next tap.
   $: if ($rotating && searchInput) searchInput.blur();
 
-  function applySuggestion(term: string) {
-    searchQuery.set(
-      $searchQuery.trim().toLowerCase() === term.toLowerCase() ? "" : term,
-    );
+  const isOn = (kind: Facet, value: string) =>
+    $searchFacets[kind].some((v) => v.toLowerCase() === value.toLowerCase());
+
+  function pick(kind: Facet, value: string) {
+    const adding = !isOn(kind, value);
+    toggleFacet(kind, value);
+    if (adding && typed) searchQuery.set("");
+  }
+
+  function onSearchKey(e: KeyboardEvent) {
+    if (e.key === "Backspace" && $searchQuery === "" && tokens.length) {
+      const last = tokens[tokens.length - 1];
+      toggleFacet(last.kind, last.value);
+    }
   }
 
   $: timeLabel = $now.toLocaleTimeString($locale, {
@@ -382,80 +430,133 @@
     </div>
 
     <div class="search">
-      <svg
-        class="search__icon"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        aria-hidden="true"
-      >
-        <circle cx="11" cy="11" r="7" stroke-width="2" />
-        <line x1="21" y1="21" x2="16.65" y2="16.65" stroke-width="2" />
-      </svg>
-      <input
-        type="search"
-        class="search__input"
-        placeholder={$t("tabbar.search")}
-        aria-label={$t("tabbar.searchAria")}
-        autocomplete="off"
-        autocorrect="off"
-        autocapitalize="off"
-        spellcheck="false"
-        bind:value={$searchQuery}
-        bind:this={searchInput}
-        on:focus={() => (searchFocused = true)}
-        on:blur={() => (searchFocused = false)}
-      />
-      {#if $searchQuery}
-        <button
-          type="button"
-          class="search__clear"
-          on:click={() => searchQuery.set("")}
-          aria-label={$t("tabbar.clearSearch")}>&times;</button
+      <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+      <div class="search__field" on:click={() => searchInput?.focus()}>
+        <svg
+          class="search__icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          aria-hidden="true"
         >
-      {/if}
+          <circle cx="11" cy="11" r="7" stroke-width="2" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" stroke-width="2" />
+        </svg>
+        {#each tokens as tok (tok.kind + ":" + tok.value)}
+          <button
+            type="button"
+            class="token"
+            style={tok.kind === "categories"
+              ? `--dot: ${noteColor(tok.value)}`
+              : undefined}
+            aria-label={$t("tabbar.removeFilter", { name: tok.label })}
+            on:pointerdown|preventDefault
+            on:click|stopPropagation={() => toggleFacet(tok.kind, tok.value)}
+          >
+            {#if tok.kind === "categories"}<span class="chip__dot"></span>
+            {:else if tok.kind === "holons"}{#if tok.value || $holonId}<Identicon
+                  class="token__mark"
+                  seed={tok.value || $holonId || ""}
+                />{/if}
+            {/if}<span class="token__label">{tok.label}</span><span
+              class="token__x"
+              aria-hidden="true">&times;</span
+            >
+          </button>
+        {/each}
+        <input
+          type="search"
+          class="search__input"
+          placeholder={tokens.length ? "" : $t("tabbar.search")}
+          aria-label={$t("tabbar.searchAria")}
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
+          bind:value={$searchQuery}
+          bind:this={searchInput}
+          on:focus={() => (searchFocused = true)}
+          on:blur={() => (searchFocused = false)}
+          on:keydown={onSearchKey}
+        />
+        {#if searching}
+          <button
+            type="button"
+            class="search__clear"
+            on:pointerdown|preventDefault
+            on:click|stopPropagation={clearSearch}
+            aria-label={$t("tabbar.clearSearch")}>&times;</button
+          >
+        {/if}
+      </div>
 
       {#if suggestOpen}
         <div
           class="suggest"
           role="listbox"
+          aria-multiselectable="true"
           aria-label={$t("tabbar.suggestions")}
         >
-          {#if $searchSuggestions.categories.length}
-            <div class="suggest__group">{$t("tabbar.categories")}</div>
+          {#if holonChips.length}
+            <div class="suggest__group">{$t("tabbar.holons")}</div>
             <div class="suggest__chips">
-              {#each $searchSuggestions.categories as cat (cat)}
+              {#each holonChips as h (h.id)}
                 <button
                   type="button"
                   class="chip"
                   role="option"
-                  aria-selected={$searchQuery.trim().toLowerCase() ===
-                    cat.toLowerCase()}
-                  class:on={$searchQuery.trim().toLowerCase() ===
-                    cat.toLowerCase()}
+                  aria-selected={isOn("holons", h.id)}
+                  class:on={$searchFacets.holons.includes(h.id)}
+                  on:pointerdown|preventDefault
+                  on:click={() => pick("holons", h.id)}
+                >
+                  {#if h.id || $holonId}<Identicon
+                      class="chip__mark"
+                      seed={h.id || $holonId || ""}
+                    />{/if}{h.name}
+                </button>
+              {/each}
+            </div>
+          {/if}
+          {#if categoryChips.length}
+            <div class="suggest__group">{$t("tabbar.categories")}</div>
+            <div class="suggest__chips">
+              {#each categoryChips as cat (cat)}
+                <button
+                  type="button"
+                  class="chip"
+                  role="option"
+                  aria-selected={$searchFacets.categories.some(
+                    (v) => v.toLowerCase() === cat.toLowerCase(),
+                  )}
+                  class:on={$searchFacets.categories.some(
+                    (v) => v.toLowerCase() === cat.toLowerCase(),
+                  )}
                   style="--dot: {noteColor(cat)}"
                   on:pointerdown|preventDefault
-                  on:click={() => applySuggestion(cat)}
+                  on:click={() => pick("categories", cat)}
                 >
                   <span class="chip__dot"></span>{cat}
                 </button>
               {/each}
             </div>
           {/if}
-          {#if $searchSuggestions.people.length}
+          {#if peopleChips.length}
             <div class="suggest__group">{$t("tabbar.people")}</div>
             <div class="suggest__chips">
-              {#each $searchSuggestions.people as person (person)}
+              {#each peopleChips as person (person)}
                 <button
                   type="button"
                   class="chip"
                   role="option"
-                  aria-selected={$searchQuery.trim().toLowerCase() ===
-                    person.toLowerCase()}
-                  class:on={$searchQuery.trim().toLowerCase() ===
-                    person.toLowerCase()}
+                  aria-selected={$searchFacets.people.some(
+                    (v) => v.toLowerCase() === person.toLowerCase(),
+                  )}
+                  class:on={$searchFacets.people.some(
+                    (v) => v.toLowerCase() === person.toLowerCase(),
+                  )}
                   on:pointerdown|preventDefault
-                  on:click={() => applySuggestion(person)}
+                  on:click={() => pick("people", person)}
                 >
                   <span class="chip__face"
                     >{person.replace(/^@/, "")[0]?.toUpperCase() ?? "·"}</span
@@ -569,7 +670,6 @@
           title={$pinnedTab === tab.id
             ? $t("tabbar.pinnedHint")
             : $t("tabbar.holdHint")}
-          animate:flip={{ duration: FLIP_MS }}
           on:click={() => onTabClick(tab.id)}
           on:pointerdown={(e) => onTabDown(e, tab.id)}
           on:contextmenu={(e) => {
@@ -753,6 +853,35 @@
     display: flex;
     align-items: center;
   }
+  /* The field is the pill: the tokens of the chips that are on, then the
+     text. Tokens scroll sideways once they outgrow it, so the text keeps
+     its room. */
+  .search__field {
+    width: 100%;
+    height: 2.4rem;
+    padding: 0 0.4rem 0 2.2rem;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-radius: 999px;
+    border: 1.5px solid var(--line);
+    background: var(--paper);
+    cursor: text;
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease,
+      background 0.15s ease;
+  }
+  .search__field::-webkit-scrollbar {
+    display: none;
+  }
+  .search__field:focus-within {
+    background: var(--card);
+    border-color: var(--teal);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 20%, transparent);
+  }
   .search__icon {
     position: absolute;
     left: 0.75rem;
@@ -762,38 +891,30 @@
     pointer-events: none;
   }
   .search__input {
-    width: 100%;
-    height: 2.4rem;
-    padding: 0 2.2rem;
-    border-radius: 999px;
-    border: 1.5px solid var(--line);
-    background: var(--paper);
+    flex: 1 1 4rem;
+    min-width: 4rem;
+    height: 100%;
+    padding: 0 0.2rem;
+    border: 0;
+    background: transparent;
     color: var(--ink);
     font-size: 0.95rem;
     font-family: inherit;
     -webkit-appearance: none;
     appearance: none;
-    transition:
-      border-color 0.15s ease,
-      box-shadow 0.15s ease,
-      background 0.15s ease;
   }
   .search__input::placeholder {
     color: var(--muted);
   }
   .search__input:focus {
     outline: none;
-    background: var(--card);
-    border-color: var(--teal);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 20%, transparent);
   }
   /* Hide the browser's native ✕ — we render our own, consistently styled. */
   .search__input::-webkit-search-cancel-button {
     -webkit-appearance: none;
   }
   .search__clear {
-    position: absolute;
-    right: 0.5rem;
+    flex: 0 0 auto;
     width: 1.6rem;
     height: 1.6rem;
     border-radius: 50%;
@@ -811,13 +932,52 @@
   .search__clear:active {
     transform: scale(0.9);
   }
+  .token {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    max-width: 10rem;
+    height: 1.75rem;
+    padding: 0 0.45rem 0 0.5rem;
+    border-radius: 999px;
+    border: 1px solid var(--teal);
+    background: color-mix(in srgb, var(--teal) 14%, var(--card));
+    color: var(--teal-ink);
+    font-size: 0.82rem;
+    font-weight: 600;
+    font-family: inherit;
+  }
+  .token:active {
+    transform: scale(0.95);
+  }
+  .token__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .token__x {
+    font-size: 1rem;
+    line-height: 1;
+    opacity: 0.7;
+  }
+  .token :global(.token__mark),
+  .chip :global(.chip__mark) {
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 50%;
+    flex: 0 0 auto;
+  }
 
-  /* Suggestion dropdown: category + people chips, tappable at kiosk sizes. */
+  /* Suggestion dropdown: holon, category + people chips, tappable at kiosk
+     sizes. */
   .suggest {
     position: absolute;
     top: calc(100% + 0.45rem);
     left: 0;
     right: 0;
+    /* The merged header's field is narrow; the chips still get room. */
+    min-width: min(22rem, calc(100vw - 2.5rem));
     z-index: 40;
     background: var(--card);
     border: 1.5px solid var(--line);
@@ -1088,10 +1248,12 @@
       margin: 0;
       max-width: none;
     }
-    .search__input {
+    .search__field {
       height: 2.7rem;
+      padding-left: 2.3rem;
+    }
+    .search__input {
       font-size: 1.05rem;
-      padding: 0 2.3rem;
     }
     .search__icon {
       width: 1.15rem;
@@ -1146,12 +1308,10 @@
     -webkit-touch-callout: none;
     transition:
       color 0.25s ease,
-      background 0.25s ease,
-      transform 0.15s ease,
-      box-shadow 0.15s ease;
+      background 0.25s ease;
   }
-  /* Lifted by a hold or a drag: it rides above its neighbours while they
-     glide (flip) into the slots it leaves and takes. */
+  /* Lifted by a hold or a drag: it rides above its neighbours, which jump
+     straight into the slots it leaves and takes (no reorder animation). */
   .tab.lifted {
     z-index: 2;
     color: var(--teal-ink);
@@ -1159,16 +1319,6 @@
     transform: scale(1.06);
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
     cursor: grabbing;
-  }
-  .tabs.dragging .tab {
-    transition:
-      color 0.25s ease,
-      background 0.25s ease;
-  }
-  .tabs.dragging .tab.lifted {
-    transition:
-      transform 0.15s ease,
-      box-shadow 0.15s ease;
   }
   /* Edit mode: every tab wears a ✕ at its corner (DockView's edit mode, in
      miniature). */

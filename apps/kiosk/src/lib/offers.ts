@@ -40,7 +40,7 @@ import type { IconName } from "./icons";
 import { classifyMarketItem } from "@holons/core/tasks";
 
 export { fmtQty } from "./stock";
-import { filterBySearch } from "./data";
+import { filterBySearch, isFiltering, HERE, type SearchFilter } from "./data";
 
 // ── Scale ────────────────────────────────────────────────────────────────
 
@@ -462,16 +462,21 @@ export function groupByCategory<
 
 /**
  * The board narrowed by the header search bar: every term must hit a title
- * or a category (the shared `filterBySearch` rule). Matches keep only legs
- * whose offer or need survived. An empty query returns the same board.
+ * or a category (the shared `filterBySearch` rule), and a holon chip keeps
+ * the cards its holon holds. Matches keep only legs whose offer or need
+ * survived. An empty query returns the same board.
  */
-export function filterBoard(board: OfferBoard, query: string): OfferBoard {
-  if (!query.trim()) return board;
+export function filterBoard(
+  board: OfferBoard,
+  query: SearchFilter | string,
+): OfferBoard {
+  if (!isFiltering(query)) return board;
   const keepOffers = new Set(
     filterBySearch(
       board.supply.map((c) => ({
         title: String(c.offer.title ?? ""),
         category: c.offer.category,
+        sourceId: c.own ? HERE : c.ownerHolonId,
         id: c.key,
       })),
       query,
@@ -482,6 +487,7 @@ export function filterBoard(board: OfferBoard, query: string): OfferBoard {
       board.demand.map((c) => ({
         title: String(c.need.title ?? ""),
         category: c.need.category,
+        sourceId: c.own ? HERE : c.ownerHolonId,
         id: c.key,
       })),
       query,

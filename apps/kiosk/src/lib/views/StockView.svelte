@@ -33,7 +33,8 @@
     partnerNames,
     rotationHold,
     scope,
-    searchQuery,
+    searchFilter,
+    searchLabel,
     stockViewMode,
     showNotice,
   } from "$lib/stores";
@@ -85,6 +86,7 @@
     withoutStockItem,
   } from "$lib/stocklink";
   import { segmentFor } from "$lib/dock";
+  import { isFiltering } from "$lib/data";
   import Modal from "$lib/components/Modal.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
 
@@ -275,10 +277,10 @@
   // The header search bar narrows the shelf by item name and/or category
   // (every term must hit); `rows` stays the full shelf so a deep link or an
   // open card is never hidden by whatever was typed.
-  $: shelf = filterShelf(rows, $searchQuery);
+  $: shelf = filterShelf(rows, $searchFilter);
   $: groups = groupShelf(shelf);
-  $: reorder = board ? filterReorder(board.reorder, $searchQuery) : [];
-  $: filtering = $searchQuery.trim().length > 0;
+  $: reorder = board ? filterReorder(board.reorder, $searchFilter) : [];
+  $: filtering = isFiltering($searchFilter);
   // Partner shelves come along only in the networked scope, like every board.
   $: partnerShelves =
     $scope === "networked" && board
@@ -288,7 +290,8 @@
             name: p.name,
             rows: filterShelf(
               shelfRows(p.specs, board!.partnerLevels[p.id] ?? []),
-              $searchQuery,
+              $searchFilter,
+              p.id,
             ),
           }))
           .filter((p) => p.rows.length)
@@ -842,7 +845,7 @@
           {$t(hasTargets ? "stock.reorderEmpty" : "stock.reorderNoTargets")}
         </p>
       {:else if !reorder.length}
-        <p class="empty">{$t("stock.noMatch", { q: $searchQuery.trim() })}</p>
+        <p class="empty">{$t("stock.noMatch", { q: $searchLabel })}</p>
       {:else}
         <ul class="rows">
           {#each reorder as line (line.itemId)}
@@ -970,7 +973,7 @@
         <p class="lead">{$t("stock.emptyShelfLead")}</p>
       </div>
     {:else if !shelf.length && !partnerShelves.length}
-      <p class="empty">{$t("stock.noMatch", { q: $searchQuery.trim() })}</p>
+      <p class="empty">{$t("stock.noMatch", { q: $searchLabel })}</p>
     {:else}
       {#each groups as group (group.category)}
         <h2 class="section">{group.category}</h2>

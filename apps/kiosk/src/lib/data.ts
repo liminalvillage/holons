@@ -1006,16 +1006,21 @@ export function toBookingEvents(
 }
 
 /**
- * Tap-to-filter suggestions for the search dropdown: every distinct category
- * and every person currently visible on the board. People are gathered from
- * event/task participants, task initiators, role holders, and library
- * borrowers, deduped case-insensitively (first spelling wins) so "Anna" from a
- * task and "anna" from a role collapse into one chip.
+ * Tap-to-filter suggestions for the search dropdown: every distinct category,
+ * every person and every holon currently visible on the board. People are
+ * gathered from event/task participants, task initiators, role holders, and
+ * library borrowers, deduped case-insensitively (first spelling wins) so
+ * "Anna" from a task and "anna" from a role collapse into one chip. Holons are
+ * the cards' sources: `HERE` for this holon's own, else the source holon's id.
  */
 export interface SearchSuggestions {
   categories: string[];
   people: string[];
+  holons: { id: string; name: string }[];
 }
+
+/** The holon facet's key for this holon's own cards (they carry no source). */
+export const HERE = "";
 
 export function toSuggestions(
   events: CalendarEvent[],
@@ -1044,13 +1049,48 @@ export function toSuggestions(
   for (const r of roles) r.people.forEach((p) => addPerson(p.name));
   for (const t of things) addPerson(t.borrower);
 
+  // This holon first, then the sources by name.
+  const holons = new Map<string, string>();
+  for (const c of [...events, ...backlog, ...roles, ...things]) {
+    const id = c.sourceId ?? HERE;
+    if (!holons.has(id)) holons.set(id, id === HERE ? "" : (c.source ?? id));
+  }
+  const foreign = [...holons]
+    .filter(([id]) => id !== HERE)
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   return {
     categories,
     people: [...people.values()].sort((a, b) => a.localeCompare(b)),
+    holons: holons.has(HERE) ? [{ id: HERE, name: "" }, ...foreign] : foreign,
   };
 }
 
-/** Text fields the kiosk search bar matches against, across every view model. */
+/**
+ * What the header search bar narrows by: free text, plus the facet chips
+ * toggled on in its dropdown. Within a facet any chip matches (Anna OR
+ * Bruno); across facets and text every part must (Anna AND garden).
+ */
+export interface SearchFilter {
+  text: string;
+  people: string[];
+  categories: string[];
+  holons: string[];
+}
+
+/** Whether the filter narrows anything at all. */
+export function isFiltering(f: SearchFilter | string): boolean {
+  if (typeof f === "string") return f.trim() !== "";
+  return (
+    f.text.trim() !== "" ||
+    f.people.length > 0 ||
+    f.categories.length > 0 ||
+    f.holons.length > 0
+  );
+}
+
+/** Fields the kiosk search bar matches against, across every view model. */
 interface Searchable {
   title?: string;
   category?: string;
@@ -1058,23 +1098,50 @@ interface Searchable {
   description?: string;
   type?: string;
   source?: string;
+  sourceId?: string;
   borrower?: string | null;
   people?: TaskPerson[];
+  initiator?: TaskPerson | null;
 }
 
 /**
- * Filter view-model items by the search bar's query: case-insensitive, and an
- * item must match *every* whitespace-separated term (AND). An empty query
- * passes the list straight through (same reference — no needless re-render).
+ * Filter view-model items by the search bar: case-insensitive text where an
+ * item must match *every* whitespace-separated term (AND), and each facet
+ * with chips on must hold one of them (see `SearchFilter`). A plain string is
+ * text only. An empty filter passes the list straight through (same
+ * reference — no needless re-render).
  */
 export function filterBySearch<T extends Searchable>(
   items: T[],
-  query: string,
+  filter: SearchFilter | string,
 ): T[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return items;
-  const terms = q.split(/\s+/);
+  if (!isFiltering(filter)) return items;
+  const f: SearchFilter =
+    typeof filter === "string"
+      ? { text: filter, people: [], categories: [], holons: [] }
+      : filter;
+  const q = f.text.trim().toLowerCase();
+  const terms = q ? q.split(/\s+/) : [];
+  const people = new Set(f.people.map((p) => p.toLowerCase()));
+  const categories = new Set(f.categories.map((c) => c.toLowerCase()));
+  const holons = new Set(f.holons);
   return items.filter((it) => {
+    if (holons.size && !holons.has(it.sourceId ?? HERE)) return false;
+    if (
+      categories.size &&
+      !(it.category && categories.has(it.category.toLowerCase()))
+    )
+      return false;
+    if (people.size) {
+      const who = [
+        ...(it.people?.map((p) => p.name) ?? []),
+        it.initiator?.name,
+        it.borrower,
+      ];
+      if (!who.some((n) => n && people.has(n.trim().toLowerCase())))
+        return false;
+    }
+    if (!terms.length) return true;
     const hay = [
       it.title,
       it.category,

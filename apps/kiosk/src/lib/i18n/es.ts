@@ -443,6 +443,8 @@ export const es: Record<MessageKey, Msg> = {
   "tabbar.suggestions": "Sugerencias de búsqueda",
   "tabbar.categories": "Categorías",
   "tabbar.people": "Personas",
+  "tabbar.holons": "Holones",
+  "tabbar.removeFilter": "Quitar el filtro {name}",
   "tabbar.menu": "Menú",
   "tabbar.holonSettings": "Ajustes del holón",
   "tabbar.login": "Entrar",

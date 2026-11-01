@@ -23,8 +23,10 @@
     shiftsLoaded,
     now,
     searchQuery,
+    searchFacets,
     holonId,
   } from "$lib/stores";
+  import { HERE, isFiltering } from "$lib/data";
   import { showNotice, offerSettings } from "$lib/stores";
   import { currentUser, isLoggedIn, loginOpen } from "$lib/auth";
   import { t, locale } from "$lib/i18n";
@@ -48,9 +50,18 @@
   $: identity = $shiftIdentity;
   // The schedule is the holon's own relay feed; partners publish none of it,
   // so the Show federated switch changes nothing here.
-  $: shown = upcomingShifts($rawShifts.occurrences, nowSec).filter((o) =>
-    shiftMatchesQuery(o, $searchQuery),
-  );
+  // A shift carries no people, category or partner holon to chip by, so a
+  // chip of those kinds leaves nothing; a holon chip keeps them only if it
+  // names this holon.
+  $: facetsPass =
+    !$searchFacets.people.length &&
+    !$searchFacets.categories.length &&
+    (!$searchFacets.holons.length || $searchFacets.holons.includes(HERE));
+  $: shown = facetsPass
+    ? upcomingShifts($rawShifts.occurrences, nowSec).filter((o) =>
+        shiftMatchesQuery(o, $searchQuery),
+      )
+    : [];
   $: days = groupShiftsByDay(shown);
   // The headline: what the wall is for. Counted over the whole window, not
   // the search-filtered subset, so a search never hides a gap.
@@ -204,7 +215,7 @@
       {/if}
     {:else if !$shiftsLoaded}
       <p class="state">{$t("shifts.loading")}</p>
-    {:else if $searchQuery.trim()}
+    {:else if isFiltering({ text: $searchQuery, ...$searchFacets })}
       <p class="state">{$t("shifts.noMatch")}</p>
     {:else}
       <p class="state">

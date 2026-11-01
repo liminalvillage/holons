@@ -15,6 +15,9 @@ import {
   toRoles,
   toThings,
   toSuggestions,
+  filterBySearch,
+  isFiltering,
+  HERE,
 } from "./data";
 import type { Quest } from "@holons/core/tasks";
 import type { LibraryItem } from "@holons/core/library";
@@ -399,6 +402,84 @@ describe("toSuggestions — search dropdown chips", () => {
     ];
     const s = toSuggestions([], toBacklog(quests), [], []);
     expect(s.people).toEqual(["Anna"]);
+  });
+});
+
+describe("toSuggestions — holon chips", () => {
+  it("lists this holon first, then the sources by name", () => {
+    const quests = [
+      quest("t1"),
+      quest("t2", {
+        _federation: { origin: "-200", originName: "Zeta" },
+      } as Partial<Quest>),
+      quest("t3", {
+        _federation: { origin: "-100", originName: "Alpha" },
+      } as Partial<Quest>),
+    ];
+    const s = toSuggestions([], toBacklog(quests), [], []);
+    expect(s.holons).toEqual([
+      { id: HERE, name: "" },
+      { id: "-100", name: "Alpha" },
+      { id: "-200", name: "Zeta" },
+    ]);
+  });
+});
+
+describe("filterBySearch — facet chips", () => {
+  const person = (id: number, first: string) => ({ id, first_name: first });
+  const tasks = toBacklog([
+    quest("water", { category: "garden", participants: [person(1, "Anna")] }),
+    quest("cook", { category: "kitchen", participants: [person(2, "Bruno")] }),
+    quest("weed", { category: "garden", participants: [person(2, "Bruno")] }),
+    quest("trade", {
+      category: "garden",
+      _federation: { origin: "-100", originName: "Alpha" },
+    } as Partial<Quest>),
+  ]);
+  const ids = (xs: { id: string }[]) => xs.map((x) => x.id).sort();
+  const none = { text: "", people: [], categories: [], holons: [] };
+
+  it("passes the list through untouched when nothing is on", () => {
+    expect(filterBySearch(tasks, none)).toBe(tasks);
+    expect(isFiltering(none)).toBe(false);
+  });
+
+  it("ORs chips within a facet", () => {
+    expect(
+      ids(filterBySearch(tasks, { ...none, people: ["anna", "Bruno"] })),
+    ).toEqual(["cook", "water", "weed"]);
+  });
+
+  it("ANDs facets with each other and with the text", () => {
+    expect(
+      ids(
+        filterBySearch(tasks, {
+          ...none,
+          people: ["Bruno"],
+          categories: ["Garden"],
+        }),
+      ),
+    ).toEqual(["weed"]);
+    expect(
+      ids(
+        filterBySearch(tasks, { ...none, text: "wa", categories: ["garden"] }),
+      ),
+    ).toEqual(["water"]);
+  });
+
+  it("keys holon chips on the source, HERE for this holon's own", () => {
+    expect(ids(filterBySearch(tasks, { ...none, holons: ["-100"] }))).toEqual([
+      "trade",
+    ]);
+    expect(ids(filterBySearch(tasks, { ...none, holons: [HERE] }))).toEqual([
+      "cook",
+      "water",
+      "weed",
+    ]);
+  });
+
+  it("still takes a plain text query", () => {
+    expect(ids(filterBySearch(tasks, "cook"))).toEqual(["cook"]);
   });
 });
 

@@ -432,6 +432,8 @@ export const en = {
   "tabbar.suggestions": "Search suggestions",
   "tabbar.categories": "Categories",
   "tabbar.people": "People",
+  "tabbar.holons": "Holons",
+  "tabbar.removeFilter": "Remove filter {name}",
   "tabbar.menu": "Menu",
   "tabbar.holonSettings": "Holon settings",
   "tabbar.login": "Log in",

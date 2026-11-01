@@ -30,13 +30,14 @@
     partnerNames,
     rotationHold,
     offersViewMode,
-    searchQuery,
+    searchFilter,
+    searchLabel,
     showNotice,
   } from "$lib/stores";
   import { currentUser, loginOpen } from "$lib/auth";
   import { getHolosphere, getLensStore } from "$lib/holosphere";
   import { nameOf as resolvedName } from "$lib/names";
-  import { personName } from "$lib/data";
+  import { isFiltering, personName } from "$lib/data";
   import { t, type MessageKey } from "$lib/i18n";
   import { createAutosave } from "$lib/autosave";
   import SaveState from "$lib/components/SaveState.svelte";
@@ -270,8 +271,8 @@
         hexOf,
       })
     : null;
-  $: board = fullBoard ? filterBoard(fullBoard, $searchQuery) : null;
-  $: filtering = $searchQuery.trim().length > 0;
+  $: board = fullBoard ? filterBoard(fullBoard, $searchFilter) : null;
+  $: filtering = isFiltering($searchFilter);
   $: supplyGroups = board ? groupByCategory(board.supply) : [];
   $: autoCards = fullBoard
     ? fullBoard.supply.filter((c) => c.own && c.auto)
@@ -1198,7 +1199,7 @@
       {#if !board.supply.length}
         {#if filtering}
           <p class="empty">
-            {$t("offers.noMatch", { q: $searchQuery.trim() })}
+            {$t("offers.noMatch", { q: $searchLabel })}
           </p>
         {:else}
           <div class="empty">
@@ -1278,7 +1279,7 @@
       {#if !board.demand.length}
         {#if filtering}
           <p class="empty">
-            {$t("offers.noMatch", { q: $searchQuery.trim() })}
+            {$t("offers.noMatch", { q: $searchLabel })}
           </p>
         {:else}
           <div class="empty">
@@ -1372,7 +1373,7 @@
       {#if !board.matches.length}
         {#if filtering}
           <p class="empty">
-            {$t("offers.noMatch", { q: $searchQuery.trim() })}
+            {$t("offers.noMatch", { q: $searchLabel })}
           </p>
         {:else}
           <div class="empty">
