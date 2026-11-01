@@ -193,7 +193,7 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
     'onboarding_config_save',
     {
       description:
-        "Set a holon's onboarding (admins only — a guarded settings field). Steps in order, each a list of cards; a card's `confirm` says who ticks it: `self` (the person), `admin` (someone from the holon vouches, e.g. the call) or `profile` (done once their profile has a name and what they offer). `enabled: false` answers join requests at once again.",
+        "Set a holon's onboarding (admins only — a guarded settings field). Steps in order, each a list of cards; a card's `confirm` says who ticks it: `self` (the person), `admin` (someone from the holon vouches, e.g. the call) or `profile` (done once the person's profile holds every required one of the card's `fields`; without `fields` it asks a name and what they offer). `enabled: false` answers join requests at once again.",
       inputSchema: {
         holon: z.string(),
         enabled: z.boolean(),
@@ -209,6 +209,17 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
                   description: z.string().optional(),
                   link: z.string().optional(),
                   confirm: z.enum(['self', 'admin', 'profile']).optional(),
+                  fields: z
+                    .array(
+                      z.object({
+                        key: z.string().describe('Profile record key. Known: first_name, last_name, ikigai, summary, values, category, linkedin, arrival, departure; any other is a question of the holon\'s own.'),
+                        label: z.string().optional().describe('The question; a known key has a default.'),
+                        type: z.enum(['text', 'longtext', 'date', 'url', 'list']).optional(),
+                        required: z.boolean().optional().describe('Default true.'),
+                      }),
+                    )
+                    .optional()
+                    .describe('A `profile` card only: what the profile must hold.'),
                 }),
               ),
             }),

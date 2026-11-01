@@ -22,6 +22,7 @@ import {
   type FederationLinkOutcome,
 } from '@holons/core/federation';
 import { assertEquationEditable } from '@holons/core/governance';
+import { unsharedOutbound } from '@holons/core/privacy';
 import type { ToolDeps } from './index.js';
 import { gate } from './standing.js';
 
@@ -156,7 +157,7 @@ export function registerSettingsTools(server: McpServer, deps: ToolDeps): void {
     'federation_link_add',
     {
       description:
-        'Link (or update) a federation partner on the native federation record — the single federation store, honored by federated reads and publishing — via @holons/core/federation setFederationPartner. Writes THIS holon\'s half; the partner\'s half is written too only when this key is also its admin, otherwise the partner\'s admins are sent a federation request (outcome.partner = "requested"; see federation_requests). The `target` JSON must include { targetId }; optional { targetName, inbound, outbound } set the display name and the FULL directional lens arrays (defaults: no lenses flowing yet).',
+        'Link (or update) a federation partner on the native federation record — the single federation store, honored by federated reads and publishing — via @holons/core/federation setFederationPartner. Writes THIS holon\'s half; the partner\'s half is written too only when this key is also its admin, otherwise the partner\'s admins are sent a federation request (outcome.partner = "requested"; see federation_requests). Linking hands out no key: locked outbound lenses the partner cannot read are listed in `lockedUnshared` — offer privacy_share for them. The `target` JSON must include { targetId }; optional { targetName, inbound, outbound } set the display name and the FULL directional lens arrays (defaults: no lenses flowing yet).',
       inputSchema: {
         holon: z.string(),
         target: z
@@ -188,7 +189,18 @@ export function registerSettingsTools(server: McpServer, deps: ToolDeps): void {
           outbound: Array.isArray(outbound) ? outbound : [],
           ...(typeof targetName === 'string' && targetName ? { partnerName: targetName } : {}),
         });
-        return ok({ success: outcome.self !== 'held', holon: args.holon, targetId, outcome, note: linkNote(outcome) });
+        // A link hands out no key: name the locked lenses the partner gets sealed.
+        const locked = await unsharedOutbound(hs, args.holon, targetId, Array.isArray(outbound) ? outbound : []).catch(() => []);
+        return ok({
+          success: outcome.self !== 'held',
+          holon: args.holon,
+          targetId,
+          outcome,
+          note: linkNote(outcome),
+          ...(locked.length
+            ? { lockedUnshared: locked, privacyNote: `Locked lenses flowing out unshared: ${locked.join(', ')}. The partner reads nothing of them until privacy_share shares each with ${targetId}.` }
+            : {}),
+        });
       } catch (err) {
         return fail((err as Error).message);
       }
