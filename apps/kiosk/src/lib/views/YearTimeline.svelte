@@ -1,7 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import Icon from "$lib/components/Icon.svelte";
-  import { MOON_ICONS } from "$lib/icons";
+  import YearShapeSwitch from "$lib/components/YearShapeSwitch.svelte";
   //
   // The year at a glance — the kiosk port of the dashboard's lunar timeline
   // (apps/web Timeline.svelte). One horizontal line is the whole year: month
@@ -17,8 +17,15 @@
   // Zooming only spreads positions out — markers keep their size — so once a
   // card has room before its neighbour its title appears next to it, and a
   // span wide enough carries its title inside the bar.
-  import { phase } from "lune";
-  import { t, locale, type MessageKey } from "$lib/i18n";
+  import { t, locale } from "$lib/i18n";
+  import {
+    DAY_MS,
+    getMoonPhases,
+    lunationMoonPhases,
+    moonStats,
+    nextSolar,
+    solarEventsIn,
+  } from "$lib/yearscale";
   import type { CalendarEvent } from "$lib/data";
 
   export let events: CalendarEvent[] = [];
@@ -54,6 +61,8 @@
     | null = null;
   /** The board has lifted a card: the timeline must not pan under the drag. */
   export let lifting = false;
+  /** Lead the toolbar with the year window's Lines/Dial switch. */
+  export let showShape = false;
 
   // Layout constants (rem, so the timeline scales with the kiosk's fluid
   // root font) — keep in sync with the stacking styles below.
@@ -63,7 +72,6 @@
   const LANE_REM = 0.6; // vertical step per span lane
   const LABELED_LANE_REM = 1.05; // …once span bars are wide enough for titles
 
-  const DAY_MS = 86400000;
   const MIN_SPAN_DAYS = 6; // deepest zoom: about six days across the width
   const DRAG_SLOP_PX = 6; // movement before a press becomes a pan
   const LABEL_MIN_PX = 44; // narrowest room worth a (truncated) title
@@ -258,60 +266,9 @@
     laneCount * laneRem;
 
   // ── Sky: solar turning points + every new/full moon ───────────────────────
-  type SolarKey =
-    | "cal.springEquinox"
-    | "cal.summerSolstice"
-    | "cal.autumnEquinox"
-    | "cal.winterSolstice";
-  function solarPoints(y: number): Array<{ key: SolarKey; date: Date }> {
-    return [
-      { key: "cal.springEquinox", date: new Date(y, 2, 20) },
-      { key: "cal.summerSolstice", date: new Date(y, 5, 21) },
-      { key: "cal.autumnEquinox", date: new Date(y, 8, 22) },
-      { key: "cal.winterSolstice", date: new Date(y, 11, 21) },
-    ];
-  }
-  $: solarEvents = [
-    ...solarPoints(new Date(yearStart).getFullYear()),
-    ...(range ? solarPoints(new Date(yearEnd).getFullYear()) : []),
-  ].filter((s) => {
-    const time = s.date.getTime();
-    return time >= yearStart && time < yearEnd;
-  });
-
-  // Scan the span in 6-hour steps for the moments the phase crosses new
-  // (≈0) or full (≈0.5); the 10-day de-dupe window keeps one marker per
-  // lunation. Same recipe as the dashboard's timeline.
-  function getMoonPhases(
-    from: number,
-    to: number,
-  ): Array<{ date: Date; isNew: boolean }> {
-    const phases: Array<{ date: Date; isNew: boolean }> = [];
-    const end = new Date(to);
-    let cursor = new Date(from);
-    while (cursor < end) {
-      const p = phase(cursor).phase;
-      if (p < 0.025 || (p > 0.475 && p < 0.525)) {
-        const isDuplicate = phases.some(
-          (m) =>
-            Math.abs(m.date.getTime() - cursor.getTime()) <
-            10 * 24 * 60 * 60 * 1000,
-        );
-        if (!isDuplicate)
-          phases.push({ date: new Date(cursor), isNew: p < 0.025 });
-      }
-      cursor = new Date(cursor.getTime() + 6 * 60 * 60 * 1000);
-    }
-    return phases;
-  }
-  // A lunation's own edges are its new moons, exactly: pin them there rather
-  // than trusting the scan's 6-hour steps to land on them.
+  $: solarEvents = solarEventsIn(yearStart, yearEnd);
   $: moonPhases = range
-    ? [
-        { date: new Date(yearStart), isNew: true },
-        ...getMoonPhases(yearStart + 2 * DAY_MS, yearEnd - 2 * DAY_MS),
-        { date: new Date(yearEnd), isNew: true },
-      ]
+    ? lunationMoonPhases(yearStart, yearEnd)
     : getMoonPhases(yearStart, yearEnd);
 
   // Month bands on screen. The name pins to the left edge while its month
@@ -633,46 +590,7 @@
   // the moon that night (phase name, illumination, lunation age) and the
   // countdown to the next solar turning point. Cards and sky markers carry
   // their own tooltips, so the readout yields while one of those is hovered.
-  const MOON_NAMES: MessageKey[] = [
-    "cal.newMoon",
-    "cal.moonWaxingCrescent",
-    "cal.moonFirstQuarter",
-    "cal.moonWaxingGibbous",
-    "cal.fullMoon",
-    "cal.moonWaningGibbous",
-    "cal.moonLastQuarter",
-    "cal.moonWaningCrescent",
-  ];
-
   let hover: { pct: number; date: Date } | null = null;
-
-  function moonStats(date: Date) {
-    const p = phase(date);
-    // Band the continuous phase into the 8 named faces (centred bands, so
-    // 0±1/16 is "new moon" rather than a sliver of crescent).
-    const idx = Math.floor(((p.phase + 1 / 16) % 1) * 8);
-    return {
-      icon: MOON_ICONS[idx],
-      nameKey: MOON_NAMES[idx],
-      pct: Math.round(p.illuminated * 100),
-      age: Math.max(1, Math.round(p.age)),
-    };
-  }
-
-  /** The next solar turning point on or after `date` (crossing new year). */
-  function nextSolar(date: Date): { key: SolarKey; days: number } {
-    const day = new Date(date);
-    day.setHours(0, 0, 0, 0);
-    const all = [
-      ...solarPoints(day.getFullYear()),
-      ...solarPoints(day.getFullYear() + 1),
-    ];
-    const next = all.find((s) => s.date.getTime() >= day.getTime()) ?? all[0];
-    return {
-      key: next.key,
-      days: Math.round((next.date.getTime() - day.getTime()) / DAY_MS),
-    };
-  }
 
   function onPointerLeave() {
     hover = null;
@@ -703,6 +621,9 @@
 </script>
 
 <div class="yt-bar">
+  {#if showShape}
+    <YearShapeSwitch />
+  {/if}
   {#if zoomed || title}
     <span class="yt-range">{rangeLabel}</span>
   {:else}

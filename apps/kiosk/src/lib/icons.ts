@@ -420,6 +420,20 @@ export const ICONS = {
   },
   moon: { paths: s("M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z") },
   contrast: { paths: [...s(CIRCLE), ...f("M12 3a9 9 0 0 1 0 18z")] },
+  // A sun, one round orbit and its planet: the recurring quests. The ring
+  // breaks around the planet so the planet reads as a body riding it (a
+  // flat ellipse with a centre dot read as an eye).
+  orbit: {
+    paths: [
+      ...f("M12 8.6a3.4 3.4 0 1 1 0 6.8 3.4 3.4 0 0 1 0-6.8Z"),
+      ...s("M15.1 4.1A8.5 8.5 0 1 0 19.9 8.9"),
+      ...f("M18.2 3.4a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2Z"),
+    ],
+  },
+  // A clock face with one hand: the year drawn as a dial.
+  dial: { paths: s(CIRCLE, "M12 12V5.5", "M12 12l4 2.4") },
+  // Two straight lines: the year drawn as lines.
+  lines: { paths: s("M3 9h18", "M3 15h18", "M7 7v4", "M15 13v4") },
   moon0: moon(0),
   moon1: moon(1),
   moon2: moon(2),

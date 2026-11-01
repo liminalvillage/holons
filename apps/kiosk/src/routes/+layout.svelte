@@ -47,6 +47,7 @@
     resolveRolesView,
     resolveFlowsView,
     resolveCalendarView,
+    resolveYearShape,
     resolveLibraryCalendarView,
   } from "$lib/config";
   import { activeTheme, themeMode, startTheme } from "$lib/theme";
@@ -94,6 +95,7 @@
     stockViewMode,
     offersViewMode,
     calendarMode,
+    yearShape,
     libraryCalendarMode,
     boardReady,
     settingsOpen,
@@ -719,6 +721,7 @@
     stockViewMode.set(resolveStockView());
     offersViewMode.set(resolveOffersView());
     calendarMode.set(resolveCalendarView());
+    yearShape.set(resolveYearShape());
     libraryCalendarMode.set(resolveLibraryCalendarView());
     brandLogo.set(resolveBrandLogo() ?? "");
     accent.set(resolveAccent());

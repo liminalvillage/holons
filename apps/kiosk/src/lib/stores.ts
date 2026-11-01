@@ -50,6 +50,7 @@ import {
   type StockViewMode,
   type OffersViewMode,
   type CalendarMode,
+  type YearShape,
   type TabPref,
 } from "./config";
 import { scopeLocal } from "./scope";
@@ -249,6 +250,8 @@ export const offersViewMode = writable<OffersViewMode>("demand");
 
 /** Calendar window: day / week / month. Persisted per device via config. */
 export const calendarMode = writable<CalendarMode>("day");
+/** The year window drawn as lines or as one dial (per device). */
+export const yearShape = writable<YearShape>("linear");
 
 /**
  * Window of the Library's booking calendar — its own, not the Calendar tab's:

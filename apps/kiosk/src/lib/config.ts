@@ -62,6 +62,7 @@ const OFFERS_VIEW_KEY = "kiosk_offers_view";
 const OFFERS_SCALE_KEY = "kiosk_offers_scale";
 const CAL_VIEW_KEY = "kiosk_cal_view";
 const LIBRARY_CAL_VIEW_KEY = "kiosk_library_cal_view";
+const YEAR_SHAPE_KEY = "kiosk_year_shape";
 const VOICE_KEY_KEY = "kiosk_voice_key";
 const LANG_KEY = "kiosk_lang";
 const LANG_RESOLVED_KEY = "kiosk_lang_resolved";
@@ -835,15 +836,33 @@ export function setOffersScale(id: string): void {
 
 /**
  * The Calendar's time window (its Layout pill): one day, the week, the
- * month grid, or the whole year as a lunar timeline. Same per-device
- * stickiness as the other views' layout choices.
+ * month grid, the whole year as a lunar timeline, or the recurring quests
+ * as orbits. Same per-device stickiness as the other views' layout choices.
  */
-export type CalendarMode = "day" | "week" | "month" | "year";
+export type CalendarMode = "day" | "week" | "month" | "year" | "orbits";
 
 /** Resolve the Calendar mode; the single day is the default. */
 export function resolveCalendarView(): CalendarMode {
   const v = persisted(CAL_VIEW_KEY);
-  return v === "week" || v === "month" || v === "year" ? v : "day";
+  return v === "week" || v === "month" || v === "year" || v === "orbits"
+    ? v
+    : "day";
+}
+
+/**
+ * How the year window draws: two straight lines (the year, then the moon
+ * we're in), or one dial — the year as the outer ring, the moon inside it.
+ */
+export type YearShape = "linear" | "radial";
+
+/** Resolve the year window's shape; the straight lines are the default. */
+export function resolveYearShape(): YearShape {
+  return persisted(YEAR_SHAPE_KEY) === "radial" ? "radial" : "linear";
+}
+
+/** Persist the year window's shape. */
+export function setYearShape(shape: YearShape): void {
+  persist(YEAR_SHAPE_KEY, shape);
 }
 
 /** Persist the Calendar mode. */

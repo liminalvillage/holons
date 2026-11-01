@@ -17,6 +17,8 @@
     editOnOpen,
     showNotice,
     calendarMode,
+    yearShape,
+    holonName,
     offerSettings,
   } from "$lib/stores";
   import { requestSwitch } from "$lib/dock";
@@ -31,6 +33,7 @@
   import { t, locale, type MessageKey } from "$lib/i18n";
   import {
     createTask,
+    isQuestCompleted,
     localDayNumber,
     moveOccurrence,
     setQuestFrequency,
@@ -53,6 +56,8 @@
   import CalendarSettings from "$lib/components/CalendarSettings.svelte";
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
   import YearTimeline from "./YearTimeline.svelte";
+  import YearDial from "./YearDial.svelte";
+  import OrbitsView, { type OrbitItem } from "./OrbitsView.svelte";
 
   // ── What this board shows ──────────────────────────────────────────────---
   // The Calendar tab passes nothing and gets the holon's dated quests; the
@@ -258,7 +263,7 @@
       dropOnTray || yearEl
         ? null
         : (el?.closest<HTMLElement>("[data-day]") ?? null);
-    dropDay = yearEl ? yearDayAt(yearEl, x) : (dayEl?.dataset.day ?? null);
+    dropDay = yearEl ? yearDayAt(yearEl, x, y) : (dayEl?.dataset.day ?? null);
     if (dayEl && dayEl.dataset.hours != null) {
       const rect = dayEl.getBoundingClientRect();
       const min = Math.round(minForY(y - rect.top) / 15) * 15;
@@ -268,9 +273,33 @@
     }
   }
 
-  /** The day under `x` on the year timeline (see its `data-view-*`). */
-  function yearDayAt(el: HTMLElement, x: number): string {
+  /**
+   * The day under the pointer on the year window (see its `data-view-*`):
+   * on the line the x picks it; on the dial the angle does, on whichever
+   * ring the pointer is over (`data-split` parts the moon from the year).
+   */
+  function yearDayAt(el: HTMLElement, x: number, y: number): string {
     const rect = el.getBoundingClientRect();
+    if (el.dataset.radial) {
+      // The dial zooms by its viewBox: map the point through the svg's own
+      // transform into drawing units (centre 500, 500).
+      const ctm = (el as unknown as SVGSVGElement).getScreenCTM?.();
+      const p = ctm
+        ? new DOMPoint(x, y).matrixTransform(ctm.inverse())
+        : {
+            x: ((x - rect.left) / rect.width) * 1000,
+            y: ((y - rect.top) / rect.height) * 1000,
+          };
+      const dx = p.x - 500;
+      const dy = p.y - 500;
+      const f = (((Math.atan2(dx, -dy) / (2 * Math.PI)) % 1) + 1) % 1;
+      const onMoon =
+        el.dataset.innerFrom != null &&
+        Math.hypot(dx, dy) < Number(el.dataset.split);
+      const from = Number(onMoon ? el.dataset.innerFrom : el.dataset.viewFrom);
+      const to = Number(onMoon ? el.dataset.innerTo : el.dataset.viewTo);
+      return isoDay(new Date(Math.min(to - 1, from + (to - from) * f)));
+    }
     const frac = Math.min(1, Math.max(0, (x - rect.left) / rect.width));
     const from = Number(el.dataset.viewFrom);
     const to = Number(el.dataset.viewTo);
@@ -869,6 +898,9 @@
     lastMode = view;
     offset = 0;
     if (hasHours) void focusDay();
+    // A window without hours opens at its top, not at the hour the day
+    // window had scrolled to.
+    else if (scrollEl) scrollEl.scrollTop = 0;
   }
   function step(dir: 1 | -1) {
     offset += dir;
@@ -1091,6 +1123,33 @@
       to: fmt(lunationRange.to),
     });
   })();
+  // Orbits window: offset counts days, so the arrows run the planets
+  // forward/back to preview where each series will be.
+  $: orbitsNow =
+    view === "orbits" && offset
+      ? new Date($now.getTime() + offset * 86400000)
+      : $now;
+  // One planet per recurring series on the board — the series behind its
+  // occurrences, so search and scope narrow the orbits like every window.
+  $: orbitItems = (() => {
+    const out: OrbitItem[] = [];
+    const seen = new Set<string>();
+    for (const ev of shownEvents) {
+      const id = ev.occurrence?.seriesId;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const quest = $rawQuests.find((q) => String(q.id ?? q.title) === id);
+      if (!quest || isQuestCompleted(quest)) continue;
+      out.push({
+        id,
+        title: ev.title,
+        category: ev.category,
+        sourceColor: ev.sourceColor,
+        quest,
+      });
+    }
+    return out;
+  })();
   $: monthGrid = (() => {
     const start = new Date(monthAnchor);
     start.setDate(1 - monthAnchor.getDay());
@@ -1121,6 +1180,9 @@
   const WEEK_FROM_HOUR = 9;
   const WEEK_TO_HOUR = 23;
   let bodyHeight = 0;
+  // What a full-area window (the dial, the orbits) can fill: the scroll
+  // area minus its own vertical padding.
+  $: fillHeight = Math.max(0, bodyHeight - rootRem * 1.2);
   let headsHeight = 0;
   // The week's all-day strip is pinned under the date band (it must not
   // scroll away with the early hours), so it takes visible height too.
@@ -1393,10 +1455,18 @@
         ? `${weekDays[0].toLocaleDateString($locale, { day: "numeric", month: "short" })} – ${weekDays[6].toLocaleDateString($locale, { day: "numeric", month: "short" })}`
         : view === "year"
           ? String(displayYear)
-          : monthAnchor.toLocaleDateString($locale, {
-              month: "long",
-              year: "numeric",
-            });
+          : view === "orbits"
+            ? offset === 0
+              ? $t("cal.orbitsTitle")
+              : orbitsNow.toLocaleDateString($locale, {
+                  weekday: "short",
+                  day: "numeric",
+                  month: "long",
+                })
+            : monthAnchor.toLocaleDateString($locale, {
+                month: "long",
+                year: "numeric",
+              });
 
   // What a card says about its own timing on `day`. A span says which of its
   // days this is; only its FIRST day also carries the start time (the later
@@ -1575,9 +1645,35 @@
           </div>
         {/each}
       </div>
+    {:else if view === "orbits"}
+      <!-- the recurring quests as planets round the holon -->
+      <OrbitsView
+        height={fillHeight}
+        items={orbitItems}
+        now={orbitsNow}
+        {noteColorFor}
+        holonName={$holonName}
+        onOpen={(id, when) => openQuest(id, "event", when)}
+      />
+    {:else if view === "year" && $yearShape === "radial" && ownBoard}
+      <!-- the year as one dial, the moon we're in as its inner ring -->
+      <YearDial
+        height={fillHeight}
+        showShape
+        events={shownEvents}
+        year={displayYear}
+        inner={{ range: lunationRange, title: lunationTitle }}
+        now={$now}
+        {noteColorFor}
+        onOpen={open}
+        onSelectDay={gotoDay}
+        onDragStart={(e, ev) => beginDrag(e, ev.id, ev.title, !!ev.external)}
+        {dropDay}
+      />
     {:else if view === "year"}
       <!-- the whole year as a lunar timeline (moons, solstices, cards) -->
       <YearTimeline
+        showShape={ownBoard}
         events={shownEvents}
         year={displayYear}
         now={$now}
