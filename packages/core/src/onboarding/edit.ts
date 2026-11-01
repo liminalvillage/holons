@@ -12,9 +12,10 @@
 //     must survive every edit; `normalizeOnboarding` drops it on save.
 
 import type { CardConfirm, OnboardingCard, OnboardingConfig, OnboardingStep } from './config.js';
+import { DEFAULT_PROFILE_FIELDS, PROFILE_FIELDS, type ProfileField } from './profile.js';
 
 /** A fresh id no step (or card) of this draft has. */
-export function newOnboardingId(prefix: 'step' | 'card', taken: Iterable<string>): string {
+export function newOnboardingId(prefix: 'step' | 'card' | 'custom', taken: Iterable<string>): string {
   const used = new Set(taken);
   for (;;) {
     const id = `${prefix}_${Math.random().toString(36).slice(2, 8)}`;
@@ -76,18 +77,56 @@ export function updateStep(config: OnboardingConfig, stepId: string, fields: { t
 
 export type CardFields = Partial<{ title: string; description: string; link: string; confirm: CardConfirm }>;
 
-/** Change a card; an emptied description or link goes away. */
+const mapCard = (config: OnboardingConfig, stepId: string, cardId: string, f: (c: OnboardingCard) => OnboardingCard): OnboardingConfig =>
+  mapStep(config, stepId, (s) => ({ ...s, cards: s.cards.map((c) => (c.id === cardId ? f(c) : c)) }));
+
+/**
+ * Change a card; an emptied description or link goes away. A card turned
+ * into a profile card starts with the default fields; one turned into
+ * anything else forgets its fields.
+ */
 export function updateCard(config: OnboardingConfig, stepId: string, cardId: string, fields: CardFields): OnboardingConfig {
-  return mapStep(config, stepId, (s) => ({
-    ...s,
-    cards: s.cards.map((c) => {
-      if (c.id !== cardId) return c;
-      const next: OnboardingCard = { ...c, ...fields };
-      if (fields.description === '') delete next.description;
-      if (fields.link === '') delete next.link;
-      return next;
-    }),
-  }));
+  return mapCard(config, stepId, cardId, (c) => {
+    const next: OnboardingCard = { ...c, ...fields };
+    if (fields.description === '') delete next.description;
+    if (fields.link === '') delete next.link;
+    if (next.confirm === 'profile') next.fields ??= DEFAULT_PROFILE_FIELDS.map((f) => ({ ...f }));
+    else delete next.fields;
+    return next;
+  });
+}
+
+const withFields = (config: OnboardingConfig, stepId: string, cardId: string, f: (fields: ProfileField[]) => ProfileField[]): OnboardingConfig =>
+  mapCard(config, stepId, cardId, (c) => (c.confirm === 'profile' ? { ...c, fields: f(c.fields ?? DEFAULT_PROFILE_FIELDS.map((x) => ({ ...x }))) } : c));
+
+/**
+ * Ask the profile one more thing: a known field by its key (with its
+ * catalog question), or — no key — a question of the holon's own, under a
+ * fresh key that never changes after. A key the card already asks is not
+ * added twice.
+ */
+export function addProfileField(config: OnboardingConfig, stepId: string, cardId: string, key?: string): OnboardingConfig {
+  return withFields(config, stepId, cardId, (fields) => {
+    const taken = fields.map((f) => f.key);
+    const known = key ? PROFILE_FIELDS.find((f) => f.key === key) : undefined;
+    if (known && taken.includes(known.key)) return fields;
+    const field: ProfileField = known ? { ...known } : { key: newOnboardingId('custom', taken), label: '', type: 'text', required: true };
+    return [...fields, field];
+  });
+}
+
+export function updateProfileField(
+  config: OnboardingConfig,
+  stepId: string,
+  cardId: string,
+  key: string,
+  change: Partial<Omit<ProfileField, 'key'>>,
+): OnboardingConfig {
+  return withFields(config, stepId, cardId, (fields) => fields.map((f) => (f.key === key ? { ...f, ...change } : f)));
+}
+
+export function removeProfileField(config: OnboardingConfig, stepId: string, cardId: string, key: string): OnboardingConfig {
+  return withFields(config, stepId, cardId, (fields) => fields.filter((f) => f.key !== key));
 }
 
 /** Move a step up (-1) or down (+1); at either end nothing moves. */
@@ -121,7 +160,11 @@ export type DraftIssue =
   /** A card without a title is not saved until it has one. */
   | { kind: 'untitled-card'; step: string; card: string }
   /** A step without one titled card is not saved at all. */
-  | { kind: 'empty-step'; step: string };
+  | { kind: 'empty-step'; step: string }
+  /** A question of the holon's own without its wording is not saved. */
+  | { kind: 'unnamed-field'; step: string; card: string; field: string }
+  /** A profile card whose every field was removed falls back to the defaults. */
+  | { kind: 'no-fields'; step: string; card: string };
 
 /** What in the draft would not survive a save, for the editor to point at. */
 export function draftIssues(config: OnboardingConfig): DraftIssue[] {
@@ -129,7 +172,14 @@ export function draftIssues(config: OnboardingConfig): DraftIssue[] {
   for (const s of config.steps) {
     const titled = s.cards.filter((c) => c.title.trim());
     if (!titled.length) out.push({ kind: 'empty-step', step: s.id });
-    for (const c of s.cards) if (!c.title.trim()) out.push({ kind: 'untitled-card', step: s.id, card: c.id });
+    for (const c of s.cards) {
+      if (!c.title.trim()) out.push({ kind: 'untitled-card', step: s.id, card: c.id });
+      if (c.confirm !== 'profile') continue;
+      const fields = c.fields ?? DEFAULT_PROFILE_FIELDS;
+      if (!fields.length) out.push({ kind: 'no-fields', step: s.id, card: c.id });
+      for (const f of fields)
+        if (!f.label.trim() && !PROFILE_FIELDS.some((k) => k.key === f.key)) out.push({ kind: 'unnamed-field', step: s.id, card: c.id, field: f.key });
+    }
   }
   return out;
 }

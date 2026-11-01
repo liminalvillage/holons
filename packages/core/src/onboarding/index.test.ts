@@ -19,7 +19,13 @@ import {
   onboardingCardId,
   onboardingHome,
   onboardingView,
-  profileReady,
+  DEFAULT_PROFILE_FIELDS,
+  fieldAccepts,
+  fieldText,
+  fieldValue,
+  missingProfileFields,
+  normalizeProfileFields,
+  profileComplete,
   readOnboarding,
   refreshOnboarding,
   saveOnboarding,
@@ -46,7 +52,11 @@ function instance(sk = founder.sk) {
 const config: OnboardingConfig = {
   enabled: true,
   steps: [
-    { id: 'profile', title: 'Profile', cards: [{ id: 'profile', title: 'Fill in your profile', confirm: 'profile' }] },
+    {
+      id: 'profile',
+      title: 'Profile',
+      cards: [{ id: 'profile', title: 'Fill in your profile', confirm: 'profile', fields: DEFAULT_PROFILE_FIELDS.map((f) => ({ ...f })) }],
+    },
     { id: 'call', title: 'Call', cards: [{ id: 'call', title: 'Onboarding call', confirm: 'admin' }] },
     {
       id: 'arrival',
@@ -58,7 +68,8 @@ const config: OnboardingConfig = {
     },
   ],
 };
-const none = { completed: new Set<string>(), profileReady: false };
+const none = { completed: new Set<string>(), profile: null };
+const ready = { id: 'x', first_name: 'Ada', ikigai: 'bread' };
 
 describe('the onboarding config', () => {
   it('falls back to the default steps, switched off', () => {
@@ -82,13 +93,50 @@ describe('the onboarding config', () => {
   });
 });
 
-describe('profileReady', () => {
-  it('needs a name and something about what they bring', () => {
-    expect(profileReady(null)).toBe(false);
-    expect(profileReady({ id: 'x', first_name: 'Ada' })).toBe(false);
-    expect(profileReady({ id: 'x', ikigai: 'bread' })).toBe(false);
-    expect(profileReady({ id: 'x', first_name: 'Ada', ikigai: 'bread' })).toBe(true);
-    expect(profileReady({ id: 'x', name: 'Ada', values: ['care'] })).toBe(true);
+describe('profile fields', () => {
+  it('the default asks a name and what they bring', () => {
+    expect(profileComplete(null, DEFAULT_PROFILE_FIELDS)).toBe(false);
+    expect(profileComplete({ id: 'x', first_name: 'Ada' }, DEFAULT_PROFILE_FIELDS)).toBe(false);
+    expect(profileComplete(ready, DEFAULT_PROFILE_FIELDS)).toBe(true);
+  });
+
+  it('a holon asks what it needs; only required fields hold the card back', () => {
+    const fields = normalizeProfileFields([
+      { key: 'arrival' },
+      { key: 'departure', required: false },
+      { key: 'Diet!', label: 'Anything you do not eat?', type: 'longtext' },
+    ]);
+    expect(fields).toEqual([
+      { key: 'arrival', label: 'Arrival date', type: 'date', required: true },
+      { key: 'departure', label: 'Departure date', type: 'date', required: false },
+      { key: 'diet', label: 'Anything you do not eat?', type: 'longtext', required: true },
+    ]);
+    expect(missingProfileFields({ id: 'x', arrival: '2026-11-03' }, fields).map((f) => f.key)).toEqual(['diet']);
+    expect(profileComplete({ id: 'x', arrival: '2026-11-03', diet: 'none' }, fields)).toBe(true);
+  });
+
+  it('drops unnamed custom fields, reserved and repeated keys; nothing left → the defaults', () => {
+    expect(normalizeProfileFields([{ key: 'custom_x' }, { key: 'id', label: 'Id' }]).map((f) => f.key)).toEqual(['first_name', 'ikigai']);
+    expect(normalizeProfileFields([{ key: 'values' }, { key: 'values', label: 'Again' }])).toEqual([
+      { key: 'values', label: 'Your values', type: 'list', required: true },
+    ]);
+  });
+
+  it('takes a typed answer by the field type', () => {
+    const date = { key: 'arrival', label: 'Arrival', type: 'date', required: true } as const;
+    const url = { key: 'linkedin', label: 'Link', type: 'url', required: false } as const;
+    const list = { key: 'values', label: 'Values', type: 'list', required: true } as const;
+    expect([fieldAccepts(date, '2026-11-03'), fieldAccepts(date, '2026-02-30'), fieldAccepts(date, 'soon')]).toEqual([true, false, false]);
+    expect([fieldAccepts(url, 'https://ada.example'), fieldAccepts(url, 'ada')]).toEqual([true, false]);
+    expect(fieldAccepts(list, '  ')).toBe(false);
+    expect(fieldValue(list, 'care, bread ,, music')).toEqual(['care', 'bread', 'music']);
+    expect(fieldText(list, ['care', 'bread'])).toBe('care, bread');
+  });
+
+  it('a profile card without fields gets the defaults; other cards carry none', () => {
+    const c = normalizeOnboarding({ steps: [{ title: 'S', cards: [{ title: 'P', confirm: 'profile' }, { title: 'Q', fields: [{ key: 'arrival' }] }] }] });
+    expect(c.steps[0].cards[0].fields).toEqual(DEFAULT_PROFILE_FIELDS);
+    expect(c.steps[0].cards[1].fields).toBeUndefined();
   });
 });
 
@@ -98,12 +146,12 @@ describe('advance', () => {
   });
 
   it('moves past every step already done', () => {
-    const at = advance(config, { step: 'profile', confirmed: [cardKey('call', 'call')] }, { ...none, profileReady: true });
+    const at = advance(config, { step: 'profile', confirmed: [cardKey('call', 'call')] }, { ...none, profile: ready });
     expect(at).toMatchObject({ step: 'arrival', passed: ['profile', 'call'], changed: true });
   });
 
   it('an admin card listens to admins only: the person ticking it does not count', () => {
-    const at = advance(config, { step: 'call' }, { completed: new Set([cardKey('call', 'call')]), profileReady: true });
+    const at = advance(config, { step: 'call' }, { completed: new Set([cardKey('call', 'call')]), profile: ready });
     expect(at.step).toBe('call');
   });
 
@@ -111,13 +159,13 @@ describe('advance', () => {
     const at = advance(
       config,
       { step: 'arrival', confirmed: [cardKey('call', 'call')] },
-      { completed: new Set([cardKey('arrival', 'dates'), cardKey('arrival', 'video')]), profileReady: true },
+      { completed: new Set([cardKey('arrival', 'dates'), cardKey('arrival', 'video')]), profile: ready },
     );
     expect(at).toMatchObject({ step: null, finished: true, passed: ['arrival'] });
   });
 
   it('a step the config lost puts them back at the first open step', () => {
-    expect(advance(config, { step: 'gone' }, { ...none, profileReady: true }).step).toBe('call');
+    expect(advance(config, { step: 'gone' }, { ...none, profile: ready }).step).toBe('call');
   });
 });
 
@@ -155,6 +203,7 @@ describe('onboarding into a holon', () => {
 
     const start = await startOnboarding(hs, holon, request, { ...opts, home });
     expect(start.view).toMatchObject({ step: 'profile', home, name: 'Alice', status: 'pending' });
+    expect(start.view.steps[0].cards[0].missing).toEqual(['first_name', 'ikigai']);
     expect(start.dealt).toEqual([onboardingCardId(holon, 'profile', 'profile')]);
     const dealt = (await hs.get(home, CARDS_LENS, start.dealt[0])) as Record<string, any>;
     expect(dealt).toMatchObject({ title: 'Fill in your profile', participants: [{ id: 4242 }], onboarding: { holon, step: 'profile' } });

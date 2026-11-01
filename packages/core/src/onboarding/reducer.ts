@@ -5,6 +5,7 @@
 // through. Pure — the bot, the kiosk and MCP all ask it the same question.
 
 import type { OnboardingCard, OnboardingConfig, OnboardingStep } from './config.js';
+import { DEFAULT_PROFILE_FIELDS, profileComplete, type OnboardingProfile } from './profile.js';
 
 /** A card's name within one holon's onboarding: `<step>/<card>`. */
 export const cardKey = (step: string, card: string): string => `${step}/${card}`;
@@ -19,7 +20,8 @@ export interface OnboardingProgress {
 export interface OnboardingFacts {
   /** Card keys whose card the person completed. */
   completed: ReadonlySet<string>;
-  profileReady: boolean;
+  /** Their profile, as their own holon holds it. */
+  profile: OnboardingProfile | null;
 }
 
 /** Is this card done? Each kind of card listens to its own witness only. */
@@ -27,7 +29,7 @@ export function cardDone(step: OnboardingStep, card: OnboardingCard, progress: O
   const key = cardKey(step.id, card.id);
   switch (card.confirm) {
     case 'profile':
-      return facts.profileReady;
+      return profileComplete(facts.profile, card.fields ?? DEFAULT_PROFILE_FIELDS);
     case 'admin':
       return (progress.confirmed ?? []).includes(key);
     default:

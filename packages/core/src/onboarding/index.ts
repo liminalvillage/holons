@@ -30,7 +30,7 @@ import { cleanName } from '../identity/ids.js';
 import { readHolonSettings } from '../settings/persistence.js';
 import { completedCards, dealCards, onboardingCardId } from './cards.js';
 import { normalizeOnboarding, readOnboarding, type OnboardingCard, type OnboardingConfig } from './config.js';
-import { readProfile, profileReady } from './profile.js';
+import { DEFAULT_PROFILE_FIELDS, missingProfileFields, readProfile } from './profile.js';
 import { advance, cardDone, cardKey, confirmable, stepDone, type OnboardingFacts } from './reducer.js';
 
 export * from './config.js';
@@ -49,6 +49,8 @@ export interface OnboardingCardView extends OnboardingCard {
   /** The card's id in the person's holon. */
   questId: string;
   done: boolean;
+  /** A `profile` card only: the keys of the required fields still empty. */
+  missing?: string[];
 }
 
 export interface OnboardingStepView {
@@ -92,6 +94,7 @@ export function viewOf(holon: string, config: OnboardingConfig, record: JoinRequ
         step: step.id,
         questId: onboardingCardId(holon, step.id, card.id),
         done: cardDone(step, card, record, facts),
+        ...(card.confirm === 'profile' ? { missing: missingProfileFields(facts.profile, card.fields ?? DEFAULT_PROFILE_FIELDS).map((f) => f.key) } : {}),
       })),
     })),
   };
@@ -113,7 +116,7 @@ export function previewSteps(holon: string, config: OnboardingConfig, at = 0): O
 
 async function factsFor(hs: HoloSphere, holon: string, home: string, config: OnboardingConfig): Promise<OnboardingFacts> {
   const [completed, profile] = await Promise.all([completedCards(hs, holon, home, config), readProfile(hs, home)]);
-  return { completed, profileReady: profileReady(profile) };
+  return { completed, profile };
 }
 
 const isOnboarding = (r: JoinRequestRecord | undefined): r is JoinRequestRecord & { home: string } => !!r?.home;

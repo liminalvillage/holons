@@ -12,9 +12,13 @@ import {
   newOnboardingId,
   removeCard,
   removeStep,
+  addProfileField,
+  removeProfileField,
   updateCard,
+  updateProfileField,
   updateStep,
 } from './edit.js';
+import { DEFAULT_PROFILE_FIELDS } from './profile.js';
 import { previewSteps } from './index.js';
 
 const base: OnboardingConfig = {
@@ -93,5 +97,37 @@ describe('editing onboarding steps', () => {
     ]);
     expect(view[0].cards[0]).toMatchObject({ done: true, questId: 'onboarding--100123-profile-profile' });
     expect(view[1].cards.every((c) => !c.done)).toBe(true);
+  });
+});
+
+describe('editing what a profile card asks', () => {
+  const fieldsOf = (c: OnboardingConfig, step: string, card: string) => c.steps.find((s) => s.id === step)!.cards.find((x) => x.id === card)!.fields;
+
+  it('a card turned into a profile card asks the defaults; turned back, it forgets them', () => {
+    const asked = updateCard(base, 'arrival', 'dates', { confirm: 'profile' });
+    expect(fieldsOf(asked, 'arrival', 'dates')).toEqual(DEFAULT_PROFILE_FIELDS);
+    expect(fieldsOf(updateCard(asked, 'arrival', 'dates', { confirm: 'self' }), 'arrival', 'dates')).toBeUndefined();
+  });
+
+  it('adds a known field once, a custom one under a fresh key that is kept, and removes them', () => {
+    let c = updateCard(base, 'arrival', 'dates', { confirm: 'profile' });
+    c = addProfileField(c, 'arrival', 'dates', 'arrival');
+    c = addProfileField(c, 'arrival', 'dates', 'arrival');
+    c = addProfileField(c, 'arrival', 'dates');
+    const fields = fieldsOf(c, 'arrival', 'dates')!;
+    expect(fields.map((f) => f.key).slice(0, 3)).toEqual(['first_name', 'ikigai', 'arrival']);
+    const custom = fields[3];
+    expect(custom).toMatchObject({ key: expect.stringMatching(/^custom_/), label: '', required: true });
+    expect(draftIssues(c)).toContainEqual({ kind: 'unnamed-field', step: 'arrival', card: 'dates', field: custom.key });
+
+    c = updateProfileField(c, 'arrival', 'dates', custom.key, { label: 'Diet', required: false });
+    expect(fieldsOf(c, 'arrival', 'dates')![3]).toEqual({ ...custom, label: 'Diet', required: false });
+    c = removeProfileField(c, 'arrival', 'dates', 'ikigai');
+    expect(fieldsOf(c, 'arrival', 'dates')!.map((f) => f.key)).toEqual(['first_name', 'arrival', custom.key]);
+    expect(normalizeOnboarding(c).steps[1].cards[0].fields!.map((f) => f.key)).toEqual(['first_name', 'arrival', custom.key]);
+  });
+
+  it('a field op on a card that is not a profile card changes nothing', () => {
+    expect(addProfileField(base, 'arrival', 'video', 'arrival')).toEqual(base);
   });
 });

@@ -9,11 +9,13 @@
 // Each step is a handful of cards. How a card counts as done:
 //   self     the person completes it themselves (watch the video)
 //   admin    someone who speaks for the holon vouches for it (the call)
-//   profile  the person's profile is filled in — "you need a profile to
-//            apply" is just the first card
+//   profile  the person's profile holds what the card asks (its `fields`:
+//            name, what they offer, arrival dates, any question the holon
+//            adds) — "you need a profile to apply" is just the first card
 
 import type { HoloSphere } from 'holosphere';
 import { readHolonSettings } from '../settings/persistence.js';
+import { DEFAULT_PROFILE_FIELDS, normalizeProfileFields, type ProfileField } from './profile.js';
 
 /** The settings field the onboarding lives in. */
 export const ONBOARDING_KEY = 'onboarding';
@@ -27,6 +29,8 @@ export interface OnboardingCard {
   /** Where the card points: a video, a booking page, a form. */
   link?: string;
   confirm: CardConfirm;
+  /** A `profile` card only: what the profile must hold for it to be done. */
+  fields?: ProfileField[];
 }
 
 export interface OnboardingStep {
@@ -47,7 +51,15 @@ export const DEFAULT_ONBOARDING_STEPS: readonly OnboardingStep[] = Object.freeze
   {
     id: 'profile',
     title: 'Your profile',
-    cards: [{ id: 'profile', title: 'Fill in your profile', description: 'Who you are, and what you can offer and give.', confirm: 'profile' }],
+    cards: [
+      {
+        id: 'profile',
+        title: 'Fill in your profile',
+        description: 'Who you are, and what you can offer and give.',
+        confirm: 'profile',
+        fields: DEFAULT_PROFILE_FIELDS.map((f) => ({ ...f })),
+      },
+    ],
   },
   {
     id: 'call',
@@ -58,7 +70,15 @@ export const DEFAULT_ONBOARDING_STEPS: readonly OnboardingStep[] = Object.freeze
     id: 'arrival',
     title: 'Before you arrive',
     cards: [
-      { id: 'dates', title: 'Share your arrival info and dates', confirm: 'self' },
+      {
+        id: 'dates',
+        title: 'Share your arrival info and dates',
+        confirm: 'profile',
+        fields: [
+          { key: 'arrival', label: 'Arrival date', type: 'date', required: true },
+          { key: 'departure', label: 'Departure date', type: 'date', required: false },
+        ],
+      },
       { id: 'buddy', title: 'Meet your buddy', description: 'Someone from the holon is your first contact. They tick this card.', confirm: 'admin' },
       { id: 'video', title: 'Watch the welcome video and playlist', confirm: 'self' },
     ],
@@ -88,7 +108,8 @@ function unique(id: string, taken: Set<string>): string {
 
 /**
  * Whatever is stored → a usable onboarding. Untitled cards and empty steps
- * drop out, ids are made safe and unique, an unknown `confirm` is `self`.
+ * drop out, ids are made safe and unique, an unknown `confirm` is `self`,
+ * a profile card always asks for fields (the defaults when it names none).
  * Nothing stored (or no steps) → the default steps, switched off.
  */
 export function normalizeOnboarding(raw: unknown): OnboardingConfig {
@@ -114,6 +135,7 @@ export function normalizeOnboarding(raw: unknown): OnboardingConfig {
         ...(description ? { description } : {}),
         ...(link ? { link } : {}),
         confirm,
+        ...(confirm === 'profile' ? { fields: normalizeProfileFields(card.fields) } : {}),
       });
     }
     if (!cards.length) continue;
