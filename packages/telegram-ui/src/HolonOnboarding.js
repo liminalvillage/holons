@@ -13,6 +13,9 @@
 //     button for the ones they tick themselves.
 //   • A card someone from the holon vouches for (the call, the buddy) is
 //     posted in the group with a Confirm button only its admins can press.
+//   • A profile card asks what the holon put on it (its `fields`): ✏️
+//     opens the questions one by one, each answered by replying to it, and
+//     the answers land in the person's profile (their holon's `dna`).
 //   • Every tick moves them on (core `refreshOnboarding`): the next step's
 //     cards and a DM; once every step is done the key is linked.
 //
@@ -24,11 +27,17 @@ import { Markup } from 'telegraf';
 import i18next from 'i18next';
 import {
   CARDS_LENS,
+  DEFAULT_PROFILE_FIELDS,
   confirmCard,
+  fieldAccepts,
+  fieldValue,
+  missingProfileFields,
   onboardingCardId,
   onboardingHome,
   readOnboarding,
+  readProfile,
   refreshOnboarding,
+  saveProfile,
   startOnboarding,
 } from '@holons/core/onboarding';
 import { joinRequestRecords } from '@holons/core/holons';
@@ -36,7 +45,7 @@ import { readHolonSettings } from '@holons/core/settings';
 import { applyTaskCompletion } from '@holons/core/tasks';
 import { miniAppUrl } from './MiniApps.js';
 
-const ACTION = { done: 'onbdone', confirm: 'onbok' };
+const ACTION = { done: 'onbdone', confirm: 'onbok', fill: 'onbfill' };
 /** Callback data is capped at 64 bytes: a key prefix names the person. */
 const PREFIX = 16;
 const SWEEP_MS = 2 * 60 * 1000;
@@ -79,6 +88,8 @@ export default class HolonOnboarding {
     this.isAdmin = options.isAdmin;
     /** holon → set of keys onboarding there, for the sweep. */
     this.tracked = new Map();
+    /** Telegram id → the profile question waiting for their reply. */
+    this.asking = new Map();
     this.timer = null;
 
     if (bot) {
@@ -89,6 +100,10 @@ export default class HolonOnboarding {
         new RegExp(`^${ACTION.confirm}:([0-9a-f]{${PREFIX}}):(\\d+):(\\d+)$`),
         ctx => this.confirm(ctx)
       );
+      bot.action(new RegExp(`^${ACTION.fill}:(-?\\d+):(\\d+):(\\d+)$`), ctx =>
+        this.fill(ctx)
+      );
+      bot.on('text', (ctx, next) => this.answer(ctx, next));
       const every = options.sweepMs ?? SWEEP_MS;
       if (every > 0) {
         this.timer = setInterval(
@@ -260,6 +275,9 @@ export default class HolonOnboarding {
         `<b>${esc(step.title)}</b>`,
         ...step.cards.map(c => {
           const mark = c.done ? '✅' : '▫️';
+          const missing = (c.fields ?? [])
+            .filter(f => c.missing?.includes(f.key))
+            .map(f => esc(f.label));
           const how =
             c.confirm === 'admin'
               ? translated(
@@ -267,11 +285,14 @@ export default class HolonOnboarding {
                   'onbAdminTicks',
                   '(someone from the holon ticks this)'
                 )
-              : c.confirm === 'profile'
+              : c.confirm === 'profile' && !c.done && missing.length
                 ? translated(
                     language,
-                    'onbProfileHow',
-                    '(send /onboarding to fill it in)'
+                    'onbProfileMissing',
+                    '(still needed: {{fields}})',
+                    {
+                      fields: missing.join(', '),
+                    }
                   )
                 : '';
           const link = c.link ? ` — ${esc(c.link)}` : '';
@@ -280,12 +301,20 @@ export default class HolonOnboarding {
       ];
       const buttons = step.cards
         .map((c, ci) => ({ c, ci }))
-        .filter(({ c }) => !c.done && c.confirm === 'self')
+        .filter(
+          ({ c }) =>
+            !c.done && (c.confirm === 'self' || c.confirm === 'profile')
+        )
         .map(({ c, ci }) => [
-          Markup.button.callback(
-            `✅ ${c.title}`.slice(0, 60),
-            `${ACTION.done}:${holon}:${si}:${ci}`
-          ),
+          c.confirm === 'profile'
+            ? Markup.button.callback(
+                `✏️ ${c.title}`.slice(0, 60),
+                `${ACTION.fill}:${holon}:${si}:${ci}`
+              )
+            : Markup.button.callback(
+                `✅ ${c.title}`.slice(0, 60),
+                `${ACTION.done}:${holon}:${si}:${ci}`
+              ),
         ]);
       const app = miniAppUrl(this.bot?.botInfo?.username, 'onboarding', holon);
       if (app)
@@ -357,6 +386,100 @@ export default class HolonOnboarding {
     await ctx.answerCbQuery('✅');
     const pubkey = await this.pubkeyOf(holon, home);
     if (pubkey) await this.nudge(holon, pubkey);
+  }
+
+  /**
+   * ✏️ <profile card>, pressed by the person in their DM: ask the first
+   * field it still needs.
+   */
+  async fill(ctx) {
+    const [, holon, si, ci] = ctx.match ?? [];
+    const language = await this.language(holon);
+    const home = String(ctx.from?.id ?? '');
+    const at = await this.cardAt(holon, si, ci);
+    if (!at || at.card.confirm !== 'profile' || String(ctx.chat?.id) !== home) {
+      await ctx.answerCbQuery(
+        translated(language, 'onbCardGone', 'This card is no longer open.')
+      );
+      return;
+    }
+    await ctx.answerCbQuery();
+    await this.askNext(holon, home, at, language);
+  }
+
+  /**
+   * Ask the card's next empty required field as a reply prompt, or — none
+   * left — move the person on.
+   */
+  async askNext(holon, home, at, language) {
+    const fields = at.card.fields ?? DEFAULT_PROFILE_FIELDS;
+    const profile = await readProfile(this.db, home);
+    const [field] = missingProfileFields(profile, fields);
+    if (!field) {
+      this.asking.delete(home);
+      const pubkey = await this.pubkeyOf(holon, home);
+      if (pubkey) await this.nudge(holon, pubkey);
+      return;
+    }
+    const hint =
+      field.type === 'date'
+        ? translated(language, 'onbFieldDate', 'A date, like 2026-11-03.')
+        : field.type === 'url'
+          ? translated(
+              language,
+              'onbFieldUrl',
+              'A link, starting with https://'
+            )
+          : field.type === 'list'
+            ? translated(language, 'onbFieldList', 'Separate them with commas.')
+            : '';
+    const sent = await this.post(
+      home,
+      `✏️ <b>${esc(field.label)}</b>${hint ? `\n<i>${esc(hint)}</i>` : ''}`,
+      Markup.forceReply()
+    );
+    this.asking.set(home, {
+      holon,
+      step: at.step.id,
+      card: at.card.id,
+      key: field.key,
+      prompt: sent?.message_id ?? null,
+    });
+  }
+
+  /**
+   * A text in a private chat answering a profile question: kept in the
+   * person's profile, then the next question. Anything else passes on.
+   */
+  async answer(ctx, next) {
+    const home = String(ctx.from?.id ?? '');
+    const asked = this.asking.get(home);
+    const text = String(ctx.message?.text ?? '');
+    const replyTo = ctx.message?.reply_to_message?.message_id;
+    if (
+      !asked ||
+      ctx.chat?.type !== 'private' ||
+      text.startsWith('/') ||
+      (asked.prompt && replyTo !== asked.prompt)
+    )
+      return next?.();
+    const language = await this.language(asked.holon);
+    const config = await readOnboarding(this.db, asked.holon);
+    const si = config.steps.findIndex(s => s.id === asked.step);
+    const ci =
+      config.steps[si]?.cards.findIndex(c => c.id === asked.card) ?? -1;
+    const at = await this.cardAt(asked.holon, si, ci);
+    const field = (at?.card.fields ?? []).find(f => f.key === asked.key);
+    if (!at || !field) {
+      this.asking.delete(home);
+      return next?.();
+    }
+    if (!fieldAccepts(field, text)) {
+      await this.askNext(asked.holon, home, at, language);
+      return;
+    }
+    await saveProfile(this.db, home, { [field.key]: fieldValue(field, text) });
+    await this.askNext(asked.holon, home, at, language);
   }
 
   /** The key onboarding in `holon` from this Telegram id. */

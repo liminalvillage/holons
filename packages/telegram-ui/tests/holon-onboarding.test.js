@@ -14,6 +14,7 @@ import { holonMembers, syncMembersLog } from '@holons/core/protocol';
 import { joinRequestRecords } from '@holons/core/holons';
 import {
   onboardingCardId,
+  readProfile,
   saveOnboarding,
   saveProfile,
 } from '@holons/core/onboarding';
@@ -170,6 +171,78 @@ describe('a holon with an onboarding', () => {
 
     // Asking again: already in.
     expect(await service.askFromTelegram(start, T)).toBe('seated');
+    service.shutdown();
+  });
+
+  it('asks the fields a profile card names, one reply at a time', async () => {
+    const { hs, service, sent, buttons, cb } = await setup();
+    await saveOnboarding(hs, T, {
+      enabled: true,
+      steps: [
+        {
+          id: 'stay',
+          title: 'Your stay',
+          cards: [
+            {
+              id: 'stay',
+              title: 'Tell us about your stay',
+              confirm: 'profile',
+              fields: [
+                { key: 'arrival', label: 'Arrival date', type: 'date' },
+                { key: 'diet', label: 'Anything you do not eat?' },
+              ],
+            },
+          ],
+        },
+        steps[1],
+      ],
+    });
+    const ada = deriveTelegramNostrKey(ADA, SECRET);
+    await service.askFromTelegram(
+      { from: { id: 4242, first_name: 'Ada' }, reply: vi.fn(async () => {}) },
+      T
+    );
+    const dm = sent().find(m => m.chat === ADA);
+    expect(dm.text).toMatch(
+      /still needed: Arrival date, Anything you do not eat\?/
+    );
+    const fill = buttons(dm).find(b => /^onbfill:/.test(b.callback_data ?? ''));
+    expect(fill.callback_data).toBe(`onbfill:${T}:0:0`);
+
+    await service.onboarding.fill(cb(fill.callback_data, ADA, { id: 4242 }));
+    const prompt = () =>
+      sent()
+        .filter(m => m.chat === ADA)
+        .at(-1);
+    expect(prompt().text).toMatch(/Arrival date/);
+    expect(prompt().extra.reply_markup.force_reply).toBe(true);
+
+    const reply = (text, to) => ({
+      chat: { id: 4242, type: 'private' },
+      from: { id: 4242 },
+      message: { text, reply_to_message: { message_id: to } },
+    });
+    const next = vi.fn();
+    // Not a reply to the question: someone else's turn.
+    await service.onboarding.answer(reply('hello', 1), next);
+    expect(next).toHaveBeenCalledOnce();
+
+    const id = () => service.onboarding.asking.get(ADA).prompt;
+    // Not a date: asked again.
+    await service.onboarding.answer(reply('next week', id()), next);
+    expect(prompt().text).toMatch(/Arrival date/);
+    await service.onboarding.answer(reply('2026-11-03', id()), next);
+    expect(prompt().text).toMatch(/Anything you do not eat/);
+    await service.onboarding.answer(reply('nuts', id()), next);
+
+    expect(await readProfile(hs, ADA)).toMatchObject({
+      arrival: '2026-11-03',
+      diet: 'nuts',
+    });
+    expect(service.onboarding.asking.has(ADA)).toBe(false);
+    expect((await joinRequestRecords(hs, T)).get(ada.publicKey)).toMatchObject({
+      step: 'call',
+    });
     service.shutdown();
   });
 
