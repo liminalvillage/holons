@@ -170,7 +170,10 @@
     const from = order.indexOf(dragId);
     if (next.indexOf(dragId) === from) return;
     const neighbour = els[Math.min(index, els.length - 1)]?.dataset.tab ?? "";
-    if (lastSwap?.id === neighbour && performance.now() - lastSwap.t < SWAP_GUARD_MS)
+    if (
+      lastSwap?.id === neighbour &&
+      performance.now() - lastSwap.t < SWAP_GUARD_MS
+    )
       return;
     lastSwap = { id: neighbour, t: performance.now() };
     reorderTabs(next as TabId[]);
