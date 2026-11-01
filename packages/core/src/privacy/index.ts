@@ -12,11 +12,13 @@
  * NIP-17 grants. No surface ever sees or types a key.
  *
  * Verbs: `lock`, `unlock`, `share`, `unshare`; `audience` to read; `sync`
- * when membership changed; `privacyOfHolon` for the flags alone.
+ * when membership changed; `privacyOfHolon` for the flags alone;
+ * `unsharedOutbound`/`shareWithPartner` when federating (a link hands out no key).
  * See packages/holosphere/PRIVACY.md.
  */
 
 export { audience, isLocked, lock, privacyOfHolon, share, sync, syncScope, takeOver, unlock, unshare } from './audience.js';
+export { lensesToShare, shareWithPartner, unsharedOutbound } from './partner.js';
 export { holonReaders, type HolonReadersOptions } from './readers.js';
 export {
   assertPrivatizable,
