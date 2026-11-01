@@ -14,7 +14,6 @@ import ChecklistIcon from "./icons/ChecklistIcon.svelte";
 import ExpensesIcon from "./icons/ExpensesIcon.svelte";
 import FederationIcon from "./icons/FederationIcon.svelte";
 import MyHolonsIcon from "./icons/MyHolonsIcon.svelte";
-import OrbitsIcon from "./icons/OrbitsIcon.svelte";
 import FlowIcon from "./icons/FlowIcon.svelte";
 import LibraryIcon from "./icons/LibraryIcon.svelte";
 import StockIcon from "./icons/StockIcon.svelte";
