@@ -283,14 +283,17 @@
     const reach = r * view.s * 1.6; // a member's own ground
     const step = Math.min(12, Math.max(4, reach / 3));
     const shade = $activeTheme === "dark" ? "#ffffff" : "#000000";
-    for (const cell of cells) {
+    // The cells in the light are drawn last, over the faded rest.
+    const lit = cells.filter((c) => groundLit(c.id, lens));
+    const unlit = cells.filter((c) => !groundLit(c.id, lens));
+    for (const cell of [...unlit, ...lit]) {
       const pts: Vec[] = cell.members.map((i) => ({ x: sx[i], y: sy[i] }));
       const necks = spanTree(pts).map(([a, b]) => [pts[a], pts[b]] as const);
       const f = blobField(pts, necks, reach, step);
       const outer = contours(f, MEMBRANE);
       const inner = contours(f, INNER_LEAF);
       const color = inks.get(cell.id) ?? "#888888";
-      const a = groundLit(cell.id, pick) ? 1 : 0.18;
+      const a = groundLit(cell.id, lens) ? 1 : 0.18;
       // The cytoplasm: a clear wash, thickening toward the membrane.
       ctx.save();
       ctx.beginPath();
@@ -398,6 +401,19 @@
   type Picked = { kind: "person"; id: string } | { kind: "hub"; id: string };
   let pick: Picked | null = null;
   $: (void pick, kick(0.7)); // a focus gathers, or lets go
+  // A person under the mouse lights the cells they belong to — brought to
+  // the front, the rest faded — without the gathering a tap starts. What
+  // is picked wins over what is only hovered.
+  let hover: string | null = null;
+  $: lens = pick ?? (hover ? ({ kind: "person", id: hover } as Picked) : null);
+  $: (void lens, kick()); // redraw the cells in the new light
+  $: if (hover && !byId.has(hover)) hover = null;
+  function onEnter(e: PointerEvent, id: string) {
+    if (e.pointerType === "mouse" && !dragId) hover = id;
+  }
+  function onLeave(id: string) {
+    if (hover === id) hover = null;
+  }
   // The cast changed under the pick (a search, a fresh read): let it go.
   $: if (pick && gone(pick, byId, hubName)) pick = null;
   function gone(
@@ -408,7 +424,7 @@
     return sel.kind === "person" ? !cast.has(sel.id) : !known.has(sel.id);
   }
   // Around a person in focus: everyone they share a hub with.
-  $: near = neighbours(pick, people);
+  $: near = neighbours(lens, people);
   function neighbours(sel: Picked | null, cast: readonly PersonAcross[]) {
     if (sel?.kind !== "person") return null;
     const mine = new Set(cast.find((p) => p.id === sel.id)?.holons);
@@ -505,7 +521,8 @@
         type="button"
         class="gname"
         class:on={pick?.kind === "hub" && pick.id === c.id}
-        class:dim={!groundLit(c.id, pick)}
+        class:dim={!groundLit(c.id, lens)}
+        class:lit={!!lens && groundLit(c.id, lens)}
         style="--c: {color}; --on-c: {inkOn(color) ?? 'var(--ink)'}"
         aria-pressed={pick?.kind === "hub" && pick.id === c.id}
         use:placeLabel={c.id}
@@ -523,7 +540,7 @@
       {@const letters = initialsOf(name)}
       <div
         class="who"
-        class:dim={!personLit(p, pick, near)}
+        class:dim={!personLit(p, lens, near)}
         class:open={pick?.kind === "person" && pick.id === p.id}
         use:placePerson={p.id}
       >
@@ -536,6 +553,8 @@
           title={name}
           on:click|stopPropagation={() => pickPerson(p.id)}
           on:pointerdown={(e) => onDown(e, p.id)}
+          on:pointerenter={(e) => onEnter(e, p.id)}
+          on:pointerleave={() => onLeave(p.id)}
           on:pointermove={onMove}
           on:pointerup={onUp}
           on:pointercancel={onUp}
@@ -708,6 +727,9 @@
   .gname.on {
     outline: 2.5px solid var(--teal);
     outline-offset: 2px;
+  }
+  .gname.lit {
+    z-index: 3;
   }
   .gname.dim {
     opacity: 0.3;
