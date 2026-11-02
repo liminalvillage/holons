@@ -6,7 +6,7 @@
 
 import lune from 'lune';
 import moment from 'moment';
-import julian from 'julian';
+import { lunationAt } from '@holons/core/flows';
 
 /**
  * Daily prompts aligned with the 28-day lunar cycle.
@@ -77,7 +77,7 @@ class Lunation {
       const newMoon = lune.phase_hunt().nextnew_date;
 
       ctx.reply(
-        `<strong>The '${ordinal(calcLunation(newMoon))} lunar cycle starts ${moment(
+        `<strong>The '${ordinal(lunationAt(newMoon.getTime()).index)} lunar cycle starts ${moment(
           newMoon
         ).fromNow()}</strong> \u{1F311} <i>on ${moment(newMoon).format(
           'dddd, MMM Do'
@@ -103,7 +103,7 @@ class Lunation {
     bot.command('lunation', ctx => {
       const age = lune.phase().age.toFixed(0);
       ctx.reply(
-        `\u{1F4DC} ${ordinal(age)} day of the '${ordinal(calcLunation(ctx.message.date * 1000))} lunation`
+        `\u{1F4DC} ${ordinal(age)} day of the '${ordinal(lunationAt(ctx.message.date * 1000).index)} lunation`
       );
     });
     bot.command('prompt', ctx => {
@@ -117,13 +117,6 @@ class Lunation {
     return lune.phase().age.toFixed(0);
   }
 }
-/******* lunation date***** */
-function calcLunation(date) {
-  const synodicMonth = 29.530588861,
-    lunationBase = 2423436.40347;
-  return Math.ceil((julian(date) - lunationBase) / synodicMonth) - 1200;
-}
-
 function ordinal(num) {
   const int = parseInt(num),
     digits = [int % 10, int % 100],
