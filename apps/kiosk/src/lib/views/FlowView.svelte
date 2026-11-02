@@ -8,12 +8,15 @@
   // keyframe views are what the zoom interpolates across, nothing switches
   // (see `$lib/flowgeom` for the geometry, `$lib/flowzoom` for the gestures).
   //
-  // Read-only. Cards are the dial's small chips at every level: a tap opens
-  // one. A tap in the middle dives one level in (on a ring, into that
-  // moment); a tap outside the outer ring backs one level out. Zooming in on
-  // a ring dives into what sits under the fingers. Every ring re-lays itself
-  // out for the camera and the box, so chips and labels keep one size on
-  // screen at every depth and nothing overlaps.
+  // Cards are the dial's small chips at every level: a tap opens one, and
+  // a lifted one (a mouse drag, a held finger) drops on a day of any ring —
+  // on the clock, on a quarter hour — exactly as on the year dial: the board
+  // (CalendarView) owns the drag and the write, this view says what is under
+  // the pointer and lights it. A tap in the middle dives one level in (on a
+  // ring, into that moment); a tap outside the outer ring backs one level
+  // out. Zooming in on a ring dives into what sits under the fingers. Every
+  // ring re-lays itself out for the camera and the box, so chips and labels
+  // keep one size on screen at every depth and nothing overlaps.
   import { t, locale } from "$lib/i18n";
   import { ICONS } from "$lib/icons";
   import type { CalendarEvent } from "$lib/data";
@@ -29,6 +32,7 @@
     layoutFlow,
     radialPlan,
     ringAt,
+    sector,
     zOfLevel,
     type FlowCamera,
     type FlowLevel,
@@ -52,6 +56,17 @@
   export let height = 0;
   /** The header's period label follows the readout. */
   export let onReadout: ((text: string) => void) | null = null;
+  /** No lifting (a booking board): chips only open. */
+  export let readonly = false;
+  /** The board's drag: a chip's pointerdown hands it the card. */
+  export let onDragStart:
+    | ((e: PointerEvent, ev: CalendarEvent) => void)
+    | null = null;
+  /** The day (and quarter hour) a lifted card would land on — lit on the rings. */
+  export let dropDay: string | null = null;
+  export let dropMin: number | null = null;
+  /** A card is lifted (or a finger holds one): the rings hold still. */
+  export let lifting = false;
 
   // ── Camera ────────────────────────────────────────────────────────────────
   // The radial plan follows the box (see `radialPlan`); the gestures read
@@ -66,6 +81,18 @@
   });
   const { camera, busy } = zoom;
   $: cam = $camera;
+  // A lifted card must not turn the rings; and the tap that ends a drop
+  // must not dive.
+  $: zoom.lock(lifting);
+  let justDropped = false;
+  let wasLifting = false;
+  $: {
+    if (wasLifting && !lifting) {
+      justDropped = true;
+      setTimeout(() => (justDropped = false), 0);
+    }
+    wasLifting = lifting;
+  }
   $: ctx = flowContext(cam.t0);
 
   // The clock ticks every second; the scene only cares about the minute.
@@ -147,7 +174,7 @@
    * moment); a tap outside the outer ring backs one level out.
    */
   function background(e: MouseEvent) {
-    if ($busy || !outerRing) return;
+    if ($busy || justDropped || !outerRing) return;
     const p = zoom.toSvg(e.clientX, e.clientY);
     if (!p) return;
     const dist = Math.hypot(p.x - C, p.y - C);
@@ -161,6 +188,62 @@
     const t0 = hit && hit.level >= outerRing.level ? hit.t : cam.t0;
     if (next !== outerRing.level || t0 !== cam.t0)
       zoom.flyTo({ z: zOfLevel(next), t0 }, 560);
+  }
+  function liftEv(e: PointerEvent, ev: CalendarEvent) {
+    if (!onDragStart || readonly) return;
+    // A mouse press on a card is the card's, never a pan of the rings.
+    if (e.pointerType === "mouse") e.stopPropagation();
+    onDragStart(e, ev);
+  }
+  /**
+   * What a lifted card would land on at a screen point: the day of the
+   * ring under it; on the day clock, the quarter hour too. Null off every
+   * ring. The board calls this while a card is dragged.
+   */
+  export function dropAt(
+    clientX: number,
+    clientY: number,
+  ): { day: string; min: number | null } | null {
+    const p = zoom.toSvg(clientX, clientY);
+    if (!p) return null;
+    const hit = ringAt(p.x, p.y, cam, ctx, rO, 100 * upx);
+    if (!hit) return null;
+    const d = new Date(hit.t);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const min =
+      hit.level === 3
+        ? Math.min(
+            23 * 60 + 45,
+            Math.round((d.getHours() * 60 + d.getMinutes()) / 15) * 15,
+          )
+        : null;
+    return { day, min };
+  }
+  /** The lit stretch of a ring for the drop target, as a sector path. */
+  function dropSector(ring: FlowRing): string | null {
+    if (!dropDay) return null;
+    const [y, m, dd] = dropDay.split("-").map(Number);
+    const a = new Date(y, m - 1, dd).getTime();
+    const b = new Date(y, m - 1, dd + 1).getTime();
+    if (b <= ring.period.from || a >= ring.period.to) return null;
+    const len = ring.period.to - ring.period.from;
+    const f = (t: number) => (t - ring.period.from) / len;
+    if (ring.level === 3 && dropMin != null) {
+      const t0 = a + dropMin * 60_000;
+      return sector(
+        f(t0),
+        f(t0 + 15 * 60_000),
+        ring.r - ring.half,
+        ring.r + ring.half,
+      );
+    }
+    return sector(
+      Math.max(0, f(a)),
+      Math.min(1, f(b)),
+      ring.r - ring.half,
+      ring.r + ring.half,
+    );
   }
   function openEv(e: Event, ev: CalendarEvent) {
     e.stopPropagation();
@@ -343,6 +426,14 @@
           {/if}
         {/each}
 
+        <!-- Where a lifted card would land -->
+        {#if dropDay}
+          {@const dd = dropSector(ring)}
+          {#if dd}
+            <path class="drop" d={dd} />
+          {/if}
+        {/if}
+
         <!-- Sky on the band -->
         {#each ring.sky as s (s.key)}
           {#if s.kind === "new" || s.kind === "full"}
@@ -395,9 +486,11 @@
             transform="rotate({c.rot} {c.x} {c.y})"
             style="fill: {c.ev.color ?? noteColorFor(c.ev.category)}; --glow: {c
               .ev.sourceColor ?? 'transparent'}; opacity: {c.opacity}"
+            class:draggable={!readonly && !!onDragStart && !c.ev.external}
             role="button"
             tabindex="0"
             aria-label={cardLabel(c.ev)}
+            on:pointerdown={(e) => liftEv(e, c.ev)}
             on:click={(e) => openEv(e, c.ev)}
             on:keydown={(e) => keyEv(e, c.ev)}
             ><title>{cardLabel(c.ev)}</title></rect
@@ -642,6 +735,15 @@
     outline: none;
     stroke: var(--teal);
     stroke-width: calc(2.5px * var(--u, 1));
+  }
+  .chip.draggable {
+    touch-action: none;
+  }
+  .drop {
+    fill: color-mix(in srgb, var(--teal) 24%, transparent);
+    stroke: var(--teal);
+    stroke-width: calc(2px * var(--u, 1));
+    pointer-events: none;
   }
   .mark {
     fill: var(--teal);

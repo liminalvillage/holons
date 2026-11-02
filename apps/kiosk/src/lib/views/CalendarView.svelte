@@ -256,6 +256,14 @@
     const el = document.elementFromPoint(x, y) as HTMLElement | null;
     // Over the drawer (or its drag-time drop hint) → unschedule, not reschedule.
     dropOnTray = el?.closest(".tray, .unschedule-zone") != null;
+    // The flow's rings resolve their own day (and, on the clock, the
+    // quarter hour) under the pointer.
+    if (view === "flow" && !dropOnTray) {
+      const at = flowView?.dropAt(x, y) ?? null;
+      dropDay = at?.day ?? null;
+      dropMin = at?.min ?? null;
+      return;
+    }
     // The year timeline has no per-day cells: it publishes the stretch of
     // time it shows, and the pointer's x picks the day within it.
     const yearEl = dropOnTray
@@ -1634,8 +1642,13 @@
         events={shownEvents}
         now={$now}
         {noteColorFor}
+        {readonly}
         onOpen={open}
         onReadout={(s) => (flowReadout = s)}
+        onDragStart={(e, ev) => beginDrag(e, ev.id, ev.title, !!ev.external)}
+        lifting={dragArmed || drag != null}
+        {dropDay}
+        {dropMin}
       />
     {:else if view === "orbits"}
       <!-- the recurring quests as planets round the holon -->

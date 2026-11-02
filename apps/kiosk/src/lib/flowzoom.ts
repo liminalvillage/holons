@@ -31,6 +31,11 @@ export interface FlowZoom {
   /** Ease the camera to `to` over `ms`. */
   flyTo: (to: FlowCamera, ms?: number) => void;
   set: (cam: FlowCamera) => void;
+  /**
+   * Hold the camera still: a lifted card is being dragged over the rings,
+   * so a finger's move must not turn them. Cancels any pan under way.
+   */
+  lock: (on: boolean) => void;
   /** A screen point in drawing units, or null before layout. */
   toSvg: (clientX: number, clientY: number) => { x: number; y: number } | null;
 }
@@ -109,6 +114,12 @@ export function createFlowZoom(opts: FlowZoomOptions): FlowZoom {
   let node: SVGSVGElement | null = null;
   let flight: number | null = null;
   let flightSeq = 0;
+  let locked = false;
+  let cancelGesture: (() => void) | null = null;
+  const lock = (on: boolean) => {
+    locked = on;
+    if (on) cancelGesture?.();
+  };
 
   // Publish once per frame: gestures write `cam`, the store follows.
   let dirty = false;
@@ -223,7 +234,13 @@ export function createFlowZoom(opts: FlowZoomOptions): FlowZoom {
       }
     };
 
+    cancelGesture = () => {
+      pointers.clear();
+      gesture = null;
+      busy.set(false);
+    };
     const down = (e: PointerEvent) => {
+      if (locked) return;
       if (e.pointerType === "mouse" && e.button !== 0) return;
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pointers.size === 1) {
@@ -250,7 +267,7 @@ export function createFlowZoom(opts: FlowZoomOptions): FlowZoom {
       }
     };
     const move = (e: PointerEvent) => {
-      if (!pointers.has(e.pointerId)) return;
+      if (locked || !pointers.has(e.pointerId)) return;
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (gesture?.kind === "pinch" && pointers.size >= 2) {
         const { dist } = pinch();
@@ -338,6 +355,7 @@ export function createFlowZoom(opts: FlowZoomOptions): FlowZoom {
         svg.removeEventListener("click", click, true);
         svg.removeEventListener("wheel", wheel);
         if (node === svg) node = null;
+        cancelGesture = null;
       },
     };
   }
@@ -350,6 +368,7 @@ export function createFlowZoom(opts: FlowZoomOptions): FlowZoom {
     panBy,
     flyTo,
     set,
+    lock,
     toSvg,
   };
 }
