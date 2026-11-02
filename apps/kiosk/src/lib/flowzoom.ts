@@ -59,6 +59,11 @@ const WHEEL_DZ_MAX = 0.32;
 const FRAME_DZ_MAX = 0.25;
 /** Wheel notches closer than this are one gesture (one dive). */
 const BURST_MS = 400;
+/**
+ * log2 zoom per log2 of finger spread: one comfortable pinch (fingers
+ * ~3× apart) crosses about one level, which is 2–3.6 in z.
+ */
+const PINCH_GAIN = 2;
 
 const clamp = (v: number, lo: number, hi: number) =>
   Math.min(hi, Math.max(lo, v));
@@ -249,7 +254,7 @@ export function createFlowZoom(opts: FlowZoomOptions): FlowZoom {
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (gesture?.kind === "pinch" && pointers.size >= 2) {
         const { dist } = pinch();
-        const target = gesture.z + Math.log2(gesture.dist / dist);
+        const target = gesture.z + PINCH_GAIN * Math.log2(gesture.dist / dist);
         const dz = clamp(target - cam.z, -FRAME_DZ_MAX, FRAME_DZ_MAX);
         cam = { z: clamp(cam.z + dz, bounds.zMin, bounds.zMax), t0: cam.t0 };
         publish();
