@@ -351,14 +351,14 @@
               class:new={s.kind === "new"}
               cx={s.x}
               cy={s.y}
-              r={5 * upx}><title>{skyTitle(s)}</title></circle
+              r={3 * upx}><title>{skyTitle(s)}</title></circle
             >
           {:else if s.kind === "quarter"}
-            <circle class="moon quarter" cx={s.x} cy={s.y} r={3.5 * upx}
+            <circle class="moon quarter" cx={s.x} cy={s.y} r={2.4 * upx}
               ><title>{skyTitle(s)}</title></circle
             >
           {:else}
-            <circle class="sun" cx={s.x} cy={s.y} r={6 * upx}
+            <circle class="sun" cx={s.x} cy={s.y} r={3.5 * upx}
               ><title>{skyTitle(s)}</title></circle
             >
           {/if}

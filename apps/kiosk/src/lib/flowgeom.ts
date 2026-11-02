@@ -47,7 +47,6 @@ const GAP = 6; // from the band to the first chip / lane
 const MAX_STACK = 5;
 const MAX_LANES = 4;
 const EDGE = 6; // kept clear at the drawing's edge
-const SKY = 14; // the rim outside the band where moons and suns sit
 const HOUR_MS = 3600_000;
 
 // ── Zoom levels ───────────────────────────────────────────────────────────
@@ -278,13 +277,20 @@ export function sector(
 
 /**
  * The radial plan for a box: chips, bands and gaps keep their size on
- * screen (`S` drawing units per px). Like the year dial, a ring's cards
- * stack inward from its band and its sky sits on the rim outside, so the
- * outer ring is set where its rim still clears the drawing's edge.
+ * screen (`S` drawing units per px). A ring's cards stack outward from its
+ * band, where they have room to grow, so the outer ring is set where its
+ * fullest stack still clears the drawing's edge — and the stack is as deep
+ * as leaves the ring at least a third of the drawing across.
  */
 export function radialPlan(S = 1): { rO: number; maxStack: number } {
-  const rim = (EDGE + BAND / 2 + SKY) * S;
-  return { rO: Math.min(R_OUTER_MAX, SIZE / 2 - rim), maxStack: MAX_STACK };
+  const edge = (EDGE + BAND / 2) * S;
+  const budget = SIZE / 2 - edge - 300;
+  const maxStack = Math.min(
+    MAX_STACK,
+    Math.max(1, Math.floor((budget - (GAP + CHIP) * S) / (STEP * S)) + 1),
+  );
+  const eOut = (GAP + CHIP + (maxStack - 1) * STEP) * S;
+  return { rO: Math.min(R_OUTER_MAX, SIZE / 2 - edge - eOut), maxStack };
 }
 
 /** The radius of level `L`'s ring at depth `d`: outer at d = L, inner one out. */
@@ -547,14 +553,13 @@ export function layoutFlow({
   weekdays,
 }: LayoutInput): FlowScene {
   const S = unitsPerPx;
-  const { rO } = radialPlan(S);
+  const { rO, maxStack } = radialPlan(S);
   const chip = CHIP * S;
   const step = STEP * S;
   const lane = LANE * S;
   const gap = GAP * S;
   const half = (BAND * S) / 2;
   const edge = EDGE * S;
-  const sky = SKY * S;
   const w = levelWeights(cam.z);
   const d = depth(cam.z);
   const nowMs = now.getTime();
@@ -574,35 +579,34 @@ export function layoutFlow({
     const frac = (t: number) => fracIn(t, period);
     const rBandIn = r - half;
     const rBandOut = r + half;
-    const rRim = rBandOut + sky;
-    // A ring whose rim would sit on the ring outside's content is left out
-    // (the smaller ones in, too): a hint of the nest is not worth a clash.
-    // The outermost ring is the exception — on its way off past the edge
-    // it keeps drawing, fading, clipped by the box.
-    const leaving = idx === 0 && rRim > outwardLimit + 1e-6;
-    if (!leaving && rRim > outwardLimit + 1e-6) break;
-    // Room inward, down to the next ring's rim (or the centre): the chips'
-    // spokes first, then the span lanes inside them, like the dial.
-    const innerLimit = next ? next.r + half + sky + edge : 0;
+    // A ring whose band would sit on the ring outside's content is left
+    // out (the smaller ones in, too): a hint of the nest is not worth a
+    // clash. The outermost ring is the exception — on its way off past the
+    // edge it keeps drawing, fading, clipped by the box.
+    const leaving = idx === 0 && rBandOut > outwardLimit + 1e-6;
+    if (!leaving && rBandOut > outwardLimit + 1e-6) break;
+    // Room outward, up to the ring outside's content: the chips' spokes
+    // (a leaving ring keeps the room it had at the edge). Room inward,
+    // down to the next ring's band: the span lanes.
+    const outwardRoom = leaving
+      ? (GAP + CHIP + (maxStack - 1) * STEP) * S
+      : Math.max(0, outwardLimit - rBandOut);
+    const innerLimit = next ? next.r + half + edge : 0;
     const inwardRoom = Math.max(0, rBandIn - innerLimit);
     // A chip needs a chip's room, and fades in over the next chip's.
-    const chipsOn = clamp01((inwardRoom - gap - chip / 2) / chip);
-    // One lane is kept for spans when stacks would take everything.
+    const chipsOn = clamp01((outwardRoom - gap - chip / 2) / chip);
     const stacks = Math.min(
-      MAX_STACK,
-      Math.max(
-        0,
-        Math.floor((inwardRoom - gap - chip - (gap + lane)) / step) + 1,
-      ),
+      maxStack,
+      Math.max(0, Math.floor((outwardRoom - gap - chip) / step) + 1),
     );
     const stackDepth = stacks ? gap + chip + (stacks - 1) * step : 0;
     const lanes = Math.min(
       MAX_LANES,
-      Math.max(0, Math.floor((inwardRoom - stackDepth - gap) / lane)),
+      Math.max(0, Math.floor((inwardRoom - gap) / lane)),
     );
     const detail = r >= (rO / RATIO) * 0.8;
-    const rCard = (column: number) => rBandIn - gap - chip / 2 - column * step;
-    const rLane0 = rBandIn - stackDepth - gap - lane / 2;
+    const rCard = (column: number) => rBandOut + gap + chip / 2 + column * step;
+    const rLane0 = rBandIn - gap - lane / 2;
     const ring: FlowRing = {
       level,
       name,
@@ -618,8 +622,8 @@ export function layoutFlow({
       marks: [],
       spans: [],
       now: nowMs >= period.from && nowMs < period.to ? frac(nowMs) : null,
-      rIn: rBandIn - stackDepth - (lanes ? gap + lanes * lane : 0),
-      rOut: rRim,
+      rIn: rBandIn - (lanes ? gap + lanes * lane : 0),
+      rOut: rBandOut + stackDepth,
     };
     outwardLimit = ring.rIn - edge;
 
@@ -630,7 +634,8 @@ export function layoutFlow({
     const skyAt = (kind: SkyKind, t: number, extra: Partial<FlowSky> = {}) => {
       if (t < period.from || t >= period.to) return;
       const f = frac(t);
-      const [x, y] = pt(f, rBandOut + sky / 2);
+      // Against the band's inner edge, clear of the labels in its middle.
+      const [x, y] = pt(f, rBandIn + 4.5 * S);
       ring.sky.push({
         key: `${kind}${t}`,
         kind,
@@ -779,7 +784,7 @@ export function layoutFlow({
 
     // ── Cards: the dial's small chips. A day's cards stack along its
     // radius at the day's noon (an hour's, on the clock), a straight spoke
-    // of squares inward from the band — exactly the year dial's stacks.
+    // of squares outward from the band, where they have room to grow.
     const inPeriod = events.filter((ev) => {
       const a = ev.date.getTime();
       if (isNaN(a)) return false;

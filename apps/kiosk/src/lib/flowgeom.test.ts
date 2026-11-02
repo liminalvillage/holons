@@ -63,12 +63,17 @@ describe("levels", () => {
 });
 
 describe("radialPlan", () => {
-  it("sets the outer ring where its rim clears the edge on every box", () => {
+  it("fits the fullest outward stack inside the drawing on every box", () => {
     for (const S of [0.8, 1, 1.3, 1.6, 2.2, 3]) {
-      const { rO } = radialPlan(S);
+      const { rO, maxStack } = radialPlan(S);
+      expect(rO).toBeGreaterThanOrEqual(300);
       expect(rO).toBeLessThanOrEqual(R_OUTER_MAX);
-      expect(rO + (13 + 14) * S).toBeLessThanOrEqual(500 - 6 * S + 1e-9);
+      expect(maxStack).toBeGreaterThanOrEqual(1);
+      expect(maxStack).toBeLessThanOrEqual(5);
+      const reach = rO + (13 + 6 + 11 + (maxStack - 1) * 13) * S;
+      expect(reach).toBeLessThanOrEqual(500 - 6 * S + 1e-9);
     }
+    expect(radialPlan(1).maxStack).toBe(5);
   });
 });
 
@@ -243,7 +248,7 @@ describe("layoutFlow", () => {
       .map((c) => c.col);
     expect(new Set(cols).size).toBe(4);
     // The clock's cards sit inside its face.
-    expect(dr.rIn).toBeLessThan(dr.r);
+    expect(dr.rOut).toBeGreaterThan(dr.r + dr.half);
 
     const phase = layoutFlow({
       events,
@@ -302,17 +307,17 @@ describe("layoutFlow", () => {
         }
         for (const r of s.rings) {
           // A day's chips are one straight spoke: the same angle, one step
-          // apart along the radius, inward from the band — the year dial's.
+          // apart along the radius, outward from the band.
           const byF = new Map<number, typeof r.cards>();
           for (const c of r.cards)
             (byF.get(c.f) ?? byF.set(c.f, []).get(c.f)!).push(c);
           for (const spoke of byF.values()) {
             const radii = spoke
               .map((c) => Math.hypot(c.x - C, c.y - C))
-              .sort((a, b) => b - a);
-            expect(radii[0]).toBeLessThan(r.r - r.half);
+              .sort((a, b) => a - b);
+            expect(radii[0]).toBeGreaterThan(r.r + r.half);
             for (let i = 0; i + 1 < radii.length; i++)
-              expect(radii[i] - radii[i + 1]).toBeCloseTo(13 * S, 6);
+              expect(radii[i + 1] - radii[i]).toBeCloseTo(13 * S, 6);
           }
           for (const c of r.cards) {
             expect(c.opacity).toBeGreaterThanOrEqual(0);
