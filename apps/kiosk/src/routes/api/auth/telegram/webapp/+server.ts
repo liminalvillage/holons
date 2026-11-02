@@ -37,9 +37,32 @@ export const POST: RequestHandler = async ({ request, cookies, url }) => {
     return json({ error: "Expected a JSON body" }, { status: 400 });
   }
 
-  const launch = verifyInitData(String(body.initData ?? ""), botTokens());
+  const tokens = botTokens();
+  if (tokens.length === 0) {
+    // Nothing to verify against: every launch would be refused, and the
+    // kiosk would read it as "not logged in". Say why, in the response and
+    // in the function log.
+    console.warn(
+      "[kiosk] Mini App launch refused: no BOT_TOKEN/BOT_TOKENS configured",
+    );
+    return json(
+      { error: "No bot token configured to verify Mini App launches" },
+      { status: 503 },
+    );
+  }
+  const launch = verifyInitData(String(body.initData ?? ""), tokens);
   if (!launch) {
-    return json({ error: "Invalid Mini App launch" }, { status: 401 });
+    // Signed by a bot whose token this deploy does not hold (each Mini App
+    // bot — @HubsNetwork_bot on hubs.network — must be in BOT_TOKENS), or
+    // older than INIT_DATA_MAX_AGE_S. Logged so the deploy's function log
+    // shows it; the kiosk shows the person as signed out.
+    console.warn(
+      `[kiosk] Mini App launch refused: no configured bot token (${tokens.length}) signed it, or it is stale`,
+    );
+    return json(
+      { error: "Mini App launch not signed by a configured bot, or stale" },
+      { status: 401 },
+    );
   }
 
   const token = await mintSession(launch.profile, cfg.jwtSecret);

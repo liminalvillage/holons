@@ -12,6 +12,9 @@
 #
 # Required server env vars (set in the Netlify UI, NOT here — they are secrets):
 #   TELEGRAM_OIDC_CLIENT_ID, TELEGRAM_OIDC_CLIENT_SECRET, AUTH_JWT_SECRET
+#   BOT_TOKEN (pictures) and BOT_TOKENS: the token of EVERY bot whose Mini Apps
+#   open this kiosk (hubs.network: @HubsNetwork_bot) — a launch signed by a bot
+#   not listed here is refused, and the person lands signed out.
 # Register each tenant's callback in BotFather Web Login → Allowed URLs, e.g.
 #   https://akasha.hubs.network/api/auth/telegram/callback
 #

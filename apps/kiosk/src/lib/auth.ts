@@ -125,6 +125,23 @@ export async function initAuth(): Promise<void> {
           body: JSON.stringify({ initData: launch.initData }),
         }).catch(() => null)
       : null;
+    if (launch && res && !res.ok) {
+      // The server answered and refused the launch: it was signed by a bot
+      // whose token this deploy does not hold (BOT_TOKEN / BOT_TOKENS), or
+      // it is stale. The webview's cookie may belong to whoever opened the
+      // app here before — Telegram accounts share one webview — so it is
+      // not this person's login; stay signed out rather than act as them.
+      const detail = await res
+        .json()
+        .then((b: { error?: string }) => b?.error ?? "")
+        .catch(() => "");
+      console.warn(
+        `[kiosk] Mini App launch rejected (${res.status}${detail ? `: ${detail}` : ""}) — ` +
+          "is the launching bot's token in the deploy's BOT_TOKEN/BOT_TOKENS?",
+      );
+      currentUser.set(null);
+      return;
+    }
     if (!res?.ok) res = await fetch("/api/auth/session");
     if (res.ok) {
       const { user, key, nostrPrivateKey } = await res.json();
