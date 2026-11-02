@@ -56,6 +56,15 @@ describe('isPlaceholderName', () => {
     expect(isPlaceholderName('npubfan', HEX)).toBe(false);
     expect(isPlaceholderName('Ada', 42)).toBe(false);
   });
+
+  it('treats the words a writer puts down for a holon it cannot name as no name', () => {
+    expect(isPlaceholderName('unknown', '-1004438000774')).toBe(true);
+    expect(isPlaceholderName('Unknown', '-1004438000774')).toBe(true);
+    expect(isPlaceholderName('Holon -1004438000774', '-1004438000774')).toBe(true);
+    expect(isPlaceholderName('My Holon', 'holon_abc')).toBe(true);
+    expect(isPlaceholderName('Lunation 84', '-1004438000774')).toBe(false);
+    expect(isPlaceholderName('Unknown Pleasures', '-1004438000774')).toBe(false);
+  });
 });
 
 describe('cleanName', () => {

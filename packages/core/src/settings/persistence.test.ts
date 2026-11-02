@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readHolonSettings } from './index.js';
+import { parseHolonSettings, readHolonSettings } from './index.js';
 
 /**
  * A settings lens holding several records, the way a real one does once a
@@ -113,5 +113,17 @@ describe('readHolonSettings', () => {
       },
     };
     expect(await readHolonSettings(broken as any, 'h1')).toBeNull();
+  });
+});
+
+describe('parseHolonSettings', () => {
+  it('keeps a real name', () => {
+    expect(parseHolonSettings({ id: '-1004438000774', name: 'Lunation 84' }).name).toBe('Lunation 84');
+  });
+
+  it("reads a writer's stand-in for a name it never knew as no name", () => {
+    expect(parseHolonSettings({ id: '-1004438000774', name: 'unknown' }).name).toBe('');
+    expect(parseHolonSettings({ id: 'h1', name: 'Holon h1' }).name).toBe('');
+    expect(parseHolonSettings({ id: 'h1' }).name).toBe('');
   });
 });

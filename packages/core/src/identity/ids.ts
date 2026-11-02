@@ -61,14 +61,19 @@ export function shortId(id: string | number | null | undefined): string {
   return n;
 }
 
+/** Words writers fall back to when they know no name; none of them is one. */
+const STAND_INS = new Set(['unknown', 'unknown holon', 'external holon', 'holon', 'my holon']);
+
 /**
  * Whether `name` is only a stand-in for `id` — its npub (whole, shortened,
- * with either ellipsis) or a hex prefix — and so must never be persisted as
- * a person's name.
+ * with either ellipsis), a hex prefix, or one of the words a writer puts
+ * down when it knows no name (`unknown`, `Holon <id>`, the web's `My Holon`)
+ * — and so must never be persisted or shown as a name.
  */
 export function isPlaceholderName(name: unknown, id: string | number | null | undefined): boolean {
   const s = String(name ?? '').trim();
   if (!s) return true;
+  if (STAND_INS.has(s.toLowerCase()) || /^holon\s+\S+$/i.test(s)) return true;
   const n = normalizeId(id);
   if (s === shortId(n) || s === `#${n}` || s === n) return true;
   if (HEX64.test(n)) {

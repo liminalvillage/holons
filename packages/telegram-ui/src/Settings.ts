@@ -2867,7 +2867,9 @@ export default class Settings {
       id: String(holonId),
       hex: '',
       version: 0.2,
-      name: holonName || 'unknown',
+      // No name known → none; `unknown` written here once outlived the real
+      // name on every surface (the field clock took it for an edit).
+      name: holonName || '',
       timezone: '',
       whitelisted: false,
       language: process.env.LANGUAGE || 'en',
@@ -3239,7 +3241,7 @@ export default class Settings {
       // the canonical `.currencies` sub-map so cross-system reads agree.
       const defaultSettings = this.getDefaultSettings(
         holonId,
-        settings.name || 'unknown'
+        settings.name || ''
       );
       settings = {
         ...defaultSettings,

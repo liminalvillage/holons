@@ -38,7 +38,7 @@ export const getChatName = async (ctx, holonId) => {
     if (chatInfo.type === 'private') {
       return `${chatInfo.first_name} ${chatInfo.last_name || ''}`.trim();
     } else {
-      return chatInfo.title || 'unknown';
+      return chatInfo.title || null;
     }
   } catch (err) {
     // Handle specific "chat not found" error more gracefully
@@ -52,7 +52,7 @@ export const getChatName = async (ctx, holonId) => {
       return null; // Return null to indicate chat not accessible
     } else {
       console.error('Error getting chat name:', err);
-      return 'unknown';
+      return null;
     }
   }
 };
@@ -261,7 +261,7 @@ export const getHolonName = async (db, holonId, ctx = null) => {
   if (ctx && typeof getChatName === 'function') {
     try {
       const chatName = await getChatName(ctx, id);
-      if (chatName && chatName !== 'unknown' && chatName.trim() !== '') {
+      if (chatName && chatName.trim() !== '') {
         if (db && typeof db.get === 'function')
           nameResolver(db).prime([[id, chatName]]);
         return chatName;

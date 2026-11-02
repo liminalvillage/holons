@@ -20,7 +20,7 @@
 import { attestationIdentityMap, attestationNameMap, parseIdentifier, type IdentityAttestation } from '../shifts/attestation.js';
 import { SHIFT_IDENTITY_LENS, attestationsFrom } from '../shifts/wire.js';
 import type { NostrEventLike } from '../nostr/types.js';
-import { cleanName, idKind, isKeyId, normalizeId, shortId } from './ids.js';
+import { cleanName, idKind, isKeyId, isPlaceholderName, normalizeId, shortId } from './ids.js';
 import { userName, type NameOptions, type NameRecord } from './index.js';
 import { fetchProfiles, profileDisplayName, type ProfileMeta } from './profiles.js';
 
@@ -74,7 +74,6 @@ export interface NameResolver {
 }
 
 const HEX64 = /^[0-9a-f]{64}$/;
-const NO_NAME = new Set(['my holon', 'holon', 'unknown', 'unknown holon', 'external holon']);
 
 type Entry = { name: string; at: number };
 
@@ -84,13 +83,13 @@ function recordName(rec: unknown, format: NameOptions): string {
   return cleanName(userName(rec as NameRecord, { ...format, idFallback: false, unknown: '' }));
 }
 
-/** A settings record's name — object or array of entries — ignoring the defaults that are not names. */
-function settingsName(raw: unknown): string {
+/** A settings record's name — object or array of entries — ignoring the stand-ins that are not names. */
+function settingsName(raw: unknown, id: string): string {
   const pick = (s: unknown) => {
     if (!s || typeof s !== 'object') return '';
     const o = s as Record<string, unknown>;
     const n = cleanName(o.name) || cleanName(o.title);
-    return n && !NO_NAME.has(n.toLowerCase()) && !/^holon\s+\S+$/i.test(n) ? n : '';
+    return n && !isPlaceholderName(n, id) ? n : '';
   };
   if (Array.isArray(raw)) {
     for (const s of raw) {
@@ -221,7 +220,7 @@ export function createNameResolver(hs: ResolverHost, opts: NameResolverOptions =
 
   async function holonName(id: string): Promise<string> {
     try {
-      const n = settingsName(await hs.get(id, 'settings', id));
+      const n = settingsName(await hs.get(id, 'settings', id), id);
       if (n) return n;
     } catch {
       /* no settings */
@@ -387,7 +386,7 @@ export function createNameResolver(hs: ResolverHost, opts: NameResolverOptions =
       for (const [id, name] of entries) {
         const n = normalizeId(id);
         const v = cleanName(name);
-        if (!n || !v || isPlaceholder(v, n) || NO_NAME.has(v.toLowerCase())) continue;
+        if (!n || !v || isPlaceholder(v, n) || isPlaceholderName(v, n)) continue;
         if (names.get(n)?.name !== v) changed = true;
         names.set(n, { name: v, at: now() });
         misses.delete(n);

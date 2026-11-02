@@ -4,6 +4,7 @@
 // without importing each other (flow-settings → federation-links → here).
 
 import { readHolonColor } from './color.js';
+import { isPlaceholderName } from '../identity/ids.js';
 import type { HoloSphere } from 'holosphere';
 import type { HolonSettings } from './flow-settings.js';
 
@@ -48,7 +49,9 @@ export function getDefaultHolonSettings(holonId: string): HolonSettings {
 export function parseHolonSettings(data: any): HolonSettings {
   return {
     id: data.id || '',
-    name: data.name || '',
+    // A writer that knew no name put down `unknown` or `Holon <id>`; neither
+    // is one, and a surface that shows them has no way to tell.
+    name: isPlaceholderName(data.name, data.id) ? '' : data.name,
     version: data.version || 1,
     admin: data.admin || '',
     timezone: data.timezone || 'UTC',
