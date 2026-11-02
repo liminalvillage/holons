@@ -33,7 +33,7 @@
   import AudienceEditor from "./AudienceEditor.svelte";
   import {
     addMember,
-    refreshOwnDm,
+    refreshQuestMessages,
     toggleJoin,
     toggleAppreciate,
   } from "$lib/membership";
@@ -92,7 +92,6 @@
     questFrequency,
     questKind,
     questSchedule,
-    rosterDiff,
     scheduleToFields,
     setParticipants,
     setQuestFrequency,
@@ -875,15 +874,21 @@
     message = "";
     // Core mirrored the card into the holon of everyone put on the roster and
     // dropped it from whoever was taken off — that is part of the write. What
-    // is left for the board is the signed-in user's own Telegram DM, when
-    // their place on the card changed.
+    // is left for the board is asking the bot to re-render the quest's
+    // Telegram messages; core names the chats (the group's, the DM of whoever
+    // joined or left), the proxy lets this session ask for its own and the
+    // group's.
     const before = savedRoster;
     savedRoster = updated.participants;
     const me = $currentUser;
     if (!me) return true;
-    const { joined, left } = rosterDiff(before, updated.participants);
-    if ([...joined, ...left].some((p) => String(p.id) === String(me.id)))
-      void refreshOwnDm(String(updated.id), me);
+    void refreshQuestMessages({
+      holon,
+      quest: updated,
+      before: { participants: before ?? [] },
+      questId: String(updated.id),
+      user: me,
+    });
     return true;
   }
 
@@ -1007,7 +1012,13 @@
     message = "";
     try {
       const id = String(sel.quest.id ?? sel.quest.title);
-      const res = await addMember($holonId, id, m, sourceRef(sel.quest, id));
+      const res = await addMember(
+        $holonId,
+        id,
+        m,
+        sourceRef(sel.quest, id),
+        $currentUser ?? undefined,
+      );
       if (res === "failed") {
         message = $t("detail.addFailed");
         return;

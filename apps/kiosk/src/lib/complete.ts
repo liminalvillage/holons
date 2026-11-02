@@ -28,6 +28,7 @@ import {
   type CompleteOccurrenceResult,
 } from "@holons/core/tasks";
 import { loadEquation, DEFAULT_EQUATION } from "@holons/core/scoring";
+import { refreshQuestMessages } from "./membership";
 import { REAEventStore } from "@holons/core/rea";
 import { getReaStore } from "./holosphere";
 
@@ -90,6 +91,14 @@ export async function recordCompletion(
     holonId,
     plan,
   );
+  if (outcome.taskSaved)
+    void refreshQuestMessages({
+      holon: holonId,
+      quest: completedTask,
+      before: task,
+      questId: String(task.id),
+      user: { id: completerId },
+    });
   return {
     ok: outcome.taskSaved,
     actions: outcome.savedActions,

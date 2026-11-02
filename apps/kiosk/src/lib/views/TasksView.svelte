@@ -46,6 +46,7 @@
     holoSeed,
   } from "$lib/data";
   import { sameId } from "$lib/ids";
+  import { refreshQuestMessages } from "$lib/membership";
   import {
     createTask,
     deleteTaskWithCascade,
@@ -799,6 +800,13 @@
         const task = createTask({ holonId: hid, initiator, title });
         task.id = newId();
         if (!(await writer.put("quests", task))) allSaved = false;
+        else
+          void refreshQuestMessages({
+            holon: hid,
+            quest: task,
+            questId: task.id,
+            user,
+          });
       }
       if (allSaved) {
         addOpen = false;

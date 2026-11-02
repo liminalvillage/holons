@@ -6,7 +6,7 @@
     import { nameMap, resolvedName, resolvedInitials } from '$lib/stores/nameResolver';
     import DisplayName from './shared/DisplayName.svelte';
     import { removeParticipant as coreRemoveParticipant, toggleParticipant as coreToggleParticipant } from '@holons/core/tasks';
-    import { refreshMemberDm } from '../utils/refreshMemberDm';
+    import { refreshQuestMessages } from '../utils/refreshQuestMessages';
     // Allow either quest or role to be passed
     export let quest: any = undefined;
     export let role: any = undefined;
@@ -194,12 +194,15 @@
         await updateItem({ participants: updated.participants });
 
         // Core mirrored the change into the member's personal holon with the
-        // write; refresh their linked DM when they left — quests only.
+        // write; the quest's Telegram messages re-render (core names the
+        // chats) — quests only.
         if (itemType === 'quests') {
-            const joined = (updated.participants || []).some(
-                (p: any) => String(p?.id) === String(userId)
-            );
-            refreshMemberDm({ questId: String(item.id ?? itemId), userId, joined });
+            refreshQuestMessages({
+                holon: holonId,
+                quest: updated,
+                touched: [userId],
+                questId: String(item.id ?? itemId),
+            });
         }
         showDropdown = false;
     }

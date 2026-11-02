@@ -9,10 +9,14 @@
 // can't call it from the browser. This server route is same-origin for the
 // kiosk, verifies the caller's session, and forwards server→server to the bot.
 //
-// It is used after a join/leave to refresh the member's personal-holon DM:
-// core's roster write leaves a {id,soul} hologram in (memberId,'quests',
+// Two uses: (1) after a join/leave, to refresh the member's personal-holon
+// DM — core's roster write leaves a {id,soul} hologram in (memberId,'quests',
 // questId), then the kiosk POSTs here with chatId == the member's id so the
-// bot sends/edits the linked DM.
+// bot sends/edits the linked DM; (2) after any kiosk write of a quest on a
+// Telegram-group holon, with chatId == the group, so the bot posts the card in
+// the chat (the bot has no live subscription on quests — without this ask a
+// task born in the kiosk never shows up in Telegram). The rule for which chat
+// a session may name is core's `mayAskQuestRefresh` (@holons/core/tasks).
 
 import { json, error } from "@sveltejs/kit";
 import { env } from "$env/dynamic/private";
@@ -22,6 +26,7 @@ import {
   verifySession,
   SESSION_COOKIE,
 } from "$lib/server/telegramAuth";
+import { mayAskQuestRefresh } from "@holons/core/tasks";
 
 /** Bot HTTP base — server-only; defaults to the production bot host. */
 function botApiUrl(): string {
@@ -51,8 +56,8 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
 
   // A logged-in user may only refresh their OWN personal-holon DM — guard the
   // open kiosk from being used to spam arbitrary Telegram chats.
-  if (chatId !== String(profile.id))
-    throw error(403, "chatId must be your own");
+  if (!mayAskQuestRefresh(chatId, profile.id))
+    throw error(403, "chatId must be your own chat or a Telegram group");
 
   // Best-effort: the DM is a convenience side-effect, never block the caller on
   // a slow/unreachable bot. Swallow failures and report scheduled regardless.

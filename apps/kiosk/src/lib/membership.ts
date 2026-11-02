@@ -5,9 +5,12 @@
 // invariant (owned by @holons/core/tasks) is applied to current data.
 
 import {
+  mayAskQuestRefresh,
+  questChats,
   toggleAppreciation,
   toggleParticipant,
   type Quest,
+  type QuestChatsInput,
   type QuestParticipant,
 } from "@holons/core/tasks";
 import { getHolosphere, getWriter } from "./holosphere";
@@ -65,8 +68,19 @@ export async function toggleAppreciate(
   const key = ref?.key ?? questId;
   const q = await freshQuest(holon, key);
   if (!q) return false;
+  const updated = toggleAppreciation(q, person(user));
   const writer = await getWriter(holon);
-  return !!(await writer.put("quests", toggleAppreciation(q, person(user))));
+  const ok = !!(await writer.put("quests", updated));
+  if (ok)
+    void refreshQuestMessages({
+      holon,
+      quest: updated,
+      before: q,
+      touched: [user.id],
+      questId: key,
+      user,
+    });
+  return ok;
 }
 
 /** Is the user a participant of the (already-toggled) quest? */
@@ -76,25 +90,32 @@ function isParticipant(quest: Quest, userId: number | string): boolean {
 }
 
 /**
- * Ask the bot to (re)send the Telegram DM linked to a card in the user's own
- * holon, after their place on it changed. The hologram behind that DM is
- * core's doing — every roster write mirrors itself into each person's holon
- * (`attachRosterMirror`) — so this only delivers. Best-effort, and only ever
- * for the signed-in user: the same-origin `/api/quest/refresh` proxy refuses
- * any chat but the caller's own.
+ * After a quest write, ask the bot to re-render the quest's Telegram messages.
+ * Which chats those are — the holon's own chat, the DM of whoever's place on
+ * the roster changed, every copy the bot has sent — is core's rule
+ * (`questChats`, @holons/core/tasks); the bot renders, the kiosk only asks,
+ * one chat per POST through the same-origin `/api/quest/refresh` proxy. The
+ * proxy lets a session name its own chat or a group (`mayAskQuestRefresh`), so
+ * the ask is filtered the same way here. Best-effort: the write has landed.
  */
-export async function refreshOwnDm(
-  questId: string,
-  user: TgUser,
+export async function refreshQuestMessages(
+  input: QuestChatsInput & { questId: string | number; user: TgUser },
 ): Promise<void> {
   try {
-    await fetch("/api/quest/refresh", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chatId: String(user.id), questId }),
-    });
+    const chats = questChats(input)
+      .map((c) => c.chat)
+      .filter((chat) => mayAskQuestRefresh(chat, input.user.id));
+    await Promise.all(
+      chats.map((chatId) =>
+        fetch("/api/quest/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chatId, questId: String(input.questId) }),
+        }).catch(() => {}),
+      ),
+    );
   } catch {
-    /* DM refresh is best-effort */
+    /* re-rendering the messages is best-effort */
   }
 }
 
@@ -116,7 +137,14 @@ export async function toggleJoin(
   const writer = await getWriter(holon);
   const ok = await writer.put("quests", updated);
   if (!ok) return false;
-  await refreshOwnDm(key, user);
+  void refreshQuestMessages({
+    holon,
+    quest: updated,
+    before: q,
+    touched: [user.id],
+    questId: key,
+    user,
+  });
   return true;
 }
 
@@ -131,6 +159,8 @@ export async function addMember(
   questId: string,
   member: TgUser,
   ref?: SourceRef,
+  /** Who is adding them — the session that may ask the bot to re-render. */
+  by: TgUser = member,
 ): Promise<Quest | "already" | "failed"> {
   const holon = ref?.holon ?? holonId;
   const key = ref?.key ?? questId;
@@ -142,7 +172,15 @@ export async function addMember(
     // participate-XOR-appreciate rule, takes them off the appreciation list.
     const updated = toggleParticipant(q, person(member));
     const writer = await getWriter(holon);
-    return (await writer.put("quests", updated)) ? updated : "failed";
+    if (!(await writer.put("quests", updated))) return "failed";
+    void refreshQuestMessages({
+      holon,
+      quest: updated,
+      before: q,
+      questId: key,
+      user: by,
+    });
+    return updated;
   } catch {
     return "failed";
   }
@@ -169,7 +207,14 @@ export async function joinOnly(
     const writer = await getWriter(holon);
     const ok = await writer.put("quests", updated);
     if (!ok) return "failed";
-    await refreshOwnDm(key, user);
+    void refreshQuestMessages({
+      holon,
+      quest: updated,
+      before: q,
+      touched: [user.id],
+      questId: key,
+      user,
+    });
     return "joined";
   } catch {
     return "failed";
@@ -195,8 +240,18 @@ export async function appreciateOnly(
   if (!q) return "failed";
   if (isAppreciating(q, user.id)) return "already";
   try {
+    const updated = toggleAppreciation(q, person(user));
     const writer = await getWriter(holon);
-    const ok = await writer.put("quests", toggleAppreciation(q, person(user)));
+    const ok = await writer.put("quests", updated);
+    if (ok)
+      void refreshQuestMessages({
+        holon,
+        quest: updated,
+        before: q,
+        touched: [user.id],
+        questId: key,
+        user,
+      });
     return ok ? "liked" : "failed";
   } catch {
     return "failed";

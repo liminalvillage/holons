@@ -40,7 +40,7 @@ import {
 import { currentUser } from "$lib/auth";
 import { getHolosphere, getWriter } from "$lib/holosphere";
 import { loadMembers } from "$lib/members";
-import { person, refreshOwnDm, type TgUser } from "$lib/membership";
+import { person, refreshQuestMessages, type TgUser } from "$lib/membership";
 import { recordCompletion } from "$lib/complete";
 
 export interface PendingPlan {
@@ -304,12 +304,17 @@ function kioskPorts(actor: TgUser): ApplyPorts {
     },
     complete: async (holon, task, completer: QuestParticipant) =>
       (await recordCompletion(holon, task, completer.id ?? actor.id)).ok,
-    afterParticipants: async (_holon, updated, user) => {
-      // The speaker's own join/leave refreshes their linked DM, exactly as a
-      // tapped toggle does. (The proxy only ever reaches the caller's chat.)
-      if (String(user.id) === String(actor.id)) {
-        await refreshOwnDm(String(updated.id), actor);
-      }
+    afterParticipants: async (holon, updated, user) => {
+      // The quest's Telegram messages re-render exactly as after a tapped
+      // toggle: core names the chats, the proxy lets the speaker ask for the
+      // group's and their own.
+      await refreshQuestMessages({
+        holon,
+        quest: updated,
+        touched: [user.id],
+        questId: String(updated.id),
+        user: actor,
+      });
     },
   };
 }

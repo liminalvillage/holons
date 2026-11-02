@@ -27,6 +27,7 @@ import {
     toggleParticipant,
     toggleAppreciation,
     toggleStopper,
+    questChats,
     type Quest as CoreQuest,
 } from '@holons/core/tasks';
 import { DEFAULT_EQUATION } from '@holons/core/scoring';
@@ -1060,7 +1061,13 @@ export default class Quests {
         const clickedChatId = String(ctx.callbackQuery?.message?.chat?.id || '');
         const questHolonStr = String(questHolon);
         const userIdStr = String(interactingUser?.id || '');
-        if (interactingUser && clickedChatId !== questHolonStr && userIdStr !== questHolonStr) {
+        const actingElsewhere = !!interactingUser && clickedChatId !== questHolonStr && userIdStr !== questHolonStr;
+        // Which chats show this quest — the home chat, the acting member's
+        // own, every copy sent — is core's rule, the same one the kiosk and
+        // the web ask us by (`questChats`, @holons/core/tasks).
+        const chats = questChats({ holon: questHolon, quest, touched: actingElsewhere ? [interactingUser.id] : [] });
+        const roleOf = (chat) => chats.find((c) => c.chat === String(chat ?? '').trim())?.role;
+        if (actingElsewhere && roleOf(interactingUser.id) === 'person') {
             const hologramResult = await this.ensureTelegramHologramMessage(ctx, quest, interactingUser.id, language);
             if (hologramResult) {
                 updatedMessages.add(`${hologramResult.holonId}_${hologramResult.messageId}`);
@@ -1073,7 +1080,9 @@ export default class Quests {
         // just rooted in the home holon. ensureMainTelegramMessage returns
         // the resolved/created message_id, or null if we have no chat to
         // send to.
-        const mainMessageId = await this.ensureMainTelegramMessage(quest, questHolon, language, markupConfig);
+        const mainMessageId = roleOf(questHolon) === 'home'
+            ? await this.ensureMainTelegramMessage(quest, questHolon, language, markupConfig)
+            : null;
         if (mainMessageId != null) {
             try {
                 await ctx.telegram.getChat(questHolon);
@@ -1094,7 +1103,7 @@ export default class Quests {
         }
 
         // 5. Update existing holograms (skip already updated messages)
-        const hologramsToUpdate = explicitHologramsToUpdate ?? (quest.activeHolograms || []);
+        const hologramsToUpdate = explicitHologramsToUpdate ?? (quest.activeHolograms || []).filter((h) => roleOf(h?.holonId));
         if (hologramsToUpdate.length > 0) {
             await this.updateHolograms(ctx, quest, language, markupConfig, hologramsToUpdate, updatedMessages);
         }

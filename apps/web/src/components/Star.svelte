@@ -13,7 +13,7 @@
 	import DisplayName from './shared/DisplayName.svelte';
 	import { getColorFromCategory } from '@holons/core/categories';
 	import { toggleParticipant as coreToggleParticipant } from '@holons/core/tasks';
-	import { refreshMemberDm } from '../utils/refreshMemberDm';
+	import { refreshQuestMessages } from '../utils/refreshQuestMessages';
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -220,11 +220,13 @@
 		await holosphere.put(holonID, "quests", quest);
 
 		// Core mirrored the change into the member's personal holon with the
-		// write; refresh their linked DM when they left.
-		const joined = (updated.participants || []).some(
-			(p) => String(p?.id) === String(userId)
-		);
-		refreshMemberDm({ questId: String(quest.id ?? questId), userId, joined });
+		// write; the quest's Telegram messages re-render (core names the chats).
+		refreshQuestMessages({
+			holon: holonID,
+			quest: updated,
+			touched: [userId],
+			questId: String(quest.id ?? questId),
+		});
 
 		showDropdown = null;
 	}

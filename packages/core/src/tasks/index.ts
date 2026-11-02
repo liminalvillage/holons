@@ -22,3 +22,4 @@ export * from './stop.js';
 export * from './deletion.js';
 export * from './chat.js';
 export * from './board.js';
+export * from './telegram.js';

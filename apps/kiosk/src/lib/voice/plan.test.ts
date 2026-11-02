@@ -38,7 +38,7 @@ vi.mock("$lib/membership", () => ({
     id: u.id,
     first_name: u.first_name,
   }),
-  refreshOwnDm: refresh,
+  refreshQuestMessages: refresh,
 }));
 vi.mock("$lib/complete", () => ({ recordCompletion: complete }));
 
@@ -175,12 +175,24 @@ describe("voice plan", () => {
     expect(put).toHaveBeenCalledTimes(1);
     expect(db.v1.participants.map((p) => p.id)).toEqual(["1", 3]);
     expect(db.v1.title).toBe("Wash the van");
-    // Only the speaker's own DM is refreshed; the holograms are core's write.
-    expect(refresh).toHaveBeenCalledTimes(1);
-    expect(refresh.mock.calls[0]).toEqual([
-      "v1",
-      expect.objectContaining({ id: 3 }),
-    ]);
+    // One ask per person put on the card to re-render the quest's Telegram
+    // messages — Marco's and the speaker's — each naming who was touched and
+    // the speaker as the one asking; the holograms themselves are core's write.
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(refresh.mock.calls.map((c) => c[0])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          questId: "v1",
+          touched: ["1"],
+          user: expect.objectContaining({ id: 3 }),
+        }),
+        expect.objectContaining({
+          questId: "v1",
+          touched: [3],
+          user: expect.objectContaining({ id: 3 }),
+        }),
+      ]),
+    );
     // The unticked rename stays in the drawer.
     expect(get(pendingPlan)!.changeset.changes.map((c) => c.id)).toEqual([
       rename.id,

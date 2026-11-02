@@ -68,7 +68,7 @@
     } from "@holons/core/datetime";
     import { getEventStore } from "../lib/rea/eventStore";
     import { queryManager } from "$lib/holosphere/QueryManager";
-    import { refreshMemberDm } from "../utils/refreshMemberDm";
+    import { refreshQuestMessages } from "../utils/refreshQuestMessages";
     import { Lock, Unlock } from "svelte-feathers";
     import { isLocked } from "@holons/core/privacy";
     import AudienceEditor from "./shared/AudienceEditor.svelte";
@@ -344,13 +344,14 @@
 
         // Sync quest in background — roll back on failure. Core mirrors the
         // change into the member's personal holon as part of this write; once
-        // it landed, a member who left gets their linked DM refreshed.
-        // `isSelected` is the pre-toggle state, so joined === !isSelected.
+        // it landed, the quest's Telegram messages re-render (core names the
+        // chats: the group's and the member's own).
         holosphere.put(holonId, lens, updatedQuest).then(() => {
-            refreshMemberDm({
+            refreshQuestMessages({
+                holon: holonId,
+                quest: updatedQuest,
+                touched: [user.id],
                 questId: String(updatedQuest.id),
-                userId: user.id,
-                joined: !isSelected,
             });
         }).catch((error: any) => {
             quest = previousQuest;
