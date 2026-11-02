@@ -432,6 +432,13 @@ export const ICONS = {
   },
   // A clock face with one hand: the year drawn as a dial.
   dial: { paths: s(CIRCLE, "M12 12V5.5", "M12 12l4 2.4") },
+  // A spiral winding outward: the flow — year, moon, phase and day as one
+  // zoomable space.
+  spiral: {
+    paths: s(
+      "M12 12a1.6 1.6 0 0 1 3.2 0 3.4 3.4 0 0 1-6.8 0 5.3 5.3 0 0 1 10.6 0 7.2 7.2 0 0 1-14.4 0 9.1 9.1 0 0 1 18.2 0",
+    ),
+  },
   // Two straight lines: the year drawn as lines.
   lines: { paths: s("M3 9h18", "M3 15h18", "M7 7v4", "M15 13v4") },
   moon0: moon(0),

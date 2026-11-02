@@ -57,7 +57,9 @@
   import VoiceButtons from "$lib/components/VoiceButtons.svelte";
   import YearTimeline from "./YearTimeline.svelte";
   import YearDial from "./YearDial.svelte";
+  import FlowView from "./FlowView.svelte";
   import OrbitsView, { type OrbitItem } from "./OrbitsView.svelte";
+  import { packColumns } from "$lib/daylayout";
 
   // ── What this board shows ──────────────────────────────────────────────---
   // The Calendar tab passes nothing and gets the holon's dated quests; the
@@ -903,9 +905,16 @@
     else if (scrollEl) scrollEl.scrollTop = 0;
   }
   function step(dir: 1 | -1) {
+    // The flow keeps its own place in time; the arrows walk it.
+    if (view === "flow") {
+      flowView?.pan(dir);
+      return;
+    }
     offset += dir;
     if (hasHours) void focusDay();
   }
+  let flowView: FlowView | null = null;
+  let flowReadout = "";
   // The day and week windows share the hour timeline (and its focus scroll).
   $: hasHours = view === "day" || view === "week";
 
@@ -1261,49 +1270,19 @@
   }
 
   // ── Side-by-side layout for colliding events ──────────────────────────────-
-  // Greedy interval-graph colouring: events that overlap in time are split into
-  // columns so they sit next to each other instead of stacking. Each event gets
+  // Events that overlap in time are split into columns so they sit next to
+  // each other instead of stacking (see `$lib/daylayout`). Each event gets
   // { col, cols } — its column index and how many columns its overlap cluster
   // needs — which the template turns into a left offset + width.
   function eventLayout(
     evs: CalendarEvent[],
   ): Map<string, { col: number; cols: number }> {
-    const items = evs
-      .map((ev) => {
+    return packColumns(
+      evs.map((ev) => {
         const start = minutesOf(ev.date);
-        return { id: ev.id, start, end: start + eventDurationMin(ev), col: 0 };
-      })
-      .sort((a, b) => a.start - b.start || a.end - b.end);
-
-    const out = new Map<string, { col: number; cols: number }>();
-    let group: typeof items = [];
-    let colEnds: number[] = []; // running end-time of each active column
-    let groupCols = 0;
-    let clusterEnd = -Infinity;
-
-    const flush = () => {
-      for (const it of group) out.set(it.id, { col: it.col, cols: groupCols });
-      group = [];
-      colEnds = [];
-      groupCols = 0;
-    };
-
-    for (const it of items) {
-      if (group.length && it.start >= clusterEnd) flush();
-      let c = colEnds.findIndex((end) => end <= it.start);
-      if (c === -1) {
-        c = colEnds.length;
-        colEnds.push(it.end);
-      } else {
-        colEnds[c] = it.end;
-      }
-      it.col = c;
-      group.push(it);
-      groupCols = Math.max(groupCols, colEnds.length);
-      clusterEnd = Math.max(clusterEnd, it.end);
-    }
-    flush();
-    return out;
+        return { id: ev.id, start, end: start + eventDurationMin(ev) };
+      }),
+    );
   }
 
   onMount(() => {
@@ -1445,28 +1424,30 @@
   })();
 
   $: periodLabel =
-    view === "day"
-      ? anchorDay.toLocaleDateString($locale, {
-          weekday: "long",
-          day: "numeric",
-          month: "long",
-        })
-      : view === "week"
-        ? `${weekDays[0].toLocaleDateString($locale, { day: "numeric", month: "short" })} – ${weekDays[6].toLocaleDateString($locale, { day: "numeric", month: "short" })}`
-        : view === "year"
-          ? String(displayYear)
-          : view === "orbits"
-            ? offset === 0
-              ? $t("cal.orbitsTitle")
-              : orbitsNow.toLocaleDateString($locale, {
-                  weekday: "short",
-                  day: "numeric",
+    view === "flow"
+      ? flowReadout
+      : view === "day"
+        ? anchorDay.toLocaleDateString($locale, {
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+          })
+        : view === "week"
+          ? `${weekDays[0].toLocaleDateString($locale, { day: "numeric", month: "short" })} – ${weekDays[6].toLocaleDateString($locale, { day: "numeric", month: "short" })}`
+          : view === "year"
+            ? String(displayYear)
+            : view === "orbits"
+              ? offset === 0
+                ? $t("cal.orbitsTitle")
+                : orbitsNow.toLocaleDateString($locale, {
+                    weekday: "short",
+                    day: "numeric",
+                    month: "long",
+                  })
+              : monthAnchor.toLocaleDateString($locale, {
                   month: "long",
-                })
-            : monthAnchor.toLocaleDateString($locale, {
-                month: "long",
-                year: "numeric",
-              });
+                  year: "numeric",
+                });
 
   // What a card says about its own timing on `day`. A span says which of its
   // days this is; only its FIRST day also carries the start time (the later
@@ -1645,6 +1626,17 @@
           </div>
         {/each}
       </div>
+    {:else if view === "flow"}
+      <!-- the year, the moon, its phase and the day as one zoomable flow -->
+      <FlowView
+        bind:this={flowView}
+        height={fillHeight}
+        events={shownEvents}
+        now={$now}
+        {noteColorFor}
+        onOpen={open}
+        onReadout={(s) => (flowReadout = s)}
+      />
     {:else if view === "orbits"}
       <!-- the recurring quests as planets round the holon -->
       <OrbitsView

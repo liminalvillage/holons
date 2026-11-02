@@ -83,6 +83,39 @@ export function lunationMoonPhases(
   ];
 }
 
+/**
+ * The three quarter moons of a lunation (first quarter, full, last quarter),
+ * by the same 6-hour scan `getMoonPhases` uses, each pinned to the first
+ * step past its crossing (0.25, 0.5, 0.75). The lunation's own edges are
+ * its new moons, so with these the cycle falls into its four quadrants.
+ */
+export function moonQuarters(
+  from: number,
+  to: number,
+): { first: Date; full: Date; last: Date } {
+  const step = 6 * 60 * 60 * 1000;
+  let first: Date | null = null;
+  let full: Date | null = null;
+  let last: Date | null = null;
+  // Skip the first day so the opening new moon's own ~0 reading can't be
+  // mistaken for a crossing, and stop a day short of the closing one.
+  for (let t = from + DAY_MS; t < to - DAY_MS; t += step) {
+    const p = phase(new Date(t)).phase;
+    if (!first && p >= 0.25) first = new Date(t);
+    else if (first && !full && p >= 0.5) full = new Date(t);
+    else if (full && !last && p >= 0.75) last = new Date(t);
+    if (last) break;
+  }
+  // A scan that somehow misses a crossing falls back to even quarters, so a
+  // caller always gets four quadrants in order.
+  const len = to - from;
+  return {
+    first: first ?? new Date(from + len / 4),
+    full: full ?? new Date(from + len / 2),
+    last: last ?? new Date(from + (3 * len) / 4),
+  };
+}
+
 export const MOON_NAMES: MessageKey[] = [
   "cal.newMoon",
   "cal.moonWaxingCrescent",

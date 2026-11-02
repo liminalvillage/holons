@@ -176,6 +176,12 @@ export const it: Record<MessageKey, Msg> = {
   "cal.lunationSpan": "Lunazione {n} · {from} – {to}",
   "cal.zoomFit": "Adatta",
   "cal.zoomHint": "Pizzica o Ctrl + rotella per ingrandire",
+  "cal.flowAria":
+    "L'anno, la luna, la sua fase e il giorno in un unico flusso da ingrandire",
+  "cal.flowHint":
+    "Pizzica o scorri per ingrandire · trascina per muoverti nel tempo",
+  "cal.lunationShort": "Lunazione {n}",
+  "cal.flowToday": "Oggi",
   "cal.orbitsTitle": "Quest ricorrenti",
   "cal.orbitsEmpty":
     "Ancora nessuna quest ricorrente: dai una ripetizione a una quest e comincerà a orbitare qui.",
@@ -400,6 +406,7 @@ export const it: Record<MessageKey, Msg> = {
   "pills.day": "Giorno",
   "pills.month": "Mese",
   "pills.year": "Anno",
+  "pills.flow": "Flusso",
   "pills.orbits": "Orbite",
   "pills.yearShape": "Forma dell'anno",
   "pills.yearLinear": "Linee",

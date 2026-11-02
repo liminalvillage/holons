@@ -167,6 +167,11 @@ export const en = {
   "cal.lunationSpan": "Lunation {n} · {from} – {to}",
   "cal.zoomFit": "Fit",
   "cal.zoomHint": "Pinch or Ctrl + scroll to zoom",
+  "cal.flowAria":
+    "The year, the moon, its phase and the day as one zoomable flow",
+  "cal.flowHint": "Pinch or scroll to zoom · drag to move in time",
+  "cal.lunationShort": "Lunation {n}",
+  "cal.flowToday": "Today",
   "cal.orbitsTitle": "Recurring quests",
   "cal.orbitsEmpty":
     "No recurring quests yet — give a quest a repeat and it starts orbiting here.",
@@ -390,6 +395,7 @@ export const en = {
   "pills.day": "Day",
   "pills.month": "Month",
   "pills.year": "Year",
+  "pills.flow": "Flow",
   "pills.orbits": "Orbits",
   "pills.yearShape": "Year shape",
   "pills.yearLinear": "Lines",

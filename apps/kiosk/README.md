@@ -8,6 +8,8 @@ interacting:
 
 - **Tasks** — the backlog, as a wall of sticky notes (list, swipe and graph layouts).
 - **Calendar** — the month at a glance, with post-it notes for what's coming up.
+  The _Flow_ layout is the year, the moon, its phase and the day as one
+  zoomable space: pinch or scroll and the shape of time changes with the depth.
 - **Shifts** — community shifts in the Elinor format, read live from the relay.
 - **Library** — the library of things, and what's available to borrow.
 - **Lists** — the holon's checklists and shopping lists.

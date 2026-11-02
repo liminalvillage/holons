@@ -170,6 +170,12 @@ export const es: Record<MessageKey, Msg> = {
   "cal.lunationSpan": "Lunación {n} · {from} – {to}",
   "cal.zoomFit": "Ajustar",
   "cal.zoomHint": "Pellizca o Ctrl + rueda para ampliar",
+  "cal.flowAria":
+    "El año, la luna, su fase y el día en un solo flujo ampliable",
+  "cal.flowHint":
+    "Pellizca o desplaza para ampliar · arrastra para moverte en el tiempo",
+  "cal.lunationShort": "Lunación {n}",
+  "cal.flowToday": "Hoy",
   "cal.orbitsTitle": "Misiones recurrentes",
   "cal.orbitsEmpty":
     "Aún no hay misiones recurrentes: dale una repetición a una misión y empezará a orbitar aquí.",
@@ -401,6 +407,7 @@ export const es: Record<MessageKey, Msg> = {
   "pills.day": "Día",
   "pills.month": "Mes",
   "pills.year": "Año",
+  "pills.flow": "Flujo",
   "pills.orbits": "Órbitas",
   "pills.yearShape": "Forma del año",
   "pills.yearLinear": "Líneas",

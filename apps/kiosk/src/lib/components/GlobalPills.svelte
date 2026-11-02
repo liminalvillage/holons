@@ -143,11 +143,14 @@
     { id: "week", icon: "rows", labelKey: "pills.week" },
     { id: "month", icon: "grid", labelKey: "pills.month" },
     { id: "year", icon: "moon", labelKey: "pills.year" },
+    { id: "flow", icon: "spiral", labelKey: "pills.flow" },
     { id: "orbits", icon: "orbit", labelKey: "pills.orbits" },
   ];
   // The booking calendar answers "when is this thing gone?" — orbits of
-  // recurring quests have nothing to say there.
-  const LIB_CAL_MODES = CAL_MODES.filter((m) => m.id !== "orbits");
+  // recurring quests and the zoomable flow have nothing to say there.
+  const LIB_CAL_MODES = CAL_MODES.filter(
+    (m) => m.id !== "orbits" && m.id !== "flow",
+  );
 
   /** Resolve a keyed segment list into PillSwitch options. */
   function resolve(tr: Translator, segs: readonly Segment[]) {

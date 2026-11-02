@@ -836,15 +836,26 @@ export function setOffersScale(id: string): void {
 
 /**
  * The Calendar's time window (its Layout pill): one day, the week, the
- * month grid, the whole year as a lunar timeline, or the recurring quests
- * as orbits. Same per-device stickiness as the other views' layout choices.
+ * month grid, the whole year as a lunar timeline, the recurring quests as
+ * orbits, or the flow — year, moon, phase and day as one zoomable space.
+ * Same per-device stickiness as the other views' layout choices.
  */
-export type CalendarMode = "day" | "week" | "month" | "year" | "orbits";
+export type CalendarMode =
+  | "day"
+  | "week"
+  | "month"
+  | "year"
+  | "orbits"
+  | "flow";
 
 /** Resolve the Calendar mode; the single day is the default. */
 export function resolveCalendarView(): CalendarMode {
   const v = persisted(CAL_VIEW_KEY);
-  return v === "week" || v === "month" || v === "year" || v === "orbits"
+  return v === "week" ||
+    v === "month" ||
+    v === "year" ||
+    v === "orbits" ||
+    v === "flow"
     ? v
     : "day";
 }
