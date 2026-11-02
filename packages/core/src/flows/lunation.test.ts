@@ -58,6 +58,14 @@ describe('lunationAt', () => {
     }
   });
 
+  it('is numbered as the community counts', () => {
+    // Lunation 84 opened with the new moon of 10 October 2026, 15:50 UTC.
+    expect(lunationAt(Date.UTC(2026, 10, 2)).index).toBe(84);
+    expect(lunationAt(Date.UTC(2026, 9, 10)).index).toBe(83); // midnight, before the new moon
+    expect(lunationAt(Date.UTC(2026, 9, 10, 16)).index).toBe(84);
+    expect(lunationAt(Date.UTC(2026, 10, 10)).index).toBe(85);
+  });
+
   it('is stable exactly on a boundary', () => {
     const cycle = lunationAt(samples[0]);
     // The opening instant belongs to the cycle it opens, not the one before.

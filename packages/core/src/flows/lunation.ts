@@ -113,17 +113,22 @@ function indexContaining(ts: number): number {
 }
 
 /**
- * The cycle's number, on the same base and synodic constants the Telegram
- * bot's `/newmoon` counts by, so one cycle carries one name across surfaces.
+ * The cycle's number, on the base and synodic constants the community has
+ * always counted by (the Telegram bot's `/lunation`), so one cycle carries
+ * one name across surfaces: the cycle opened by the new moon whose synodic
+ * quotient from the base is N is called N − 1199 — Lunation 84 opened on
+ * 10 October 2026.
  *
  * Taken at the new-moon instant itself and rounded: at the boundary the
  * quotient is an integer, and rounding is the only reading that does not
- * wobble with floating point.
+ * wobble with floating point. (The bot ceils the quotient of the CURRENT
+ * instant, which mid-cycle is the same number; an earlier port here
+ * subtracted 1200 and named every cycle one short.)
  */
 function numberOf(newMoonMs: number): number {
   const BASE_JULIAN = 2423436.40347;
   const BASE_SYNODIC = 29.530588861;
-  return Math.round((julianOf(newMoonMs) - BASE_JULIAN) / BASE_SYNODIC) - 1200;
+  return Math.round((julianOf(newMoonMs) - BASE_JULIAN) / BASE_SYNODIC) - 1199;
 }
 
 /** One lunar cycle: when it opens, when it closes, and what it is called. */
