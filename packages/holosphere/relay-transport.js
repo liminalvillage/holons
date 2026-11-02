@@ -5,10 +5,11 @@
 //   write  →  every non-private put/delete is a signed kind-30078 event
 //             (NIP-33 replaceable per location) published to the relay set —
 //             holograms and globals included. The event goes into the store's
-//             OUTBOX first and leaves it only once a relay says OK; what no
-//             relay took is replayed on reconnect, on wake, on a backoff
-//             timer and at the next start, so a write made offline is never
-//             stranded in one device's store.
+//             OUTBOX first and leaves it only once EVERY relay has said OK;
+//             what a relay has not taken is replayed on reconnect, on wake,
+//             on a backoff timer and at the next start, so a write made
+//             offline is never stranded in one device's store, nor on one
+//             relay.
 //   read   →  a PULL. `ensureSync(holon, lens)` catches the pair up from the
 //             relays (paginated backfill on a cold store, a `since` query from
 //             the persisted cursor on a warm one) and resolves; reads then
@@ -240,13 +241,27 @@ export function createRelayTransport(holo, {
 
   // ---- publishing ------------------------------------------------------------
 
-  // The outbox: every event we publish sits in the store until ONE relay
-  // acknowledges it. `send` is the wire attempt; `publishEvent` is enqueue +
-  // send; `flushOutbox` resends whatever is still waiting.
-  const outbox = { timer: null, attempts: 0, flushing: null, inflight: new Set() };
+  // The outbox: every event we publish sits in the store until EVERY relay
+  // has acknowledged it (or refused it for good). One relay's OK is not
+  // enough: relays do not sync with each other, so an event only one of them
+  // took is lost if that relay later loses its data, and is invisible to a
+  // reader of the other. `send` is the wire attempt; `publishEvent` is
+  // enqueue + send; `flushOutbox` resends whatever is still waiting.
+  //
+  // `owed` (event id → relays that have not answered for good) lives in
+  // memory only: an outbox reopened after a restart owes every relay again,
+  // and a relay that already holds the event answers `duplicate`, which
+  // counts as taken.
+  const outbox = { timer: null, attempts: 0, flushing: null, inflight: new Set(), owed: new Map() };
 
-  function sent(event) {
-    outbox.attempts = 0;
+  function owedBy(event) {
+    let set = outbox.owed.get(event.id);
+    if (!set) { set = new Set(relays); outbox.owed.set(event.id, set); }
+    return set;
+  }
+
+  function done(event) {
+    outbox.owed.delete(event.id);
     store.outboxRemove(event.id);
   }
 
@@ -258,38 +273,55 @@ export function createRelayTransport(holo, {
   }
 
   /**
-   * One wire attempt. Resolves true when at least one relay said OK (the
-   * event leaves the outbox), false when none did (it stays, and a retry is
-   * scheduled). A terminal verdict from every relay drops it as well.
+   * One wire attempt to the relays that still owe this event, minus `skip`
+   * (relays a resend pass already found down). Each relay that says OK, or
+   * gives a verdict that will not change on retry, is settled; one that is
+   * unreachable, times out or refuses for a passing reason stays owed and
+   * joins `skip`. Resolves to how many relays acknowledged on this attempt;
+   * the event leaves the outbox once no relay owes it.
    */
-  async function send(event) {
-    if (closed || !event) return false;
-    if (outbox.inflight.has(event.id)) return false;
+  async function send(event, skip = null) {
+    if (closed || !event) return 0;
+    if (outbox.inflight.has(event.id)) return 0;
+    const owed = owedBy(event);
+    const targets = [...owed].filter((r) => !skip?.has(r));
+    if (!targets.length) return 0;
     outbox.inflight.add(event.id);
+    let acked = 0;
     try {
       const p = await poolReady;
-      if (closed) return false;
-      const results = await Promise.allSettled(p.publish(relays, event));
+      if (closed) return 0;
+      const results = await Promise.allSettled(p.publish(targets, event));
       // nostr-tools: a relay's OK fulfils with its message, an unreachable
-      // relay FULFILS with "connection failure: …", and an OK=false or a
-      // timeout rejects. Only the first is an acknowledgement.
-      if (results.some((x) => x.status === 'fulfilled' && !UNREACHABLE.test(String(x.value ?? '')))) {
-        sent(event);
-        return true;
+      // relay FULFILS (or, in newer versions, rejects) with "connection
+      // failure: …", and an OK=false or a timeout rejects. Only the first is
+      // an acknowledgement.
+      const refusals = [];
+      results.forEach((x, i) => {
+        const relay = targets[i];
+        const reason = String(x.status === 'fulfilled' ? x.value ?? '' : (x.reason?.message ?? x.reason ?? ''));
+        if (x.status === 'fulfilled' && !UNREACHABLE.test(reason)) {
+          acked++;
+          owed.delete(relay);
+        } else if (TERMINAL_VERDICT.test(reason) || reason === 'duplicate url') {
+          refusals.push(`${relay}: ${reason}`);
+          owed.delete(relay);
+        } else {
+          vlog('publish not taken by', relay, event.id, reason);
+          skip?.add(relay);
+        }
+      });
+      if (refusals.length) {
+        console.warn(`[nostr-transport] refused for good ${event.id} (${refusals.join('; ')})`);
       }
-      const reasons = results.map((x) => String(x.status === 'fulfilled' ? x.value : (x.reason?.message ?? x.reason ?? '')));
-      if (reasons.length && reasons.every((r) => TERMINAL_VERDICT.test(r))) {
-        console.warn(`[nostr-transport] every relay refused ${event.id} (${reasons[0]}); dropped from the outbox`);
-        store.outboxRemove(event.id);
-        return false;
-      }
-      vlog('publish reached no relay:', event.id, reasons[0]);
-      scheduleOutboxRetry();
-      return false;
+      // A resend pass (`skip` set) arms the retry timer itself, once.
+      if (!owed.size) done(event);
+      else if (!skip) scheduleOutboxRetry();
+      return acked;
     } catch (e) {
       vlog('publish failed:', e?.message);
-      scheduleOutboxRetry();
-      return false;
+      if (!skip) scheduleOutboxRetry();
+      return acked;
     } finally {
       outbox.inflight.delete(event.id);
     }
@@ -297,28 +329,37 @@ export function createRelayTransport(holo, {
 
   function publishEvent(event) {
     if (closed || !event) return;
-    store.outboxAdd(event);
+    for (const id of store.outboxAdd(event)) outbox.owed.delete(id);
     send(event).catch(() => {});
   }
 
   /**
-   * Resend every event still awaiting a relay, oldest first. Runs once at a
-   * time; a call during a run returns the running one. Resolves to the
-   * number of events acknowledged.
+   * Resend every event still awaiting a relay, oldest first. A relay that
+   * fails once is skipped for the rest of the pass, so a dead relay costs one
+   * attempt per pass rather than one per event; the retry timer comes back
+   * for it. Runs once at a time; a call during a run returns the running
+   * one. Resolves to the number of events that left the outbox.
    */
   function flushOutbox() {
     if (closed) return Promise.resolve(0);
     if (outbox.flushing) return outbox.flushing;
     if (outbox.timer) { clearTimeout(outbox.timer); outbox.timer = null; }
     outbox.flushing = (async () => {
-      let ok = 0;
+      const skip = new Set();
+      let left = 0;
+      let progressed = false;
       for (const event of store.outboxList()) {
-        if (closed) break;
+        if (closed || skip.size >= relays.length) break; // every relay is down this pass
         if (outbox.inflight.has(event.id)) continue; // its own first attempt is still out
-        if (await send(event)) ok++;
-        else break; // the wire is down: the retry timer picks the rest up
+        if (await send(event, skip)) progressed = true;
+        if (!outbox.owed.has(event.id)) left++;
       }
-      return ok;
+      // Back off only while the retries get nowhere: a relay that stays down
+      // must not be retried every few seconds just because live writes keep
+      // reaching the others.
+      if (progressed) outbox.attempts = 0;
+      if (store.outboxSize()) scheduleOutboxRetry();
+      return left;
     })().finally(() => { outbox.flushing = null; });
     return outbox.flushing;
   }

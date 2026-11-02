@@ -22,7 +22,7 @@ describe('relay outbox', () => {
   const relays = [];
   const make = (url, opts = {}) => {
     const s = new HoloSphere({
-      appName: APP, privateKey: opts.privateKey || generateSecretKey(), relays: [url],
+      appName: APP, privateKey: opts.privateKey || generateSecretKey(), relays: Array.isArray(url) ? url : [url],
       store: { adapter: opts.adapter || 'memory' },
       nostr: { syncTimeoutMs: 1500, freshnessMs: 0, grants: false, projections: [], reverseSync: false },
     });
@@ -135,5 +135,62 @@ describe('relay outbox', () => {
     expect(await waitFor(() => relay.count() >= 2)).toBe(true);
     const reader = make(relay.url);
     expect((await reader.get('hub5', 'quests', 'q5'))?.title).toBe('v3');
+  }, 40000);
+
+  test('a write both relays take leaves the outbox and is on both', async () => {
+    const a = await startRelay();
+    const b = await startRelay();
+    relays.push(a, b);
+    const sphere = make([a.url, b.url]);
+    await sphere.put('hub6', 'quests', { id: 'q6', title: 'Both' });
+    expect(await waitFor(() => a.count() >= 1 && b.count() >= 1)).toBe(true);
+    expect(await waitFor(async () => (await sphere.getOutbox()).length === 0)).toBe(true);
+  }, 20000);
+
+  test('one relay taking a write is not enough: it waits for the one that was down', async () => {
+    const up = await startRelay();
+    relays.push(up);
+    const probe = await startRelay();
+    const { port, url: downUrl } = probe;
+    await probe.close();
+
+    const sphere = make([up.url, downUrl]);
+    await sphere.put('hub7', 'quests', { id: 'q7', title: 'Owed' });
+    expect(await waitFor(() => up.count() >= 1)).toBe(true);
+    // The live relay has it, but the event stays queued for the other one.
+    await wait(1500);
+    expect((await sphere.getOutbox()).length).toBe(1);
+
+    // The second relay comes back: the resend reaches it and the outbox empties.
+    const back = await startRelay({ port });
+    relays.push(back);
+    await sphere.resyncSubscriptions();
+    expect(await waitFor(() => back.events().some((e) => e.tags.some((t) => t[0] === 'd' && t[1].endsWith('q7'))))).toBe(true);
+    expect(await waitFor(async () => (await sphere.getOutbox()).length === 0)).toBe(true);
+  }, 40000);
+
+  test('a resend after a restart counts a relay that already holds the event as done', async () => {
+    const a = await startRelay();
+    relays.push(a);
+    const probe = await startRelay();
+    const { port, url: downUrl } = probe;
+    await probe.close();
+
+    const adapter = createMemoryAdapter({ retain: true });
+    const sk = generateSecretKey();
+    const first = make([a.url, downUrl], { adapter, privateKey: sk });
+    await first.put('hub8', 'quests', { id: 'q8', title: 'Restart' });
+    expect(await waitFor(() => a.count() >= 1)).toBe(true);
+    await wait(1500);
+    expect((await first.getOutbox()).length).toBe(1);
+    await first.close();
+
+    const b = await startRelay({ port });
+    relays.push(b);
+    const second = make([a.url, b.url], { adapter, privateKey: sk });
+    await second.ready();
+    expect(await waitFor(() => b.count() >= 1)).toBe(true);
+    expect(await waitFor(async () => (await second.getOutbox()).length === 0)).toBe(true);
+    expect(a.count()).toBe(1);
   }, 40000);
 });

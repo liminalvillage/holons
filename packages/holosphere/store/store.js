@@ -14,10 +14,10 @@
 //             `_events` sidecar: signing reads its envelopes from here.
 //   private   NIP-44 ciphertext of password lenses (see private.js).
 //   cursors   lens key → { since, syncedAt }: how far a lens has been synced.
-//   outbox    id → signed event (any kind) this instance published but no
-//             relay has acknowledged yet. The transport replays it until one
-//             does, so a write made offline still travels once the network is
-//             back — and survives a reload in between. One entry per
+//   outbox    id → signed event (any kind) this instance published but not
+//             every relay has acknowledged yet. The transport replays it until
+//             all have, so a write made offline still travels once the network
+//             is back — and survives a reload in between. One entry per
 //             replaceable coordinate: a newer write to the same address drops
 //             the unsent older one (the relay would keep only the newest).
 //   backlinks source soul → Set<pointer soul>: derived from the records that
@@ -455,7 +455,7 @@ export class Store {
     // ------------------------------------------------------------------ outbox
 
     /**
-     * Remember a signed event until a relay acknowledges it. A replaceable
+     * Remember a signed event until every relay acknowledges it. A replaceable
      * event (kinds 10000–19999, 30000–39999, 0, 3) evicts the unsent older
      * one at the same coordinate: the relay keeps only the newest, so sending
      * the older one would be a wasted round trip. Returns the ids evicted.
@@ -478,14 +478,14 @@ export class Store {
         return evicted;
     }
 
-    /** A relay took the event (or it will never be taken): forget it. */
+    /** Every relay took the event (or will never take it): forget it. */
     outboxRemove(id) {
         const had = this.outbox.delete(id);
         if (had) this._enqueue({ t: 'out-del', id });
         return had;
     }
 
-    /** Events still awaiting a relay, oldest first. */
+    /** Events still awaiting at least one relay, oldest first. */
     outboxList() {
         return Array.from(this.outbox.values()).sort((a, b) => (a.created_at - b.created_at) || (a.id < b.id ? -1 : 1));
     }

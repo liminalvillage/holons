@@ -146,20 +146,26 @@ the store on its own, so a crash mid-backfill cannot skip history.
 
 Every event the transport publishes (30078 envelopes, projections, kind-1808
 log entries, NIP-17 wraps) goes into `outbox` BEFORE the wire attempt and is
-removed only once one relay answers OK. What no relay took is resent — oldest
-first, one failure stops the pass — on reconnect (`resync`, which the
+removed only once every relay has answered OK (or refused it for good —
+`invalid:`, `blocked:`, `duplicate:` …). Relays do not sync with each other,
+so an event only one relay took is lost if that relay loses its data, and
+missing for anyone reading another. What a relay has not taken is resent to
+that relay — oldest first; a relay that fails is skipped for the rest of the
+pass — on reconnect (`resync`, which the
 browser's `online` and `visibilitychange` handlers call), on a backoff timer
-(5 s → 15 s → 60 s → 5 min while the wire stays down) and when the next
+(5 s → 15 s → 60 s → 5 min while the retries get nowhere) and when the next
 instance opens the same store. So a tick made on an iPad with no network lands
 locally at once, survives a reload, and reaches the relays whenever the
 network is back.
 
 Two rules keep it small: a newer claim at the same replaceable coordinate
 (`kind|pubkey[|d]`) evicts the unsent older one — the relay would keep only
-the newest anyway — and a verdict every relay agrees will not change on retry
-(`invalid:`, `blocked:`, `pow:`, `restricted:`) drops the event with a
-warning. Anything else (connection failure, timeout, rate limit, an
-unexplained refusal) is retried. `holosphere.getOutbox()` lists what is
+the newest anyway — and a verdict that will not change on retry (`invalid:`,
+`blocked:`, `pow:`, `restricted:`) settles that relay with a warning. Anything
+else (connection failure, timeout, rate limit, an unexplained refusal) is
+retried. Which relays still owe an event is kept in memory only: after a
+restart the outbox is resent to every relay, and one that already holds an
+event answers `duplicate`, which counts as taken. `holosphere.getOutbox()` lists what is
 waiting; `holosphere.flushOutbox()` resends now.
 
 ## Adapter interface

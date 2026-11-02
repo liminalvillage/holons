@@ -731,8 +731,8 @@ class HoloSphere {
     }
 
     /**
-     * Events this instance published that no relay has acknowledged yet
-     * (oldest first). Empty when every write has reached the wire; the
+     * Events this instance published that not every relay has acknowledged
+     * yet (oldest first). Empty when every write has reached the wire; the
      * transport keeps resending these on reconnect, wake and a backoff timer.
      */
     async getOutbox() {
@@ -740,7 +740,7 @@ class HoloSphere {
         return this.store.outboxList();
     }
 
-    /** Resend the outbox now; resolves to how many events a relay took. */
+    /** Resend the outbox now; resolves to how many events every relay now holds. */
     async flushOutbox() {
         await this._awaitBackend();
         return this._relayTransport ? this._relayTransport.flushOutbox() : 0;

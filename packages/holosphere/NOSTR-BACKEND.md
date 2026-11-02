@@ -6,8 +6,8 @@ network, and a local event-sourced store (`STORE.md`) is the cache.
 - **write** — every non-private `put`/`delete` is signed and applied to the
   local store, then published as a NIP-01 event (kind 30078, NIP-33
   replaceable per location). This includes **holograms** and **globals**.
-  The event waits in the store's **outbox** until a relay acknowledges it;
-  what no relay took is resent on reconnect, on a backoff timer and at the
+  The event waits in the store's **outbox** until every relay acknowledges
+  it; what a relay has not taken is resent on reconnect, on a backoff timer and at the
   next start (see `STORE.md` → *Outbox*), so an offline write is never
   stranded on one device.
 - **read** — a pull. `get`/`getAll` catch the `(holon, lens)` up from the
