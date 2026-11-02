@@ -1,76 +1,99 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it } from "vitest";
-import { INNER_LEAF, blobField, contours, traceLoops } from "./peoplecells";
+import { convexHull, membrane, traceLoop } from "./peoplecells";
 
-const centre = (loop: { x: number; y: number }[]) => ({
-  x: loop.reduce((s, p) => s + p.x, 0) / loop.length,
-  y: loop.reduce((s, p) => s + p.y, 0) / loop.length,
+type V = { x: number; y: number };
+const area = (loop: V[]) =>
+  loop.reduce((s, p, i) => {
+    const q = loop[(i + 1) % loop.length];
+    return s + (p.x * q.y - q.x * p.y);
+  }, 0) / 2;
+/** Is `p` inside the closed loop (ray casting)? */
+const inside = (loop: V[], p: V) => {
+  let hit = false;
+  for (let i = 0, j = loop.length - 1; i < loop.length; j = i++) {
+    const a = loop[i];
+    const b = loop[j];
+    if (
+      a.y > p.y !== b.y > p.y &&
+      p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x
+    )
+      hit = !hit;
+  }
+  return hit;
+};
+
+describe("convexHull", () => {
+  it("keeps the corners, drops what is inside, runs counter-clockwise", () => {
+    const hull = convexHull([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+      { x: 5, y: 5 },
+      { x: 5, y: 0 }, // on a side
+    ]);
+    expect(hull).toHaveLength(4);
+    expect(area(hull)).toBeGreaterThan(0);
+  });
 });
 
-describe("peoplecells", () => {
-  it("draws nothing for nobody", () => {
-    expect(contours(blobField([], [], 20, 4))).toEqual([]);
+describe("membrane", () => {
+  it("is nothing round nobody, and a disc round one", () => {
+    expect(membrane([], 10)).toEqual([]);
+    const disc = membrane([{ x: 50, y: 50 }], 10);
+    for (const p of disc)
+      expect(Math.hypot(p.x - 50, p.y - 50)).toBeCloseTo(10);
   });
 
-  it("rings a lone member at the reach asked for", () => {
-    const loops = contours(blobField([{ x: 100, y: 50 }], [], 20, 2));
-    expect(loops).toHaveLength(1);
-    for (const p of loops[0])
-      expect(Math.hypot(p.x - 100, p.y - 50)).toBeCloseTo(20, -0.5);
-    const c = centre(loops[0]);
-    expect(c.x).toBeCloseTo(100, 0);
-    expect(c.y).toBeCloseTo(50, 0);
+  it("is one loop round everyone, a reach clear of each", () => {
+    const pts = [
+      { x: 0, y: 0 },
+      { x: 200, y: 20 },
+      { x: 90, y: 150 },
+      { x: 60, y: 40 }, // inside
+      { x: 400, y: 0 }, // far off: still the same one cell
+    ];
+    const loop = membrane(pts, 30);
+    expect(area(loop)).toBeGreaterThan(0);
+    for (const p of pts) expect(inside(loop, p)).toBe(true);
+    // Every point of the membrane is a reach from the nearest member or
+    // more — no member pokes through it.
+    for (const q of loop) {
+      const d = Math.min(...pts.map((p) => Math.hypot(p.x - q.x, p.y - q.y)));
+      expect(d).toBeGreaterThan(30 - 1e-6);
+    }
   });
 
-  it("traces the inner leaf just inside the membrane", () => {
-    const f = blobField([{ x: 0, y: 0 }], [], 20, 2);
-    const [inner] = contours(f, INNER_LEAF);
-    const d = Math.hypot(inner[0].x, inner[0].y);
-    expect(d).toBeLessThan(20);
-    expect(d).toBeGreaterThan(14);
-  });
-
-  it("keeps two far members apart, and a neck makes them one", () => {
-    const a = { x: 0, y: 0 };
-    const b = { x: 200, y: 0 };
-    expect(contours(blobField([a, b], [], 20, 4))).toHaveLength(2);
-    expect(contours(blobField([a, b], [[a, b]], 20, 4))).toHaveLength(1);
-  });
-
-  it("melts two close members into one", () => {
-    const loops = contours(
-      blobField(
-        [
-          { x: 0, y: 0 },
-          { x: 30, y: 0 },
-        ],
-        [],
-        20,
-        3,
-      ),
+  it("is a capsule round two", () => {
+    const loop = membrane(
+      [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ],
+      10,
     );
-    expect(loops).toHaveLength(1);
+    const ys = loop.map((p) => p.y);
+    expect(Math.max(...ys)).toBeCloseTo(10);
+    expect(Math.min(...ys)).toBeCloseTo(-10);
+    expect(Math.min(...loop.map((p) => p.x))).toBeCloseTo(-10, 0); // sampled arc
+    expect(Math.max(...loop.map((p) => p.x))).toBeCloseTo(110, 0);
   });
+});
 
-  it("leaves a hole in a ring of members round an empty middle", () => {
-    const ring = Array.from({ length: 24 }, (_, i) => ({
-      x: Math.cos((i / 24) * 2 * Math.PI) * 150,
-      y: Math.sin((i / 24) * 2 * Math.PI) * 150,
-    }));
-    expect(contours(blobField(ring, [], 25, 4))).toHaveLength(2);
-  });
-
-  it("traces each loop as one closed rounded path", () => {
+describe("traceLoop", () => {
+  it("draws one closed path", () => {
     const calls: string[] = [];
-    const ctx = {
-      moveTo: () => calls.push("move"),
-      quadraticCurveTo: () => calls.push("curve"),
-      closePath: () => calls.push("close"),
-    };
-    const loops = contours(blobField([{ x: 0, y: 0 }], [], 20, 4));
-    traceLoops(ctx, loops);
+    traceLoop(
+      {
+        moveTo: () => calls.push("move"),
+        lineTo: () => calls.push("line"),
+        closePath: () => calls.push("close"),
+      },
+      membrane([{ x: 0, y: 0 }], 10),
+    );
     expect(calls[0]).toBe("move");
     expect(calls.at(-1)).toBe("close");
-    expect(calls.filter((c) => c === "curve")).toHaveLength(loops[0].length);
+    expect(calls.filter((c) => c === "move")).toHaveLength(1);
   });
 });

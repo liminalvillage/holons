@@ -38,20 +38,19 @@
     initialsOf,
     peopleField,
     simBounds,
-    spanTree,
     stepPeopleSim,
     syncPeopleSim,
     type PeopleField,
     type PeopleSim,
   } from "$lib/dockpeople";
-  import {
-    INNER_LEAF,
-    MEMBRANE,
-    blobField,
-    contours,
-    traceLoops,
-  } from "$lib/peoplecells";
+  import { membrane, traceLoop } from "$lib/peoplecells";
   import { names, nameOf, profileFor } from "$lib/names";
+  import {
+    cellSpots,
+    placeLabels,
+    type LabelBox,
+    type Rect,
+  } from "$lib/labelplace";
   import { avatarUrl, hideImg, showImg } from "./Avatars.svelte";
   import { t } from "$lib/i18n";
   import Icon from "./Icon.svelte";
@@ -281,27 +280,24 @@
     ctx.clearRect(0, 0, paneW, paneH);
     ctx.lineJoin = "round";
     const reach = r * view.s * 1.6; // a member's own ground
-    const step = Math.min(12, Math.max(4, reach / 3));
     const shade = $activeTheme === "dark" ? "#ffffff" : "#000000";
     // The cells in the light are drawn last, over the faded rest.
     const lit = cells.filter((c) => groundLit(c.id, lens));
+    const tags: LabelBox[] = [];
     const unlit = cells.filter((c) => !groundLit(c.id, lens));
     for (const cell of [...unlit, ...lit]) {
       const pts: Vec[] = cell.members.map((i) => ({ x: sx[i], y: sy[i] }));
-      const necks = spanTree(pts).map(([a, b]) => [pts[a], pts[b]] as const);
-      const f = blobField(pts, necks, reach, step);
-      const outer = contours(f, MEMBRANE);
-      const inner = contours(f, INNER_LEAF);
+      const outline = membrane(pts, reach);
       const color = inks.get(cell.id) ?? "#888888";
       const a = groundLit(cell.id, lens) ? 1 : 0.18;
       // The cytoplasm: a clear wash, thickening toward the membrane.
       ctx.save();
       ctx.beginPath();
-      traceLoops(ctx, outer);
-      ctx.clip("evenodd");
+      traceLoop(ctx, outline);
+      ctx.clip();
       ctx.fillStyle = color;
       ctx.globalAlpha = a * 0.2;
-      ctx.fill("evenodd");
+      ctx.fill();
       ctx.strokeStyle = color;
       ctx.globalAlpha = a * 0.12;
       for (const w of [0.9, 0.55, 0.25]) {
@@ -309,30 +305,77 @@
         ctx.stroke();
       }
       ctx.restore();
-      // The membrane: a faint inner leaf, and a firm outer one drawn deeper
-      // than the ground so it holds on pale paper (lighter on the night's).
+      // The membrane: one firm line round everyone, drawn deeper than the
+      // ground so it holds on pale paper (lighter on the night's).
       ctx.beginPath();
-      traceLoops(ctx, inner);
-      membrane(ctx, color, shade, a * 0.6, 1);
-      ctx.beginPath();
-      traceLoops(ctx, outer);
-      membrane(ctx, color, shade, a, 2);
-      // The hub's name, over the top of its cell.
+      traceLoop(ctx, outline);
+      strokeMembrane(ctx, color, shade, a, 2);
+      // The hub's name: where it could go round its cell (placed below).
       const label = labelEls.get(cell.id);
       if (label) {
-        let x = 0;
-        let top = Infinity;
-        for (const p of pts) {
-          x += p.x;
-          top = Math.min(top, p.y);
-        }
-        label.style.transform = `translate3d(${x / pts.length}px, ${top - reach}px, 0)`;
+        const size = labelSize(cell.id, label);
+        tags.push({
+          id: cell.id,
+          ...size,
+          spots: cellSpots(pts, reach, size.w, size.h, root * 1.2),
+        });
       }
     }
     ctx.globalAlpha = 1;
+    // The names, laid down so none covers another: those in the light
+    // first, then the biggest cells (lib/labelplace).
+    const rank = new Map(lit.map((c, i) => [c.id, i - lit.length]));
+    const sizeOf = new Map(cells.map((c) => [c.id, c.members.length]));
+    tags.sort(
+      (a, b) =>
+        (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0) ||
+        (sizeOf.get(b.id) ?? 0) - (sizeOf.get(a.id) ?? 0) ||
+        (a.id < b.id ? -1 : 1),
+    );
+    // The people are in the way too: each orb and the name hung under it.
+    const orb = (PERSON_REM * root * view.s) / 2;
+    const faces: Rect[] = [];
+    for (let i = 0; i < n; i++)
+      faces.push({
+        x0: sx[i] - orb,
+        y0: sy[i] - orb,
+        x1: sx[i] + orb,
+        y1: sy[i] + orb + root * 1.2,
+      });
+    const placed = placeLabels(tags, {
+      bounds: { w: paneW, h: paneH },
+      prev: labelSpot,
+      obstacles: faces,
+    });
+    labelSpot = new Map();
+    for (const [id, at] of placed) {
+      labelSpot.set(id, at.spot);
+      const el = labelEls.get(id);
+      if (el) el.style.transform = `translate3d(${at.x}px, ${at.y}px, 0)`;
+    }
     return easing;
   }
-  function membrane(
+
+  // The names' sizes, measured once each (reading layout every frame would
+  // stall it) and again when the cells change; where each name sat last.
+  let labelSizes = new Map<string, { w: number; h: number }>();
+  let labelSpot = new Map<string, number>();
+  $: (void cells, (labelSizes = new Map()));
+  // A name measured before the web font landed is measured too narrow.
+  if (typeof document !== "undefined")
+    void document.fonts?.ready.then(() => {
+      labelSizes = new Map();
+      kick();
+    });
+  function labelSize(id: string, el: HTMLElement) {
+    let size = labelSizes.get(id);
+    if (!size || !size.w) {
+      size = { w: el.offsetWidth, h: el.offsetHeight };
+      labelSizes.set(id, size);
+    }
+    return size;
+  }
+  function strokeMembrane(
     ctx: CanvasRenderingContext2D,
     color: string,
     shade: string,
@@ -691,7 +734,7 @@
     position: absolute;
     left: 0;
     top: 0;
-    z-index: 1;
+    z-index: 3; /* over the people: a name is never hidden by a face */
     transform: translate3d(-100vw, 0, 0);
     translate: -50% -50%;
     display: inline-flex;
@@ -729,7 +772,7 @@
     outline-offset: 2px;
   }
   .gname.lit {
-    z-index: 3;
+    z-index: 4;
   }
   .gname.dim {
     opacity: 0.3;

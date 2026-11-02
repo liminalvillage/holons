@@ -7,7 +7,6 @@ import {
   peopleField,
   settlePeople,
   simBounds,
-  spanTree,
   stepPeopleSim,
   syncPeopleSim,
   type PeopleSim,
@@ -201,23 +200,6 @@ describe("the people field", () => {
     sim.py.set([0, 0]);
     expect(simBounds(sim, 26)).toEqual({ x: 50, y: 0, w: 152, h: 52 });
     expect(simBounds(syncPeopleSim(null, [], 26), 26).w).toBe(0);
-  });
-});
-
-describe("spanTree", () => {
-  it("joins every point with the shortest lines, and no more", () => {
-    const pts = [
-      { x: 0, y: 0 },
-      { x: 100, y: 0 },
-      { x: 10, y: 0 },
-      { x: 100, y: 10 },
-    ];
-    const tree = spanTree(pts);
-    expect(tree).toHaveLength(3);
-    const key = (e: [number, number]) => [...e].sort().join("-");
-    expect(tree.map(key).sort()).toEqual(["0-2", "1-2", "1-3"]);
-    expect(spanTree([pts[0]])).toEqual([]);
-    expect(spanTree([])).toEqual([]);
   });
 });
 

@@ -503,40 +503,6 @@ export function settlePeople(
   return sim;
 }
 
-/**
- * The shortest set of lines that joins every point to the rest (a minimum
- * spanning tree), as pairs of places in `pts`. A hub's ground is drawn as
- * its members' discs melted together; these are the necks that keep a hub
- * whose members stand apart one piece, without sweeping over whoever stands
- * between them the way a hull would.
- */
-export function spanTree(pts: readonly Vec[]): Array<[number, number]> {
-  const n = pts.length;
-  const out: Array<[number, number]> = [];
-  if (n < 2) return out;
-  const near = new Float64Array(n).fill(Infinity);
-  const from = new Int32Array(n);
-  const done = new Uint8Array(n);
-  let cur = 0;
-  done[0] = 1;
-  for (let added = 1; added < n; added++) {
-    let best = -1;
-    for (let j = 0; j < n; j++) {
-      if (done[j]) continue;
-      const d = Math.hypot(pts[j].x - pts[cur].x, pts[j].y - pts[cur].y);
-      if (d < near[j]) {
-        near[j] = d;
-        from[j] = cur;
-      }
-      if (best < 0 || near[j] < near[best]) best = j;
-    }
-    done[best] = 1;
-    out.push([from[best], best]);
-    cur = best;
-  }
-  return out;
-}
-
 /** The box the people of a sim stand in, orbs included. */
 export function simBounds(
   sim: PeopleSim,
