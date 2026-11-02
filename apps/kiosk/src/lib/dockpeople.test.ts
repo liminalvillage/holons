@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it } from "vitest";
 import {
+  filterPeople,
   focusRest,
   initialsOf,
   peopleField,
@@ -91,6 +92,43 @@ describe("the people field", () => {
     expect(Math.max(box.w, box.h)).toBeLessThan(40 * 26);
   });
 
+  it("holds two cells closer the more people they share", () => {
+    // Three hubs of six: a and b share three people, a and c only one.
+    const cast = [
+      ...["s1", "s2", "s3"].map((id) => person(id, "a", "b")),
+      person("t1", "a", "c"),
+      ...["a1", "a2"].map((id) => person(id, "a")),
+      ...["b1", "b2", "b3"].map((id) => person(id, "b")),
+      ...["c1", "c2", "c3", "c4", "c5"].map((id) => person(id, "c")),
+    ];
+    const sim = settlePeople(cast, 26);
+    const centre = (ids: string[]) => patch(sim, ids);
+    const a = centre(["s1", "s2", "s3", "t1", "a1", "a2"]);
+    const b = centre(["s1", "s2", "s3", "b1", "b2", "b3"]);
+    const c = centre(["t1", "c1", "c2", "c3", "c4", "c5"]);
+    const ab = Math.hypot(a.x - b.x, a.y - b.y);
+    const ac = Math.hypot(a.x - c.x, a.y - c.y);
+    expect(ab).toBeLessThan(ac);
+  });
+
+  it("parts cells that share nobody, rather than piling them up", () => {
+    const cast = ["a", "b", "c"].flatMap((h) =>
+      [1, 2, 3, 4].map((i) => person(`${h}${i}`, h)),
+    );
+    const sim = settlePeople(cast, 26);
+    const cs = ["a", "b", "c"].map((h) =>
+      patch(
+        sim,
+        [1, 2, 3, 4].map((i) => `${h}${i}`),
+      ),
+    );
+    for (let i = 0; i < 3; i++)
+      for (let j = i + 1; j < 3; j++)
+        expect(
+          Math.hypot(cs[i].x - cs[j].x, cs[i].y - cs[j].y),
+        ).toBeGreaterThan(cs[i].reach + cs[j].reach);
+  });
+
   it("comes to rest, and is the same picture every time", () => {
     const sim = settlePeople(people, 26);
     const field = peopleField(sim, people);
@@ -98,13 +136,21 @@ describe("the people field", () => {
     expect(settlePeople(people, 26)).toEqual(settlePeople(people, 26));
   });
 
-  it("keeps wandering when asked to, and leaves a held person to the hand", () => {
+  it("comes to rest, so the view can stop drawing", () => {
     const sim = settlePeople(people, 26);
-    const before = [sim.px[0], sim.py[0], sim.px[1], sim.py[1]];
-    for (let f = 0; f < 30; f++)
-      stepPeopleSim(sim, 26, { wobbleT: f * 16, held: 0 });
-    expect([sim.px[0], sim.py[0]]).toEqual(before.slice(0, 2));
-    expect([sim.px[1], sim.py[1]]).not.toEqual(before.slice(2));
+    const field = peopleField(sim, people);
+    expect(stepPeopleSim(sim, 26, { field })).toBeLessThan(0.05);
+  });
+
+  it("leaves a held person to the hand while the rest move", () => {
+    const sim = settlePeople(people, 26);
+    const field = peopleField(sim, people);
+    sim.px[0] += 200; // carried off
+    const held = [sim.px[0], sim.py[0]];
+    const other = [sim.px[1], sim.py[1]];
+    for (let f = 0; f < 30; f++) stepPeopleSim(sim, 26, { field, held: 0 });
+    expect([sim.px[0], sim.py[0]]).toEqual(held);
+    expect([sim.px[1], sim.py[1]]).not.toEqual(other);
   });
 
   it("gathers round the person in focus, the most shared nearest", () => {
@@ -184,5 +230,48 @@ describe("initialsOf", () => {
   it("has nothing to say for an id", () => {
     expect(initialsOf("#235114395")).toBe("");
     expect(initialsOf("")).toBe("");
+  });
+});
+
+describe("filterPeople", () => {
+  const hubs = [
+    { id: "-1", name: "Casa Selva" },
+    { id: "-2", name: "Liminal Village" },
+    { id: "-3", name: "Oilonics" },
+  ];
+  const names: Record<string, string> = {
+    ann: "Ann Àlvarez",
+    bo: "Bo Lind",
+    cy: "Cy Moss",
+  };
+  const nameOf = (id: string) => names[id] ?? id;
+  const cast = [
+    person("ann", "-1", "-2"),
+    person("bo", "-2", "-3"),
+    person("cy", "-3"),
+  ];
+
+  it("keeps everyone on a blank query", () => {
+    const out = filterPeople(cast, hubs, "  ", nameOf);
+    expect(out.people).toEqual(cast);
+    expect([...out.hubs].sort()).toEqual(["-1", "-2", "-3"]);
+  });
+
+  it("finds a person by name, accents aside, with all their hubs", () => {
+    const out = filterPeople(cast, hubs, "alvarez", nameOf);
+    expect(out.people).toEqual([person("ann", "-1", "-2")]);
+    expect([...out.hubs].sort()).toEqual(["-1", "-2"]);
+  });
+
+  it("finds a hub's members, standing only on that hub", () => {
+    const out = filterPeople(cast, hubs, "liminal", nameOf);
+    expect(out.people).toEqual([person("ann", "-2"), person("bo", "-2")]);
+    expect([...out.hubs]).toEqual(["-2"]);
+  });
+
+  it("answers nothing when nobody and no hub matches", () => {
+    const out = filterPeople(cast, hubs, "zzz", nameOf);
+    expect(out.people).toEqual([]);
+    expect(out.hubs.size).toBe(0);
   });
 });

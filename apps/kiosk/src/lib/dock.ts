@@ -225,16 +225,21 @@ export function matchesDock(
   entry: Pick<DockEntry, "id" | "name">,
   query: string,
 ): boolean {
+  return matchesText(`${entry.name} ${labelFor(entry.id)} ${entry.id}`, query);
+}
+
+/** Does `text` answer the query — every word of it, case and accents aside? */
+export function matchesText(text: string, query: string): boolean {
   const words = fold(query).split(" ").filter(Boolean);
   if (!words.length) return true;
-  const hay = fold(`${entry.name} ${labelFor(entry.id)} ${entry.id}`);
+  const hay = fold(text);
   return words.every((w) => hay.includes(w));
 }
 
 /**
  * A stable angle (0–359) for a holon from the card hash every surface shares.
  * The orbs are PAINTED with `holonColor` (lib/palette), which also honours a
- * caretaker override; this bare number only seeds each orb's drift phase.
+ * caretaker override; this bare number is only the hue it hashes to.
  */
 export function hueFor(id: string): number {
   return colorHash(id) % 360;
@@ -314,15 +319,13 @@ export function orbClusters(
   return out;
 }
 
-/** A running gravity simulation — positions, momentum, and wander phases. */
+/** A running gravity simulation — positions and momentum. */
 export type OrbSim = {
   ids: string[];
   px: Float64Array;
   py: Float64Array;
   vx: Float64Array;
   vy: Float64Array;
-  /** Per-orb wander phase (from the id hash) so no two orbs drift in step. */
-  phase: Float64Array;
 };
 
 const GOLDEN_ANGLE = 2.399963229728653; // spreads any orb count evenly
@@ -350,14 +353,12 @@ export function seedOrbs(
     py: new Float64Array(n),
     vx: new Float64Array(n),
     vy: new Float64Array(n),
-    phase: new Float64Array(n),
   };
   const ring = n > 1 ? Math.min(width, height) / 3.2 : 0;
   for (let i = 0; i < n; i++) {
     const a = i * GOLDEN_ANGLE;
     sim.px[i] = width / 2 + Math.cos(a) * ring;
     sim.py[i] = height / 2 + Math.sin(a) * ring * 0.8;
-    sim.phase[i] = (hueFor(ids[i]) / 360) * Math.PI * 2;
   }
   return sim;
 }
@@ -389,9 +390,9 @@ export function syncOrbs(
 
 /**
  * One physics tick: central gravity, pairwise repulsion, link springs, soft
- * walls, then damped integration. `wobbleT` (ms, e.g. a rAF timestamp) adds
- * the gentle perpetual wander that keeps the sky alive; omit it for a
- * deterministic settle (that's what the tests and orbLayout do).
+ * walls, then damped integration. Returns the fastest any orb moved (px),
+ * so the live sky can tell a field at rest and stop drawing it. There is no
+ * wander: a sky that breathed forever was redrawn every frame forever.
  *
  * Every force is SOFT and bounded — there is no positional snap anywhere.
  * The dock used to finish each frame by yanking every federated pair back
@@ -428,13 +429,12 @@ export function stepOrbs(
   width: number,
   height: number,
   radius: number,
-  wobbleT?: number,
   liftedId?: string,
   anchors?: ReadonlyMap<string, Vec>,
-): void {
+): number {
   const n = sim.ids.length;
-  if (!n || width <= 0 || height <= 0) return;
-  const { px, py, vx, vy, phase } = sim;
+  if (!n || width <= 0 || height <= 0) return 0;
+  const { px, py, vx, vy } = sim;
   const cx = width / 2;
   const cy = height / 2;
   const idx = new Map(sim.ids.map((id, i) => [id, i]));
@@ -532,16 +532,7 @@ export function stepOrbs(
       vy[j] -= dy * f;
     }
   }
-  if (wobbleT !== undefined) {
-    // A slow orbital breeze, phased per orb: strong enough to see the sky
-    // breathe, far too weak to break a constellation apart.
-    const t = wobbleT * 0.001;
-    for (let i = 0; i < n; i++) {
-      if (i === lifted) continue;
-      vx[i] += Math.cos(t * 0.6 + phase[i]) * 0.05;
-      vy[i] += Math.sin(t * 0.45 + phase[i] * 1.7) * 0.05;
-    }
-  }
+  let fastest = 0;
   for (let i = 0; i < n; i++) {
     if (i === lifted) continue;
     vx[i] *= 0.8;
@@ -551,8 +542,10 @@ export function stepOrbs(
       vx[i] *= maxSpeed / speed;
       vy[i] *= maxSpeed / speed;
     }
-    const nx = px[i] + vx[i];
-    const ny = py[i] + vy[i];
+    const ox = px[i];
+    const oy = py[i];
+    const nx = ox + vx[i];
+    const ny = oy + vy[i];
     px[i] = clampX(nx);
     py[i] = clampY(ny);
     // Meeting the edge spends the momentum that was carrying the orb into
@@ -560,7 +553,9 @@ export function stepOrbs(
     // jump rather than a drift.
     if (px[i] !== nx) vx[i] = 0;
     if (py[i] !== ny) vy[i] = 0;
+    fastest = Math.max(fastest, Math.hypot(px[i] - ox, py[i] - oy));
   }
+  return fastest;
 }
 
 /** The sim's positions as a map, for the template and the bounds. */
@@ -618,7 +613,7 @@ export function orbLayout(
   if (!ids.length || width <= 0 || height <= 0) return new Map();
   const sim = seedOrbs(ids, width, height);
   for (let it = 0; it < 300; it++)
-    stepOrbs(sim, links, width, height, radius, undefined, undefined, anchors);
+    stepOrbs(sim, links, width, height, radius, undefined, anchors);
   return orbPositions(sim);
 }
 
@@ -878,28 +873,45 @@ export function isForgotten(id: string): boolean {
   return forgotten.has(id);
 }
 
+/**
+ * Which docked holons are ANCHORED — the ones the sky shows, in the
+ * holosphere and the geosphere alike: every holon `holds` says is anchored
+ * by itself (the dock passes "has a place, or has any federation partner"),
+ * and every holon in the same constellation as one (partners of partners
+ * included). Everything else waits in the dock's drawer.
+ */
+export function anchoredIds(
+  ids: readonly string[],
+  links: readonly OrbLink[],
+  holds: (id: string) => boolean,
+): Set<string> {
+  const out = new Set<string>();
+  for (const group of orbClusters(ids, links))
+    if (group.some(holds)) for (const id of group) out.add(id);
+  return out;
+}
+
 // ── Sky ⇄ earth ──────────────────────────────────────────────────────────--
 
 /**
  * What lies beneath the orbs: "deck" is the sky alone, "map" shows the earth
  * under it — each placed orb then hovers over its hexagon, tied to it by a
- * beacon — and "list" turns the earth's pane over into a list of the same
- * things, by name. "people" is a view of its own: the same hubs, gathered by
+ * beacon. "people" is a view of its own: the same hubs, gathered by
  * the people they share, with everyone in them (PeopleView). The orbs
  * themselves are always there. The earth is the
  * default: the map is the kiosk's front door, the first thing a bare visit
  * shows.
  */
-export type DockViewMode = "deck" | "map" | "list" | "people";
+export type DockViewMode = "deck" | "map" | "people";
 
 const VIEW_KEY = "kiosk_dock_view";
 
 function loadView(): DockViewMode {
   try {
     const kept = localStorage.getItem(VIEW_KEY);
-    return kept === "deck" || kept === "list" || kept === "people"
-      ? kept
-      : "map";
+    // A kept "list" (the retired List view) opens the earth: the list
+    // lives in the drawer now, on both spheres.
+    return kept === "deck" || kept === "people" ? kept : "map";
   } catch {
     return "map";
   }

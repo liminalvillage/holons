@@ -1,31 +1,42 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
-  // The dock read as people. Everyone is an orb in a gravity field of their
-  // own; each hub is a territory — a soft hull in the hub's colour around
-  // its members — and nobody else stands on it. So where a person stands
-  // says which hubs they are in: someone in two hubs comes to rest where
-  // the two territories overlap, and that overlap IS the relation between
-  // the groups, with the people who make it standing in it. There are no
-  // lines between people: the ground they stand on says what they share.
+  // The dock read as people. Everyone is an orb in a gravity field; each hub
+  // is a cell — a membrane in the hub's colour round its members — and
+  // nobody else stands in it. So where a person stands says which hubs they
+  // are in: someone in two hubs comes to rest where the two cells overlap,
+  // and that overlap IS the relation between the groups.
   //
-  // The field runs live (lib/dockpeople `stepPeopleSim`; who counts and who
-  // is tied is core's rule): the orbs breathe, and one can be dragged about
-  // and let go. Tapping a person puts them in focus — everyone they share a
-  // hub with gathers round, the most shared nearest — and opens a card with
-  // their hubs. The whole picture is kept in the pane: it shrinks to fit
-  // rather than scrolls. The row of hubs along the foot is the key to the
-  // colours, and picks one hub out of the picture.
-  import { onDestroy, onMount } from "svelte";
+  // Built to cost nothing at rest. The physics (lib/dockpeople) runs only
+  // while something moves — a new cast, a focus, a drag — and the frame
+  // loop stops dead once the field is still. While it runs, nothing goes
+  // through Svelte: the orbs and hub names are moved by writing their
+  // transforms, and the cells are traced as numbers (lib/peoplecells) and
+  // painted as plain paths on one canvas. Svelte renders only what changes
+  // with the cast, the search or the pick.
+  //
+  // Tapping a person puts them in focus — everyone they share a hub with
+  // gathers round, the most shared nearest — and opens a card with their
+  // hubs. The search box (DockView) narrows the picture to a person or a
+  // hub by name. The row along the foot is the key to the colours.
+  import { onDestroy } from "svelte";
   import type { PersonAcross } from "@holons/core/holons";
   import type { Vec } from "$lib/dock";
-  import { holonColor, holonColors } from "$lib/palette";
   import {
+    holonColor,
+    holonColors,
+    inkOn,
+    resolveCssColor,
+  } from "$lib/palette";
+  import { activeTheme } from "$lib/theme";
+  import {
+    COLD,
+    coolPeople,
     dockPeople,
     dockPeopleLoading,
+    filterPeople,
     initialsOf,
     peopleField,
-    settlePeople,
     simBounds,
     spanTree,
     stepPeopleSim,
@@ -33,18 +44,33 @@
     type PeopleField,
     type PeopleSim,
   } from "$lib/dockpeople";
+  import {
+    INNER_LEAF,
+    MEMBRANE,
+    blobField,
+    contours,
+    traceLoops,
+  } from "$lib/peoplecells";
   import { names, nameOf, profileFor } from "$lib/names";
   import { avatarUrl, hideImg, showImg } from "./Avatars.svelte";
   import { t } from "$lib/i18n";
   import Icon from "./Icon.svelte";
 
-  /** The hubs that count — the dock's, or the ones its search has left. */
+  /** The hubs that count — the dock's. */
   export let hubs: readonly { id: string; name: string }[] = [];
+  /** The search box: narrows the picture to a person or a hub by name. */
+  export let query = "";
   export let onopen: (hub: string) => void;
 
-  /** People drawn at most: the field is stepped and redrawn every frame. */
+  /** People drawn at most. */
   const CAP = 150;
   const PERSON_REM = 4.5;
+  /** Fastest move (px a frame) still worth drawing once the field is cold. */
+  const REST = 0.05;
+  /** Live, the field cools faster than when settled in one go (`COOL`): it
+   *  starts near rest, and a nudge should be over in a few seconds. */
+  const LIVE_COOL = 0.98;
+
   let paneW = 0;
   let paneH = 0;
   function rootPx(): number {
@@ -54,44 +80,167 @@
   }
   $: root = paneW ? rootPx() : 16; // the root size is viewport-driven
   $: r = (PERSON_REM * root) / 2; // the physics' radius, before any shrink
-  $: hubName = new Map(hubs.map((h) => [h.id, h.name]));
 
-  // Only the hubs in hand count, for who is drawn and for where they stand.
-  $: everyone = $dockPeople.people
+  // ── Who is drawn ────────────────────────────────────────────────────────--
+  $: hubName = new Map(hubs.map((h) => [h.id, h.name]));
+  $: docked = $dockPeople.people
     .map((p) => ({ ...p, holons: p.holons.filter((h) => hubName.has(h)) }))
-    .filter((p) => p.holons.length > 0)
-    .sort((a, b) => b.holons.length - a.holons.length);
+    .filter((p) => p.holons.length > 0);
+  // A person by name (with all their hubs) or a hub by name (its members,
+  // on that ground only) — lib/dockpeople `filterPeople`.
+  $: found = (void $names, filterPeople(docked, hubs, query, $nameOf));
+  $: shownHubs = hubs.filter((h) => found.hubs.has(h.id));
+  $: everyone = found.people.sort((a, b) => b.holons.length - a.holons.length);
   $: people = everyone.slice(0, CAP);
   $: byId = new Map(people.map((p) => [p.id, p]));
 
   // ── The field ───────────────────────────────────────────────────────────--
-  //
-  // The sim lives around its own origin; what is drawn is that, shrunk if
-  // need be and centred in the pane (`view`), so nobody is ever off screen.
   const reducedMotion =
     typeof matchMedia !== "undefined" &&
     matchMedia("(prefers-reduced-motion: reduce)").matches;
   let sim: PeopleSim | null = null;
   let field: PeopleField | null = null;
-  let pos: ReadonlyMap<string, Vec> = new Map();
-  let view = { x: 0, y: 0, s: 1 };
-  let awake = 0; // frames left to redraw once the field has come to rest
+  /** Per drawn hub, its members' places in the sim. */
+  let cells: { id: string; name: string; members: number[] }[] = [];
 
-  $: reseat(people, r);
-  function reseat(cast: readonly PersonAcross[], radius: number) {
-    const ids = cast.map((p) => p.id);
-    sim = reducedMotion
-      ? settlePeople(cast, radius)
-      : syncPeopleSim(sim, ids, radius);
+  $: reseat(people, shownHubs, r);
+  /** What the field was last built from: who, in which hubs, at what size. */
+  let seatedAs = "";
+  function reseat(
+    cast: readonly PersonAcross[],
+    shown: readonly { id: string; name: string }[],
+    radius: number,
+  ) {
+    // A fresh read that names the same people in the same hubs (the relay
+    // catching up behind the remembered picture) changes nothing: it must
+    // not stir the field.
+    const as = `${radius}|${shown.map((h) => `${h.id}:${h.name}`).join(",")}|${cast
+      .map((p) => `${p.id}:${p.holons.join(",")}`)
+      .join(";")}`;
+    if (as === seatedAs && sim) return;
+    seatedAs = as;
+    // A first cast (or a still screen) is settled before it is shown, so
+    // the picture never opens with everyone flying in from a spiral.
+    const fresh = !sim || sim.ids.length === 0 || reducedMotion;
+    sim = syncPeopleSim(
+      fresh ? null : sim,
+      cast.map((p) => p.id),
+      radius,
+    );
     field = peopleField(sim, cast);
-    awake = 240;
-    if (reducedMotion) paint(true);
+    // A first cast is cooled before it is shown; a changed one is warmed,
+    // and glides to its new places.
+    if (fresh) heat = Math.min(heat, coolPeople(sim, radius, field, 650));
+    else heat = Math.max(heat, 0.6);
+    const idx = new Map(sim.ids.map((id, i) => [id, i]));
+    cells = shown.flatMap((h) => {
+      const members = cast
+        .filter((p) => p.holons.includes(h.id))
+        .map((p) => idx.get(p.id))
+        .filter((i): i is number => i != null);
+      return members.length ? [{ id: h.id, name: h.name, members }] : [];
+    });
+    snap = fresh;
+    kick();
   }
-  $: if (reducedMotion && paneW && paneH) paint(true);
 
-  /** Fit the field to the pane and publish where everyone is on screen. */
-  function paint(snap = false) {
+  // The hubs' colours as literals the canvas can take, again whenever an
+  // override lands or the theme turns.
+  $: inks = colorsOf(cells, $holonColors, $activeTheme);
+  function colorsOf(
+    list: typeof cells,
+    colors: typeof $holonColors,
+    _theme: string,
+  ): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const c of list)
+      out.set(c.id, resolveCssColor(holonColor(c.id, colors)));
+    kick();
+    return out;
+  }
+
+  // ── The frame loop: runs while something moves, then stops ─────────────--
+  let raf = 0;
+  /** The field's heat (lib/dockpeople `COOL`): raised by a nudge, cooling
+   *  every frame; cold and still, the loop stops. */
+  let heat = 1;
+  let snap = true; // jump the view to its fit, rather than ease there
+  let destroyed = false;
+  let view = { x: 0, y: 0, s: 1 };
+
+  /** Wake the loop, warming the field to at least `to`. */
+  function kick(to = 0) {
+    heat = Math.max(heat, to);
+    if (!raf && !destroyed && typeof requestAnimationFrame !== "undefined")
+      raf = requestAnimationFrame(frame);
+  }
+  function frame() {
+    raf = 0;
     if (!sim || !paneW || !paneH) return;
+    let fastest = 0;
+    const held = dragId ? sim.ids.indexOf(dragId) : -1;
+    if (!reducedMotion) {
+      fastest = stepPeopleSim(sim, r, {
+        held,
+        heat,
+        field: field ?? undefined,
+        focus: pick?.kind === "person" ? sim.ids.indexOf(pick.id) : -1,
+      });
+      heat *= LIVE_COOL;
+      if (held >= 0 && dragTo) {
+        sim.px[held] = dragTo.x;
+        sim.py[held] = dragTo.y;
+      }
+    }
+    const easing = paint();
+    const warm = !reducedMotion && heat > COLD;
+    if (held >= 0 || easing || fastest > REST || (warm && fastest > 0))
+      raf = requestAnimationFrame(frame);
+  }
+  onDestroy(() => {
+    destroyed = true;
+    if (raf) cancelAnimationFrame(raf);
+  });
+
+  // The pane changed size: the canvas follows, and the picture refits.
+  $: if (paneW && paneH && canvasEl) sizeCanvas(paneW, paneH);
+  let dpr = 1;
+  function sizeCanvas(w: number, h: number) {
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvasEl.width = Math.round(w * dpr);
+    canvasEl.height = Math.round(h * dpr);
+    kick();
+  }
+
+  // ── Painting ────────────────────────────────────────────────────────────--
+  let stageEl: HTMLElement;
+  let canvasEl: HTMLCanvasElement;
+  const personEls = new Map<string, HTMLElement>();
+  const labelEls = new Map<string, HTMLElement>();
+  /** An action keeping an element in `map` under `id` while it is mounted. */
+  function registry(map: Map<string, HTMLElement>) {
+    return (node: HTMLElement, id: string) => {
+      let key = id;
+      map.set(key, node);
+      kick(); // a newcomer is placed on the next frame
+      return {
+        update(next: string) {
+          if (map.get(key) === node) map.delete(key);
+          key = next;
+          map.set(key, node);
+        },
+        destroy() {
+          if (map.get(key) === node) map.delete(key);
+        },
+      };
+    };
+  }
+  const placePerson = registry(personEls);
+  const placeLabel = registry(labelEls);
+
+  /** Fit, move everyone, trace the cells. True while the fit still eases. */
+  function paint(): boolean {
+    if (!sim || !canvasEl || !stageEl) return false;
     const box = simBounds(sim, r);
     const pad = 1.6 * r; // the names under the orbs, and air
     const fit = Math.min(
@@ -99,85 +248,101 @@
       paneW / (box.w + 2 * pad || 1),
       paneH / (box.h + 2 * pad || 1),
     );
-    // Small orbs beat people off screen: a full dock on a phone needs ~0.25.
-    const s = Math.max(0.2, fit);
-    // Ease toward the fit: a field that snapped its size every frame would
-    // shimmer as the orbs breathe. And not at all while someone is carried:
-    // the frame moving under the finger would take the orb out from under it.
-    const k = snap ? 1 : dragId ? 0 : 0.04;
+    const s = Math.max(0.2, fit); // small orbs beat people off screen
+    // Ease toward the fit — and not at all while someone is carried: the
+    // frame moving under the finger would take the orb out from under it.
+    const k = snap ? 1 : dragId ? 0 : 0.08;
+    snap = false;
     view = {
       x: view.x + (box.x - view.x) * k,
       y: view.y + (box.y - view.y) * k,
       s: view.s + (s - view.s) * k,
     };
-    const out = new Map<string, Vec>();
-    for (let i = 0; i < sim.ids.length; i++)
-      out.set(sim.ids[i], {
-        x: paneW / 2 + (sim.px[i] - view.x) * view.s,
-        y: paneH / 2 + (sim.py[i] - view.y) * view.s,
-      });
-    pos = out;
-  }
+    const easing =
+      !dragId &&
+      (Math.abs(view.x - box.x) > 0.5 ||
+        Math.abs(view.y - box.y) > 0.5 ||
+        Math.abs(view.s - s) > 0.002);
+    stageEl.style.setProperty("--s", String(view.s));
 
-  let raf = 0;
-  onMount(() => {
-    if (reducedMotion) return;
-    let first = true;
-    raf = requestAnimationFrame(function frame(now) {
-      if (sim && sim.ids.length && paneW && paneH) {
-        const held = dragId ? sim.ids.indexOf(dragId) : -1;
-        const fastest = stepPeopleSim(sim, r, {
-          wobbleT: now,
-          held,
-          field: field ?? undefined,
-          focus: pick?.kind === "person" ? sim.ids.indexOf(pick.id) : -1,
-        });
-        if (held >= 0 && dragTo) {
-          sim.px[held] = dragTo.x;
-          sim.py[held] = dragTo.y;
-        }
-        if (fastest > 0.05 || held >= 0) awake = 60;
-        if (awake > 0) {
-          awake--;
-          paint(first);
-          first = false;
-        }
+    const n = sim.ids.length;
+    const sx = new Float64Array(n);
+    const sy = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      sx[i] = paneW / 2 + (sim.px[i] - view.x) * view.s;
+      sy[i] = paneH / 2 + (sim.py[i] - view.y) * view.s;
+      const el = personEls.get(sim.ids[i]);
+      if (el) el.style.transform = `translate3d(${sx[i]}px, ${sy[i]}px, 0)`;
+    }
+
+    const ctx = canvasEl.getContext("2d");
+    if (!ctx) return easing;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, paneW, paneH);
+    ctx.lineJoin = "round";
+    const reach = r * view.s * 1.6; // a member's own ground
+    const step = Math.min(12, Math.max(4, reach / 3));
+    const shade = $activeTheme === "dark" ? "#ffffff" : "#000000";
+    for (const cell of cells) {
+      const pts: Vec[] = cell.members.map((i) => ({ x: sx[i], y: sy[i] }));
+      const necks = spanTree(pts).map(([a, b]) => [pts[a], pts[b]] as const);
+      const f = blobField(pts, necks, reach, step);
+      const outer = contours(f, MEMBRANE);
+      const inner = contours(f, INNER_LEAF);
+      const color = inks.get(cell.id) ?? "#888888";
+      const a = groundLit(cell.id, pick) ? 1 : 0.18;
+      // The cytoplasm: a clear wash, thickening toward the membrane.
+      ctx.save();
+      ctx.beginPath();
+      traceLoops(ctx, outer);
+      ctx.clip("evenodd");
+      ctx.fillStyle = color;
+      ctx.globalAlpha = a * 0.2;
+      ctx.fill("evenodd");
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = a * 0.12;
+      for (const w of [0.9, 0.55, 0.25]) {
+        ctx.lineWidth = reach * w;
+        ctx.stroke();
       }
-      raf = requestAnimationFrame(frame);
-    });
-  });
-  onDestroy(() => {
-    if (raf) cancelAnimationFrame(raf);
-  });
-
-  // The territories. A hub's ground is its members' discs melted into one
-  // blob (the `goo` filter in the markup), with a neck along the shortest
-  // lines between them so members standing apart are still one ground; its
-  // name hangs over the top of it. Read `pos` here, in the statement itself:
-  // this is what follows the field frame by frame.
-  $: reach = r * view.s * 1.6; // a member's disc of ground
-  $: grounds = hubs.flatMap((hub) => {
-    const pts = people
-      .filter((p) => p.holons.includes(hub.id))
-      .map((p) => pos.get(p.id))
-      .filter((p): p is Vec => !!p);
-    if (pts.length === 0) return [];
-    return [
-      {
-        id: hub.id,
-        name: hub.name,
-        n: pts.length,
-        pts,
-        necks: spanTree(pts).map(([i, j]) => [pts[i], pts[j]] as const),
-        x: pts.reduce((sum, p) => sum + p.x, 0) / pts.length,
-        y: Math.min(...pts.map((p) => p.y)) - reach,
-      },
-    ];
-  });
-  function groundLit(id: string, sel: Picked | null): boolean {
-    if (!sel) return true;
-    if (sel.kind === "hub") return sel.id === id;
-    return !!byId.get(sel.id)?.holons.includes(id);
+      ctx.restore();
+      // The membrane: a faint inner leaf, and a firm outer one drawn deeper
+      // than the ground so it holds on pale paper (lighter on the night's).
+      ctx.beginPath();
+      traceLoops(ctx, inner);
+      membrane(ctx, color, shade, a * 0.6, 1);
+      ctx.beginPath();
+      traceLoops(ctx, outer);
+      membrane(ctx, color, shade, a, 2);
+      // The hub's name, over the top of its cell.
+      const label = labelEls.get(cell.id);
+      if (label) {
+        let x = 0;
+        let top = Infinity;
+        for (const p of pts) {
+          x += p.x;
+          top = Math.min(top, p.y);
+        }
+        label.style.transform = `translate3d(${x / pts.length}px, ${top - reach}px, 0)`;
+      }
+    }
+    ctx.globalAlpha = 1;
+    return easing;
+  }
+  function membrane(
+    ctx: CanvasRenderingContext2D,
+    color: string,
+    shade: string,
+    alpha: number,
+    width: number,
+  ) {
+    ctx.lineWidth = width;
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    ctx.globalAlpha = alpha * 0.4;
+    ctx.strokeStyle = shade;
+    ctx.stroke();
   }
 
   // ── Dragging ────────────────────────────────────────────────────────────--
@@ -189,6 +354,7 @@
   let dragId: string | null = null;
   let dragTo: Vec | null = null; // in the sim's own coordinates
   let pressAt: Vec | null = null;
+  let pressId: string | null = null;
   let dragged = false;
   function panePoint(e: PointerEvent): Vec {
     const box = paneEl.getBoundingClientRect();
@@ -197,12 +363,11 @@
   function onDown(e: PointerEvent, id: string) {
     if (e.button != null && e.button !== 0) return;
     pressAt = panePoint(e);
+    pressId = id;
     dragged = false;
     dragId = null;
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-    pressId = id;
   }
-  let pressId: string | null = null;
   function onMove(e: PointerEvent) {
     if (!pressId || !pressAt || reducedMotion) return;
     const p = panePoint(e);
@@ -216,12 +381,14 @@
       x: (p.x - paneW / 2) / view.s + view.x,
       y: (p.y - paneH / 2) / view.s + view.y,
     };
+    kick(0.5);
   }
   function onUp() {
     pressId = null;
     pressAt = null;
     dragId = null;
     dragTo = null;
+    kick(0.5); // let go: the field settles round where they were left
   }
 
   // ── Picking ─────────────────────────────────────────────────────────────--
@@ -230,19 +397,17 @@
   // Everything else steps back.
   type Picked = { kind: "person"; id: string } | { kind: "hub"; id: string };
   let pick: Picked | null = null;
-  $: (void pick, (awake = 240)); // a focus gathers, or lets go: redraw it
+  $: (void pick, kick(0.7)); // a focus gathers, or lets go
   // The cast changed under the pick (a search, a fresh read): let it go.
   $: if (pick && gone(pick, byId, hubName)) pick = null;
   function gone(
     sel: Picked,
     cast: ReadonlyMap<string, unknown>,
-    names: ReadonlyMap<string, string>,
+    known: ReadonlyMap<string, string>,
   ): boolean {
-    if (sel.kind === "person") return !cast.has(sel.id);
-    return !names.has(sel.id);
+    return sel.kind === "person" ? !cast.has(sel.id) : !known.has(sel.id);
   }
-  // Around a person in focus: everyone they share a hub with — the same
-  // people the field gathers round them.
+  // Around a person in focus: everyone they share a hub with.
   $: near = neighbours(pick, people);
   function neighbours(sel: Picked | null, cast: readonly PersonAcross[]) {
     if (sel?.kind !== "person") return null;
@@ -251,7 +416,11 @@
       cast.filter((p) => p.holons.some((h) => mine.has(h))).map((p) => p.id),
     );
   }
-
+  function groundLit(id: string, sel: Picked | null): boolean {
+    if (!sel) return true;
+    if (sel.kind === "hub") return sel.id === id;
+    return !!byId.get(sel.id)?.holons.includes(id);
+  }
   function personLit(
     p: PersonAcross,
     sel: Picked | null,
@@ -285,8 +454,6 @@
     close();
     onopen(id);
   }
-
-  // The card of the person in focus: their hubs.
   $: cardHubs =
     pick?.kind === "person" ? (byId.get(pick.id)?.holons ?? []) : [];
 
@@ -304,9 +471,6 @@
     }
     return null;
   }
-
-  // Worked out once per cast, not per frame — and again when a name lands,
-  // since a profile learned later brings its picture with it.
   $: pictures = (void $names, new Map(people.map((p) => [p.id, pictureOf(p)])));
 
   /** A ring cut into equal arcs, one per hub, each in that hub's colour. */
@@ -330,190 +494,114 @@
   bind:clientHeight={paneH}
   on:click={close}
 >
-  {#if paneW && paneH}
-    <div
-      class="canvas"
-      style="--person: {PERSON_REM * view.s}rem; --s: {view.s}"
-    >
-      <!-- The territories, beneath everything: per hub, a disc of ground
-           under each member and a neck between neighbours, blurred and then
-           cut back to a hard edge — which melts them into one blob, the way
-           drops run together. The filter then paints that blob as a wash of
-           the hub's colour inside a firm rim of it, so a ground is one even
-           tone with a clear edge, and two that overlap deepen. -->
-      <svg class="grounds" viewBox="0 0 {paneW} {paneH}" aria-hidden="true">
-        <defs>
-          <filter
-            id="people-goo"
-            x="-30%"
-            y="-30%"
-            width="160%"
-            height="160%"
-            color-interpolation-filters="sRGB"
-          >
-            <feGaussianBlur stdDeviation={reach * 0.42} result="soft" />
-            <feColorMatrix
-              in="soft"
-              mode="matrix"
-              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -9"
-              result="blob"
-            />
-            <!-- The rim: the blob less itself drawn a little smaller. -->
-            <feMorphology
-              in="blob"
-              operator="erode"
-              radius="2.5"
-              result="inner"
-            />
-            <feComposite in="blob" in2="inner" operator="out" result="rim" />
-            <!-- The ground inside it: the same colour, as a wash. -->
-            <feColorMatrix
-              in="blob"
-              mode="matrix"
-              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.42 0"
-              result="wash"
-            />
-            <feMerge>
-              <feMergeNode in="wash" />
-              <feMergeNode in="rim" />
-            </feMerge>
-          </filter>
-        </defs>
-        {#each grounds as g (g.id)}
-          <g
-            class="ground"
-            class:dim={!groundLit(g.id, pick)}
-            filter="url(#people-goo)"
-            style="--c: {holonColor(g.id, $holonColors)}"
-          >
-            {#each g.necks as [a, b], i (i)}
-              <line
-                x1={a.x}
-                y1={a.y}
-                x2={b.x}
-                y2={b.y}
-                stroke-width={reach * 1.1}
-              />
-            {/each}
-            {#each g.pts as p, i (i)}
-              <circle cx={p.x} cy={p.y} r={reach} />
-            {/each}
-          </g>
-        {/each}
-      </svg>
+  <div class="stage" bind:this={stageEl} style="--person-rem: {PERSON_REM}rem">
+    <canvas class="cells" bind:this={canvasEl} aria-hidden="true"></canvas>
 
-      <!-- Each territory's name, over the top of it; a tap picks the hub. -->
-      {#each grounds as g (g.id)}
+    <!-- Each cell's name, over the top of it; a tap picks the hub. Placed by
+         the frame loop. -->
+    {#each cells as c (c.id)}
+      {@const color = holonColor(c.id, $holonColors)}
+      <button
+        type="button"
+        class="gname"
+        class:on={pick?.kind === "hub" && pick.id === c.id}
+        class:dim={!groundLit(c.id, pick)}
+        style="--c: {color}; --on-c: {inkOn(color) ?? 'var(--ink)'}"
+        aria-pressed={pick?.kind === "hub" && pick.id === c.id}
+        use:placeLabel={c.id}
+        on:click|stopPropagation={() => pickHub(c.id)}
+      >
+        <span class="gtext">{c.name}</span><span class="gcount"
+          >{c.members.length}</span
+        >
+      </button>
+    {/each}
+
+    <!-- Everyone: an orb and a first name, moved together by the loop. -->
+    {#each people as p (p.id)}
+      {@const name = $nameOf(p.id)}
+      {@const letters = initialsOf(name)}
+      <div
+        class="who"
+        class:dim={!personLit(p, pick, near)}
+        class:open={pick?.kind === "person" && pick.id === p.id}
+        use:placePerson={p.id}
+      >
         <button
           type="button"
-          class="gname"
-          class:on={pick?.kind === "hub" && pick.id === g.id}
-          class:dim={!groundLit(g.id, pick)}
-          style="left: {g.x}px; top: {g.y}px"
-          aria-pressed={pick?.kind === "hub" && pick.id === g.id}
-          on:click|stopPropagation={() => pickHub(g.id)}
+          class="person"
+          style="--ring: {ringOf(p.holons, $holonColors)}"
+          aria-label={$t("dock.personOpen", { name, n: p.holons.length })}
+          aria-expanded={pick?.kind === "person" && pick.id === p.id}
+          title={name}
+          on:click|stopPropagation={() => pickPerson(p.id)}
+          on:pointerdown={(e) => onDown(e, p.id)}
+          on:pointermove={onMove}
+          on:pointerup={onUp}
+          on:pointercancel={onUp}
         >
-          <span
-            class="dot"
-            style:--c={holonColor(g.id, $holonColors)}
-            aria-hidden="true"
-          ></span>{g.name}<span class="gcount">{g.n}</span>
+          <span class="face">
+            {#if letters}{letters}{:else}<Icon name="person" />{/if}
+            {#if pictures.get(p.id)}
+              <img
+                src={pictures.get(p.id)}
+                alt=""
+                loading="lazy"
+                draggable="false"
+                on:error={hideImg}
+                on:load={showImg}
+              />
+            {/if}
+          </span>
         </button>
-      {/each}
-
-      {#each people as p (p.id)}
-        {@const at = pos.get(p.id)}
-        {#if at}
-          {@const name = $nameOf(p.id)}
-          {@const letters = initialsOf(name)}
-          <button
-            type="button"
-            class="person"
-            class:open={pick?.kind === "person" && pick.id === p.id}
-            class:dim={!personLit(p, pick, near)}
-            style="left: {at.x}px; top: {at.y}px; --ring: {ringOf(
-              p.holons,
-              $holonColors,
-            )}"
-            aria-label={$t("dock.personOpen", { name, n: p.holons.length })}
-            aria-expanded={pick?.kind === "person" && pick.id === p.id}
-            title={name}
-            on:click|stopPropagation={() => pickPerson(p.id)}
-            on:pointerdown={(e) => onDown(e, p.id)}
-            on:pointermove={onMove}
-            on:pointerup={onUp}
-            on:pointercancel={onUp}
-          >
-            <span class="face">
-              {#if letters}{letters}{:else}<Icon name="person" />{/if}
-              <!-- Over the initials, which show until (and unless) it
-                   loads. -->
-              {#if pictures.get(p.id)}
-                <img
-                  src={pictures.get(p.id)}
-                  alt=""
-                  loading="lazy"
-                  draggable="false"
-                  on:error={hideImg}
-                  on:load={showImg}
-                />
-              {/if}
-            </span>
-          </button>
-          {#if letters}
-            <span
-              class="pname"
-              class:dim={!personLit(p, pick, near)}
-              aria-hidden="true"
-              style="left: {at.x}px; top: {at.y}px">{firstName(name)}</span
-            >
-          {/if}
+        {#if letters}
+          <span class="pname" aria-hidden="true">{firstName(name)}</span>
         {/if}
-      {/each}
+      </div>
+    {/each}
+  </div>
 
-      {#if pick?.kind === "person"}
-        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-        <div class="card" role="group" on:click|stopPropagation>
-          <header>
-            <strong>{$nameOf(pick.id)}</strong>
-            <button
-              type="button"
-              class="x"
-              aria-label={$t("map.closePanel")}
-              on:click={close}
-            >
-              <Icon name="close" />
+  {#if pick?.kind === "person"}
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+    <div class="card" role="group" on:click|stopPropagation>
+      <header>
+        <strong>{$nameOf(pick.id)}</strong>
+        <button
+          type="button"
+          class="x"
+          aria-label={$t("map.closePanel")}
+          on:click={close}
+        >
+          <Icon name="close" />
+        </button>
+      </header>
+      <p>{$t("dock.personHubs", { n: cardHubs.length })}</p>
+      <ul>
+        {#each cardHubs as h (h)}
+          <li>
+            <button type="button" class="row" on:click={() => openHub(h)}>
+              <span
+                class="dot"
+                style:--c={holonColor(h, $holonColors)}
+                aria-hidden="true"
+              ></span>
+              <span class="label">{hubName.get(h) ?? $nameOf(h)}</span>
+              <span class="chev" aria-hidden="true"
+                ><Icon name="chevron-right" /></span
+              >
             </button>
-          </header>
-          <p>{$t("dock.personHubs", { n: cardHubs.length })}</p>
-          <ul>
-            {#each cardHubs as h (h)}
-              <li>
-                <button type="button" class="row" on:click={() => openHub(h)}>
-                  <span
-                    class="dot"
-                    style:--c={holonColor(h, $holonColors)}
-                    aria-hidden="true"
-                  ></span>
-                  <span class="label">{hubName.get(h) ?? $nameOf(h)}</span>
-                  <span class="chev" aria-hidden="true"
-                    ><Icon name="chevron-right" /></span
-                  >
-                </button>
-              </li>
-            {/each}
-          </ul>
-        </div>
-      {/if}
+          </li>
+        {/each}
+      </ul>
     </div>
   {/if}
 </section>
 
 <!-- The key: which colour is which hub. A tap picks that hub's people and
-     ground out of the picture; again lets them go. -->
+     cell out of the picture; again lets them go. -->
 <div class="key">
   <div class="keyhubs" role="group" aria-label={$t("dock.boards")}>
-    {#each hubs as hub (hub.id)}
+    {#each shownHubs as hub (hub.id)}
       <button
         type="button"
         class="keychip"
@@ -535,6 +623,8 @@
   <p class="note" role="status">
     {#if people.length > 0}
       {$t("dock.peopleCapped", { n: CAP, total: everyone.length })}
+    {:else if query.trim() && docked.length > 0}
+      {$t("dock.peopleNoMatch")}
     {:else if $dockPeopleLoading}
       {$t("dock.peopleLoading")}
     {:else}
@@ -545,8 +635,7 @@
 
 <style>
   /* The view fills the sky between the bar and the key, on the dock's own
-     paper, and scrolls both ways when the picture is bigger than the pane.
-     Above the gravity field (z 2), under the bar and the tray (z 6). */
+     paper. Above the gravity field (z 2), under the bar and the tray (z 6). */
   .people {
     position: absolute;
     /* Below the bar that floats over the sky (two lines of it on a narrow
@@ -563,56 +652,52 @@
       top: calc(env(safe-area-inset-top) + 7.6rem);
     }
   }
-  .canvas {
+  .stage {
     position: absolute;
     inset: 0;
+    --person: calc(var(--person-rem) * var(--s, 1));
   }
-  .grounds {
+  .cells {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
     pointer-events: none;
   }
-  /* A territory: the hub's colour as a wash inside a rim of the same (both
-     painted by the filter), so two that overlap deepen where they do and
-     each keeps its own edge. */
-  .ground {
-    transition: opacity 0.3s ease;
-  }
-  .ground circle {
-    fill: var(--c);
-  }
-  .ground line {
-    stroke: var(--c);
-    stroke-linecap: round;
-  }
-  .ground.dim {
-    opacity: 0.18;
-  }
-  /* A territory's name, riding its top edge. */
+
+  /* A cell's name, riding its top edge — in the cell's own colour, a filled
+     tag, so it never reads as a person's name (those hang under the orbs on
+     the card's paper). Placed by transform; parked off screen until then. */
   .gname {
     position: absolute;
+    left: 0;
+    top: 0;
     z-index: 1;
-    transform: translate(-50%, -50%);
+    transform: translate3d(-100vw, 0, 0);
+    translate: -50% -50%;
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    max-width: 11rem;
+    gap: 0.4rem;
+    max-width: 12rem;
     min-height: 1.7rem;
-    padding: 0 0.6rem;
-    border-radius: 999px;
-    border: 1.5px solid var(--line);
-    background: color-mix(in srgb, var(--card) 92%, transparent);
+    padding: 0 0.3rem 0 0.7rem;
+    border-radius: 0.55rem;
+    border: 0;
+    background: var(--c);
     box-shadow: var(--shadow-soft);
     font-family: inherit;
-    font-size: 0.76rem;
-    font-weight: 700;
-    color: var(--ink);
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--on-c);
     white-space: nowrap;
+    transition: opacity 0.2s ease;
+  }
+  .gtext {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    transition: opacity 0.2s ease;
   }
   /* The label is small on purpose; its target is not. */
   .gname::after {
@@ -621,39 +706,65 @@
     inset: -0.55rem -0.3rem;
   }
   .gname.on {
-    border-color: var(--teal);
+    outline: 2.5px solid var(--teal);
+    outline-offset: 2px;
   }
   .gname.dim {
     opacity: 0.3;
   }
+  /* The count, a small chip of the paper inside the tag. */
   .gcount {
-    color: var(--ink-soft);
-    font-weight: 600;
+    flex: none;
+    min-width: 1.2rem;
+    padding: 0 0.3rem;
+    border-radius: 0.4rem;
+    background: color-mix(in srgb, var(--card) 85%, transparent);
+    color: var(--ink);
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 1.25rem;
+    text-align: center;
   }
-  /* A person: an orb like a hub's, smaller — a disc on the theme's card
-     inside a ring cut into their hubs' colours. */
+
+  /* A person: an orb and the name under it, one point the loop moves. */
+  .who {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 1;
+    width: 0;
+    height: 0;
+    transform: translate3d(-100vw, 0, 0);
+    transition: opacity 0.2s ease;
+  }
+  .who.open {
+    z-index: 2;
+  }
+  .who.dim {
+    opacity: 0.25;
+  }
+  /* The orb: a disc on the theme's card inside a ring cut into their hubs'
+     colours. */
   .person {
     position: absolute;
-    z-index: 1;
+    left: 0;
+    top: 0;
     width: var(--person);
     height: var(--person);
     padding: calc(4px * var(--s, 1));
-    transform: translate(-50%, -50%);
+    translate: -50% -50%;
     border-radius: 50%;
     background: var(--ring);
     /* Carried by the finger: the browser must not scroll or zoom instead. */
     touch-action: none;
     box-shadow: var(--shadow-soft);
-    transition:
-      opacity 0.2s ease,
-      transform 0.15s ease;
+    transition: scale 0.15s ease;
   }
   .person:active {
-    transform: translate(-50%, -50%) scale(0.93);
+    scale: 0.93;
   }
-  .person.open {
-    z-index: 2;
-    transform: translate(-50%, -50%) scale(1.12);
+  .who.open .person {
+    scale: 1.12;
   }
   .face {
     position: relative;
@@ -685,8 +796,9 @@
   /* The first name, hung under the orb on a ground of its own. */
   .pname {
     position: absolute;
-    z-index: 1;
-    transform: translate(-50%, calc(var(--person) / 2 - 0.15rem));
+    left: 0;
+    top: calc(var(--person) / 2 - 0.15rem);
+    translate: -50% 0;
     max-width: 5.4rem;
     padding: 0 0.45rem;
     border-radius: 999px;
@@ -699,11 +811,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     pointer-events: none;
-    transition: opacity 0.2s ease;
-  }
-  .person.dim,
-  .pname.dim {
-    opacity: 0.25;
   }
 
   /* The card of the person in focus stands aside, in the pane's corner:

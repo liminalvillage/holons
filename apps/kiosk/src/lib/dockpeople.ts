@@ -17,14 +17,36 @@ import {
   type PeopleAcross,
   type PersonAcross,
 } from "@holons/core/holons";
-import type { Vec } from "./dock";
+import { matchesDock, matchesText, type Vec } from "./dock";
+import { readCache, writeCache } from "./dockcache";
 import { getHolosphere } from "./holosphere";
 import { primeNames } from "./names";
 
 const NOBODY: PeopleAcross = { people: [], connectors: [], bridges: [] };
 
-/** The people across the docked hubs; empty until `loadDockPeople` answers. */
-export const dockPeople = writable<PeopleAcross>(NOBODY);
+/** The last fold this device saw (lib/dockcache), so a reload paints at once. */
+function keptPeople(): PeopleAcross {
+  const kept = readCache<PeopleAcross>("people", NOBODY);
+  if (!Array.isArray(kept?.people)) return NOBODY;
+  primeNamesOf(kept);
+  return {
+    people: kept.people,
+    connectors: Array.isArray(kept.connectors) ? kept.connectors : [],
+    bridges: Array.isArray(kept.bridges) ? kept.bridges : [],
+  };
+}
+function primeNamesOf(found: PeopleAcross): void {
+  // The rosters named these people; the resolver need not ask again.
+  primeNames(found.people.flatMap((p) => p.ids.map((id) => [id, p.name])));
+}
+
+/**
+ * The people across the docked hubs: what was last seen on this device at
+ * once, then each fresh read from `loadDockPeople`.
+ */
+export const dockPeople = writable<PeopleAcross>(
+  typeof window === "undefined" ? NOBODY : keptPeople(),
+);
 /** A read is out — the list says so instead of "nobody". */
 export const dockPeopleLoading = writable(false);
 
@@ -56,13 +78,17 @@ export async function loadDockPeople(
     const hs = await getHolosphere();
     const found = await loadPeopleAcross(hs, ids, {
       format: { lastName: "initial" },
+      // Every roster at once: each waits on a relay catch-up, and the
+      // transport keeps its own query budget — a lane of four here only
+      // queued them behind one another.
+      concurrency: ids.length,
     });
     if (asking !== key) return;
-    // The rosters named these people; the resolver need not ask again.
-    primeNames(found.people.flatMap((p) => p.ids.map((id) => [id, p.name])));
+    primeNamesOf(found);
     loadedKey = key;
     loadedAt = Date.now();
     dockPeople.set(found);
+    writeCache("people", found);
   } catch {
     /* offline — whoever was known stays on screen */
   } finally {
@@ -83,15 +109,13 @@ export function resetDockPeople(): void {
 
 // ── The picture ──────────────────────────────────────────────────────────--
 
-/** A running people graph — positions, momentum, and wander phases. */
+/** A running people graph — positions and momentum. */
 export type PeopleSim = {
   ids: string[];
   px: Float64Array;
   py: Float64Array;
   vx: Float64Array;
   vy: Float64Array;
-  /** Per-person wander phase, so no two drift in step. */
-  phase: Float64Array;
 };
 
 /**
@@ -105,13 +129,14 @@ export type PeopleField = {
   hubs: number[][];
   /** `kin[i * n + j]`: the hubs `i` and `j` share. */
   kin: Uint8Array;
+  /**
+   * `share[h * hubs + k]`: how much of the smaller of hubs `h` and `k` is
+   * also in the other — 0 when they share nobody, 1 when one is wholly
+   * inside the other.
+   */
+  share: Float32Array;
   /** Per person, how many hubs they are in. */
   count: Uint8Array;
-  /**
-   * `apart[h * hubs + k]`: how far apart hubs `h` and `k` belong, 1 when they
-   * share nobody down to 0 when the smaller is wholly inside the other.
-   */
-  apart: Float32Array;
 };
 
 /** Read the field off the people of a sim. */
@@ -139,16 +164,16 @@ export function peopleField(
       for (const j of members)
         if (i !== j) kin[i * n + j] = Math.min(255, kin[i * n + j] + 1);
   const hubs = [...byHub.values()];
-  const apart = new Float32Array(hubs.length * hubs.length);
+  const share = new Float32Array(hubs.length * hubs.length);
   for (let h = 0; h < hubs.length; h++) {
     const mine = new Set(hubs[h]);
     for (let k = h + 1; k < hubs.length; k++) {
       const both = hubs[k].filter((i) => mine.has(i)).length;
-      const share = both / Math.min(hubs[h].length, hubs[k].length);
-      apart[h * hubs.length + k] = apart[k * hubs.length + h] = 1 - share;
+      share[h * hubs.length + k] = share[k * hubs.length + h] =
+        both / Math.min(hubs[h].length, hubs[k].length);
     }
   }
-  return { hubIds: [...byHub.keys()], hubs, kin, count, apart };
+  return { hubIds: [...byHub.keys()], hubs, kin, count, share };
 }
 
 const GOLDEN_ANGLE = 2.399963229728653; // spreads any count evenly
@@ -171,7 +196,6 @@ export function syncPeopleSim(
     py: new Float64Array(n),
     vx: new Float64Array(n),
     vy: new Float64Array(n),
-    phase: new Float64Array(n),
   };
   const was = new Map(prev?.ids.map((id, i) => [id, i]));
   for (let i = 0; i < n; i++) {
@@ -181,15 +205,11 @@ export function syncPeopleSim(
       sim.py[i] = prev.py[k];
       sim.vx[i] = prev.vx[k];
       sim.vy[i] = prev.vy[k];
-      sim.phase[i] = prev.phase[k];
       continue;
     }
     const rad = 3 * r * Math.sqrt(i + 0.5);
     sim.px[i] = Math.cos(i * GOLDEN_ANGLE) * rad;
     sim.py[i] = Math.sin(i * GOLDEN_ANGLE) * rad;
-    let h = 0;
-    for (const ch of ids[i]) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    sim.phase[i] = (h % 6283) / 1000;
   }
   return sim;
 }
@@ -200,23 +220,36 @@ export function syncPeopleSim(
 // long (a tenth lost a frame), which turns every push into a slow glide and
 // smooths over the forces that switch on and off at a boundary (two orbs
 // touching, a stranger crossing a hub's ground). Speed is capped low for the
-// same reason, and the wander is a breath, not a wobble.
+// same reason. There is no wander: a field at rest is still, so the view
+// can stop drawing it altogether.
 const GAIN = 0.2;
 const DAMPING = 0.9;
 const MAX_GLIDE = 0.16; // radii a frame
-const WANDER = 0.0016; // radii a frame, each way
+/** How hard a connector tows each of their cells toward them. */
+const TIE = 0.01;
 
 /** What a frame may be told beyond the people. */
 export type StepOptions = {
-  /** ms — adds the sky's gentle wander; leave it out to settle. */
-  wobbleT?: number;
   /** The person under a finger: moved by the hand, not the forces. */
   held?: number;
   /** The hubs as territories (see `peopleField`). */
   field?: PeopleField;
   /** The person in focus: everyone they share a hub with gathers round. */
   focus?: number;
+  /**
+   * How much of this frame's forces reach the momentum, 0–1 (default 1).
+   * The live view cools it after every nudge (see `COOL`), which is what
+   * guarantees the field comes to rest: a field of hubs that push and
+   * people that tie need not have a still point of its own, and without
+   * cooling crept round for ever.
+   */
+  heat?: number;
 };
+
+/** Per frame, how much heat the field keeps: ~0.01 left after 650 frames. */
+export const COOL = 0.993;
+/** Below this the field is cold: once nobody moves, the loop may stop. */
+export const COLD = 0.01;
 
 /**
  * One frame of the people field. What shapes it, in order:
@@ -228,9 +261,14 @@ export type StepOptions = {
  *    patches, where their territories overlap;
  *  - a hub pushes out whoever stands on its ground without belonging to it,
  *    so a territory holds its own people and nobody else;
- *  - two hubs' grounds push one another apart, less the more of their
- *    people they share — it is what stops two unrelated hubs settling as
- *    one ring of alternating strangers;
+ *  - every two cells (hubs) repel until they no more than touch — or
+ *    overlap as far as they share people;
+ *  - and the people in more than one hub tie their cells together: each
+ *    cell, whole, is towed toward its connectors. So cells sit as close as
+ *    the people they share hold them — the more shared, the closer — with
+ *    the connectors standing on the seam between them. The picture finds
+ *    its best layout between the push of the cells and the pull of the
+ *    people;
  *  - with someone in focus, everyone who shares a hub with them is drawn to
  *    a distance set by how many — the most shared nearest;
  *  - a light pull home keeps the unattached from drifting off.
@@ -242,8 +280,9 @@ export function stepPeopleSim(
   r: number,
   opts: StepOptions = {},
 ): number {
-  const { px, py, vx, vy, phase } = sim;
-  const { wobbleT, field, focus = -1, held = -1 } = opts;
+  const { px, py, vx, vy } = sim;
+  const { field, focus = -1, held = -1, heat = 1 } = opts;
+  const gain = GAIN * heat;
   const n = sim.ids.length;
   // Kept tight: the picture is shrunk to fit its pane, so every radius of
   // air between people is a radius their orbs are drawn smaller by.
@@ -320,28 +359,58 @@ export function stepPeopleSim(
         fy[j] += (dy / d) * push;
       }
     }
+    // The ties: a cell is towed, whole, toward each of its connectors — a
+    // connector's pull shared out among their cells, so someone in a dozen
+    // hubs does not drag a dozen cells onto one point.
     for (let h = 0; h < H; h++) {
+      const members = field.hubs[h];
+      if (members.length < 2) continue;
+      let tx = 0;
+      let ty = 0;
+      for (const i of members) {
+        if (field.count[i] < 2) continue;
+        tx += ((px[i] - cx[h]) * TIE) / field.count[i];
+        ty += ((py[i] - cy[h]) * TIE) / field.count[i];
+      }
+      if (!tx && !ty) continue;
+      for (const j of members) {
+        fx[j] += tx / members.length;
+        fy[j] += ty / members.length;
+      }
+    }
+    // The cells' push, on each cell's OWN people — the people two cells
+    // share are what holds them together, and are left to it. It holds
+    // until the two only touch, or overlap as far as they share: a cell
+    // wholly inside another stays there. (A faint push beyond touching was
+    // tried: it spread the picture and stretched every cell.)
+    const mineH = new Uint8Array(n);
+    for (let h = 0; h < H; h++) {
+      mineH.fill(0);
+      for (const i of field.hubs[h]) mineH[i] = 1;
       for (let k = h + 1; k < H; k++) {
-        const want = (reach[h] + reach[k] + 2.4 * r) * field.apart[h * H + k];
+        const share = field.share[h * H + k];
+        const touchAt = (reach[h] + reach[k] + 2.4 * r) * (1 - share);
         let dx = cx[k] - cx[h];
         let dy = cy[k] - cy[h];
         let d = Math.hypot(dx, dy);
-        if (d >= want) continue;
         if (d < 1e-3) {
-          // Two grounds on one point part along a direction of their own.
+          // Two cells on one point part along a direction of their own.
           dx = Math.cos(h * GOLDEN_ANGLE + k);
           dy = Math.sin(h * GOLDEN_ANGLE + k);
           d = 1;
         }
-        const push = Math.min((want - d) * 0.03, r * 0.3);
+        if (d >= touchAt) continue;
+        const push = Math.min((touchAt - d) * 0.03, r * 0.3);
         const ux = (dx / d) * push;
         const uy = (dy / d) * push;
-        // Whoever is in both is pushed both ways: they stay between.
+        const both = new Set(field.hubs[k].filter((i) => mineH[i]));
         for (const i of field.hubs[h]) {
+          if (both.has(i)) continue;
           fx[i] -= ux;
           fy[i] -= uy;
         }
         for (const i of field.hubs[k]) {
+          if (both.has(i)) continue;
           fx[i] += ux;
           fy[i] += uy;
         }
@@ -370,12 +439,8 @@ export function stepPeopleSim(
       vx[i] = vy[i] = 0;
       continue;
     }
-    vx[i] = (vx[i] + fx[i] * GAIN) * DAMPING;
-    vy[i] = (vy[i] + fy[i] * GAIN) * DAMPING;
-    if (wobbleT != null) {
-      vx[i] += Math.cos(wobbleT * 0.00035 + phase[i]) * r * WANDER;
-      vy[i] += Math.sin(wobbleT * 0.0003 + phase[i] * 1.3) * r * WANDER;
-    }
+    vx[i] = (vx[i] + fx[i] * gain) * DAMPING;
+    vy[i] = (vy[i] + fy[i] * gain) * DAMPING;
     const speed = Math.hypot(vx[i], vy[i]);
     if (speed > maxSpeed) {
       vx[i] *= maxSpeed / speed;
@@ -400,10 +465,27 @@ export function focusRest(shared: number): number {
 }
 
 /**
- * The field settled in one go (1200 frames, no wander). Deterministic — the
- * same people always settle into the same picture. The reduced-motion path
- * and the tests use this; the live view steps the same physics frame by
- * frame.
+ * Run a field from hot to cold in one go (no drawing): `frames` steps with
+ * the heat falling by `COOL` each. Returns the heat it ends on.
+ */
+export function coolPeople(
+  sim: PeopleSim,
+  r: number,
+  field: PeopleField,
+  frames = 900,
+  heat = 1,
+): number {
+  for (let it = 0; it < frames; it++) {
+    stepPeopleSim(sim, r, { field, heat });
+    heat *= COOL;
+  }
+  return heat;
+}
+
+/**
+ * The field settled in one go, hot to cold. Deterministic — the same
+ * people always settle into the same picture. The reduced-motion path and
+ * the tests use this; the live view steps the same physics frame by frame.
  */
 export function settlePeople(
   people: readonly Pick<PersonAcross, "id" | "holons">[],
@@ -415,7 +497,9 @@ export function settlePeople(
     r,
   );
   const field = peopleField(sim, people);
-  for (let it = 0; it < 1200; it++) stepPeopleSim(sim, r, { field });
+  coolPeople(sim, r, field, 1200);
+  // And to a standstill: what momentum is left, the damping spends.
+  for (let it = 0; it < 60; it++) stepPeopleSim(sim, r, { field, heat: 0 });
   return sim;
 }
 
@@ -482,4 +566,39 @@ export function initialsOf(name: string): string {
   const first = [...words[0]][0];
   const last = words.length > 1 ? [...words[words.length - 1]][0] : "";
   return (first + last).toUpperCase();
+}
+
+/**
+ * Narrow the people view to a search. A person answers by name; a hub by
+ * its name (the dock's own rule, `matchesDock`). Who stays:
+ *
+ * - everyone who answers by name, with ALL their hubs — finding a person
+ *   shows where they stand;
+ * - every member of a hub that answers, but standing only on the hubs that
+ *   answer — finding a hub shows its people, not every other ground each
+ *   of them brings along.
+ *
+ * `hubs` are the hubs that end up drawn: the ones somebody still stands on.
+ * A blank query keeps everyone, as they were, and every hub.
+ */
+export function filterPeople<P extends Pick<PersonAcross, "id" | "holons">>(
+  people: readonly P[],
+  hubs: readonly { id: string; name: string }[],
+  query: string,
+  nameOf: (id: string) => string,
+): { people: P[]; hubs: Set<string> } {
+  if (!query.trim())
+    return { people: [...people], hubs: new Set(hubs.map((h) => h.id)) };
+  const hit = new Set(
+    hubs.filter((h) => matchesDock(h, query)).map((h) => h.id),
+  );
+  const kept: P[] = [];
+  for (const p of people) {
+    if (matchesText(nameOf(p.id), query)) kept.push(p);
+    else {
+      const holons = p.holons.filter((h) => hit.has(h));
+      if (holons.length) kept.push({ ...p, holons });
+    }
+  }
+  return { people: kept, hubs: new Set(kept.flatMap((p) => p.holons)) };
 }

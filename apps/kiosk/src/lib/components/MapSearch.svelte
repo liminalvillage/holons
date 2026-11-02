@@ -29,6 +29,11 @@
 
   /** The live text in the box, for whoever filters by it. */
   export let query = "";
+  /** Look hubs and places up at all — off where the box only filters
+   *  what is on screen (the People view). */
+  export let lookup = true;
+  /** What the empty box says. */
+  export let placeholder = "";
   let hits: HubHit[] = [];
   let spots: PlaceHit[] = [];
   let searching = false;
@@ -39,7 +44,7 @@
   function onInput() {
     clearTimeout(timer);
     const q = query.trim();
-    if (q.length < 2) {
+    if (q.length < 2 || !lookup) {
       reset();
       return;
     }
@@ -110,6 +115,9 @@
     onplace(place);
   }
 
+  // Switched to filtering only: the rows a lookup left must go.
+  $: if (!lookup) reset();
+
   onDestroy(() => clearTimeout(timer));
 </script>
 
@@ -119,8 +127,8 @@
     bind:value={query}
     on:input={onInput}
     on:keydown={(e) => e.key === "Escape" && clear()}
-    placeholder={$t("dock.searchPlaceholder")}
-    aria-label={$t("dock.searchPlaceholder")}
+    placeholder={placeholder || $t("dock.searchPlaceholder")}
+    aria-label={placeholder || $t("dock.searchPlaceholder")}
     autocomplete="off"
     autocorrect="off"
     autocapitalize="off"

@@ -19,8 +19,8 @@
     isValidCell,
     latLngToCell,
   } from "h3-js";
-  import { readSettingsHex } from "@holons/core/federation";
   import type { HoloSphere } from "holosphere";
+  import { dockHexes, ensureHexes, lookupHex } from "$lib/dockhexes";
   import {
     getHolosphere,
     normalizeSub,
@@ -55,9 +55,7 @@
     type PresenceEntry,
     type ViewBox,
   } from "$lib/maplens";
-  import { hubRows, lensRows, type LensRow } from "$lib/maplist";
   import type { PlaceHit } from "$lib/placesearch";
-  import MapList from "./MapList.svelte";
   import { prettyField } from "$lib/lensform";
   import { geoMessage, requestPosition } from "$lib/geolocate";
   import { locale, t, tr, type MessageKey } from "$lib/i18n";
@@ -84,7 +82,6 @@
   let map: any = null;
   let mapboxglMod: any = null;
   let alive = true;
-  let loadingHexes = true;
   /** The docked boards with a place, each with its cell's centre resolved
    *  once (the per-frame projection must not redo the H3 math). */
   let located: Array<DockEntry & { hex: string; lng: number; lat: number }> =
@@ -98,6 +95,9 @@
   export let onbackdrop: () => boolean = () => false;
   /** The view settled or the box changed — the reduced-motion sky relays out. */
   export let onmove: () => void = () => {};
+  /** The view is moving (every frame of a pan, zoom or flight): the live
+   *  sky above wakes to follow its places, and rests again after. */
+  export let onmoving: () => void = () => {};
   /**
    * The board a carried orb is about to be dropped on (DockView's drop
    * target): its hexagon lights up so the place reads as the landing zone.
@@ -178,79 +178,25 @@
     return out;
   }
 
-  // A board's claimed cell rarely changes — a cell once seen is kept across
-  // mounts so flipping sky ⇄ earth is instant. A MISS is never kept: a
-  // partner's settings replicate a beat after we first ask (so a miss is
-  // retried while the earth is up, like the palette's colour look-up), and a
-  // place claimed later in Settings must show on the next look — the picker
-  // announces it (`kiosk:hex-changed`) so an open dock lands the beacon at
-  // once.
-  const hexCache: Map<string, string> = ((
-    globalThis as any
-  ).__kioskDockHexes ??= new Map());
-  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-  const looking = new Set<string>();
-
-  async function lookupHex(hs: HoloSphere, id: string): Promise<void> {
-    if (looking.has(id)) return;
-    looking.add(id);
-    try {
-      for (const delay of [0, 800, 2000]) {
-        if (delay) await sleep(delay);
-        if (!alive) return;
-        const hex = await readSettingsHex(hs, id);
-        if (hex) {
-          hexCache.set(id, hex);
-          return;
-        }
-      }
-    } finally {
-      looking.delete(id);
-    }
-  }
+  // Where each board lives comes from the dock's hex store (lib/dockhexes):
+  // the sky needs it too — it decides which holons are anchored — so the
+  // look-ups, the retry for a late replica and the `kiosk:hex-changed`
+  // announcements all live there. The earth only places what it says.
 
   /** The cell a board is currently drawn on, as far as the map knows. */
   export function hexOf(id: string): string | null {
-    return hexCache.get(id) ?? null;
+    return $dockHexes.get(id) ?? null;
   }
 
-  async function loadHexes(entries: DockEntry[]) {
-    // `get`, not `has`: a stale falsy entry (older code cached misses) is a miss.
-    const missing = entries.filter((e) => !hexCache.get(e.id));
-    if (missing.length) {
-      try {
-        const hs = await getHolosphere();
-        // Place whatever is already known while the misses are retried, and
-        // again as each retry lands, so a late reply still gets its hexagon.
-        await Promise.all(
-          missing.map((e) => lookupHex(hs, e.id).then(() => place(entries))),
-        );
-      } catch {
-        /* unreachable — those boards stay off the earth this time */
-      }
-    }
-    place(entries);
-  }
-
-  function place(entries: DockEntry[]) {
+  function place(entries: DockEntry[], hexes: ReadonlyMap<string, string>) {
     if (!alive) return;
     located = entries.flatMap((e) => {
-      const hex = hexCache.get(e.id);
+      const hex = hexes.get(e.id);
       if (!hex) return [];
       const [lat, lng] = cellToLatLng(hex);
       return [{ ...e, hex, lng, lat }];
     });
-    loadingHexes = false;
     placeBoards();
-  }
-
-  /** Settings → Set location just claimed (or moved) a board's place. */
-  function onHexChanged(ev: Event) {
-    const d = (ev as CustomEvent<{ holon?: string; hex?: string }>).detail;
-    if (!d?.holon) return;
-    if (d.hex) hexCache.set(d.holon, d.hex);
-    else hexCache.delete(d.holon);
-    void loadHexes($dockEntries);
   }
 
   async function initMap() {
@@ -308,6 +254,7 @@
         // The sky above relays its placed orbs out when the earth settles
         // (the live sky re-projects every frame on its own).
         map.on("moveend", () => onmove());
+        map.on("move", () => onmoving());
         map.on("resize", () => onmove());
         // Cells lit by the selected lens — the dashboard map's highlighted
         // hexagons, in the same per-lens colour.
@@ -509,15 +456,7 @@
    * one with no place at all moves nothing (its orb floats free).
    */
   export async function showBoard(id: string): Promise<void> {
-    showMap(); // the fly is the answer — it has to be seen
-    if (!hexCache.get(id)) {
-      try {
-        await lookupHex(await getHolosphere(), id);
-      } catch {
-        return;
-      }
-    }
-    const hex = hexCache.get(id);
+    const hex = await lookupHex(id);
     if (hex && alive) flyToCell(hex);
   }
 
@@ -546,7 +485,6 @@
    */
   export function showPlace(place: PlaceHit) {
     if (!map) return;
-    showMap();
     const box = place.bbox;
     if (box && box[0] < box[2])
       map.fitBounds(
@@ -698,7 +636,6 @@
             if (!held) liveItems.set(cell, (held = new Map()));
             if (item._deleted === true) held.delete(id);
             else held.set(id, item);
-            touchList();
             if (selectedCell === cell) panelIngest?.(item, key);
           },
         ),
@@ -710,59 +647,12 @@
         lensSubs.delete(cell);
       }
     }
-    touchList(); // the cells in view changed, so what is listed did too
   }
 
   function teardownLensSubs() {
     for (const sub of lensSubs.values()) sub.unsubscribe();
     lensSubs = new Map();
     liveItems.clear(); // the held records belong to the outgoing lens
-    touchList();
-  }
-
-  // ── List view ────────────────────────────────────────────────────────────--
-  //
-  // The map read as a list (MapList): the dock's hubs, and the selected
-  // lens's records in the cells on screen. Nothing new is fetched for it —
-  // the rows are the records the presence channel has already heard for the
-  // cells it is subscribed to right now, so the list and the lit hexagons
-  // are the same answer. The earth stays mounted beneath, still following
-  // lens changes, which is what keeps the list live.
-
-  /** Whether the list lies over the earth — the dock's view switch says. */
-  export let listOpen = false;
-  /** The map has somewhere to fly: the dock turns the pane back to the earth. */
-  export let onshowmap: () => void = () => {};
-  function showMap() {
-    if (listOpen) onshowmap();
-  }
-  let listTick = 0;
-  let listQueued = false;
-  /** What the list shows changed. Records arrive in bursts — one repaint a
-   *  frame is plenty — and a closed list rebuilds when it opens anyway. */
-  function touchList() {
-    if (!listOpen || listQueued) return;
-    listQueued = true;
-    requestAnimationFrame(() => {
-      listQueued = false;
-      listTick += 1;
-    });
-  }
-  const NO_ROWS = { rows: [] as LensRow[], total: 0 };
-  $: listed =
-    listOpen && selectedLens
-      ? (void listTick, lensRows(selectedLens, liveItems, lensSubs.keys()))
-      : NO_ROWS;
-  $: listHubs = listOpen
-    ? (void located, hubRows($dockEntries, (id) => hexCache.get(id)))
-    : [];
-
-  /** A lens row: back to the earth, onto its cell, with its details open. */
-  function showRow(row: LensRow) {
-    showMap();
-    selectCell(row.cell);
-    detailId = row.id;
-    flyToCell(row.cell);
   }
 
   /** Pick a lens chip; tapping the active one stands the lens layer down. */
@@ -988,7 +878,8 @@
   }
   let fittedKey = "";
 
-  $: if (alive) void loadHexes($dockEntries);
+  $: if (alive) void ensureHexes($dockEntries.map((e) => e.id));
+  $: place($dockEntries, $dockHexes);
 
   // The ONLY place this view asks for coordinates — an explicit tap on the
   // top bar's My-location button (DockView). The fix is cached (setGeo) so
@@ -997,7 +888,6 @@
   export let locating = false;
   export async function locate() {
     if (locating) return;
-    showMap();
     locating = true;
     try {
       const res = await requestPosition();
@@ -1023,7 +913,6 @@
 
   onMount(() => {
     if (MAPBOX_TOKEN) void initMap();
-    window.addEventListener("kiosk:hex-changed", onHexChanged);
     // The lens layer needs the shared holosphere; once it's up, reconcile
     // whatever the map is already showing (and any pre-selected cell).
     void getHolosphere().then((h) => {
@@ -1035,8 +924,6 @@
   });
   onDestroy(() => {
     alive = false;
-    if (typeof window !== "undefined")
-      window.removeEventListener("kiosk:hex-changed", onHexChanged);
     teardownLensSubs();
     panelSub?.unsubscribe();
     panelSub = null;
@@ -1073,7 +960,7 @@
 
     <!-- What lives in the tapped cell, for the selected lens — the
          dashboard sidebar's job, sized for a kiosk. -->
-    {#if selectedCell && !listOpen}
+    {#if selectedCell}
       <aside class="cellpanel">
         <header>
           {#if detailItem}
@@ -1158,20 +1045,6 @@
     {/if}
   {:else}
     <p class="empty">{$t("dock.mapUnavailable")}</p>
-  {/if}
-
-  <!-- The pane turned over (the dock's List view). Outside the token check:
-       the dock's hubs can be listed with no earth to show them on. -->
-  {#if listOpen}
-    <MapList
-      hubs={listHubs}
-      lens={selectedLens}
-      rows={listed.rows}
-      total={listed.total}
-      onopen={requestOpen}
-      onshowhub={(id) => void showBoard(id)}
-      onshowrow={showRow}
-    />
   {/if}
 </div>
 

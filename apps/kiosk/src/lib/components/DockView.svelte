@@ -32,6 +32,7 @@
     type HolonColors,
   } from "$lib/palette";
   import {
+    anchoredIds,
     beaconPath,
     beaconTangents,
     boundsPath,
@@ -64,6 +65,8 @@
     resolveNames,
   } from "$lib/names";
   import { dockPartnersOf } from "$lib/dockfed";
+  import { dockHexes, ensureHexes } from "$lib/dockhexes";
+  import { packSky, readCache, unpackSky, writeCache } from "$lib/dockcache";
   import { clearBotHandoff, returningFromBot } from "$lib/config";
   import { clearHubClaim, pendingClaim } from "$lib/hubclaim";
   import { showNotice } from "$lib/stores";
@@ -78,6 +81,7 @@
   import FederationLens from "./FederationLens.svelte";
   import DockMap from "./DockMap.svelte";
   import PeopleView from "./PeopleView.svelte";
+  import HolonDrawer from "./HolonDrawer.svelte";
   import MapSearch from "./MapSearch.svelte";
   import { loadDockPeople } from "$lib/dockpeople";
   import type { PlaceHit } from "$lib/placesearch";
@@ -101,13 +105,10 @@
   // hexagon sits.
   let dockMap: DockMap | undefined;
   let locating = false;
-  // The earth is up for the list too: the list is the earth's pane turned
-  // over, and what it lists is what the map beneath is looking at.
-  $: mapOn = $dockView === "map" || $dockView === "list";
+  $: mapOn = $dockView === "map";
   // The people have a view of their own: no earth, and the sky's orbs stand
   // aside for it (PeopleView draws the hubs its own way).
   $: peopleOn = $dockView === "people";
-  $: listOn = $dockView === "list";
 
   /**
    * What the earth has selected, when it is showing: the tapped cell and the
@@ -115,9 +116,8 @@
    * one of these, here" — see `addHub`.
    */
   let mapSel: { cell: string; lens: LensId | null } | null = null;
-  /** The cell an add would land in, or null when the earth is off/unselected
-   *  — or turned over into the list, where no cell is there to be seen. */
-  $: addCell = mapOn && !listOn ? (mapSel?.cell ?? null) : null;
+  /** The cell an add would land in, or null when the earth is off/unselected. */
+  $: addCell = mapOn ? (mapSel?.cell ?? null) : null;
   /**
    * The lens an add would write into that cell. The `holons` lens is NOT one
    * of these: adding a holon is adding a hub, and the cell becomes its home
@@ -479,20 +479,44 @@
     $dockEntries.find((e) => e.id === id)?.name ?? $resolvedName(id);
 
   // ── Federation ties ─────────────────────────────────────────────────────--
-  // Each docked board's partner list, fetched once and cached for the dock's
-  // lifetime. Until (or unless) it arrives, the orbs float unlinked.
-  let partnerMap = new Map<string, readonly string[]>();
+  // Each docked board's partner list. What this device saw last time
+  // (lib/dockcache) is drawn at once — so a reload opens on the
+  // constellations, not on loose orbs that snap together a few seconds
+  // later — and each list is read fresh once per session behind it.
+  type KeptFed = Record<
+    string,
+    { partners: string[]; lenses: Record<string, LensDirections> }
+  >;
+  const keptFed = readCache<KeptFed>("federation", {});
+  let partnerMap = new Map<string, readonly string[]>(
+    Object.entries(keptFed)
+      .filter(([, f]) => Array.isArray(f?.partners))
+      .map(([id, f]) => [id, f.partners]),
+  );
   /** Each board's per-partner lens directions — what its liquids describe. */
-  let fedConfigs = new Map<string, Record<string, LensDirections>>();
+  let fedConfigs = new Map<string, Record<string, LensDirections>>(
+    Object.entries(keptFed)
+      .filter(([, f]) => f?.lenses && typeof f.lenses === "object")
+      .map(([id, f]) => [id, f.lenses]),
+  );
   const fetching = new Set<string>();
+  /** Lists read from the relays this session (not only remembered). */
+  const freshFed = new Set<string>();
+  function keepFed() {
+    const out: KeptFed = {};
+    for (const [id, partners] of partnerMap)
+      out[id] = { partners: [...partners], lenses: fedConfigs.get(id) ?? {} };
+    writeCache("federation", out);
+  }
 
   $: ids = $dockEntries.map((e) => e.id);
   $: void loadPartners(ids);
+  // Where each hub lives — read in both spheres, since it decides who is
+  // anchored (below), not only where the earth draws a hexagon.
+  $: void ensureHexes(ids);
 
   async function loadPartners(list: string[]) {
-    const missing = list.filter(
-      (id) => !partnerMap.has(id) && !fetching.has(id),
-    );
+    const missing = list.filter((id) => !freshFed.has(id) && !fetching.has(id));
     if (!missing.length) return;
     for (const id of missing) fetching.add(id);
     try {
@@ -503,13 +527,18 @@
             const snap = await getFederationSnapshot(hs, id);
             partnerMap.set(id, snap.federated);
             fedConfigs.set(id, snap.lensConfig);
+            freshFed.add(id);
           } catch {
-            partnerMap.set(id, []);
+            // Unreadable now: a remembered list stands until a read works.
+            if (!partnerMap.has(id)) partnerMap.set(id, []);
+          } finally {
+            fetching.delete(id);
           }
         }),
       );
       partnerMap = partnerMap; // reassign → recompute links below
       fedConfigs = fedConfigs;
+      keepFed();
     } catch {
       /* can't connect — the constellation just shows no ties */
     }
@@ -532,7 +561,26 @@
     typeof matchMedia !== "undefined" &&
     matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  $: links = linksAmong(ids, partnerMap);
+  $: allLinks = linksAmong(ids, partnerMap);
+
+  // ── Anchored ────────────────────────────────────────────────────────────--
+  //
+  // The sky — holosphere and geosphere alike — shows only ANCHORED hubs: a
+  // hub with a place, or one in a federation (with any partner, docked here
+  // or not), and every hub in a constellation with one of those. The rest —
+  // unfederated and placeless — are listed in the drawer (HolonDrawer), from
+  // where a drag gives them a place or a partner and so brings them up. A
+  // constellation is anchored whole or not at all, so the sky's links are
+  // exactly its own.
+  $: anchored = anchoredIds(
+    ids,
+    allLinks,
+    (id) => !!$dockHexes.get(id) || (partnerMap.get(id)?.length ?? 0) > 0,
+  );
+  $: skyEntries = $dockEntries.filter((e) => anchored.has(e.id));
+  $: skyIds = skyEntries.map((e) => e.id);
+  $: links = allLinks.filter(([a]) => anchored.has(a));
+  $: drawerEntries = $dockEntries.filter((e) => !anchored.has(e.id));
 
   // ── People ──────────────────────────────────────────────────────────────--
   //
@@ -561,7 +609,7 @@
     void mapTick; // the earth settled somewhere new: the places moved
     void mapOn;
     readAnchors();
-    const settled = orbLayout(ids, links, fieldW, fieldH, ORB / 2, anchors);
+    const settled = orbLayout(skyIds, links, fieldW, fieldH, ORB / 2, anchors);
     // Even a parked sky lets a dragged orb follow the finger.
     if (dragging && dragId && dragPos) settled.set(dragId, dragPos);
     positions = settled;
@@ -610,14 +658,25 @@
 
   onMount(() => {
     // A federation change (this popup's writes included) redraws the ties:
-    // flush the partner cache and refetch, and the orbs pull together live.
+    // refetch every list, and the orbs pull together (or apart) live. The
+    // ties on screen stay until their fresh reads replace them.
     const onFedChanged = () => {
-      partnerMap = new Map();
-      fedConfigs = new Map();
+      freshFed.clear();
       fetching.clear();
       void loadPartners(ids);
     };
     window.addEventListener("kiosk:federation-changed", onFedChanged);
+    // Where the orbs stand is kept for the next load (lib/dockcache): on
+    // the way out — a reload, a closed tab, the app sent to the background.
+    const keepSky = () => {
+      if (sim && fieldW && fieldH)
+        writeCache("sky", packSky(sim, fieldW, fieldH));
+    };
+    const onHidden = () => {
+      if (document.visibilityState === "hidden") keepSky();
+    };
+    window.addEventListener("pagehide", keepSky);
+    document.addEventListener("visibilitychange", onHidden);
     // Dev/test hook, like window.__dockMap: lets a headless run read where
     // the orbs and their places are without scraping the DOM. DEV only.
     if (import.meta.env.DEV)
@@ -626,43 +685,91 @@
         grounds: () => grounds,
       };
 
-    let raf = 0;
-    if (!reducedMotion)
-      raf = requestAnimationFrame(function frame(t) {
-        if (fieldEl && fieldW && fieldH && ids.length) {
-          // Re-seat the sim when the cast or the field changes; retained orbs
-          // keep their place and momentum, newcomers glide in from the ring.
-          const key = `${ids.join("\n")}|${fieldW}x${fieldH}`;
-          if (!sim || key !== simKey) {
-            sim = keptSim = syncOrbs(sim, ids, fieldW, fieldH);
-            simKey = key;
-          }
-          const lifted = dragging && dragId ? dragId : undefined;
-          // Where the places are THIS frame — the earth may be mid-fly.
-          readAnchors();
-          stepOrbs(sim, links, fieldW, fieldH, ORB / 2, t, lifted, anchors);
-          // A dragged orb is kinematic: lifted out of the physics (see
-          // stepOrbs) and pinned under the finger.
-          if (dragging && dragId && dragPos) {
-            const i = sim.ids.indexOf(dragId);
-            if (i >= 0) {
-              sim.px[i] = Math.min(fieldW, Math.max(0, dragPos.x));
-              sim.py[i] = Math.min(fieldH, Math.max(0, dragPos.y));
-              sim.vx[i] = 0;
-              sim.vy[i] = 0;
-            }
-          }
-          positions = orbPositions(sim);
-        }
-        raf = requestAnimationFrame(frame);
-      });
+    skyLive = !reducedMotion;
+    skyKick();
     return () => {
+      keepSky();
       window.removeEventListener("kiosk:federation-changed", onFedChanged);
-      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener("pagehide", keepSky);
+      document.removeEventListener("visibilitychange", onHidden);
+      skyLive = false;
+      if (skyRaf) cancelAnimationFrame(skyRaf);
+      skyRaf = 0;
     };
   });
+  // ── The sky's frame loop: runs while something moves, then stops ────────--
+  //
+  // The physics steps only while the field is in motion — a new cast, new
+  // ties, a resize, a drag, the earth beneath moving — and the loop stops
+  // dead once every orb is still, so a sky at rest costs nothing. (It used
+  // to breathe forever: a wander kept every orb drifting and the whole
+  // sky, ties and hulls included, was redrawn every frame for as long as
+  // the dock was open.)
+  const SKY_BUDGET = 900; // frames after a nudge before it is made to stop
+  const SKY_REST = 0.05; // px a frame still worth drawing
+  let skyLive = false;
+  let skyRaf = 0;
+  let skyBudget = 0;
+  /** Wake the sky for up to `frames` more frames. */
+  function skyKick(frames = SKY_BUDGET) {
+    skyBudget = Math.max(skyBudget, frames);
+    if (skyLive && !skyRaf) skyRaf = requestAnimationFrame(skyFrame);
+  }
+  function skyFrame() {
+    skyRaf = 0;
+    if (!fieldEl || !fieldW || !fieldH || !skyIds.length) return;
+    // Re-seat the sim when the cast or the field changes; retained orbs
+    // keep their place and momentum, newcomers glide in from the ring.
+    const key = `${skyIds.join("\n")}|${fieldW}x${fieldH}`;
+    if (!sim || key !== simKey) {
+      const first = !sim;
+      sim = keptSim = syncOrbs(sim, skyIds, fieldW, fieldH);
+      // A reload: everyone stands where they were left, at rest.
+      if (first) unpackSky(sim, readCache("sky", {}), fieldW, fieldH);
+      simKey = key;
+    }
+    const lifted = dragging && dragId ? dragId : undefined;
+    // Where the places are THIS frame — the earth may be mid-fly.
+    readAnchors();
+    const fastest = stepOrbs(
+      sim,
+      links,
+      fieldW,
+      fieldH,
+      ORB / 2,
+      lifted,
+      anchors,
+    );
+    // A dragged orb is kinematic: lifted out of the physics (see stepOrbs)
+    // and pinned under the finger.
+    if (dragging && dragId && dragPos) {
+      const i = sim.ids.indexOf(dragId);
+      if (i >= 0) {
+        sim.px[i] = Math.min(fieldW, Math.max(0, dragPos.x));
+        sim.py[i] = Math.min(fieldH, Math.max(0, dragPos.y));
+        sim.vx[i] = 0;
+        sim.vy[i] = 0;
+      }
+    }
+    positions = orbPositions(sim);
+    skyBudget--;
+    if (dragging || (fastest > SKY_REST && skyBudget > 0))
+      skyRaf = requestAnimationFrame(skyFrame);
+    else skyBudget = 0;
+  }
+  // What sets the field moving: the cast, its ties, the field's size, the
+  // orb size, the earth turning on or off, a finger.
+  $: (void skyIds,
+    void links,
+    void fieldW,
+    void fieldH,
+    void ORB,
+    void mapOn,
+    skyKick());
+  $: (void dragging, void dragPos, skyKick());
+
   $: bounds = orbClusters(
-    filtering ? ids.filter((id) => shown.has(id)) : ids,
+    filtering ? skyIds.filter((id) => shown.has(id)) : skyIds,
     shownLinks,
   )
     .filter((c) => c.length > 1)
@@ -818,11 +925,10 @@
       <DockMap
         bind:this={dockMap}
         bind:locating
-        listOpen={listOn}
-        onshowmap={() => setDockView("map")}
         bind:selection={mapSel}
         onbackdrop={standDown}
         onmove={() => (mapTick += 1)}
+        onmoving={() => skyKick(60)}
         highlight={dragging ? dropTarget : (homeDrop?.hex ?? null)}
         carrying={dragging ? dragId : (homeDrop?.holon ?? null)}
       />
@@ -835,7 +941,7 @@
            `grounds` inline — a helper closure would hide the dependency from
            the compiler and freeze the cones in place. -->
       <svg class="beacons" viewBox="0 0 {fieldW} {fieldH}" aria-hidden="true">
-        {#each $dockEntries as e, i (e.id)}
+        {#each skyEntries as e, i (e.id)}
           {@const p = positions.get(e.id)}
           {@const g = grounds.get(e.id)}
           {#if p && g && nearField(g) && (!filtering || shown.has(e.id))}
@@ -1018,7 +1124,7 @@
           {/each}
         </svg>
 
-        {#each $dockEntries as e, i (e.id)}
+        {#each skyEntries as e, i (e.id)}
           {@const p = positions.get(e.id)}
           {#if p}
             <div
@@ -1063,7 +1169,7 @@
              slot a name was painted over by whichever neighbour came later
              in the list, and federated orbs overlap by design. Read
              `positions` inline, like the slots do. -->
-        {#each $dockEntries as e (e.id)}
+        {#each skyEntries as e (e.id)}
           {@const p = positions.get(e.id)}
           {#if p}
             <span
@@ -1075,6 +1181,33 @@
             >
           {/if}
         {/each}
+
+        <!-- A hub carried out of the drawer: it is in no constellation yet,
+             so the physics never holds it — this ghost follows the finger
+             until it lands on a hexagon or an orb. -->
+        {#if dragging && dragId && dragPos && !anchored.has(dragId)}
+          {@const carried = $dockEntries.find((e) => e.id === dragId)}
+          <div
+            class="slot front ghost"
+            aria-hidden="true"
+            style="{paintOf(
+              dragId,
+              $holonColors,
+            )}; left: {dragPos.x}px; top: {dragPos.y}px"
+          >
+            <span class="orb lifted"
+              ><Identicon class="mark" seed={dragId} /></span
+            >
+          </div>
+          {#if carried}
+            <span
+              class="name front"
+              aria-hidden="true"
+              style="left: {dragPos.x}px; top: {dragPos.y}px"
+              >{carried.name}</span
+            >
+          {/if}
+        {/if}
 
         <!-- The hover chip: what flows across the liquid the pointer rests
            on, hung just above its neck. Last in the layer, over the names. -->
@@ -1094,9 +1227,8 @@
     {#if peopleOn}
       <PeopleView
         bind:this={peopleView}
-        hubs={filtering
-          ? $dockEntries.filter((e) => shown.has(e.id))
-          : $dockEntries}
+        hubs={$dockEntries}
+        query={searchQuery}
         onopen={requestOpen}
       />
     {/if}
@@ -1108,10 +1240,31 @@
         <p>{$t("dock.emptyBody")}</p>
         <a class="start" href="/about">{$t("dock.emptyStart")}</a>
       </div>
+    {:else if skyEntries.length === 0 && !peopleOn && !adding}
+      <!-- Hubs, but none anchored: they are all in the drawer. Say how one
+           comes up into the sky. -->
+      <div class="empty" role="note">
+        <p>{$t("dock.skyEmptyHint")}</p>
+      </div>
+    {/if}
+    {#if !peopleOn && $dockEntries.length > 0}
+      <HolonDrawer
+        entries={drawerEntries}
+        {editing}
+        carrying={dragging ? dragId : null}
+        onopen={onOrbClick}
+        onforget={askForget}
+        grab={{
+          down: onOrbDown,
+          move: onOrbMove,
+          up: onOrbUp,
+          leave: onOrbLeave,
+        }}
+      />
     {/if}
   </div>
 
-  <!-- The top bar hovers over the sky, in three slots: the sky/earth/list
+  <!-- The top bar hovers over the sky, in three slots: the sky/earth/people
        switch always in the middle; with the earth on, the search (hubs and
        places) to its left and the My-location button at the right edge —
        all inside the earth's pane. -->
@@ -1123,6 +1276,8 @@
       <MapSearch
         bind:query={searchQuery}
         places={mapOn}
+        lookup={!peopleOn}
+        placeholder={peopleOn ? $t("dock.searchPeople") : ""}
         onpick={pickHub}
         onplace={pickPlace}
         near={() => dockMap?.center() ?? null}
@@ -1148,16 +1303,6 @@
         on:click={() => setDockView("map")}
       >
         <span aria-hidden="true"><Icon name="hexagon" /></span>{$t("dock.map")}
-      </button>
-      <button
-        type="button"
-        class="viewopt"
-        class:on={$dockView === "list"}
-        role="radio"
-        aria-checked={$dockView === "list"}
-        on:click={() => setDockView("list")}
-      >
-        <span aria-hidden="true"><Icon name="list" /></span>{$t("dock.list")}
       </button>
       <button
         type="button"
@@ -1340,6 +1485,11 @@
        (see .tray) so the sky, and with it the earth, runs to the true
        bottom edge of the screen rather than stopping on a paper margin. */
     --dock-lens: 0rem;
+    /* The margin of paper the earth's pane keeps from the screen edge
+       (DockMap .mapwrap reads it). Set in every view, not only over the
+       earth: the top bar and the drawer sit inside it, so switching between
+       holosphere and geosphere leaves them exactly where they were. */
+    --frame: clamp(0.4rem, 2vw, 1.4rem);
     --dock-tray: calc(6.6rem + env(safe-area-inset-bottom));
     display: flex;
     flex-direction: column;
@@ -1366,9 +1516,6 @@
   .dock.onmap {
     --dock-lens: 3.4rem;
     --dock-tray: calc(4.4rem + var(--dock-lens) + env(safe-area-inset-bottom));
-    /* The margin of paper the earth's pane keeps from the screen edge
-       (DockMap .mapwrap reads it): the bar sits inside it, on the map. */
-    --frame: clamp(0.4rem, 2vw, 1.4rem);
   }
 
   /* The sky's box: earth, beacons and field all fill it edge to edge. */
@@ -1580,6 +1727,10 @@
   }
   .slot.front {
     z-index: 3; /* the carried orb rides above the rest of the sky */
+  }
+  /* A hub carried out of the drawer: drawn, never hit. */
+  .slot.ghost {
+    pointer-events: none;
   }
   /* Filtered out by the search: still in the physics, gone from the eye and
      from under the finger. */
@@ -1845,23 +1996,15 @@
      taps through to whatever is beneath; only the controls catch them. */
   .topbar {
     position: absolute;
-    top: calc(env(safe-area-inset-top) + 0.8rem);
-    left: calc(env(safe-area-inset-left) + 0.8rem);
-    right: calc(env(safe-area-inset-right) + 0.8rem);
+    top: calc(env(safe-area-inset-top) + var(--frame) + 0.8rem);
+    left: calc(env(safe-area-inset-left) + var(--frame) + 0.9rem);
+    right: calc(env(safe-area-inset-right) + var(--frame) + 0.9rem);
     z-index: 6; /* above the map (and its overlays) and the gravity field */
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
     gap: 0.5rem;
     pointer-events: none;
-  }
-  /* With the earth on, the bar sits INSIDE the earth's pane — in from the
-     frame the pane keeps from the screen edge, then the same breathing room
-     the map's lens chips keep (DockMap .lensbar). */
-  .topbar.onmap {
-    top: calc(env(safe-area-inset-top) + var(--frame) + 0.8rem);
-    left: calc(env(safe-area-inset-left) + var(--frame) + 0.9rem);
-    right: calc(env(safe-area-inset-right) + var(--frame) + 0.9rem);
   }
   .topbar__left,
   .topbar__right {

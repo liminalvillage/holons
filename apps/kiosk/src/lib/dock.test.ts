@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it } from "vitest";
 import {
+  anchoredIds,
   beaconPath,
   beaconTangents,
   boundsPath,
@@ -364,6 +365,35 @@ describe("orbClusters", () => {
   });
 });
 
+describe("anchoredIds (who the sky shows)", () => {
+  const placed =
+    (...ids: string[]) =>
+    (id: string) =>
+      ids.includes(id);
+  it("anchors a placed holon on its own", () => {
+    expect([...anchoredIds(["-1"], [], placed("-1"))]).toEqual(["-1"]);
+  });
+  it("anchors an unplaced partner, and a partner of a partner", () => {
+    const got = anchoredIds(
+      ["-1", "-2", "-3"],
+      [
+        ["-1", "-2"],
+        ["-2", "-3"],
+      ],
+      placed("-1"),
+    );
+    expect([...got].sort()).toEqual(["-1", "-2", "-3"]);
+  });
+  it("leaves a constellation with no place, and a lone unplaced holon, out", () => {
+    const got = anchoredIds(
+      ["-1", "-4", "-5", "-6"],
+      [["-4", "-5"]],
+      placed("-1"),
+    );
+    expect([...got]).toEqual(["-1"]);
+  });
+});
+
 describe("orbUnder (what a drop lands on)", () => {
   const r = 50;
   const positions = new Map([
@@ -454,26 +484,23 @@ describe("stepOrbs / syncOrbs (the live sky)", () => {
   const ids = ["-1", "-2", "-3"];
   const links: Array<[string, string]> = [["-1", "-2"]];
 
-  it("keeps drifting after settling when the wander is on", () => {
+  it("comes to rest, so the live sky can stop drawing", () => {
     const sim = seedOrbs(ids, 800, 500);
-    for (let i = 0; i < 300; i++) stepOrbs(sim, links, 800, 500, 50);
+    let fastest = Infinity;
+    for (let i = 0; i < 1500; i++) fastest = stepOrbs(sim, links, 800, 500, 50);
+    expect(fastest).toBeLessThan(0.05);
     const settled = orbPositions(sim);
-    for (let i = 0; i < 60; i++)
-      stepOrbs(sim, links, 800, 500, 50, 4000 + i * 16);
-    const later = orbPositions(sim);
-    const moved = ids.some(
-      (id) =>
-        Math.hypot(
-          settled.get(id)!.x - later.get(id)!.x,
-          settled.get(id)!.y - later.get(id)!.y,
-        ) > 0.5,
-    );
-    expect(moved).toBe(true);
+    for (let i = 0; i < 60; i++) stepOrbs(sim, links, 800, 500, 50);
+    for (const id of ids) {
+      const a = settled.get(id)!;
+      const b = orbPositions(sim).get(id)!;
+      expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeLessThan(0.5);
+    }
   });
 
-  it("wander never pushes an orb out of the field", () => {
+  it("never pushes an orb out of the field", () => {
     const sim = seedOrbs(ids, 800, 500);
-    for (let i = 0; i < 900; i++) stepOrbs(sim, links, 800, 500, 50, i * 16);
+    for (let i = 0; i < 900; i++) stepOrbs(sim, links, 800, 500, 50);
     for (const p of orbPositions(sim).values()) {
       expect(p.x).toBeGreaterThanOrEqual(0);
       expect(p.x).toBeLessThanOrEqual(800);
@@ -489,7 +516,7 @@ describe("stepOrbs / syncOrbs (the live sky)", () => {
     sim.py[0] = 250;
     sim.px[1] = 400;
     sim.py[1] = 250;
-    stepOrbs(sim, [], 800, 500, 50, undefined, "a");
+    stepOrbs(sim, [], 800, 500, 50, "a");
     expect(sim.px[1]).toBeCloseTo(400); // untouched: no shove from "a"
     expect(sim.px[0]).toBeCloseTo(390); // not integrated: the caller pins it
     stepOrbs(sim, [], 800, 500, 50);
@@ -717,13 +744,13 @@ describe("anchors (the earth beneath the sky)", () => {
     ]);
     const sim = seedOrbs(ids, 900, 560);
     for (let i = 0; i < 500; i++)
-      stepOrbs(sim, links, 900, 560, r, i * 16, undefined, anchors);
+      stepOrbs(sim, links, 900, 560, r, undefined, anchors);
     let p0 = orbPositions(sim);
-    stepOrbs(sim, links, 900, 560, r, 500 * 16, undefined, anchors);
+    stepOrbs(sim, links, 900, 560, r, undefined, anchors);
     let p1 = orbPositions(sim);
     let maxJerk = 0;
     for (let i = 501; i < 800; i++) {
-      stepOrbs(sim, links, 900, 560, r, i * 16, undefined, anchors);
+      stepOrbs(sim, links, 900, 560, r, undefined, anchors);
       const p2 = orbPositions(sim);
       for (const id of ids) {
         const a = p0.get(id)!;
@@ -829,10 +856,10 @@ describe("anchors (the earth beneath the sky)", () => {
       const anchors = new Map([["-1", { x: w / 2, y: h / 2 }]]);
       const sim = seedOrbs(ids, w, h);
       for (let i = 0; i < 1500; i++)
-        stepOrbs(sim, links, w, h, radius, undefined, undefined, anchors);
+        stepOrbs(sim, links, w, h, radius, undefined, anchors);
       let speed = 0;
       for (let i = 0; i < 300; i++) {
-        stepOrbs(sim, links, w, h, radius, undefined, undefined, anchors);
+        stepOrbs(sim, links, w, h, radius, undefined, anchors);
         for (let k = 0; k < ids.length; k++)
           speed = Math.max(speed, Math.hypot(sim.vx[k], sim.vy[k]));
       }
@@ -850,7 +877,7 @@ describe("anchors (the earth beneath the sky)", () => {
     sim.px[1] = 700;
     sim.py[1] = 420;
     for (let i = 0; i < 200; i++)
-      stepOrbs(sim, [["-1", "-2"]], 800, 500, r, undefined, "-1");
+      stepOrbs(sim, [["-1", "-2"]], 800, 500, r, "-1");
     expect(sim.px[0]).toBe(100);
     expect(sim.py[0]).toBe(100);
     expect(Math.hypot(sim.px[1] - 100, sim.py[1] - 100)).toBeLessThan(2 * r);
@@ -860,8 +887,7 @@ describe("anchors (the earth beneath the sky)", () => {
     const sim = seedOrbs(["-1"], 800, 500);
     const before = { x: sim.px[0], y: sim.py[0] };
     const anchors = new Map([["-1", { x: 700, y: 50 }]]);
-    for (let i = 0; i < 50; i++)
-      stepOrbs(sim, [], 800, 500, r, undefined, "-1", anchors);
+    for (let i = 0; i < 50; i++) stepOrbs(sim, [], 800, 500, r, "-1", anchors);
     expect(sim.px[0]).toBe(before.x);
     expect(sim.py[0]).toBe(before.y);
   });
