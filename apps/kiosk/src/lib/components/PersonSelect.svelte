@@ -44,11 +44,21 @@
   export let block = false;
   /** The trigger grows like its siblings in a wrapping row of buttons. */
   export let grow = false;
+  /**
+   * Pick several at once: rows tick on and off, and one "Add N" button at
+   * the foot of the menu fires `pickMany` with everyone ticked. Closing the
+   * menu any other way adds no one.
+   */
+  export let multi = false;
 
   const dispatch = createEventDispatcher<{
     pick: PersonOption;
+    pickMany: PersonOption[];
     other: void;
   }>();
+
+  /** Ids ticked so far in a multi pick (string form). */
+  let picked = new Set<string>();
 
   onMount(() => {
     if (!people) void loadMembers();
@@ -106,6 +116,7 @@
     open = true;
     query = "";
     active = 0;
+    picked = new Set();
     if (federation && !fedLoaded) {
       fedLoaded = true;
       void loadFedPeople().then((list) => (fed = list));
@@ -134,17 +145,48 @@
         : `left:${left}px;bottom:${window.innerHeight - r.top + 4}px;width:${w}px;max-height:${Math.min(400, above)}px`;
   }
 
+  /** A row as the caller receives it: the shown fields, the caller's id type. */
+  function optionOf(p: PersonOption): PersonOption {
+    const pick: PersonOption = { id: p.id };
+    for (const k of ["name", "username", "first_name", "last_name"] as const)
+      if (p[k]) pick[k] = p[k];
+    // Hand back the caller's own id type (a member's numeric Telegram id).
+    const orig = pool.find((x) => String(x.id) === String(p.id));
+    if (orig) pick.id = orig.id;
+    return pick;
+  }
+
   function choose(i: number) {
     if (i < rows.length) {
       const { p } = rows[i];
-      const pick: PersonOption = { id: p.id };
-      for (const k of ["name", "username", "first_name", "last_name"] as const)
-        if (p[k]) pick[k] = p[k];
-      // Hand back the caller's own id type (a member's numeric Telegram id).
-      const orig = pool.find((x) => String(x.id) === p.id);
-      if (orig) pick.id = orig.id;
-      dispatch("pick", pick);
+      if (multi) {
+        // Tick, don't close: the pick lands with the Add button.
+        const next = new Set(picked);
+        if (next.has(p.id)) next.delete(p.id);
+        else next.add(p.id);
+        picked = next;
+        return;
+      }
+      dispatch("pick", optionOf(p));
     } else dispatch("other");
+    close();
+  }
+
+  /** Everyone ticked, in list order, then the ticks made elsewhere (a search
+   *  that was cleared) after them. */
+  function addPicked() {
+    if (!picked.size) return;
+    const all = [...pool, ...fed].map((p) => ({
+      ...p,
+      id: String(p.id),
+      name: (p as PersonOption).name || personName(p),
+    }));
+    const out: PersonOption[] = [];
+    for (const id of picked) {
+      const p = all.find((x) => x.id === id);
+      if (p) out.push(optionOf(p));
+    }
+    dispatch("pickMany", out);
     close();
   }
 
@@ -161,7 +203,10 @@
       active = (active - 1 + count) % Math.max(1, count);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (count) choose(active);
+      // In a multi pick Enter on an empty search adds what is ticked; on a
+      // search it ticks the highlighted row, as a tap would.
+      if (multi && picked.size && !query.trim()) addPicked();
+      else if (count) choose(active);
     }
   }
 
@@ -228,11 +273,15 @@
     </div>
     <ul class="list" role="listbox" aria-label={label}>
       {#each rows as { p, via }, i (p.id)}
-        <li role="option" aria-selected={i === active}>
+        <li
+          role="option"
+          aria-selected={multi ? picked.has(p.id) : i === active}
+        >
           <button
             type="button"
             class="row"
             class:active={i === active}
+            class:ticked={multi && picked.has(p.id)}
             on:mouseenter={() => (active = i)}
             on:click={() => choose(i)}
           >
@@ -251,6 +300,11 @@
               {#if via}<span class="via">{$t("people.via", { name: via })}</span
                 >{/if}
             </span>
+            {#if multi}
+              <span class="tick" aria-hidden="true"
+                >{#if picked.has(p.id)}<Icon name="check" />{/if}</span
+              >
+            {/if}
           </button>
         </li>
       {/each}
@@ -277,6 +331,21 @@
       </p>
     {:else if federation && !query.trim()}
       <p class="note">{$t("people.typeToSearchFederation")}</p>
+    {/if}
+    {#if multi}
+      <div class="pickbar">
+        <span class="picked-n"
+          >{picked.size
+            ? $t("people.pickedN", { n: picked.size })
+            : $t("people.tickSeveral")}</span
+        >
+        <button
+          type="button"
+          class="addmany"
+          disabled={!picked.size}
+          on:click={addPicked}>{$t("people.addN", { n: picked.size })}</button
+        >
+      </div>
     {/if}
   </div>
 {/if}
@@ -384,6 +453,55 @@
   }
   .row.other {
     color: var(--teal-ink);
+  }
+  .row.ticked {
+    color: var(--teal-ink);
+  }
+  /* The tick box at the end of a multi-pick row: hollow until picked. */
+  .tick {
+    flex: 0 0 auto;
+    margin-left: auto;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    border: 1.5px solid var(--line);
+    display: grid;
+    place-items: center;
+    font-size: 0.85rem;
+    color: var(--on-teal);
+  }
+  .row.ticked .tick {
+    background: var(--teal);
+    border-color: var(--teal);
+  }
+  .pickbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin-top: 0.4rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--line);
+  }
+  .picked-n {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+    padding-left: 0.4rem;
+  }
+  .addmany {
+    min-height: 44px;
+    padding: 0 1.1rem;
+    border-radius: 12px;
+    font-weight: 700;
+    color: var(--on-teal);
+    background: var(--teal);
+    box-shadow: var(--shadow-soft);
+  }
+  .addmany:disabled {
+    opacity: 0.45;
+    box-shadow: none;
   }
   .av {
     position: relative;

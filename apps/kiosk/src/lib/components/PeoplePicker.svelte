@@ -3,7 +3,8 @@
   // A roster of people on a card — the hosts of an event, or its participants.
   // Each person is a chip with a clear "×" badge to drop them; one round "+"
   // opens the people selector (PersonSelect: search, avatars, members first,
-  // partner holons' people on a search). What the list *means* is core's
+  // partner holons' people on a search) — ticking several and adding them in
+  // one go, unless the list holds one person at most. What the list *means* is core's
   // (`hostsOf`, `setParticipants`); this only edits the array the card form
   // will save.
   import Icon from "$lib/components/Icon.svelte";
@@ -24,14 +25,25 @@
 
   $: taken = new Set(people.map((h) => String(h.id)));
 
-  function put(m: PersonOption) {
-    if (taken.has(String(m.id))) return;
-    // The stored shape of a person on a card — see membership.ts `person`.
+  /** The stored shape of a person on a card — see membership.ts `person`. */
+  function toPerson(m: PersonOption): QuestParticipant {
     const p: QuestParticipant = { id: m.id };
     if (m.username) p.username = m.username;
     if (m.first_name) p.first_name = m.first_name;
     if (m.last_name) p.last_name = m.last_name;
-    people = single ? [p] : [...people, p];
+    return p;
+  }
+
+  function put(m: PersonOption) {
+    if (taken.has(String(m.id))) return;
+    people = single ? [toPerson(m)] : [...people, toPerson(m)];
+  }
+
+  /** Several at once (the multi pick): everyone not already on the list. */
+  function putMany(list: PersonOption[]) {
+    const fresh = list.filter((m) => !taken.has(String(m.id)));
+    if (!fresh.length) return;
+    people = [...people, ...fresh.map(toPerson)];
   }
 
   function remove(id: string | number | undefined) {
@@ -72,7 +84,9 @@
       label={addLabel}
       exclude={[...taken]}
       federation
+      multi={!single}
       on:pick={(e) => put(e.detail)}
+      on:pickMany={(e) => putMany(e.detail)}
     >
       <button
         slot="trigger"

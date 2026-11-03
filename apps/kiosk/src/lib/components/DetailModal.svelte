@@ -1,9 +1,15 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   import Icon from "$lib/components/Icon.svelte";
-  // The zoomed-forward detail card for a tapped post-it / library thing. Shows
-  // full details and — when logged in with Telegram — edit fields and actions
-  // (save, mark complete, borrow / return). Writes go through identity-aware
+  // The zoomed-forward detail card for a tapped post-it / library thing.
+  //
+  // A task or event is edited where it is read: title and description are
+  // live text (InlineText), the people are chip rosters with a multi-pick
+  // "+", the steps a list that grows from the card — every change saves
+  // itself. Schedule, kind, cadence, category and location sit behind one
+  // "Details" drawer, and the decisions (join, appreciate, done; then chat,
+  // board, link, lock, delete) live in the card's pinned footer. A library
+  // thing keeps its small edit form. Writes go through identity-aware
   // helpers; the meaning of borrowing lives in @holons/core/library.
   import Modal from "./Modal.svelte";
   import Confetti from "./Confetti.svelte";
@@ -32,12 +38,10 @@
   import { privacyOfHolon, type Audience } from "@holons/core/privacy";
   import AudienceEditor from "./AudienceEditor.svelte";
   import {
-    addMember,
     refreshQuestMessages,
     toggleJoin,
     toggleAppreciate,
   } from "$lib/membership";
-  import { loadMembers, type Member } from "$lib/members";
   import {
     checkComplete,
     checkOccurrenceComplete,
@@ -88,6 +92,7 @@
     hostsOf,
     isAgendaQuest,
     isOccurrenceCompleted,
+    isQuestSettled,
     isRecurring,
     questFrequency,
     questKind,
@@ -97,6 +102,7 @@
     setQuestFrequency,
     setQuestKind,
     shiftSchedule,
+    stepsOf,
     toggleOccurrenceCompleted,
     boardUrlOf,
     taskRef,
@@ -108,7 +114,7 @@
     type SwitchableKind,
   } from "@holons/core/tasks";
   import PeoplePicker from "./PeoplePicker.svelte";
-  import PersonSelect from "./PersonSelect.svelte";
+  import InlineText from "./InlineText.svelte";
   import ProposalVote from "./ProposalVote.svelte";
   import { breakdownAvailable, requestBreakdownProposal } from "$lib/breakdown";
   import { t, locale, type MessageKey } from "$lib/i18n";
@@ -219,20 +225,31 @@
     if (k !== selKey) {
       selKey = k;
       // Whatever the form still holds lands before it goes away.
-      if (editing) void autosave.flush();
+      if (editing || editSel) void autosave.flush();
       editing = false;
+      editSel = null;
+      detailsOpen = false;
       booking = false;
       message = "";
+      newStepTitle = "";
       lightbox = null; // a new card means a new photo
       cancelBreakdown();
+      // A task's form is the card itself, so it is loaded with the card.
+      if (sel && sel.kind !== "thing") loadForm(sel);
     }
   }
 
-  // Opened via a pen button → jump straight into edit mode.
+  // Opened via a pen button → the details drawer is already open.
   $: if ($selection && $selection.kind !== "thing" && $editOnOpen) {
     editOnOpen.set(false);
-    startEdit();
+    detailsOpen = true;
   }
+
+  // Whether this card can be edited where it stands: a signed-in person on
+  // a stored card. A draft is edited the same way but waits for Create.
+  $: canEdit = quest != null && $isLoggedIn;
+  // The details drawer: schedule, kind, cadence, category, location.
+  let detailsOpen = false;
 
   // Whether the logged-in user is already a participant of this quest.
   $: amParticipant =
@@ -430,15 +447,89 @@
     );
   }
 
+  // ── Steps ────────────────────────────────────────────────────────────────
+  // A task's sub-tasks are the quests it waits on (core `stepsOf`): the same
+  // edges the graph draws. They are read from the live record so a step
+  // added from the card appears on it as soon as the write echoes back.
+  $: steps =
+    quest && !isNew
+      ? stepsOf(
+          { ...(liveQuest ?? quest), id: String(quest.id ?? quest.title) },
+          $rawQuests,
+        )
+      : [];
+  // Steps are written to this holon's graph, so only its own stored cards
+  // grow them (a hologram's or a federated card's steps belong elsewhere).
+  $: canSteps =
+    quest != null &&
+    !isNew &&
+    $isLoggedIn &&
+    !sourceRef(quest, String(quest.id ?? quest.title));
+  $: openSteps = steps.filter((q) => !isQuestSettled(q)).length;
+
+  /** Open a step's own card in place of this one. */
+  function openStep(step: Quest) {
+    selection.set({
+      kind: questKind(step) === "event" ? "event" : "task",
+      quest: step,
+    });
+  }
+
+  /** One typed step: created and wired as a prerequisite in a single go. */
+  async function addStep() {
+    const title = newStepTitle.trim();
+    if (!title || !quest || saving) return;
+    const parent = await freshQuest(quest);
+    let preview: ApplyBreakdownResult;
+    try {
+      preview = applyBreakdownProposal({
+        proposal: {
+          atomic: false,
+          reasoning: "",
+          steps: [
+            {
+              title,
+              description: "",
+              existingTaskId: "",
+              category: String(parent.category ?? ""),
+              dependsOnSteps: [],
+              dependsOnExisting: [],
+            },
+          ],
+        },
+        parent: { ...parent, id: String(parent.id ?? parent.title) },
+        allQuests: localQuests(),
+        initiator: breakdownInitiator(),
+      });
+    } catch (e) {
+      message = (e as Error)?.message || $t("detail.stepsUnwirable");
+      return;
+    }
+    newStepTitle = "";
+    const ok = await writeSteps(preview, parent);
+    if (!ok) newStepTitle = title; // nothing landed: the words come back
+  }
+
   async function confirmBreakdown() {
-    if (!breakdownPreview || !quest || !$holonId) return;
+    if (!breakdownPreview || !quest) return;
+    if (await writeSteps(breakdownPreview, await freshQuest(quest)))
+      cancelBreakdown();
+  }
+
+  /**
+   * Write new steps, then link them on the parent. Steps first, parent last
+   * — a partial failure leaves the goal unwired rather than depending on
+   * tasks that don't exist. The card stays open: the steps show up on it.
+   */
+  async function writeSteps(
+    preview: ApplyBreakdownResult,
+    parent: Quest,
+  ): Promise<boolean> {
+    if (!$holonId) return false;
     saving = true;
     message = "";
-    const preview = breakdownPreview;
     try {
       const writer = await getWriter($holonId, (m) => (message = m));
-      // Steps first, parent last — a partial failure leaves the goal unwired
-      // rather than depending on tasks that don't exist.
       let saved = 0;
       for (const q of preview.newQuests) {
         if (await writer.put("quests", q)) saved++;
@@ -451,11 +542,10 @@
             total: preview.newQuests.length,
           });
         }
-        return;
+        return false;
       }
       // Link on the freshest parent copy so a concurrent edit isn't clobbered;
       // merge rather than replace its dependency list for the same reason.
-      const parent = await freshQuest(quest);
       const dependencies = [
         ...new Set([
           ...((parent.dependencies as string[] | undefined) ?? []).map(String),
@@ -463,14 +553,11 @@
         ]),
       ];
       const ok = await writer.put("quests", { ...parent, dependencies });
-      if (ok) {
-        cancelBreakdown();
-        closeDetail();
-      } else if (!message) {
-        message = $t("detail.linkStepsFailed");
-      }
+      if (!ok && !message) message = $t("detail.linkStepsFailed");
+      return ok;
     } catch (e) {
       message = (e as Error)?.message || $t("detail.createStepsFailed");
+      return false;
     } finally {
       saving = false;
     }
@@ -712,42 +799,50 @@
     cardLocked = e.detail.locked;
   };
 
+  /** A task's form fields, from the card that was just opened. */
+  function loadForm(s: NonNullable<typeof sel>) {
+    if (s.kind === "thing") return;
+    editSel = s;
+    const q = s.quest;
+    fTitle = q.title ?? "";
+    fLocation = String(q.location ?? "");
+    fCategory = String(q.category ?? "");
+    addingCategory = false;
+    fDescription = String(q.description ?? "");
+    // Core splits the stored schedule back into the four form fields.
+    ({
+      startDate: fDate,
+      startTime: fTime,
+      endDate: fEndDate,
+      endTime: fEndTime,
+    } = scheduleToFields(q));
+    fFrequency = questFrequency(q);
+    // Core names the kind; legacy spellings ('quest', 'meeting') fold into
+    // the two the switch offers. A marketplace card never reaches the
+    // switch, so the fallback is harmless.
+    fKind = questKind(q) === "event" ? "event" : "task";
+    // Read as an event either way, so hosts survive a trip through "task".
+    fHosts = hostsOf({ ...q, type: "event" });
+    fParticipants = Array.isArray(q.participants) ? [...q.participants] : [];
+    savedRoster = q.participants;
+  }
+
+  /** A thing opens its edit form; a task opens its details drawer. */
   function startEdit() {
     if (!sel) return;
     message = "";
-    editSel = sel;
-    if (sel.kind === "thing") {
-      fType =
-        String(sel.item.type ?? "")
-          .trim()
-          .toLowerCase() || "other";
-      addingThingType = false;
-      fDescription = String(sel.item.description ?? "");
-      fValue = Number(sel.item.value ?? 0);
-    } else {
-      const q = sel.quest;
-      fTitle = q.title ?? "";
-      fLocation = String(q.location ?? "");
-      fCategory = String(q.category ?? "");
-      addingCategory = false;
-      fDescription = String(q.description ?? "");
-      // Core splits the stored schedule back into the four form fields.
-      ({
-        startDate: fDate,
-        startTime: fTime,
-        endDate: fEndDate,
-        endTime: fEndTime,
-      } = scheduleToFields(q));
-      fFrequency = questFrequency(q);
-      // Core names the kind; legacy spellings ('quest', 'meeting') fold into
-      // the two the switch offers. A marketplace card never reaches the
-      // switch, so the fallback is harmless.
-      fKind = questKind(q) === "event" ? "event" : "task";
-      // Read as an event either way, so hosts survive a trip through "task".
-      fHosts = hostsOf({ ...q, type: "event" });
-      fParticipants = Array.isArray(q.participants) ? [...q.participants] : [];
-      savedRoster = q.participants;
+    if (sel.kind !== "thing") {
+      detailsOpen = true;
+      return;
     }
+    editSel = sel;
+    fType =
+      String(sel.item.type ?? "")
+        .trim()
+        .toLowerCase() || "other";
+    addingThingType = false;
+    fDescription = String(sel.item.description ?? "");
+    fValue = Number(sel.item.value ?? 0);
     editing = true;
   }
 
@@ -967,10 +1062,12 @@
       e.kind === "quest" ? putQuest(e.record) : putThing(e.item, e.record),
   );
   $: autosave.watch(
-    !editing || isNew
-      ? null
-      : isThing
+    isThing
+      ? editing
         ? JSON.stringify([fType, fDescription, fValue])
+        : null
+      : !canEdit || isNew
+        ? null
         : JSON.stringify([
             fTitle,
             fDate,
@@ -994,50 +1091,6 @@
     const ok = await autosave.flush();
     saving = false;
     if (ok) closeDetail();
-  }
-
-  // Who can still be put on this card: the holon's members not yet on it.
-  // The roster loads once the card is up, so the control appears with it.
-  $: if (quest && $isLoggedIn) void loadMembers();
-  $: onRoster = new Set(people.map((p) => String(p.id)));
-
-  /**
-   * Put someone on this card straight from it — no edit form. The card stays
-   * up with the new roster so several people can be added in a row; core's
-   * write puts a hologram of the card in each one's own holon.
-   */
-  async function addPerson(m: Member) {
-    if (!sel || sel.kind === "thing" || !$holonId) return;
-    saving = true;
-    message = "";
-    try {
-      const id = String(sel.quest.id ?? sel.quest.title);
-      const res = await addMember(
-        $holonId,
-        id,
-        m,
-        sourceRef(sel.quest, id),
-        $currentUser ?? undefined,
-      );
-      if (res === "failed") {
-        message = $t("detail.addFailed");
-        return;
-      }
-      if (res !== "already") {
-        // Only the people lists changed; the card keeps its own provenance.
-        selection.set({
-          ...sel,
-          quest: {
-            ...sel.quest,
-            participants: res.participants,
-            appreciation: res.appreciation,
-          },
-        });
-      }
-      showNotice($t("detail.addedPerson", { name: personName(m) }));
-    } finally {
-      saving = false;
-    }
   }
 
   /**
@@ -1512,11 +1565,18 @@
 </script>
 
 {#if sel}
-  <Modal {tint} {holo} glow={srcGlow} {seed} on:close={closeDetail}>
+  <Modal
+    {tint}
+    {holo}
+    glow={srcGlow}
+    {seed}
+    footer={!!quest}
+    on:close={closeDetail}
+  >
     <svelte:fragment slot="corner">
       {#if editing && !isNew}<SaveState saver={autosave} />{/if}
     </svelte:fragment>
-    {#if linkUrl && !editing}
+    {#if linkUrl && isThing && !editing}
       <button
         class="share"
         class:done={copied}
@@ -1803,40 +1863,90 @@
         </div>
       {/if}
     {:else if quest}
-      <!-- ── Calendar event / task ─────────────────────────────────────── -->
-      {#if !editing}
-        {#if quest.picture}
-          <button
-            class="hero-btn"
-            on:click={() => openLightbox(quest.picture, quest.title)}
-            title={$t("detail.enlargePicture")}
-            aria-label={$t("detail.enlargePicture")}
-          >
-            <img
-              class="hero"
-              src={pictureUrl(quest.picture)}
-              alt={quest.title}
-              loading="lazy"
-              on:error={hideImg}
-            />
-          </button>
+      <!-- ── Calendar event / task ─────────────────────────────────────────
+           One surface, read and edited in place. Order follows how a card is
+           read: what (title), when, where, the story (description), who,
+           the steps, then the conversation. The decisions sit in the footer. -->
+      {#if quest.picture}
+        <button
+          class="hero-btn"
+          on:click={() => openLightbox(quest.picture, quest.title)}
+          title={$t("detail.enlargePicture")}
+          aria-label={$t("detail.enlargePicture")}
+        >
+          <img
+            class="hero"
+            src={pictureUrl(quest.picture)}
+            alt={quest.title}
+            loading="lazy"
+            on:error={hideImg}
+          />
+        </button>
+      {/if}
+      {#if quest.category || srcName || isNew}
+        <div class="chips">
+          {#if isNew}<span class="kind">{$t("detail.newCard")}</span
+            >{:else if quest.category}<span class="kind">{quest.category}</span
+            >{/if}
+          {#if srcName}
+            <button
+              type="button"
+              class="srcchip"
+              style="--src: {srcGlow}"
+              title={$t("source.open", { name: srcName })}
+              on:click={jumpToSource}><Icon name="swap" /> {srcName}</button
+            >
+          {/if}
+        </div>
+      {/if}
+
+      <!-- The title, set as the headline whether read or typed. -->
+      <div class="headline">
+        {#if canEdit}
+          <InlineText
+            bind:value={fTitle}
+            variant="title"
+            placeholder={$t("detail.titlePlaceholder")}
+            ariaLabel={$t("detail.title")}
+            autofocus={isNew && !fTitle}
+          />
+        {:else}
+          <h2>{@html linkify(quest.title)}</h2>
         {/if}
-        {#if quest.category || srcName}
-          <div class="chips">
-            {#if quest.category}<span class="kind">{quest.category}</span>{/if}
-            {#if srcName}
-              <button
-                type="button"
-                class="srcchip"
-                style="--src: {srcGlow}"
-                title={$t("source.open", { name: srcName })}
-                on:click={jumpToSource}><Icon name="swap" /> {srcName}</button
-              >
+      </div>
+
+      <!-- When and where: a line each. For an editor they open the details
+           drawer — tapping the date is how you change it. -->
+      {#if canEdit}
+        <button
+          type="button"
+          class="line whenbtn"
+          class:done={occurrenceDone}
+          class:placeholder={!fDate}
+          aria-expanded={detailsOpen}
+          aria-controls="card-details"
+          on:click={() => (detailsOpen = !detailsOpen)}
+        >
+          <Icon name="calendar" />
+          <span class="line-text">
+            {#if scheduleSummary}
+              {scheduleSummary}{#if effectiveFrequency}{" · "}<Icon
+                  name="repeat"
+                />
+                {freqLabel(effectiveFrequency)}{/if}
+            {:else}
+              {$t("detail.addDate")}
             {/if}
-          </div>
+          </span>
+          <Icon name={detailsOpen ? "chevron-up" : "chevron-down"} />
+        </button>
+        {#if fLocation && !detailsOpen}
+          <p class="line where"><Icon name="pin" /> <span>{fLocation}</span></p>
         {/if}
-        <h2>{@html linkify(quest.title)}</h2>
-        <p class="when" class:done={occurrenceDone}>{whenText($locale)}</p>
+      {:else}
+        <p class="line when" class:done={occurrenceDone}>
+          <Icon name="calendar" /> <span>{whenText($locale)}</span>
+        </p>
         {#if frequency}
           <p class="repeats">
             {repeatsText($locale)}{#if occurrenceDone}{" · "}{$t(
@@ -1844,357 +1954,18 @@
               )}{/if}
           </p>
         {/if}
-        {#if quest.location}<p class="where">
-            <Icon name="pin" />
-            {quest.location}
+        {#if quest.location}<p class="line where">
+            <Icon name="pin" /> <span>{quest.location}</span>
           </p>{/if}
-        {#if quest.description}<p class="desc">
-            {@html linkify(quest.description)}
-          </p>{/if}
-        {#if hostPeople.length}
-          <div class="facts-line">
-            <span class="people-label"
-              ><Icon name="crown" /> {$t("detail.hostedBy")}</span
-            >
-          </div>
-          <ul class="people">
-            {#each hostPeople as p (p.id)}
-              <li class="person">
-                <span class="pav">
-                  <span class="pini">{avatarInitial(p.name)}</span>
-                  <img
-                    src={avatarUrl(p.id)}
-                    alt=""
-                    loading="lazy"
-                    on:error={hideImg}
-                    on:load={showImg}
-                  />
-                </span>
-                <span class="pname">{p.name}</span>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-        {#if people.length || appreciationCount}
-          <div class="facts-line">
-            {#if people.length}
-              <span class="people-label"
-                >{$t("detail.participants", { n: people.length })}</span
-              >
-            {/if}
-            {#if appreciationCount}
-              <span><Icon name="heart" /> {appreciationCount}</span>
-            {/if}
-          </div>
-        {/if}
-        {#if people.length}
-          <ul class="people">
-            {#each people as p (p.id)}
-              <li class="person">
-                <span class="pav">
-                  <span class="pini">{avatarInitial(p.name)}</span>
-                  <img
-                    src={avatarUrl(p.id)}
-                    alt=""
-                    loading="lazy"
-                    on:error={hideImg}
-                    on:load={showImg}
-                  />
-                </span>
-                <span class="pname">{p.name}</span>
-              </li>
-            {/each}
-          </ul>
-        {/if}
+      {/if}
 
-        {#if quest && quest.type === "proposal" && $holonId}
-          <!-- A proposal is decided by signed ballots on the votes log, not
-               by who joined it: the fold is core's, this only renders it. -->
-          <ProposalVote holonId={$holonId} proposalId={String(quest.id)} />
-        {/if}
-
-        {#if chatRef}
-          <!-- Open to visitors too: reading the chat and the board needs
-               only what reading the card does. -->
-          <div class="actions links">
-            {#if boardHref}
-              <a
-                class="ghost linkbtn"
-                href={boardHref}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <Icon name="whiteboard" />
-                <span>{$t("detail.board")}</span>
-                <Icon name="external" />
-              </a>
-            {:else if $isLoggedIn}
-              <button
-                class="ghost linkbtn"
-                on:click={startBoard}
-                disabled={boardBusy}
-              >
-                <Icon name="whiteboard" />
-                <span>{$t("detail.boardStart")}</span>
-              </button>
-            {/if}
-            <button
-              class="ghost linkbtn"
-              class:on={chatOpen}
-              aria-expanded={chatOpen}
-              aria-controls="task-chat"
-              on:click={() => (chatOpen = !chatOpen)}
-            >
-              <Icon name="chat" />
-              <span>{$t("detail.chat")}</span>
-            </button>
-          </div>
-          {#if chatOpen}
-            {#key `${chatRef.holon}|${chatRef.key}`}
-              <TaskChat id="task-chat" ref={chatRef} />
-            {/key}
-          {/if}
-        {/if}
-
-        {#if $isLoggedIn}
-          <div class="actions">
-            {#if amParticipant}
-              <button
-                class="ghost joined"
-                on:click={joinQuest}
-                disabled={saving}
-                title={$t("detail.leaveTitle")}
-                ><Icon name="check" /> {$t("detail.joinedLeave")}</button
-              >
-            {:else}
-              <button class="primary" on:click={joinQuest} disabled={saving}
-                >{$t("swipe.joinTitle")}</button
-              >
-            {/if}
-            <button
-              class="ghost appreciate"
-              class:on={amAppreciating}
-              on:click={appreciate}
-              disabled={saving}
-              >{#if amAppreciating}<Icon name="heart" />
-                {$t("detail.appreciatedLabel")}{:else}<Icon
-                  name="heart-outline"
-                />
-                {$t("tasks.appreciate")}{/if}{appreciationCount
-                ? ` · ${appreciationCount}`
-                : ""}</button
-            >
-            {#if quest?.status !== "completed"}
-              <!-- Put anyone on the card: the people selector lists the
-                   members not yet on it; a search reaches partner holons. -->
-              <PersonSelect
-                grow
-                label={$t("detail.addParticipant")}
-                exclude={[...onRoster]}
-                federation
-                disabled={saving}
-                on:pick={(e) => void addPerson(e.detail as Member)}
-              >
-                <button
-                  slot="trigger"
-                  let:toggle
-                  let:open
-                  type="button"
-                  class="ghost addperson"
-                  class:busy={saving}
-                  disabled={saving}
-                  aria-haspopup="listbox"
-                  aria-expanded={open}
-                  on:click={toggle}
-                  ><Icon name="plus" />
-                  {$t("detail.addSomeone")}</button
-                >
-              </PersonSelect>
-            {/if}
-            {#if occurrenceWhen}
-              <!-- Opened from one date of a repeating series: done means done
-                   THIS time. The series lives on. -->
-              <button
-                class={occurrenceDone
-                  ? "ghost"
-                  : amParticipant
-                    ? "primary"
-                    : "ghost"}
-                on:click={toggleOccurrence}
-                disabled={saving}
-                >{$t(
-                  occurrenceDone
-                    ? "detail.undoDoneOnce"
-                    : "detail.markDoneOnce",
-                )}</button
-              >
-            {:else}
-              <button
-                class={amParticipant ? "primary" : "ghost"}
-                on:click={completeQuest}
-                disabled={saving}>{$t("tasks.markComplete")}</button
-              >
-            {/if}
-            <button class="ghost" on:click={startEdit} disabled={saving}
-              >{$t("detail.edit")}</button
-            >
-            {#if canBreakdown && breakdownSteps === null}
-              <button
-                class="ghost"
-                on:click={requestBreakdown}
-                disabled={saving || breakingDown}
-                title={$t("detail.breakdownTitle")}
-                >{#if breakingDown}{$t("detail.breakingDown")}{:else}<Icon
-                    name="sparkles"
-                  />
-                  {$t("detail.breakDown")}{/if}</button
-              >
-            {/if}
-            <button
-              class="ghost danger"
-              on:click={deleteQuest}
-              disabled={saving}>{$t("tasks.delete")}</button
-            >
-            {#if lockable || cardLocked}
-              <button
-                class="ghost lockbtn"
-                class:on={cardLocked}
-                aria-expanded={lockOpen}
-                on:click={() => (lockOpen = !lockOpen)}
-                disabled={saving}
-                ><Icon name={cardLocked ? "lock" : "unlock"} />
-                {$t(cardLocked ? "detail.locked" : "detail.lock")}</button
-              >
-            {/if}
-          </div>
-
-          {#if breakdownSteps !== null}
-            <div class="breakdown">
-              <p class="bd-head">{$t("detail.proposedSteps")}</p>
-              {#if breakdownInfo}
-                <p class="bd-note">
-                  {$t("detail.notBrokenDown", { reason: breakdownInfo })}
-                </p>
-              {:else if breakdownReasoning}
-                <p class="bd-note">{breakdownReasoning}</p>
-              {/if}
-              {#if breakdownSteps.length > 0}
-                <ul class="bd-steps">
-                  {#each breakdownSteps as step, i (step.title + i)}
-                    <li>
-                      <span class="bd-num">{i + 1}.</span>
-                      <div class="bd-body">
-                        <span class="bd-title">{step.title}</span>
-                        {#if step.category && step.category !== (quest?.category || "")}
-                          <span class="bd-tag">{step.category}</span>
-                        {/if}
-                        {#if stepReuseTitle(step)}
-                          <span class="bd-tag"
-                            >{$t("detail.reuses", {
-                              title: stepReuseTitle(step),
-                            })}</span
-                          >
-                        {/if}
-                        {#if stepDepsLabel(step)}
-                          <span class="bd-tag"
-                            >{$t("detail.after", {
-                              deps: stepDepsLabel(step),
-                            })}</span
-                          >
-                        {/if}
-                        {#if step.description}
-                          <p class="bd-desc">{step.description}</p>
-                        {/if}
-                      </div>
-                      <button
-                        class="bd-x"
-                        on:click={() => removeBreakdownStep(i)}
-                        aria-label={$t("detail.removeStepAria", {
-                          n: i + 1,
-                          title: step.title,
-                        })}
-                        title={$t("detail.removeStep")}
-                        ><Icon name="close" /></button
-                      >
-                    </li>
-                  {/each}
-                </ul>
-              {/if}
-              <div class="bd-add">
-                <input
-                  type="text"
-                  placeholder={$t("detail.addStepPlaceholder")}
-                  bind:value={newStepTitle}
-                  on:keydown={(e) => e.key === "Enter" && addBreakdownStep()}
-                />
-                <button
-                  class="ghost bd-add-btn"
-                  on:click={addBreakdownStep}
-                  disabled={!newStepTitle.trim()}>{$t("tasks.add")}</button
-                >
-              </div>
-              {#each breakdownPreview?.warnings ?? [] as warning}
-                <p class="bd-warn"><Icon name="warning" /> {warning}</p>
-              {/each}
-              <div class="actions">
-                {#if breakdownPreview && (breakdownPreview.newQuests.length > 0 || breakdownPreview.reusedExistingIds.length > 0)}
-                  <button
-                    class="primary"
-                    on:click={confirmBreakdown}
-                    disabled={saving}
-                    >{saving
-                      ? $t("detail.creating")
-                      : $t("detail.createSteps", {
-                          n: breakdownPreview.newQuests.length,
-                        })}</button
-                  >
-                {/if}
-                <button
-                  class="ghost"
-                  on:click={requestBreakdown}
-                  disabled={breakingDown}
-                  >{#if breakingDown}{$t("detail.regenerating")}{:else}<Icon
-                      name="repeat"
-                    />
-                    {$t("detail.regenerate")}{/if}</button
-                >
-                <button class="ghost" on:click={cancelBreakdown}
-                  >{$t("common.cancel")}</button
-                >
-              </div>
-            </div>
-          {/if}
-        {:else}
-          <div class="actions">
-            <button class="primary" on:click={requestLogin}
-              >{$t("detail.loginEdit")}</button
-            >
-          </div>
-        {/if}
-      {:else}
-        <!-- ── Edit a task / event ────────────────────────────────────────
-             Grouped the way a person thinks about a card: what it is, when
-             it happens (and so whether it is an event, and whether it
-             repeats), who is in it, then where it sits. Leaving the end blank
-             keeps it a one-day card; an end date on a later day is what makes
-             it a multi-day event. An existing card saves as it is edited (the
-             state sits in the corner); a new one waits for Create. -->
-        <section class="grp first">
-          <label class="lead"
-            >{$t("detail.title")}
-            <input
-              type="text"
-              bind:value={fTitle}
-              placeholder={$t("detail.titlePlaceholder")}
-            />
-          </label>
-          <label
-            >{$t("detail.description")}
-            <textarea bind:value={fDescription} rows="3"></textarea>
-          </label>
-        </section>
-
-        <section class="grp">
+      {#if canEdit && detailsOpen}
+        <!-- ── Details drawer ──────────────────────────────────────────────
+             Everything about a card that is not its text or its people:
+             when (and so whether it is an event, and whether it repeats),
+             what it is filed under, where it happens. Saves as it is edited;
+             a new card waits for Create. -->
+        <section class="drawer" id="card-details">
           <div class="when-row">
             <div class="edge">
               <span class="elab">{$t("detail.starts")}</span>
@@ -2232,21 +2003,12 @@
               </div>
             </div>
           </div>
-          <!-- What the fields add up to, in the same words the card will use. -->
-          {#if scheduleSummary}<p class="sched-sum">
-              {scheduleSummary}{#if effectiveFrequency}{" · "}<Icon
-                  name="repeat"
-                />{" "}{freqLabel(effectiveFrequency)}{/if}
-            </p>{/if}
 
           {#if !fDate}
             <!-- Kind and cadence both count from a date; until there is one
                  they are a single line saying so, not a wall of grey chips. -->
             <p class="kind-hint">{$t("detail.dateUnlocks")}</p>
           {:else}
-            <!-- Task or event? A task is work to do and lives on the task
-                 board; an event is something happening and lives on the
-                 calendar only. Clearing the date turns it back into a task. -->
             {#if isAgendaQuest(quest)}
               <div
                 class="kind-edit"
@@ -2311,90 +2073,355 @@
               </div>
             </div>
           {/if}
-        </section>
 
-        <section class="grp">
-          <!-- Who leads the event: named hosts get the credit instead of the
-               participants (core's creditedMembers). Events only. -->
-          {#if effectiveKind === "event"}
-            <div class="hosts-edit">
-              <span class="elab"
-                ><Icon name="crown" /> {$t("detail.hosts")}</span
-              >
-              <PeoplePicker
-                bind:people={fHosts}
-                addLabel={$t("detail.addHost")}
-                removeLabel={(name) => $t("detail.removeHost", { name })}
+          <div class="duo">
+            <label
+              >{$t("detail.category")}
+              {#if addingCategory}
+                <input
+                  type="text"
+                  bind:value={fCategory}
+                  placeholder={$t("detail.newCategoryPlaceholder")}
+                />
+                <button
+                  type="button"
+                  class="link-btn"
+                  on:click={() => {
+                    addingCategory = false;
+                    fCategory = "";
+                  }}>{$t("detail.pickFromList")}</button
+                >
+              {:else}
+                <select value={fCategory} on:change={onCategorySelect}>
+                  <option value="">{$t("detail.noCategory")}</option>
+                  {#each categoryOptions as opt}
+                    <option value={opt}>{opt}</option>
+                  {/each}
+                  <option value={NEW_CATEGORY}
+                    >＋ {$t("detail.newCategory")}</option
+                  >
+                </select>
+              {/if}
+            </label>
+            <label
+              >{$t("detail.location")}
+              <input
+                type="text"
+                bind:value={fLocation}
+                placeholder={$t("detail.locationPlaceholder")}
               />
-              <p class="kind-hint">{$t("detail.hostsHint")}</p>
-            </div>
+            </label>
+          </div>
+        </section>
+      {/if}
+
+      <!-- The story: running text, typed where it is read. -->
+      {#if canEdit}
+        <div class="story">
+          <InlineText
+            bind:value={fDescription}
+            variant="body"
+            placeholder={$t("detail.addDescription")}
+            ariaLabel={$t("detail.description")}
+          />
+        </div>
+      {:else if quest.description}
+        <p class="desc">{@html linkify(quest.description)}</p>
+      {/if}
+
+      <!-- ── People ────────────────────────────────────────────────────────
+           The hosts of an event (they get the credit), then everyone taking
+           part. For an editor each is a roster whose "+" picks several
+           people at once; a visitor sees the chips. -->
+      {#if canEdit ? effectiveKind === "event" : hostPeople.length > 0}
+        <section class="sec">
+          <div class="sec-h">
+            <span class="elab"><Icon name="crown" /> {$t("detail.hosts")}</span>
+          </div>
+          {#if canEdit}
+            <PeoplePicker
+              bind:people={fHosts}
+              addLabel={$t("detail.addHost")}
+              removeLabel={(name) => $t("detail.removeHost", { name })}
+            />
+          {:else}
+            <ul class="people">
+              {#each hostPeople as p (p.id)}
+                <li class="person">
+                  <span class="pav">
+                    <span class="pini">{avatarInitial(p.name)}</span>
+                    <img
+                      src={avatarUrl(p.id)}
+                      alt=""
+                      loading="lazy"
+                      on:error={hideImg}
+                      on:load={showImg}
+                    />
+                  </span>
+                  <span class="pname">{p.name}</span>
+                </li>
+              {/each}
+            </ul>
           {/if}
-          <!-- Who takes part: add or drop anyone on the roster, not just
-               yourself. Core keeps a member out of both lists at once. -->
-          <div class="hosts-edit">
+        </section>
+      {/if}
+
+      {#if canEdit || people.length}
+        <section class="sec">
+          <div class="sec-h">
             <span class="elab"
-              ><Icon name="users" /> {$t("detail.participantsLabel")}</span
+              ><Icon name="users" />
+              {canEdit
+                ? $t("detail.participantsLabel")
+                : $t("detail.participants", { n: people.length })}</span
             >
+            {#if canEdit && fParticipants.length}
+              <span class="sec-n">{fParticipants.length}</span>
+            {/if}
+          </div>
+          {#if canEdit}
             <PeoplePicker
               bind:people={fParticipants}
               addLabel={$t("detail.addParticipant")}
               removeLabel={(name) => $t("detail.removeParticipant", { name })}
             />
-            <p class="kind-hint">{$t("detail.participantsHint")}</p>
-          </div>
+          {:else}
+            <ul class="people">
+              {#each people as p (p.id)}
+                <li class="person">
+                  <span class="pav">
+                    <span class="pini">{avatarInitial(p.name)}</span>
+                    <img
+                      src={avatarUrl(p.id)}
+                      alt=""
+                      loading="lazy"
+                      on:error={hideImg}
+                      on:load={showImg}
+                    />
+                  </span>
+                  <span class="pname">{p.name}</span>
+                </li>
+              {/each}
+            </ul>
+          {/if}
         </section>
+      {/if}
 
-        <section class="grp duo">
-          <label
-            >{$t("detail.category")}
-            {#if addingCategory}
-              <input
-                type="text"
-                bind:value={fCategory}
-                placeholder={$t("detail.newCategoryPlaceholder")}
-              />
+      <!-- ── Steps ─────────────────────────────────────────────────────────
+           The sub-tasks this card waits on. Each row opens its own card; a
+           typed line becomes a new step wired to this one; the spark asks
+           the AI for a proposal, which lands as a draft to prune first. -->
+      {#if canSteps || steps.length}
+        <section class="sec">
+          <div class="sec-h">
+            <span class="elab"><Icon name="graph" /> {$t("detail.steps")}</span>
+            {#if steps.length}
+              <span class="sec-n"
+                >{$t("detail.stepsOpen", {
+                  open: openSteps,
+                  n: steps.length,
+                })}</span
+              >
+            {/if}
+            {#if canSteps && canBreakdown && breakdownSteps === null}
               <button
                 type="button"
-                class="link-btn"
-                on:click={() => {
-                  addingCategory = false;
-                  fCategory = "";
-                }}>{$t("detail.pickFromList")}</button
+                class="spark"
+                on:click={requestBreakdown}
+                disabled={saving || breakingDown}
+                title={$t("detail.breakdownTitle")}
+                aria-label={$t("detail.breakdownTitle")}
+                ><Icon name="sparkles" />
+                <span
+                  >{breakingDown
+                    ? $t("detail.breakingDown")
+                    : $t("detail.suggestSteps")}</span
+                ></button
               >
-            {:else}
-              <select value={fCategory} on:change={onCategorySelect}>
-                <option value="">{$t("detail.noCategory")}</option>
-                {#each categoryOptions as opt}
-                  <option value={opt}>{opt}</option>
-                {/each}
-                <option value={NEW_CATEGORY}
-                  >＋ {$t("detail.newCategory")}</option
-                >
-              </select>
             {/if}
-          </label>
-          <label
-            >{$t("detail.location")}
-            <input type="text" bind:value={fLocation} />
-          </label>
-        </section>
-
-        <div class="actions">
-          {#if isNew}
-            <button
-              class="primary"
-              on:click={saveQuest}
-              disabled={saving || !fTitle.trim()}
-              >{saving ? $t("rolesv.saving") : $t("detail.create")}</button
-            >
-            <button class="ghost" on:click={closeDetail}
-              >{$t("common.cancel")}</button
-            >
-          {:else}
-            <button class="primary" on:click={doneEditing} disabled={saving}
-              >{$t("common.done")}</button
-            >
+          </div>
+          {#if steps.length}
+            <ul class="steps">
+              {#each steps as step (step.id)}
+                <li>
+                  <button
+                    type="button"
+                    class="step"
+                    class:settled={isQuestSettled(step)}
+                    on:click={() => openStep(step)}
+                  >
+                    <span class="step-dot" aria-hidden="true"
+                      >{#if isQuestSettled(step)}<Icon
+                          name="check"
+                        />{/if}</span
+                    >
+                    <span class="step-title">{step.title}</span>
+                    <Icon name="chevron-right" />
+                  </button>
+                </li>
+              {/each}
+            </ul>
           {/if}
+          {#if canSteps}
+            <div class="step-add">
+              <Icon name="plus" />
+              <input
+                type="text"
+                placeholder={$t("detail.addStepPlaceholder")}
+                bind:value={newStepTitle}
+                aria-label={$t("detail.addStep")}
+                enterkeyhint="done"
+                disabled={saving}
+                on:keydown={(e) => e.key === "Enter" && void addStep()}
+              />
+              {#if newStepTitle.trim()}
+                <button
+                  type="button"
+                  class="step-go"
+                  on:click={addStep}
+                  disabled={saving}>{$t("tasks.add")}</button
+                >
+              {/if}
+            </div>
+          {/if}
+
+          {#if breakdownSteps !== null}
+            <div class="breakdown">
+              <p class="bd-head">{$t("detail.proposedSteps")}</p>
+              {#if breakdownInfo}
+                <p class="bd-note">
+                  {$t("detail.notBrokenDown", { reason: breakdownInfo })}
+                </p>
+              {:else if breakdownReasoning}
+                <p class="bd-note">{breakdownReasoning}</p>
+              {/if}
+              {#if breakdownSteps.length > 0}
+                <ul class="bd-steps">
+                  {#each breakdownSteps as step, i (step.title + i)}
+                    <li>
+                      <span class="bd-num">{i + 1}.</span>
+                      <div class="bd-body">
+                        <span class="bd-title">{step.title}</span>
+                        {#if step.category && step.category !== (quest?.category || "")}
+                          <span class="bd-tag">{step.category}</span>
+                        {/if}
+                        {#if stepReuseTitle(step)}
+                          <span class="bd-tag"
+                            >{$t("detail.reuses", {
+                              title: stepReuseTitle(step),
+                            })}</span
+                          >
+                        {/if}
+                        {#if stepDepsLabel(step)}
+                          <span class="bd-tag"
+                            >{$t("detail.after", {
+                              deps: stepDepsLabel(step),
+                            })}</span
+                          >
+                        {/if}
+                        {#if step.description}
+                          <p class="bd-desc">{step.description}</p>
+                        {/if}
+                      </div>
+                      <button
+                        class="bd-x"
+                        on:click={() => removeBreakdownStep(i)}
+                        aria-label={$t("detail.removeStepAria", {
+                          n: i + 1,
+                          title: step.title,
+                        })}
+                        title={$t("detail.removeStep")}
+                        ><Icon name="close" /></button
+                      >
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+              <div class="bd-add">
+                <input
+                  type="text"
+                  placeholder={$t("detail.addOwnStepPlaceholder")}
+                  bind:value={newStepTitle}
+                  on:keydown={(e) => e.key === "Enter" && addBreakdownStep()}
+                />
+                <button
+                  class="ghost bd-add-btn"
+                  on:click={addBreakdownStep}
+                  disabled={!newStepTitle.trim()}>{$t("tasks.add")}</button
+                >
+              </div>
+              {#each breakdownPreview?.warnings ?? [] as warning}
+                <p class="bd-warn"><Icon name="warning" /> {warning}</p>
+              {/each}
+              <div class="actions">
+                {#if breakdownPreview && (breakdownPreview.newQuests.length > 0 || breakdownPreview.reusedExistingIds.length > 0)}
+                  <button
+                    class="primary"
+                    on:click={confirmBreakdown}
+                    disabled={saving}
+                    >{saving
+                      ? $t("detail.creating")
+                      : $t("detail.createSteps", {
+                          n: breakdownPreview.newQuests.length,
+                        })}</button
+                  >
+                {/if}
+                <button
+                  class="ghost"
+                  on:click={requestBreakdown}
+                  disabled={breakingDown}
+                  >{#if breakingDown}{$t("detail.regenerating")}{:else}<Icon
+                      name="repeat"
+                    />
+                    {$t("detail.regenerate")}{/if}</button
+                >
+                <button class="ghost" on:click={cancelBreakdown}
+                  >{$t("common.cancel")}</button
+                >
+              </div>
+            </div>
+          {/if}
+        </section>
+      {/if}
+
+      {#if quest && quest.type === "proposal" && $holonId}
+        <!-- A proposal is decided by signed ballots on the votes log, not
+             by who joined it: the fold is core's, this only renders it. -->
+        <ProposalVote holonId={$holonId} proposalId={String(quest.id)} />
+      {/if}
+
+      {#if chatRef && chatOpen}
+        {#key `${chatRef.holon}|${chatRef.key}`}
+          <TaskChat id="task-chat" ref={chatRef} />
+        {/key}
+      {/if}
+
+      {#if chatRef && !$isLoggedIn}
+        <!-- Open to visitors too: reading the chat and the board needs
+             only what reading the card does. -->
+        <div class="actions links">
+          {#if boardHref}
+            <a
+              class="ghost linkbtn"
+              href={boardHref}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Icon name="whiteboard" />
+              <span>{$t("detail.board")}</span>
+              <Icon name="external" />
+            </a>
+          {/if}
+          <button
+            class="ghost linkbtn"
+            class:on={chatOpen}
+            aria-expanded={chatOpen}
+            aria-controls="task-chat"
+            on:click={() => (chatOpen = !chatOpen)}
+          >
+            <Icon name="chat" />
+            <span>{$t("detail.chat")}</span>
+          </button>
         </div>
       {/if}
     {/if}
@@ -2409,6 +2436,159 @@
     {/if}
 
     {#if message}<p class="msg">{message}</p>{/if}
+    <svelte:fragment slot="footer">
+      {#if quest}
+        {#if !$isLoggedIn}
+          <div class="deck">
+            <button class="primary" on:click={requestLogin}
+              >{$t("detail.loginEdit")}</button
+            >
+          </div>
+        {:else if isNew}
+          <div class="deck two">
+            <button class="ghost" on:click={closeDetail}
+              >{$t("common.cancel")}</button
+            >
+            <button
+              class="primary"
+              on:click={saveQuest}
+              disabled={saving || !fTitle.trim()}
+              >{saving ? $t("rolesv.saving") : $t("detail.create")}</button
+            >
+          </div>
+        {:else}
+          <!-- The three things most people come to do, side by side; the
+               one that ends the card is the only filled button. -->
+          <div class="deck">
+            <button
+              class="ghost toggle"
+              class:on={amParticipant}
+              on:click={joinQuest}
+              disabled={saving}
+              aria-pressed={amParticipant}
+              title={amParticipant ? $t("detail.leaveTitle") : undefined}
+              >{#if amParticipant}<Icon name="check" />
+                {$t("detail.joined")}{:else}<Icon name="plus" />
+                {$t("swipe.joinTitle")}{/if}</button
+            >
+            <button
+              class="ghost toggle appreciate"
+              class:on={amAppreciating}
+              on:click={appreciate}
+              disabled={saving}
+              aria-pressed={amAppreciating}
+              >{#if amAppreciating}<Icon name="heart" />{:else}<Icon
+                  name="heart-outline"
+                />{/if}
+              {appreciationCount
+                ? appreciationCount
+                : $t("tasks.appreciate")}</button
+            >
+            {#if occurrenceWhen}
+              <!-- Opened from one date of a repeating series: done means done
+                   THIS time. The series lives on. -->
+              <button
+                class={occurrenceDone ? "ghost" : "primary"}
+                on:click={toggleOccurrence}
+                disabled={saving}
+                ><Icon name={occurrenceDone ? "undo" : "check"} />
+                {$t(
+                  occurrenceDone
+                    ? "detail.undoDoneOnce"
+                    : "detail.markDoneOnce",
+                )}</button
+              >
+            {:else if quest.status !== "completed"}
+              <button class="primary" on:click={completeQuest} disabled={saving}
+                ><Icon name="check" /> {$t("detail.done")}</button
+              >
+            {:else}
+              <span class="completed"
+                ><Icon name="check" /> {$t("detail.completed")}</span
+              >
+            {/if}
+          </div>
+          <!-- Everything else about the card, as one row of small tools. -->
+          <div class="tools">
+            <button
+              type="button"
+              class="tool"
+              class:on={detailsOpen}
+              aria-expanded={detailsOpen}
+              aria-controls="card-details"
+              on:click={() => (detailsOpen = !detailsOpen)}
+              ><Icon name="sliders" /><span>{$t("detail.details")}</span
+              ></button
+            >
+            {#if chatRef}
+              <button
+                type="button"
+                class="tool"
+                class:on={chatOpen}
+                aria-expanded={chatOpen}
+                aria-controls="task-chat"
+                on:click={() => (chatOpen = !chatOpen)}
+                ><Icon name="chat" /><span>{$t("detail.chat")}</span></button
+              >
+              {#if boardHref}
+                <a
+                  class="tool"
+                  href={boardHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  ><Icon name="whiteboard" /><span
+                    >{$t("detail.boardShort")}</span
+                  ></a
+                >
+              {:else}
+                <button
+                  type="button"
+                  class="tool"
+                  on:click={startBoard}
+                  disabled={boardBusy}
+                  title={$t("detail.boardStart")}
+                  ><Icon name="whiteboard" /><span
+                    >{$t("detail.boardShort")}</span
+                  ></button
+                >
+              {/if}
+            {/if}
+            {#if linkUrl}
+              <button
+                type="button"
+                class="tool"
+                class:on={copied}
+                on:click={copyLink}
+                title={$t(copied ? "detail.linkCopied" : "detail.copyLink")}
+                ><Icon name={copied ? "check" : "link"} /><span
+                  >{$t(copied ? "detail.copied" : "detail.link")}</span
+                ></button
+              >
+            {/if}
+            {#if lockable || cardLocked}
+              <button
+                type="button"
+                class="tool"
+                class:on={cardLocked}
+                aria-expanded={lockOpen}
+                on:click={() => (lockOpen = !lockOpen)}
+                disabled={saving}
+                ><Icon name={cardLocked ? "lock" : "unlock"} /><span
+                  >{$t(cardLocked ? "detail.locked" : "detail.lock")}</span
+                ></button
+              >
+            {/if}
+            <button
+              type="button"
+              class="tool danger"
+              on:click={deleteQuest}
+              disabled={saving}
+              ><Icon name="trash" /><span>{$t("tasks.delete")}</span></button
+            >
+          </div>
+        {/if}
+      {/if}
+    </svelte:fragment>
   </Modal>
 {/if}
 
@@ -2593,14 +2773,6 @@
     color: var(--ink-soft);
     margin: 0 0 0.5rem;
   }
-  .facts-line {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem 1rem;
-    color: var(--ink-soft);
-    font-weight: 600;
-    margin: 0 0 0.5rem;
-  }
 
   /* Participant chips: photo (initials fallback) + name. */
   .people {
@@ -2716,10 +2888,6 @@
     border-color: var(--teal);
     color: var(--on-teal);
   }
-  .joined {
-    background: var(--teal-wash);
-    color: var(--teal-ink);
-  }
 
   label {
     display: block;
@@ -2754,14 +2922,6 @@
   }
   textarea {
     resize: vertical;
-  }
-  /* The title leads the form — no top gap above it, and set at reading size. */
-  .lead {
-    margin-top: 0.6rem;
-  }
-  .lead input {
-    font-size: 1.15rem;
-    font-weight: 700;
   }
 
   /* ── When it starts / when it ends ───────────────────────────────────────
@@ -2803,14 +2963,6 @@
   .pair input:disabled {
     opacity: 0.45;
   }
-  /* The sentence the card will read once saved. Ink, not accent — `--teal-deep`
-     is a light-skin colour and goes near-black on the dark card. */
-  .sched-sum {
-    margin: 0.6rem 0 0;
-    font-size: 0.9rem;
-    font-weight: 700;
-    color: var(--ink-soft);
-  }
   /* The cadence chips under the schedule — the booking sheet's chips, one
      row that wraps, greyed out while the card has no date to count from. */
   .freq {
@@ -2839,12 +2991,6 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
     column-gap: 0.8rem;
-  }
-  .hosts-edit {
-    margin-top: 0.9rem;
-  }
-  .hosts-edit .elab {
-    margin-bottom: 0.4rem;
   }
   .kind-hint {
     margin: 0.35rem 0 0;
@@ -2938,17 +3084,6 @@
     transform: scale(0.97);
   }
   .primary:disabled {
-    opacity: 0.6;
-  }
-  /* "Add someone": opens the people selector. */
-  .addperson {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
-    padding: 0 1rem;
-  }
-  .addperson.busy {
     opacity: 0.6;
   }
   .appreciate.on {
@@ -3054,5 +3189,339 @@
   }
   .breakdown .actions {
     margin-top: 0.8rem;
+  }
+  /* ── The card as one surface ─────────────────────────────────────────────
+     Headline, lines, story, sections: a vertical rhythm of 0.9rem between
+     blocks, 0.35rem inside them, so the eye reads one column top to bottom. */
+  .headline {
+    margin: 0.15rem 0 0.25rem;
+    /* Clear of the ✕ (and the save pill) in the corner. */
+    padding-right: max(0px, calc(var(--corner-w, 44px) - 0.6rem));
+  }
+  /* The chips row sits beside the corner too. */
+  .chips {
+    padding-right: max(0px, calc(var(--corner-w, 44px) - 0.6rem));
+  }
+  .line {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    margin: 0;
+    padding: 0.3rem 0;
+    font-size: 0.98rem;
+    font-weight: 700;
+    color: var(--ink);
+    text-align: left;
+  }
+  .line > :global(svg) {
+    flex: 0 0 auto;
+    color: var(--ink-soft);
+  }
+  .line-text {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .line.where {
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+  .line.done .line-text,
+  .line.when.done {
+    text-decoration: line-through;
+    opacity: 0.7;
+  }
+  /* The date line is the handle on the details drawer. */
+  .whenbtn {
+    margin-left: -0.35rem;
+    width: calc(100% + 0.7rem);
+    padding: 0.4rem 0.35rem;
+    border-radius: 10px;
+    transition: background 0.15s ease;
+  }
+  .whenbtn.placeholder {
+    color: var(--teal-ink);
+  }
+  @media (hover: hover) {
+    .whenbtn:hover {
+      background: var(--glass);
+    }
+  }
+  .whenbtn:active {
+    background: var(--glass);
+  }
+  .drawer {
+    margin: 0.4rem 0 0.6rem;
+    padding: 0.2rem 0.9rem 0.9rem;
+    border-radius: 16px;
+    background: var(--glass);
+    animation: kiosk-fade 0.18s ease both;
+  }
+  .drawer .when-row {
+    margin-top: 0.7rem;
+  }
+  .drawer .duo {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    column-gap: 0.8rem;
+  }
+  .story {
+    margin: 0.5rem 0 0.2rem;
+  }
+
+  /* A titled block: hosts, participants, steps. */
+  .sec {
+    margin-top: 1rem;
+  }
+  .sec-h {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 1.8rem;
+    margin-bottom: 0.45rem;
+  }
+  .sec-h .elab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .sec-n {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--muted);
+  }
+  /* The AI spark, at the end of the steps header: quiet until wanted. */
+  .spark {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-height: 36px;
+    padding: 0 0.75rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: var(--teal-ink);
+    background: var(--teal-wash);
+  }
+  .spark:disabled {
+    opacity: 0.6;
+  }
+  .steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.2rem;
+  }
+  .step {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-height: 48px;
+    padding: 0.35rem 0.5rem 0.35rem 0.4rem;
+    margin-left: -0.4rem;
+    width: calc(100% + 0.8rem);
+    border-radius: 12px;
+    text-align: left;
+    font-weight: 700;
+    color: var(--ink);
+    transition: background 0.15s ease;
+  }
+  .step:active,
+  .step:focus-visible {
+    background: var(--glass);
+    outline: none;
+  }
+  @media (hover: hover) {
+    .step:hover {
+      background: var(--glass);
+    }
+  }
+  .step > :global(svg:last-child) {
+    flex: 0 0 auto;
+    color: var(--muted);
+  }
+  .step-dot {
+    flex: 0 0 auto;
+    width: 1.35rem;
+    height: 1.35rem;
+    border-radius: 50%;
+    border: 1.5px solid var(--teal-ink);
+    display: grid;
+    place-items: center;
+    font-size: 0.75rem;
+    color: var(--on-teal);
+  }
+  .step.settled .step-dot {
+    background: var(--teal);
+    border-color: var(--teal);
+  }
+  .step.settled .step-title {
+    text-decoration: line-through;
+    color: var(--ink-soft);
+    font-weight: 600;
+  }
+  .step-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  /* The line that becomes a step: a "+" and bare text, no box until typing. */
+  .step-add {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-height: 48px;
+    padding: 0 0.5rem 0 0.4rem;
+    margin-left: -0.4rem;
+    width: calc(100% + 0.8rem);
+    border-radius: 12px;
+    color: var(--teal-ink);
+  }
+  .step-add input {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    padding: 0.5rem 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    font-weight: 600;
+  }
+  .step-add input:focus {
+    border-bottom: 1.5px solid var(--teal);
+  }
+  .step-go {
+    flex: 0 0 auto;
+    min-height: 36px;
+    padding: 0 0.9rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: var(--on-teal);
+    background: var(--teal);
+  }
+  .step-go:disabled {
+    opacity: 0.6;
+  }
+  .sec .breakdown {
+    margin-top: 0.6rem;
+  }
+
+  /* ── The footer ──────────────────────────────────────────────────────────
+     Row one: join, appreciate, done — equal thirds, the last one filled.
+     Row two: the small tools, each an icon over a word, the width of the row
+     shared out so a thumb can land on any of them. */
+  .deck {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+  .deck.two {
+    grid-template-columns: 1fr 1.4fr;
+  }
+  .deck .primary,
+  .deck .ghost {
+    flex: none;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0 0.6rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .deck .primary {
+    grid-column: span 1;
+  }
+  .deck > :only-child {
+    grid-column: 1 / -1;
+  }
+  .toggle.on {
+    background: var(--teal-wash);
+    color: var(--teal-ink);
+    box-shadow: inset 0 0 0 1.5px
+      color-mix(in srgb, var(--teal) 45%, transparent);
+  }
+  .toggle.appreciate.on {
+    background: var(--note-coral);
+    color: var(--danger);
+    box-shadow: none;
+  }
+  .completed {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    min-height: 52px;
+    border-radius: 14px;
+    font-weight: 700;
+    color: var(--teal-ink);
+    background: var(--teal-wash);
+  }
+  .tools {
+    display: flex;
+    gap: 0.25rem;
+    margin-top: 0.6rem;
+  }
+  .tool {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    min-height: 52px;
+    padding: 0.3rem 0.2rem;
+    border-radius: 12px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: var(--ink-soft);
+    text-decoration: none;
+    transition:
+      background 0.15s ease,
+      transform 0.1s ease;
+  }
+  .tool > :global(svg) {
+    font-size: 1.15rem;
+  }
+  .tool span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tool:active {
+    transform: scale(0.95);
+    background: var(--glass);
+  }
+  @media (hover: hover) {
+    .tool:hover {
+      background: var(--glass);
+    }
+  }
+  .tool.on {
+    color: var(--teal-ink);
+    background: var(--teal-wash);
+  }
+  .tool.danger {
+    color: var(--danger);
+    background: none;
+  }
+  .tool:disabled {
+    opacity: 0.5;
+  }
+  @media (max-width: 420px) {
+    .deck .primary,
+    .deck .ghost {
+      font-size: 0.92rem;
+      padding: 0 0.4rem;
+    }
   }
 </style>

@@ -5,6 +5,7 @@ import {
   isQuestSettled,
   unmetDependencies,
   moveDependency,
+  stepsOf,
 } from './dependencies.js';
 import type { Quest } from './types.js';
 
@@ -194,5 +195,22 @@ describe('moveDependency', () => {
     const snapshot = JSON.stringify(quests);
     moveDependency(quests, 'a', 'b');
     expect(JSON.stringify(quests)).toBe(snapshot);
+  });
+});
+
+describe('stepsOf', () => {
+  it('resolves the parent’s dependencies, in order, to the quests themselves', () => {
+    const all = [q('a', ['c', 'b']), q('b'), q('c')];
+    expect(stepsOf(all[0], all).map((s) => s.id)).toEqual(['c', 'b']);
+  });
+
+  it('skips self, duplicates, unknown ids and deleted quests', () => {
+    const gone = { ...q('d'), _deleted: true } as Quest;
+    const all = [q('a', ['a', 'b', 'b', 'zzz', 'd']), q('b'), gone];
+    expect(stepsOf(all[0], all).map((s) => s.id)).toEqual(['b']);
+  });
+
+  it('is empty for a task with no dependencies', () => {
+    expect(stepsOf(q('a'), [q('a'), q('b')])).toEqual([]);
   });
 });

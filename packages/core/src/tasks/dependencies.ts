@@ -183,3 +183,25 @@ export function moveDependency(
   }
   return { ok: true, edits };
 }
+
+/**
+ * The steps of a task: the quests it waits on, in its own `dependencies`
+ * order, each resolved to the record in `quests`. Ids that lead nowhere (a
+ * deleted or foreign quest) and self-references are skipped, so the list is
+ * exactly what a card can show as its sub-tasks.
+ */
+export function stepsOf(parent: Quest, quests: Quest[]): Quest[] {
+  const parentId = String(parent.id);
+  const byId = new Map(quests.map((q) => [String(q.id), q] as const));
+  const out: Quest[] = [];
+  const seen = new Set<string>();
+  for (const raw of (parent.dependencies as unknown[] | undefined) ?? []) {
+    const id = String(raw);
+    if (id === parentId || seen.has(id)) continue;
+    const step = byId.get(id);
+    if (!step || step._deleted === true) continue;
+    seen.add(id);
+    out.push(step);
+  }
+  return out;
+}

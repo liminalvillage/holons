@@ -15,6 +15,8 @@
   export let seed: number | undefined = undefined;
   /** A wide card for sheets that carry a board preview beside a form. */
   export let wide = false;
+  /** Show the pinned footer (the `footer` slot) under the scrolling body. */
+  export let footer = false;
   // The corner: the ✕ and, through the `corner` slot, a sheet's one headline
   // action beside it. Its width is published as `--corner-w` on the card so
   // the sheet's title can keep clear of it (`padding-right: var(--corner-w)`).
@@ -68,6 +70,13 @@
     <div class="body scroll">
       <slot />
     </div>
+    {#if footer && $$slots.footer}
+      <!-- A sheet's decisions, pinned under the scrolling body so they are
+           always in reach — on a phone, right above the thumb. -->
+      <div class="foot">
+        <slot name="footer" />
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -93,6 +102,8 @@
     width: min(64rem, 100%);
   }
   .card {
+    display: flex;
+    flex-direction: column;
     max-height: 86dvh;
     border-radius: 22px;
     background: var(--tint);
@@ -146,8 +157,49 @@
     transform: scale(0.92);
   }
   .body {
+    flex: 1 1 auto;
+    min-height: 0;
     padding: 1.6rem 1.5rem 1.5rem;
-    max-height: 86dvh;
+  }
+  .foot {
+    flex: 0 0 auto;
+    padding: 0.8rem 1.5rem 1.1rem;
+    border-top: 1px solid var(--line);
+    background: color-mix(in srgb, var(--tint) 70%, var(--card));
+  }
+  :global(:root[data-theme="dark"]) .foot {
+    background: color-mix(in srgb, var(--tint) 18%, var(--card));
+  }
+  /* A phone: the card is a sheet rising from the bottom edge, full width,
+     with the home-indicator inset kept clear under the footer. */
+  @media (max-width: 640px) {
+    .backdrop {
+      align-items: flex-end;
+      padding: 0;
+    }
+    .card,
+    .card.wide {
+      width: 100%;
+      max-height: 94dvh;
+      border-radius: 22px 22px 0 0;
+      animation: rise 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.05) both;
+    }
+    .body {
+      padding: 1.3rem 1.1rem 1.2rem;
+    }
+    .foot {
+      padding: 0.7rem 1.1rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
+    }
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(40px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
   @media (prefers-reduced-motion: reduce) {
     .card {
