@@ -436,6 +436,20 @@
     }
   }
 
+  /** Whether a planned timing leaves the card's schedule as it is (same
+   *  instants, whatever spelling the stored value uses). */
+  function sameTiming(q: Quest, timing: Partial<Quest>): boolean {
+    return Object.entries(timing).every(([k, v]) => {
+      const was = (q as Record<string, unknown>)[k];
+      if (was === v || ((was ?? "") === "" && (v ?? "") === "")) return true;
+      if (typeof was !== "string" || typeof v !== "string") return false;
+      if (/T\d\d:/.test(was) !== /T\d\d:/.test(v)) return false;
+      const a = parseWhen(was)?.getTime();
+      const b = parseWhen(v)?.getTime();
+      return a != null && !Number.isNaN(a) && a === b;
+    });
+  }
+
   async function applyDrop(id: string, day: string, min: number | null) {
     const hid = get(holonId);
     if (!hid) return;
@@ -472,6 +486,9 @@
       ? moveOccurrence(q, occurrence.when, when)
       : shiftSchedule(q, when);
     if (!timing) return;
+    // Dropped back where it was (a lift that settles on its own slot): the
+    // card snaps home, and nothing is written.
+    if (sameTiming(q, timing)) return;
     const updated = { ...q, ...timing };
     await saveQuest(q, updated, "cal.verbMove");
   }
