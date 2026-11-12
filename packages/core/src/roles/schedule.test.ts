@@ -41,6 +41,15 @@ describe('roles/schedule date keys', () => {
   it('isoDateOf is YYYY-MM-DD', () => {
     expect(isoDateOf(thu)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
+
+  it('isoDateOf names the local calendar day, not the UTC one', () => {
+    // Local midnight is the previous UTC day anywhere east of UTC.
+    expect(isoDateOf(new Date(2026, 10, 12))).toBe('2026-11-12');
+    expect(isoDateOf(new Date(2026, 10, 12, 23, 59))).toBe('2026-11-12');
+    for (const day of weekDaysOf('2026-W46')) {
+      expect(isoDateOf(day).slice(8)).toBe(String(day.getDate()).padStart(2, '0'));
+    }
+  });
 });
 
 describe('roles/schedule fixed holders', () => {

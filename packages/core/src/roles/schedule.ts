@@ -37,9 +37,17 @@ export function weekKeyOf(date: Date): string {
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
 }
 
-/** ISO date key (`YYYY-MM-DD`) for a date. */
+/**
+ * Calendar-day key (`YYYY-MM-DD`) of a date, read in LOCAL time — the day the
+ * person is looking at. (`toISOString()` would read it in UTC, so east of UTC
+ * local midnight lands on the previous day and every holder is stored a day
+ * early.)
+ */
 export function isoDateOf(date: Date): string {
-  return date.toISOString().split('T')[0];
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 /** The seven dates (Monday → Sunday) of a week key. */

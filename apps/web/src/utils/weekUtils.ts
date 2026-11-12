@@ -1,3 +1,5 @@
+import { isoDateOf } from "@holons/core/roles";
+
 /**
  * Week utility functions for role scheduling
  */
@@ -130,7 +132,7 @@ export function formatWeekRange(weekKey: string): string {
  * Get ISO date string (YYYY-MM-DD) from Date
  */
 export function toISODateString(date: Date): string {
-  return date.toISOString().split("T")[0];
+  return isoDateOf(date);
 }
 
 /**
