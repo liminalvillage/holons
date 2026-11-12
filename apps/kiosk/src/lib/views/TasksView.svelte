@@ -17,6 +17,7 @@
     showNotice,
     taskViewMode,
     taskSort,
+    questsPulled,
   } from "$lib/stores";
   import { requestSwitch } from "$lib/dock";
   import { privacyOfHolon } from "@holons/core/privacy";
@@ -1019,7 +1020,9 @@
           {/each}
         </div>
       {:else}
-        <p class="empty">{$t("tasks.emptyBacklog")}</p>
+        <p class="empty">
+          {$t($questsPulled ? "tasks.emptyBacklog" : "tasks.loadingBacklog")}
+        </p>
       {/if}
     </div>
   {/if}

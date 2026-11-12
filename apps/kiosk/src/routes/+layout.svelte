@@ -98,6 +98,7 @@
     yearShape,
     libraryCalendarMode,
     boardReady,
+    questsPulled,
     settingsOpen,
     userMenuOpen,
     connected,
@@ -265,6 +266,7 @@
       if (readyTimer) clearTimeout(readyTimer);
       readyTimer = null;
       boardReady.set(false);
+      questsPulled.set(false);
       booting = false;
       return;
     }
@@ -276,6 +278,7 @@
       console.error("[kiosk] failed to connect", err);
       booting = false;
       boardReady.set(true); // can't connect — reveal the (empty) board anyway
+      questsPulled.set(true);
       return;
     }
     connected.set(true);
@@ -301,6 +304,15 @@
       checklistsSub = null; // recreated below when the Lists tab is enabled
       hiddenSet = new Set();
       lastQuestItems = [];
+      // The subscription streams what arrives; this pull says when the first
+      // read is over, so an empty board can tell "still reading" from "clear".
+      questsPulled.set(false);
+      void Promise.resolve()
+        .then(() => hs.getAll(id, "quests"))
+        .catch(() => {})
+        .finally(() => {
+          if (boundHolon === id) questsPulled.set(true);
+        });
       questsSub = hs.subscribeFederated(
         id,
         "quests",

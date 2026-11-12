@@ -474,19 +474,24 @@
     {:else}
       <ol class="ranks">
         {#each rows as row (row.id)}
-          {@const i = rows.indexOf(row)}
+          <!-- Shared places for equal scores, and no podium for nothing:
+               a board of zeros has no winner. -->
+          {@const i = rows.filter((r) => r.score > row.score + 1e-9).length}
+          {@const medal = row.score > 0 ? i : -1}
           <li>
             <button
               class="rank"
-              class:top={i === 0}
+              class:top={medal === 0}
               on:click={() => (selected = row)}
               title={$t("status.seeScore", { name: row.name })}
             >
               <span class="place">
-                {#if i === 0}<Icon name="trophy" />{:else if i === 1}<Icon
+                {#if medal === 0}<Icon
+                    name="trophy"
+                  />{:else if medal === 1}<Icon
                     name="medal"
                     class="silver"
-                  />{:else if i === 2}<Icon
+                  />{:else if medal === 2}<Icon
                     name="medal"
                     class="bronze"
                   />{:else}{i + 1}{/if}

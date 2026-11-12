@@ -82,6 +82,7 @@ export const en = {
   "tasks.adding": "Adding…",
   "tasks.add": "Add",
   "tasks.emptyBacklog": "The backlog is clear. ✶",
+  "tasks.loadingBacklog": "Reading the backlog…",
 
   // Swipe deck
   "swipe.participating": "You're participating — that outranks a like ♥",
@@ -615,7 +616,7 @@ export const en = {
   "tglink.cancel": "Cancel",
   "tglink.failed": "Could not link — {reason}",
   "hub.hereTitleKey": "New hub",
-  "hub.hereBodyKey": "Founded by your key, right now â no Telegram needed.",
+  "hub.hereBodyKey": "Made with your key, right now — no Telegram needed.",
   "login.nostrLead": "Sign in with your key",
   "login.orOther": "or sign in another way",
   "login.telegramTile": "Telegram",
@@ -637,6 +638,7 @@ export const en = {
   "login.pinUnlock": "Unlock",
   "login.pinSave": "Save",
   "login.otherWay": "Sign in another way",
+  "login.pinSkip": "Skip — don't remember me on this device",
 
   // User menu
   "menu.notSignedIn": "Not signed in",
@@ -756,11 +758,11 @@ export const en = {
   "members.youNotLinked":
     "Your key {key} isn’t linked to this hub yet, so only this screen sees your changes. Ask below — the ask is signed by your key, nothing else is needed.",
   "members.youNotLinkedTelegram":
-    "Or link this key to your Telegram account, so the bot seats it in every chat you are in.",
+    "Or link this key to your Telegram account, so the bot links it in every chat you are in.",
   "members.linkTelegram": "Link via Telegram",
   "members.linkTelegramOpen": "Open Telegram and tap Start",
   "members.linkTelegramHint":
-    "The proof is published from this device; the bot checks it and links the key to your account. Your hubs seat it on their next refresh.",
+    "The proof is published from this device; the bot checks it and links the key to your account. Your hubs link it on their next refresh.",
   "members.linkTelegramFailed": "Couldn't publish the proof: {reason}",
   "members.youNoKey":
     "You are signed in without a key, so nothing links you to this hub. Sign in with your key (nsec, passkey or wallet).",
@@ -895,7 +897,7 @@ export const en = {
   "fed.keyError": "The sharing change didn't save — try again.",
   "fed.sharedWith": "{name} can read the locked lenses marked with a key.",
   "fed.noReaders":
-    "{name} has no readers yet — it will read once its bot or a member founds it.",
+    "{name} has no readers yet — it will read once its bot or a member sets it up.",
   "fed.privateHint":
     "A locked lens is private: the arrow opens the flow, the key lets the partner read what is inside.",
   "fed.unlinkError": "Unlink didn't save — try again.",
@@ -1273,12 +1275,12 @@ export const en = {
   "hub.back": "Back",
 
   "hub.hereTitle": "Start a hub here",
-  "hub.hereBody": "No Telegram: your key founds it, right now.",
+  "hub.hereBody": "No Telegram: your key starts it, right now.",
   "hub.hereLead":
-    "A hub of your own, founded by your key: you are its first admin, and you link others by their public key.",
+    "A hub of your own, started with your key: you are its first admin, and you link others by their public key.",
   "hub.hereName": "Name",
   "hub.hereNamePlaceholder": "What is this hub called?",
-  "hub.hereCreate": "Found it",
+  "hub.hereCreate": "Start it",
   "hub.hereNeedsKey":
     "Founding needs a key of your own. Sign in with an nsec, a passkey or a wallet first.",
   "hub.hereSignIn": "Sign in with a key",
@@ -1499,7 +1501,7 @@ export const en = {
   "flows.claimNoSigner":
     "Signing is not set up for this login, so a claim cannot be recorded here.",
   "flows.claimsProvisional":
-    "This holon is not founded yet: who counts is provisional until the bot signs its membership.",
+    "This holon's membership isn't signed yet: who counts is provisional until the bot signs it.",
   "flows.claimsReview": "Claims to review",
   "flows.claimAttest": "Attest",
   "flows.claimDispute": "Dispute",
@@ -1631,7 +1633,7 @@ export const en = {
   "alloc.noPartners": "No federation partners yet — find one below.",
   "alloc.people": "People by zone",
   "alloc.peopleAbout":
-    "Anyone the holon shares with in relationship rather than for tasks. A member placed here holds both seats.",
+    "Anyone the holon shares with in relationship rather than for tasks. A member placed here counts on both sides.",
   "alloc.addPerson": "Add a person…",
   "alloc.removePerson": "Remove {name}",
   "alloc.noPeople": "Nobody to place yet.",
@@ -1716,7 +1718,7 @@ export const en = {
   "vote.passing": "passing",
   "vote.notPassing": "not passing",
   "vote.provisional":
-    "This holon is not founded yet: who counts is provisional until the bot signs its membership.",
+    "This holon's membership isn't signed yet: who counts is provisional until the bot signs it.",
   "vote.yours": "Your vote",
   "vote.signIn": "Sign in to vote",
   "vote.noSigner":
@@ -1756,7 +1758,7 @@ export const en = {
   "alloc.rulesSave": "Set the rules",
   "alloc.rulesSaved": "Rules recorded.",
   "alloc.splitNotAdmin":
-    "Only an admin's signature sets the split; yours would be recorded but not counted.",
+    "Only an admin can change the split. You can read it here.",
   "alloc.rulesNotAdmin":
     "Only an admin's signature sets the rules; yours would be recorded but not counted.",
   "alloc.rulesNoSigner":

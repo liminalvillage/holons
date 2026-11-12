@@ -14,7 +14,7 @@
   import type { BacklogTask } from "$lib/data";
   import { holoSeed } from "$lib/data";
   import { t } from "$lib/i18n";
-  import { holonId } from "$lib/stores";
+  import { holonId, questsPulled } from "$lib/stores";
   import { requestSwitch } from "$lib/dock";
 
   /** A provenance badge tap travels to the holon the card came from. */
@@ -159,7 +159,9 @@
     {/each}
   </ul>
 {:else}
-  <p class="empty">{$t("tasks.emptyBacklog")}</p>
+  <p class="empty">
+    {$t($questsPulled ? "tasks.emptyBacklog" : "tasks.loadingBacklog")}
+  </p>
 {/if}
 
 <style>

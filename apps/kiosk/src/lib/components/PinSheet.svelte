@@ -80,8 +80,11 @@
     {mode === "set" ? $t("login.pinSave") : $t("login.pinUnlock")}
   </button>
   <div class="links">
+    <!-- Setting a PIN, the person is already signed in by now: the way out
+         is not remembering, so the link says so. Unlocking, it goes back to
+         the other sign-in options. -->
     <button type="button" class="link" on:click={() => dispatch("back")}>
-      {$t("login.otherWay")}
+      {mode === "set" ? $t("login.pinSkip") : $t("login.otherWay")}
     </button>
     {#if mode === "enter" && canForget}
       <button

@@ -79,6 +79,7 @@
   // it never comes back on that device. Only offered while there IS a "+"
   // (some tab is hidden) and the kiosk is awake.
   let addTip = false;
+  const ADD_TIP_MS = 12_000;
   let addTipTimer: ReturnType<typeof setTimeout> | null = null;
   function dismissAddTip() {
     if (addTipTimer) clearTimeout(addTipTimer);
@@ -301,7 +302,11 @@
     if (!resolveAddTipSeen()) {
       addTipTimer = setTimeout(() => {
         addTipTimer = null;
-        if ($hiddenTabs.length && !$rotating && !$appService) addTip = true;
+        if (!$hiddenTabs.length || $rotating || $appService) return;
+        addTip = true;
+        // Read, not waited on: it retires by itself after a while, so a
+        // board nobody touches does not keep its pills covered.
+        addTipTimer = setTimeout(dismissAddTip, ADD_TIP_MS);
       }, 900);
     }
     return () => {
@@ -766,13 +771,10 @@
     </nav>
 
     {#if addTip && $hiddenTabs.length}
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="addtip"
-        id="addtip"
-        role="tooltip"
-        on:pointerdown={dismissAddTip}
-      >
+      <!-- Click-through: the bubble sits over the view pills, so the press
+           that retires it (the window handler) must still reach whatever
+           is under it — a first tap is never spent on the hint. -->
+      <div class="addtip" id="addtip" role="tooltip">
         <span class="addtip__plus" aria-hidden="true">+</span>
         <span>{$t("tabbar.addHint")}</span>
       </div>
@@ -1407,7 +1409,7 @@
       var(--shadow-soft),
       0 12px 32px rgba(0, 0, 0, 0.18);
     animation: kiosk-rise 0.35s ease both;
-    cursor: pointer;
+    pointer-events: none;
   }
   .addtip::before {
     content: "";

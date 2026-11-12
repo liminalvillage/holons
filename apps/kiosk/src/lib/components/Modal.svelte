@@ -3,7 +3,7 @@
   import Icon from "$lib/components/Icon.svelte";
   // Generic "bring it forward" overlay: a dimmed backdrop and a card that zooms
   // up from the tapped element. Closes on backdrop tap, the ✕, or Escape.
-  import { createEventDispatcher } from "svelte";
+  import { createEventDispatcher, onDestroy, onMount, tick } from "svelte";
   import { t } from "$lib/i18n";
   const dispatch = createEventDispatcher();
   export let tint: string = "var(--card)";
@@ -17,6 +17,8 @@
   export let wide = false;
   /** Show the pinned footer (the `footer` slot) under the scrolling body. */
   export let footer = false;
+  /** The dialog's accessible name, when its title is not an <h2> inside. */
+  export let label: string | undefined = undefined;
   // The corner: the ✕ and, through the `corner` slot, a sheet's one headline
   // action beside it. Its width is published as `--corner-w` on the card so
   // the sheet's title can keep clear of it (`padding-right: var(--corner-w)`).
@@ -38,9 +40,70 @@
     if (downOnBackdrop) close();
     downOnBackdrop = false;
   }
-  function onKey(e: KeyboardEvent) {
-    if (e.key === "Escape") close();
+  // Keyboard: the dialog takes focus when it opens, keeps Tab inside it
+  // (otherwise Tab walks off into the board behind), and hands focus back to
+  // whatever opened it when it closes.
+  let card: HTMLElement;
+  let opener: HTMLElement | null = null;
+  let labelledBy: string | undefined = undefined;
+
+  function focusables(): HTMLElement[] {
+    if (!card) return [];
+    return [
+      ...card.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ].filter((el) => el.offsetParent !== null || el === document.activeElement);
   }
+
+  function onKey(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      close();
+      return;
+    }
+    if (e.key !== "Tab" || !card) return;
+    const items = focusables();
+    if (items.length === 0) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+    const inside = !!active && card.contains(active);
+    // Only the topmost dialog steers: a sheet opened over this one owns Tab.
+    if (
+      !inside &&
+      active &&
+      active !== document.body &&
+      active.closest('[role="dialog"]')
+    )
+      return;
+    if (e.shiftKey && (active === first || !inside)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (active === last || !inside)) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  onMount(async () => {
+    opener = document.activeElement as HTMLElement | null;
+    await tick();
+    if (!card) return;
+    // Named by its own heading when it has one.
+    const h = card.querySelector<HTMLElement>("h1, h2, h3");
+    if (!label && h) {
+      if (!h.id) h.id = `modal-title-${Math.random().toString(36).slice(2, 9)}`;
+      labelledBy = h.id;
+    }
+    // Land on the dialog itself, unless something inside already took focus
+    // (an autofocused field).
+    if (!card.contains(document.activeElement))
+      card.focus({ preventScroll: true });
+  });
+
+  onDestroy(() => {
+    if (opener && opener.isConnected) opener.focus?.({ preventScroll: true });
+  });
 </script>
 
 <svelte:window on:keydown={onKey} />
@@ -60,6 +123,10 @@
     style:--corner-w="{cornerW}px"
     role="dialog"
     aria-modal="true"
+    aria-label={label}
+    aria-labelledby={label ? undefined : labelledBy}
+    tabindex="-1"
+    bind:this={card}
   >
     <div class="corner" bind:clientWidth={cornerW}>
       <slot name="corner" />
@@ -93,6 +160,9 @@
     backdrop-filter: blur(3px);
     -webkit-backdrop-filter: blur(3px);
     animation: kiosk-fade 0.2s ease both;
+  }
+  .card:focus {
+    outline: none; /* focused to anchor the keyboard, not to be marked */
   }
   .card {
     position: relative;

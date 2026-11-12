@@ -81,6 +81,7 @@ export const es: Record<MessageKey, Msg> = {
   "tasks.adding": "Añadiendo…",
   "tasks.add": "Añadir",
   "tasks.emptyBacklog": "No hay tareas pendientes. ✶",
+  "tasks.loadingBacklog": "Leyendo las tareas…",
 
   // Swipe deck
   "swipe.participating": "Ya participas — eso vale más que un me gusta ♥",
@@ -619,7 +620,7 @@ export const es: Record<MessageKey, Msg> = {
   "tglink.cancel": "Cancelar",
   "tglink.failed": "No se pudo enlazar — {reason}",
   "hub.hereTitleKey": "Nuevo hub",
-  "hub.hereBodyKey": "Fundado por tu clave, ahora mismo â sin Telegram.",
+  "hub.hereBodyKey": "Creado con tu clave, ahora mismo — sin Telegram.",
   "login.nostrLead": "Entra con tu clave",
   "login.orOther": "o entra de otra manera",
   "login.telegramTile": "Telegram",
@@ -641,6 +642,7 @@ export const es: Record<MessageKey, Msg> = {
   "login.pinUnlock": "Desbloquear",
   "login.pinSave": "Guardar",
   "login.otherWay": "Entrar de otra manera",
+  "login.pinSkip": "Omitir — no recordarme en este dispositivo",
 
   // User menu
   "menu.notSignedIn": "Sesión no iniciada",
@@ -910,7 +912,7 @@ export const es: Record<MessageKey, Msg> = {
   "fed.sharedWith":
     "{name} puede leer las lentes bloqueadas marcadas con una llave.",
   "fed.noReaders":
-    "{name} aún no tiene lectores — leerá cuando su bot o un miembro lo funde.",
+    "{name} aún no tiene lectores — leerá cuando su bot o un miembro lo ponga en marcha.",
   "fed.privateHint":
     "Una lente con candado es privada: la flecha abre el flujo, la llave comparte el contenido.",
   "fed.unlinkError": "La desvinculación no se guardó — inténtalo de nuevo.",
@@ -1292,12 +1294,12 @@ export const es: Record<MessageKey, Msg> = {
   "hub.back": "Atrás",
 
   "hub.hereTitle": "Iniciar un hub aquí",
-  "hub.hereBody": "Sin Telegram: lo funda tu clave, ahora mismo.",
+  "hub.hereBody": "Sin Telegram: lo pone en marcha tu clave, ahora mismo.",
   "hub.hereLead":
-    "Un hub propio, fundado por tu clave: eres su primer admin, y sientas a los demás por su clave pública.",
+    "Un hub propio, puesto en marcha con tu clave: eres su primer admin, y vinculas a los demás por su clave pública.",
   "hub.hereName": "Nombre",
   "hub.hereNamePlaceholder": "¿Cómo se llama este hub?",
-  "hub.hereCreate": "Fundarlo",
+  "hub.hereCreate": "Ponerlo en marcha",
   "hub.hereNeedsKey":
     "Fundar necesita una clave propia. Inicia sesión primero con un nsec, una passkey o un wallet.",
   "hub.hereSignIn": "Iniciar sesión con una clave",
@@ -1518,7 +1520,7 @@ export const es: Record<MessageKey, Msg> = {
   "flows.claimNoSigner":
     "La firma no está configurada para este acceso: aquí no se puede registrar una reclamación.",
   "flows.claimsProvisional":
-    "Este holon aún no está fundado: quién cuenta es provisional hasta que el bot firme sus miembros.",
+    "Los miembros de este holón aún no están firmados: quién cuenta es provisional hasta que el bot los firme.",
   "flows.claimsReview": "Reclamaciones por revisar",
   "flows.claimAttest": "Atestiguar",
   "flows.claimDispute": "Disputar",
@@ -1651,7 +1653,7 @@ export const es: Record<MessageKey, Msg> = {
   "alloc.noPartners": "Aún no hay socios federados — encuentra uno abajo.",
   "alloc.people": "Personas por zona",
   "alloc.peopleAbout":
-    "Quien comparte con el holón por relación, no por tareas. Un miembro colocado aquí ocupa ambos puestos.",
+    "Quien comparte con el holón por relación, no por tareas. Un miembro colocado aquí cuenta en ambos lados.",
   "alloc.addPerson": "Añadir una persona…",
   "alloc.removePerson": "Quitar a {name}",
   "alloc.noPeople": "Nadie a quien colocar todavía.",
@@ -1737,7 +1739,7 @@ export const es: Record<MessageKey, Msg> = {
   "vote.passing": "aprobada",
   "vote.notPassing": "no aprobada",
   "vote.provisional":
-    "Este holón aún no está fundado: quién cuenta es provisional hasta que el bot firme a sus miembros.",
+    "Los miembros de este holón aún no están firmados: quién cuenta es provisional hasta que el bot los firme.",
   "vote.yours": "Tu voto",
   "vote.signIn": "Inicia sesión para votar",
   "vote.noSigner":
@@ -1777,7 +1779,7 @@ export const es: Record<MessageKey, Msg> = {
   "alloc.rulesSave": "Fijar las reglas",
   "alloc.rulesSaved": "Reglas registradas.",
   "alloc.splitNotAdmin":
-    "Solo la firma de un admin fija el reparto; la tuya quedaría registrada pero no contada.",
+    "Solo un admin puede cambiar el reparto. Aquí puedes consultarlo.",
   "alloc.rulesNotAdmin":
     "Solo la firma de un admin fija las reglas; la tuya quedaría registrada pero no contada.",
   "alloc.rulesNoSigner":

@@ -15,6 +15,7 @@
     showNotice,
     taskSort,
     taskViewMode,
+    questsPulled,
   } from "$lib/stores";
   import { requestSwitch } from "$lib/dock";
   import { get } from "svelte/store";
@@ -537,7 +538,9 @@
     <Confetti originY={40} />
   {/if}
 {:else}
-  <p class="empty">{$t("tasks.emptyBacklog")}</p>
+  <p class="empty">
+    {$t($questsPulled ? "tasks.emptyBacklog" : "tasks.loadingBacklog")}
+  </p>
 {/if}
 
 <style>

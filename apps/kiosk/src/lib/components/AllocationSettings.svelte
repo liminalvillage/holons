@@ -738,25 +738,29 @@
       </div>
     {:else if tab === "split"}
       <!-- ── How much goes to each side ─────────────────────────────────── -->
-      <div class="control">
-        <label for="alloc-interior" class="k">
-          {$t("alloc.interior")}
-          <span class="value">{interiorPercent}% / {exteriorPercent}%</span>
-        </label>
-        <input
-          id="alloc-interior"
-          type="range"
-          min="0"
-          max="100"
-          step="1"
-          bind:value={interiorPercent}
-        />
-        <div class="ends">
-          <span>{$t("alloc.allExterior")}</span>
-          <span>{$t("alloc.allInterior")}</span>
+      <!-- The split is a guarded setting: a non-admin reads it, and the
+           controls are locked rather than taking an edit that never saves. -->
+      <fieldset class="lock" disabled={!canEditSplit}>
+        <div class="control">
+          <label for="alloc-interior" class="k">
+            {$t("alloc.interior")}
+            <span class="value">{interiorPercent}% / {exteriorPercent}%</span>
+          </label>
+          <input
+            id="alloc-interior"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            bind:value={interiorPercent}
+          />
+          <div class="ends">
+            <span>{$t("alloc.allExterior")}</span>
+            <span>{$t("alloc.allInterior")}</span>
+          </div>
+          <p class="sub">{$t("alloc.splitAbout")}</p>
         </div>
-        <p class="sub">{$t("alloc.splitAbout")}</p>
-      </div>
+      </fieldset>
 
       <!-- What each half does next, and the way to go and change it. -->
       <button class="jump" on:click={() => (tab = "contributors")}>
@@ -777,119 +781,128 @@
       </button>
     {:else if tab === "contributors"}
       <!-- ── How the contributors' share is divided ─────────────────────── -->
-      <div class="control">
-        <div class="k" id="alloc-mode-label">{$t("alloc.split")}</div>
-        <div class="mode" role="radiogroup" aria-labelledby="alloc-mode-label">
-          <button
-            role="radio"
-            aria-checked={interiorMode === "equation"}
-            class="seg"
-            class:on={interiorMode === "equation"}
-            on:click={() => setMode("equation")}
-            >{$t("alloc.splitEquation")}</button
+      <fieldset class="lock" disabled={!canEditSplit}>
+        <div class="control">
+          <div class="k" id="alloc-mode-label">{$t("alloc.split")}</div>
+          <div
+            class="mode"
+            role="radiogroup"
+            aria-labelledby="alloc-mode-label"
           >
-          <button
-            role="radio"
-            aria-checked={interiorMode === "custom"}
-            class="seg"
-            class:on={interiorMode === "custom"}
-            on:click={() => setMode("custom")}>{$t("alloc.splitCustom")}</button
-          >
-        </div>
-        <p class="sub">
-          {interiorMode === "custom"
-            ? $t("alloc.splitCustomAbout")
-            : $t("alloc.splitEquationAbout")}
-        </p>
-      </div>
-
-      {#if interiorMode === "custom"}
-        {#if shareRows.length}
-          <ul class="parties shares">
-            {#each shareRows as row (row.id)}
-              <li>
-                <div class="pline">
-                  <span class="pname">{row.name}</span>
-                  {#if row.scored != null}
-                    <span class="pshare"
-                      >{$t("alloc.splitScored", { pct: pct(row.scored) })}</span
-                    >
-                  {/if}
-                </div>
-                <div class="sharebox">
-                  <input
-                    type="number"
-                    inputmode="decimal"
-                    min="0"
-                    step="any"
-                    value={row.text}
-                    on:input={(e) => setShare(row.id, e.currentTarget.value)}
-                    aria-label={row.name}
-                  />
-                  <span class="unit ofTotal"
-                    >{$t("alloc.zoneShare", { pct: pct(row.ofTotal) })}</span
-                  >
-                  <button
-                    class="drop"
-                    on:click={() => removeShare(row.id)}
-                    aria-label={$t("alloc.removePerson", { name: row.name })}
-                    ><Icon name="close" /></button
-                  >
-                </div>
-              </li>
-            {/each}
-          </ul>
-          <div class="totalrow">
-            <span>{$t("alloc.splitTotal")}</span>
-            <span class="sum"
-              >{pct(sharesTotal)}
-              <span class="unit ofTotal"
-                >{$t("alloc.zoneShare", {
-                  pct: sharesTotal > 0 ? 100 : 0,
-                })}</span
-              ></span
+            <button
+              role="radio"
+              aria-checked={interiorMode === "equation"}
+              class="seg"
+              class:on={interiorMode === "equation"}
+              on:click={() => setMode("equation")}
+              >{$t("alloc.splitEquation")}</button
+            >
+            <button
+              role="radio"
+              aria-checked={interiorMode === "custom"}
+              class="seg"
+              class:on={interiorMode === "custom"}
+              on:click={() => setMode("custom")}
+              >{$t("alloc.splitCustom")}</button
             >
           </div>
-        {:else}
-          <p class="sub">{$t("alloc.splitEmpty")}</p>
-        {/if}
-        <div class="rowactions">
-          {#if shareable.length}
-            <div class="picker">
-              <PersonSelect
-                block
-                label={$t("alloc.addPerson")}
-                people={shareable}
-                on:pick={(e) => seatShare(String(e.detail.id))}
-              >
-                <button
-                  slot="trigger"
-                  let:toggle
-                  let:open
-                  type="button"
-                  class="pick"
-                  aria-haspopup="listbox"
-                  aria-expanded={open}
-                  on:click={toggle}
-                  ><span class="plus">＋</span>
-                  {$t("alloc.addPerson")}</button
-                >
-              </PersonSelect>
-            </div>
-          {/if}
-          <button
-            class="wide-ghost"
-            disabled={!Object.keys(equationShares).length}
-            on:click={copyEquation}>{$t("alloc.splitCopy")}</button
-          >
+          <p class="sub">
+            {interiorMode === "custom"
+              ? $t("alloc.splitCustomAbout")
+              : $t("alloc.splitEquationAbout")}
+          </p>
         </div>
-        <!-- Anyone else: a person or a holon by name or id. A holon becomes
+
+        {#if interiorMode === "custom"}
+          {#if shareRows.length}
+            <ul class="parties shares">
+              {#each shareRows as row (row.id)}
+                <li>
+                  <div class="pline">
+                    <span class="pname">{row.name}</span>
+                    {#if row.scored != null}
+                      <span class="pshare"
+                        >{$t("alloc.splitScored", {
+                          pct: pct(row.scored),
+                        })}</span
+                      >
+                    {/if}
+                  </div>
+                  <div class="sharebox">
+                    <input
+                      type="number"
+                      inputmode="decimal"
+                      min="0"
+                      step="any"
+                      value={row.text}
+                      on:input={(e) => setShare(row.id, e.currentTarget.value)}
+                      aria-label={row.name}
+                    />
+                    <span class="unit ofTotal"
+                      >{$t("alloc.zoneShare", { pct: pct(row.ofTotal) })}</span
+                    >
+                    <button
+                      class="drop"
+                      on:click={() => removeShare(row.id)}
+                      aria-label={$t("alloc.removePerson", { name: row.name })}
+                      ><Icon name="close" /></button
+                    >
+                  </div>
+                </li>
+              {/each}
+            </ul>
+            <div class="totalrow">
+              <span>{$t("alloc.splitTotal")}</span>
+              <span class="sum"
+                >{pct(sharesTotal)}
+                <span class="unit ofTotal"
+                  >{$t("alloc.zoneShare", {
+                    pct: sharesTotal > 0 ? 100 : 0,
+                  })}</span
+                ></span
+              >
+            </div>
+          {:else}
+            <p class="sub">{$t("alloc.splitEmpty")}</p>
+          {/if}
+          <div class="rowactions">
+            {#if shareable.length}
+              <div class="picker">
+                <PersonSelect
+                  block
+                  label={$t("alloc.addPerson")}
+                  people={shareable}
+                  on:pick={(e) => seatShare(String(e.detail.id))}
+                >
+                  <button
+                    slot="trigger"
+                    let:toggle
+                    let:open
+                    type="button"
+                    class="pick"
+                    aria-haspopup="listbox"
+                    aria-expanded={open}
+                    on:click={toggle}
+                    ><span class="plus">＋</span>
+                    {$t("alloc.addPerson")}</button
+                  >
+                </PersonSelect>
+              </div>
+            {/if}
+            <button
+              class="wide-ghost"
+              disabled={!Object.keys(equationShares).length}
+              on:click={copyEquation}>{$t("alloc.splitCopy")}</button
+            >
+          </div>
+          <!-- Anyone else: a person or a holon by name or id. A holon becomes
              a federation partner on Save; a person is seated by their id. -->
-        <PartyFinder
-          exclude={Object.keys(shareOf)}
-          on:pick={(e) => found(e, "split")}
-        />
-      {/if}
+          <PartyFinder
+            exclude={Object.keys(shareOf)}
+            on:pick={(e) => found(e, "split")}
+          />
+        {/if}
+      </fieldset>
 
       <!-- The weights behind the equation split. Under "by value equation"
            they ARE the split; under a custom split they still drive the hint
@@ -911,208 +924,210 @@
       {/if}
     {:else if tab === "zones"}
       <!-- ── Who is on which ring ───────────────────────────────────────── -->
-      <div class="control">
-        <label for="alloc-steep" class="k">
-          {$t("alloc.sharing")}
-          <span class="value">{steepness}%</span>
-        </label>
-        <input
-          id="alloc-steep"
-          type="range"
-          min="0"
-          max="100"
-          step="1"
-          bind:value={steepness}
-        />
-        <div class="ends">
-          <span>{$t("alloc.steep")}</span>
-          <span>{$t("alloc.even")}</span>
-        </div>
-      </div>
-
-      <div class="control">
-        <div class="k">
-          {$t("alloc.zones")}
-          <span class="value">{nzones}</span>
-        </div>
-        <p class="sub">
-          {anyPlaced ? $t("alloc.zonesAbout") : $t("alloc.zonesPreview")}
-        </p>
-        <div class="stepper">
-          <button
-            on:click={() => (nzones = Math.max(1, nzones - 1))}
-            disabled={nzones <= 1}
-            aria-label={$t("alloc.fewer")}>−</button
-          >
-          <div class="rings">
-            {#each zoneShares as share, i (i)}
-              <div
-                class="ring"
-                class:empty={share <= 0}
-                title={$t("alloc.zoneShareFund", { pct: pct(share) })}
-              >
-                <span class="rs">{pct(share)}%</span>
-                <div
-                  class="fill"
-                  style="height: {maxZoneShare > 0
-                    ? Math.max(4, (share / maxZoneShare) * 100)
-                    : 4}%"
-                ></div>
-                <span class="rn">{i + 1}</span>
-              </div>
-            {/each}
+      <fieldset class="lock" disabled={!canEditSplit}>
+        <div class="control">
+          <label for="alloc-steep" class="k">
+            {$t("alloc.sharing")}
+            <span class="value">{steepness}%</span>
+          </label>
+          <input
+            id="alloc-steep"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            bind:value={steepness}
+          />
+          <div class="ends">
+            <span>{$t("alloc.steep")}</span>
+            <span>{$t("alloc.even")}</span>
           </div>
-          <button
-            on:click={() => (nzones = Math.min(10, nzones + 1))}
-            disabled={nzones >= 10}
-            aria-label={$t("alloc.more")}>+</button
-          >
         </div>
-      </div>
 
-      <div class="control">
-        <div class="k">{$t("alloc.partners")}</div>
-        {#if partnersAll.length}
-          <p class="sub">{$t("alloc.partnersAbout")}</p>
-          <ul class="parties">
-            {#each partnersAll as p (p.id)}
-              <li>
-                <div class="pline">
-                  <span class="pname">{p.name}</span>
-                  {#if newPartners.some((n) => n.id === p.id)}
-                    <span class="unplaced">{$t("alloc.newPartner")}</span>
-                  {:else if (zoneOf[p.id] ?? 0) >= 1}
+        <div class="control">
+          <div class="k">
+            {$t("alloc.zones")}
+            <span class="value">{nzones}</span>
+          </div>
+          <p class="sub">
+            {anyPlaced ? $t("alloc.zonesAbout") : $t("alloc.zonesPreview")}
+          </p>
+          <div class="stepper">
+            <button
+              on:click={() => (nzones = Math.max(1, nzones - 1))}
+              disabled={nzones <= 1}
+              aria-label={$t("alloc.fewer")}>−</button
+            >
+            <div class="rings">
+              {#each zoneShares as share, i (i)}
+                <div
+                  class="ring"
+                  class:empty={share <= 0}
+                  title={$t("alloc.zoneShareFund", { pct: pct(share) })}
+                >
+                  <span class="rs">{pct(share)}%</span>
+                  <div
+                    class="fill"
+                    style="height: {maxZoneShare > 0
+                      ? Math.max(4, (share / maxZoneShare) * 100)
+                      : 4}%"
+                  ></div>
+                  <span class="rn">{i + 1}</span>
+                </div>
+              {/each}
+            </div>
+            <button
+              on:click={() => (nzones = Math.min(10, nzones + 1))}
+              disabled={nzones >= 10}
+              aria-label={$t("alloc.more")}>+</button
+            >
+          </div>
+        </div>
+
+        <div class="control">
+          <div class="k">{$t("alloc.partners")}</div>
+          {#if partnersAll.length}
+            <p class="sub">{$t("alloc.partnersAbout")}</p>
+            <ul class="parties">
+              {#each partnersAll as p (p.id)}
+                <li>
+                  <div class="pline">
+                    <span class="pname">{p.name}</span>
+                    {#if newPartners.some((n) => n.id === p.id)}
+                      <span class="unplaced">{$t("alloc.newPartner")}</span>
+                    {:else if (zoneOf[p.id] ?? 0) >= 1}
+                      <span class="pshare"
+                        >{$t("alloc.zoneShare", {
+                          pct: pct(partnerShare(p.id)),
+                        })}</span
+                      >
+                    {:else}
+                      <span class="unplaced">{$t("alloc.unplaced")}</span>
+                    {/if}
+                  </div>
+                  <div
+                    class="ringpick"
+                    role="radiogroup"
+                    tabindex="-1"
+                    aria-label={p.name}
+                    on:keydown={(e) =>
+                      onRingKey(e, zoneOf[p.id] ?? 0, (z) =>
+                        place(p.id, zoneOf[p.id] === z ? 0 : z),
+                      )}
+                  >
+                    {#each rings as z (z)}
+                      <button
+                        role="radio"
+                        aria-checked={(zoneOf[p.id] ?? 0) === z}
+                        tabindex={(zoneOf[p.id] ?? 0) === z ||
+                        (!(zoneOf[p.id] >= 1) && z === 1)
+                          ? 0
+                          : -1}
+                        class="rp"
+                        class:on={(zoneOf[p.id] ?? 0) === z}
+                        on:click={() => place(p.id, z)}
+                        title="{$t('flows.tipZoneN', { n: String(z) })} · {$t(
+                          'alloc.zoneShareFund',
+                          { pct: pct(zoneShares[z - 1] ?? 0) },
+                        )}">{z}</button
+                      >
+                    {/each}
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="sub">{$t("alloc.noPartners")}</p>
+          {/if}
+        </div>
+
+        <div class="control">
+          <div class="k">{$t("alloc.people")}</div>
+          <p class="sub">{$t("alloc.peopleAbout")}</p>
+          {#if placedPeople.length}
+            <ul class="parties">
+              {#each placedPeople as p (p.id)}
+                <li>
+                  <div class="pline">
+                    <span class="pname">{p.name}</span>
                     <span class="pshare"
                       >{$t("alloc.zoneShare", {
                         pct: pct(partnerShare(p.id)),
                       })}</span
                     >
-                  {:else}
-                    <span class="unplaced">{$t("alloc.unplaced")}</span>
-                  {/if}
-                </div>
-                <div
-                  class="ringpick"
-                  role="radiogroup"
-                  tabindex="-1"
-                  aria-label={p.name}
-                  on:keydown={(e) =>
-                    onRingKey(e, zoneOf[p.id] ?? 0, (z) =>
-                      place(p.id, zoneOf[p.id] === z ? 0 : z),
-                    )}
-                >
-                  {#each rings as z (z)}
-                    <button
-                      role="radio"
-                      aria-checked={(zoneOf[p.id] ?? 0) === z}
-                      tabindex={(zoneOf[p.id] ?? 0) === z ||
-                      (!(zoneOf[p.id] >= 1) && z === 1)
-                        ? 0
-                        : -1}
-                      class="rp"
-                      class:on={(zoneOf[p.id] ?? 0) === z}
-                      on:click={() => place(p.id, z)}
-                      title="{$t('flows.tipZoneN', { n: String(z) })} · {$t(
-                        'alloc.zoneShareFund',
-                        { pct: pct(zoneShares[z - 1] ?? 0) },
-                      )}">{z}</button
-                    >
-                  {/each}
-                </div>
-              </li>
-            {/each}
-          </ul>
-        {:else}
-          <p class="sub">{$t("alloc.noPartners")}</p>
-        {/if}
-      </div>
-
-      <div class="control">
-        <div class="k">{$t("alloc.people")}</div>
-        <p class="sub">{$t("alloc.peopleAbout")}</p>
-        {#if placedPeople.length}
-          <ul class="parties">
-            {#each placedPeople as p (p.id)}
-              <li>
-                <div class="pline">
-                  <span class="pname">{p.name}</span>
-                  <span class="pshare"
-                    >{$t("alloc.zoneShare", {
-                      pct: pct(partnerShare(p.id)),
-                    })}</span
+                  </div>
+                  <div
+                    class="ringpick"
+                    role="radiogroup"
+                    tabindex="-1"
+                    aria-label={p.name}
+                    on:keydown={(e) =>
+                      onRingKey(e, personZone[p.id] ?? 1, (z) =>
+                        placePerson(p.id, z),
+                      )}
                   >
-                </div>
-                <div
-                  class="ringpick"
-                  role="radiogroup"
-                  tabindex="-1"
-                  aria-label={p.name}
-                  on:keydown={(e) =>
-                    onRingKey(e, personZone[p.id] ?? 1, (z) =>
-                      placePerson(p.id, z),
-                    )}
-                >
-                  {#each rings as z (z)}
+                    {#each rings as z (z)}
+                      <button
+                        role="radio"
+                        aria-checked={personZone[p.id] === z}
+                        tabindex={personZone[p.id] === z ? 0 : -1}
+                        class="rp"
+                        class:on={personZone[p.id] === z}
+                        on:click={() => placePerson(p.id, z)}
+                        title="{$t('flows.tipZoneN', { n: String(z) })} · {$t(
+                          'alloc.zoneShareFund',
+                          { pct: pct(zoneShares[z - 1] ?? 0) },
+                        )}">{z}</button
+                      >
+                    {/each}
                     <button
-                      role="radio"
-                      aria-checked={personZone[p.id] === z}
-                      tabindex={personZone[p.id] === z ? 0 : -1}
-                      class="rp"
-                      class:on={personZone[p.id] === z}
-                      on:click={() => placePerson(p.id, z)}
-                      title="{$t('flows.tipZoneN', { n: String(z) })} · {$t(
-                        'alloc.zoneShareFund',
-                        { pct: pct(zoneShares[z - 1] ?? 0) },
-                      )}">{z}</button
+                      class="rp drop"
+                      on:click={() => removePerson(p.id)}
+                      aria-label={$t("alloc.removePerson", { name: p.name })}
+                      ><Icon name="close" /></button
                     >
-                  {/each}
-                  <button
-                    class="rp drop"
-                    on:click={() => removePerson(p.id)}
-                    aria-label={$t("alloc.removePerson", { name: p.name })}
-                    ><Icon name="close" /></button
-                  >
-                </div>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-        {#if unplaced.length}
-          <!-- Choosing someone seats them on the first ring at once. -->
-          <div class="picker">
-            <PersonSelect
-              block
-              label={$t("alloc.addPerson")}
-              people={unplaced}
-              on:pick={(e) => placePerson(String(e.detail.id), 1)}
-            >
-              <button
-                slot="trigger"
-                let:toggle
-                let:open
-                type="button"
-                class="pick"
-                aria-haspopup="listbox"
-                aria-expanded={open}
-                on:click={toggle}
-                ><span class="plus">＋</span>
-                {$t("alloc.addPerson")}</button
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          {#if unplaced.length}
+            <!-- Choosing someone seats them on the first ring at once. -->
+            <div class="picker">
+              <PersonSelect
+                block
+                label={$t("alloc.addPerson")}
+                people={unplaced}
+                on:pick={(e) => placePerson(String(e.detail.id), 1)}
               >
-            </PersonSelect>
-          </div>
-        {:else if !placedPeople.length}
-          <p class="sub">{$t("alloc.noPeople")}</p>
-        {/if}
-        <!-- Anyone else, or another holon: found by name or id, seated on
+                <button
+                  slot="trigger"
+                  let:toggle
+                  let:open
+                  type="button"
+                  class="pick"
+                  aria-haspopup="listbox"
+                  aria-expanded={open}
+                  on:click={toggle}
+                  ><span class="plus">＋</span>
+                  {$t("alloc.addPerson")}</button
+                >
+              </PersonSelect>
+            </div>
+          {:else if !placedPeople.length}
+            <p class="sub">{$t("alloc.noPeople")}</p>
+          {/if}
+          <!-- Anyone else, or another holon: found by name or id, seated on
              the first ring at once. A holon is linked as a partner on Save. -->
-        <PartyFinder
-          exclude={[
-            ...partnersAll.map((p) => p.id),
-            ...placedPeople.map((p) => p.id),
-          ]}
-          on:pick={(e) => found(e, "zones")}
-        />
-      </div>
+          <PartyFinder
+            exclude={[
+              ...partnersAll.map((p) => p.id),
+              ...placedPeople.map((p) => p.id),
+            ]}
+            on:pick={(e) => found(e, "zones")}
+          />
+        </div>
+      </fieldset>
     {:else if tab === "rules"}
       <!-- ── The claims policy ─────────────────────────────────────────── -->
       <p class="sub">{$t("alloc.rulesAbout")}</p>
@@ -1373,6 +1388,17 @@
 </SidePanel>
 
 <style>
+  /* A locked group of split controls: no frame of its own, dimmed while
+     only an admin may change it. */
+  .lock {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+  }
+  .lock:disabled {
+    opacity: 0.6;
+  }
   /* ── Tab strip ──────────────────────────────────────────────────────────
      Four equal tabs, each showing its own current value so the state of the
      whole panel reads without opening a thing. */

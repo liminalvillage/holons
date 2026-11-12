@@ -546,6 +546,13 @@ export const searchLabel = derived(
  */
 export const boardReady = writable<boolean>(false);
 
+/**
+ * Whether the bound holon's first quests pull from the relays has finished.
+ * Until then an empty board is "still reading", never "the backlog is clear":
+ * a cold pull can take many seconds, and the reveal does not wait for it.
+ */
+export const questsPulled = writable<boolean>(false);
+
 // ── Detail / zoom selection ────────────────────────────────────────────────
 //
 // Clicking any post-it or card "brings it forward" into the DetailModal. The

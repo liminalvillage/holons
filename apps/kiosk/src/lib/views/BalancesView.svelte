@@ -455,6 +455,26 @@
     </div>
   </header>
   {#if currencies.length > 1}
+    <!-- One sheet per currency, and a way to turn to the others: without it
+         a tab kept in tree or usd reads as "no shared expenses" while the
+         sheet on show is euro. -->
+    <ul
+      class="picks sheets"
+      role="radiogroup"
+      aria-label={$t("balances.currencyLabel")}
+    >
+      {#each currencies as c (c)}
+        <li>
+          <button
+            role="radio"
+            aria-checked={c === currency}
+            class="pick"
+            class:on={c === currency}
+            on:click={() => onCurrency(c)}>{c.toUpperCase()}</button
+          >
+        </li>
+      {/each}
+    </ul>
     <p class="note">{$t("balances.allCurrencies")}</p>
   {/if}
 
@@ -1060,6 +1080,9 @@
 {/if}
 
 <style>
+  .sheets {
+    margin: 0 0 0.4rem;
+  }
   .balances {
     animation: kiosk-rise 0.42s ease both;
     padding-bottom: 5rem; /* room for the FAB */
