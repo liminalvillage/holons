@@ -122,6 +122,30 @@ describe('shoppingNeeds', () => {
   });
 });
 
+describe('shoppingNeeds adopts by source', () => {
+  it('an unstamped item adopts the open need it already raised instead of minting a -2', () => {
+    const plan = shoppingNeeds({
+      holonId: H,
+      initiator,
+      list: list([{ id: 'eggs', text: 'eggs', checked: false }]),
+      needs: [need('need-shop-eggs', 'eggs')],
+    });
+    expect(plan.create).toEqual([]);
+    expect(plan.keep.map((n) => n.id)).toEqual(['need-shop-eggs']);
+    expect(plan.list?.items[0].needId).toBe('need-shop-eggs');
+  });
+
+  it('an unstamped item checked off fulfils the need it raised', () => {
+    const plan = shoppingNeeds({
+      holonId: H,
+      initiator,
+      list: list([{ id: 'eggs', text: 'eggs', checked: true }]),
+      needs: [need('need-shop-eggs', 'eggs')],
+    });
+    expect(plan.close.map((c) => [c.need.id, c.outcome])).toEqual([['need-shop-eggs', 'fulfilled']]);
+  });
+});
+
 describe('syncNeedsFromShopping', () => {
   function fakeHs(seed: Record<string, Record<string, unknown>> = {}) {
     const db: Record<string, Record<string, unknown>> = { ...seed };
@@ -182,5 +206,17 @@ describe('syncNeedsFromShopping', () => {
     const off = await syncNeedsFromShopping(hs, 'h1', { initiator });
     expect(off.closed.map((c) => [c.need.id, c.outcome])).toEqual([['need-shop-eggs', 'cancelled']]);
     expect(((db['h1/checklists'] as Record<string, ShoppingChecklist>).shopping.items[0] as { needId?: string }).needId).toBeUndefined();
+  });
+
+  it('two overlapping syncs (two quick taps on a stale list) raise each need once', async () => {
+    const { hs, db } = fakeHs({ 'h1/checklists': { shopping: list([]) } });
+    const stale = list([{ id: 'eggs', text: 'eggs', checked: false }, { id: 'oil', text: 'oil', checked: false }]);
+    const [a, b] = await Promise.all([
+      syncNeedsFromShopping(hs, 'h1', { initiator, toHex: false, list: stale }),
+      syncNeedsFromShopping(hs, 'h1', { initiator, toHex: false, list: stale }),
+    ]);
+    expect(a.created.map((n) => n.id).sort()).toEqual(['need-shop-eggs', 'need-shop-oil']);
+    expect(b.created).toEqual([]);
+    expect(Object.keys(db['h1/quests']).sort()).toEqual(['need-shop-eggs', 'need-shop-oil']);
   });
 });

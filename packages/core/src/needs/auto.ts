@@ -80,6 +80,17 @@ export function shoppingNeeds(input: ShoppingNeedsInput, enabled = true): Shoppi
     if (n) byId.set(String(n.id), n);
   }
   const isOpen = (n: PublishedNeed | undefined): n is PublishedNeed => !!n && OPEN_NEED_STATUSES.includes(n.status);
+  // The open need each item already raised, found by its source — the stamp
+  // on the item can trail (a list written from a copy read before the last
+  // sync stamped it), and an unstamped item must adopt its need, never raise
+  // a second one.
+  const bySource = new Map<string, PublishedNeed>();
+  for (const n of byId.values()) {
+    if (n.source?.kind !== 'shopping' || !n.source.auto || !isOpen(n)) continue;
+    const key = String(n.source.itemId);
+    const prev = bySource.get(key);
+    if (!prev || String(n.id) < String(prev.id)) bySource.set(key, n);
+  }
 
   let list = input.list;
   const onList = new Set<string>();
@@ -87,7 +98,15 @@ export function shoppingNeeds(input: ShoppingNeedsInput, enabled = true): Shoppi
     const itemId = String(item.id);
     onList.add(itemId);
     const needId = needIdOf(item);
-    const current = needId ? byId.get(needId) : undefined;
+    let current: PublishedNeed | undefined = needId ? byId.get(needId) : undefined;
+    const stampedStatus = current?.status;
+    if (!isOpen(current) && !(item.checked && stampedStatus === 'claimed')) {
+      const adopted = bySource.get(itemId);
+      if (adopted) {
+        current = adopted;
+        if (needId !== String(adopted.id)) list = stampNeedId(list, item.id, String(adopted.id));
+      }
+    }
 
     if (item.checked) {
       // Bought: the need it carried is met (claimed included — the handoff
@@ -211,7 +230,29 @@ export async function readAutoNeedSetting(holosphere: HoloSphere, holonId: strin
  * holon's needs, honour the per-holon switch, and bring the needs in step.
  * Idempotent, and never throws — a board must not fail on its side effect.
  */
-export async function syncNeedsFromShopping(
+// One sync at a time per store and holon: each one reads the holon's needs,
+// publishes, then stamps the list, so two overlapping runs (two quick taps)
+// would each plan from a state the other is about to change.
+const syncQueues = new WeakMap<object, Map<string, Promise<unknown>>>();
+
+export function syncNeedsFromShopping(
+  holosphere: HoloSphere,
+  holonId: string,
+  opts: SyncShoppingNeedsOptions,
+): Promise<SyncShoppingNeedsOutcome> {
+  const key = holosphere as unknown as object;
+  let queues = syncQueues.get(key);
+  if (!queues) syncQueues.set(key, (queues = new Map()));
+  const prev = queues.get(holonId) ?? Promise.resolve();
+  const run = prev.then(() => runShoppingSync(holosphere, holonId, opts));
+  queues.set(holonId, run);
+  void run.finally(() => {
+    if (queues!.get(holonId) === run) queues!.delete(holonId);
+  });
+  return run;
+}
+
+async function runShoppingSync(
   holosphere: HoloSphere,
   holonId: string,
   opts: SyncShoppingNeedsOptions,
