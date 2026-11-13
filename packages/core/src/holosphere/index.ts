@@ -62,11 +62,17 @@ export {
 export { sourceHolonId, sourceRef, deleteRef, recordKey, type DeleteRef } from './provenance.js';
 export {
   HOLONS_REGISTRY_TABLE,
+  attachRegistry,
   buildRegistryEntry,
+  hasRegistry,
+  holonTypeOf,
+  isRegistrableHolon,
   registerHolon,
+  registryEntryFromSettings,
   searchHolons,
   searchRegistry,
   type HolonRegistryEntry,
   type HolonSearchHit,
   type RegisterHolonInput,
+  type RegistryHost,
 } from './registry.js';

@@ -187,31 +187,7 @@
             if ($ID && !holonIds.has($ID)) {
                 holonIds.add($ID);
 
-                // Register current holon in global registry if not there
-                try {
-                    const settings = await holosphere.get($ID, 'settings', $ID);
-                    if (settings?.name) {
-                        // Canonical `created: ISO`. Promote either the legacy
-                        // settings `createdAt` (ms epoch) or new `created`
-                        // (ISO) so the registry record always carries the
-                        // unified shape.
-                        const createdIso = typeof settings.created === 'string'
-                            ? settings.created
-                            : (typeof settings.createdAt === 'number'
-                                ? new Date(settings.createdAt).toISOString()
-                                : new Date().toISOString());
-                        await holosphere.writeGlobal('holons_registry', {
-                            id: $ID,
-                            name: settings.name,
-                            purpose: settings.purpose || '',
-                            created: createdIso,
-                            type: 'personal'
-                        });
-                        console.log(`Registered current holon ${$ID} in global registry`);
-                    }
-                } catch (error) {
-                    console.warn('Failed to register current holon:', error);
-                }
+                // Its settings writes keep it in the global registry (core).
             }
 
             // Filter out invalid IDs - only keep actual holon IDs

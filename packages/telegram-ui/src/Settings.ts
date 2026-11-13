@@ -31,7 +31,6 @@ import {
   loadGovernedEquation,
 } from '@holons/core/governance';
 import { REAEventStore } from '@holons/core/rea';
-import { registerHolon } from '@holons/core/holosphere';
 import { audience, lock, share, unlock, unshare } from '@holons/core/privacy';
 import { parseClaimPayload, recordHolonClaim } from '@holons/core/claims';
 import { KEY_LINK_DEEPLINK_PREFIX } from '@holons/core/users';
@@ -412,7 +411,17 @@ export default class Settings {
           (oldStatus === 'left' || oldStatus === 'kicked' || !oldStatus)
         ) {
           const holonId = update.chat.id;
-          const language = await this.getLanguage(holonId);
+          // Joining is a settings write — first time or re-added — so core
+          // lists the holon in the registry (searchable from every surface),
+          // named after the chat when it has no name yet.
+          const settings = await this.getSettings(holonId);
+          const title = (update.chat as { title?: string }).title?.trim();
+          await this.db.put(holonId.toString(), 'settings', {
+            ...settings,
+            ...(!settings.name && title ? { name: title } : {}),
+          });
+          this._settingsCache.delete(holonId);
+          const language = settings.language;
 
           // This is the moment someone who came from the landing
           // page arrives: hand them the way back to their board.
@@ -706,14 +715,8 @@ export default class Settings {
         console.log(`=== Reset complete, deleted ${deletedCount} items ===\n`);
 
         const freshSettings = this.getDefaultSettings(holonId, holonName);
+        // The settings write keeps the holon in the global registry (core).
         await this.db.put(holonId.toString(), 'settings', freshSettings);
-        // Re-seed the global registry (idempotent — keyed by id).
-        await registerHolon(this.db, {
-          id: holonId,
-          name: freshSettings.name,
-          purpose: freshSettings.purpose,
-          type: holonId.toString().startsWith('-') ? 'community' : 'personal',
-        });
         ctx.reply(`Holon reset complete! ${deletedCount} items deleted.`);
       } else {
         ctx.reply('Only a chat admin can perform this action');
@@ -3224,16 +3227,9 @@ export default class Settings {
     if (!settings || settings == '') {
       let holonName = await utils.getChatName(this.bot, holonId);
       settings = this.getDefaultSettings(holonId, holonName);
+      // First time we've seen this holon: the settings write also lists it
+      // in the global registry (core attachRegistry), so it is searchable.
       await this.db.put(holonId.toString(), 'settings', settings);
-      // First time we've seen this holon → record it in the global
-      // registry so the network stays enumerable. Best-effort: never
-      // throws, so a registry hiccup can't break settings creation.
-      await registerHolon(this.db, {
-        id: holonId,
-        name: settings.name,
-        purpose: settings.purpose,
-        type: holonId.toString().startsWith('-') ? 'community' : 'personal',
-      });
     } else {
       // Ensure all required fields exist by merging with default settings.
       // migrateEquation folds legacy `hours` and flat per-currency keys

@@ -20,6 +20,7 @@
 import { HoloSphere } from 'holosphere';
 import { attachLedger, type LedgerHost } from '../rea/attach.js';
 import { attachRosterMirror, type RosterMirrorHost } from '../tasks/roster-mirror.js';
+import { attachRegistry, type RegistryHost } from './registry.js';
 import { createWireRegistry } from 'holosphere/store';
 import { createShiftIdentityWire, createShiftWire } from '../shifts/wire.js';
 import { PROTOCOL_LENSES } from '../protocol/events.js';
@@ -139,6 +140,13 @@ export interface CreateHoloSphereOptions {
    */
   rosterMirror?: boolean;
   /**
+   * Keep every holon whose settings are written listed in the global
+   * `holons_registry` (see `attachRegistry`). On by default — a holon made on
+   * any surface is findable from every other. `false` only for tooling that
+   * must write raw records (imports, forensics).
+   */
+  registry?: boolean;
+  /**
    * Extra append-only lenses (kind 1808, every signed entry kept — see
    * `@holons/core/protocol`). Core's own logs (`APPEND_LENSES`) are always
    * registered; pass a list to add an app's, or `false` for none at all.
@@ -168,7 +176,7 @@ export function createHoloSphere(options: CreateHoloSphereOptions): HoloSphere;
 export function createHoloSphere(
   options: CreateHoloSphereOptions
 ): HoloSphere | Promise<HoloSphere> {
-  const { appName, privateKey, relays, store, nostr, strict, awaitReady, standardWires, extra, ledger, rosterMirror, appendLenses, enforce } = options;
+  const { appName, privateKey, relays, store, nostr, strict, awaitReady, standardWires, extra, ledger, rosterMirror, registry, appendLenses, enforce } = options;
 
   // A lens that owns a standard kind needs the store to consume that kind.
   // Built here so no UI has to know the registry exists.
@@ -221,5 +229,6 @@ export function createHoloSphere(
   if (authority) (instance as unknown as { _readAuthority?: unknown })._readAuthority = authority;
   if (ledger !== false) attachLedger(instance as unknown as LedgerHost);
   if (rosterMirror !== false) attachRosterMirror(instance as unknown as RosterMirrorHost);
+  if (registry !== false) attachRegistry(instance as unknown as RegistryHost);
   return awaitReady ? instance.ready().then(() => instance) : instance;
 }
