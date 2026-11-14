@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { bytesToHex } from '@noble/hashes/utils';
 import { createHoloSphere } from '../holosphere/factory.js';
 import { signerFromSecretKey } from '../holosphere/signers.js';
-import { createHolon, joinRequestRecords, parseJoinRequest, requestToJoin } from '../holons/index.js';
+import { createHolon, joinRequestRecords, parseJoinRequest } from '../holons/index.js';
 import { holonMembers } from '../protocol/founding.js';
 import { testKey } from '../protocol/testing.js';
 import {
@@ -34,6 +34,7 @@ import {
   dealCards,
   type OnboardingConfig,
 } from './index.js';
+import { signJoinRequest } from '../holons/testing.js';
 
 const founder = testKey();
 const alice = testKey();
@@ -180,7 +181,7 @@ async function setup() {
   const hs = instance();
   const { holon } = await createHolon(hs, signer(founder.sk), { appName: APP });
   await saveOnboarding(hs, holon, config);
-  const request = parseJoinRequest(requestToJoin(hs, holon, signer(alice.sk), { appName: APP, reason: 'Alice' }))!;
+  const request = parseJoinRequest(signJoinRequest(hs, holon, signer(alice.sk), { appName: APP, reason: 'Alice' }))!;
   return { hs, holon, request };
 }
 

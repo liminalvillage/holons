@@ -22,7 +22,7 @@
 import type { HoloSphere } from 'holosphere';
 import { writeAcceptance } from '../holosphere/authority.js';
 import { may } from '../holosphere/capabilities.js';
-import { joinRequestRecords } from '../holons/requests.js';
+import { joinRequestRecords, mayLink } from '../holons/requests.js';
 import { cleanName, isPlaceholderName, shortId } from '../identity/ids.js';
 import { normalizeOnboarding } from '../onboarding/config.js';
 import { holonMembers } from '../protocol/founding.js';
@@ -362,14 +362,17 @@ export async function readHolonFront(hs: HoloSphere, holon: string, opts: ReadHo
       viewer ? joinRequestRecords(hs, h) : Promise.resolve(null),
     ]);
     const linked = !!viewer && standing.status === 'accepted';
-    const pending = !linked && records?.get(viewer)?.status === 'pending';
+    const mine = records?.get(viewer);
+    const pending = !linked && mine?.status === 'pending';
+    // In, but agreed to another DNA than the holon's now: walk it again.
+    const request = pending ? (mayLink(mine, dnaHash(genes)) ? 'pending' : 'blocked') : null;
     return buildHolonFront({
       holon: h,
       settings,
       genes,
       members: members.size,
       anchored: standing.status !== 'open',
-      viewer: viewer ? { linked, admin: may(standing, 'dna'), request: pending ? 'pending' : null } : null,
+      viewer: viewer ? { linked, admin: may(standing, 'dna'), request } : null,
     });
   })();
 

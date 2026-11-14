@@ -17,10 +17,11 @@ import { createHoloSphere } from '../holosphere/factory.js';
 import { writeAcceptance } from '../holosphere/authority.js';
 import { signerFromSecretKey } from '../holosphere/signers.js';
 import { setFederationPartner } from '../federation/index.js';
-import { approveJoin, createHolon, parseJoinRequest, requestToJoin } from '../holons/index.js';
+import { approveJoin, createHolon, parseJoinRequest } from '../holons/index.js';
 import { lock, share } from '../privacy/audience.js';
 import { testKey } from '../protocol/testing.js';
 import { readOnboarding, refreshOnboarding, saveOnboarding, saveProfile, startOnboarding } from './index.js';
+import { signJoinRequest } from '../holons/testing.js';
 
 const APP = 'onboarding-privacy-test';
 const signer = (sk: Uint8Array) => signerFromSecretKey(bytesToHex(sk));
@@ -114,7 +115,7 @@ describe('a private holon', () => {
     expect(await titles(a, H)).not.toContain('secret plan');
 
     // She asks; the founder (answering for the holon) starts her onboarding.
-    const request = parseJoinRequest(requestToJoin(a, H, signer(alice.sk), { appName: APP, reason: 'Alice' }))!;
+    const request = parseJoinRequest(signJoinRequest(a, H, signer(alice.sk), { appName: APP, reason: 'Alice' }))!;
     const opts = { signer: signer(founder.sk), appName: APP };
     const started = await startOnboarding(f, H, request, {
       ...opts,
