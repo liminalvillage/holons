@@ -97,7 +97,7 @@ function leg(env: NodeJS.ProcessEnv, key: string, fallback: Leg): Leg {
 
 /**
  * Default tool families for spoken interaction. Drops the exotic domains
- * (dna/chromosome/scoring/settings/federation/…) a voice user won't reach;
+ * (dna/scoring/settings/federation/…) a voice user won't reach;
  * set VOICE_TOOLS=all (or a custom comma list of prefixes) to override.
  */
 const DEFAULT_TOOL_PREFIXES = [
