@@ -58,3 +58,16 @@ await hs.setSchema('quests', questsSchema);
 Holon-level `profile` and other per-id keys that aren't generic lenses
 are intentionally omitted. Add a schema here when a real write site
 appears.
+
+## Not a lens: the front page contract
+
+[`holon-front.schema.json`](holon-front.schema.json) is **not** a lens schema
+and is never passed to `setSchema`: nothing stores a front page. It is the
+wire contract of a holon's front page — the `HolonFront` view model that
+`@holons/core/dna` `buildHolonFront` builds and every surface renders, served
+publicly as `/api/front/<holon>`. It is plain draft-07, so a reader outside
+the monorepo (the website) validates with a default `new Ajv()`.
+
+[`examples/`](examples) holds fronts built by core's own spec
+(`src/dna/front.test.ts` writes them with `vitest -u` and fails when they
+drift), for readers to test against without running core.

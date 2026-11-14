@@ -58,3 +58,26 @@ export {
   type WalkState,
   type WalkStep,
 } from './walk.js';
+
+export {
+  FRONT_CATCH_UP_MS,
+  FRONT_TEASER_CHARS,
+  HOLON_FRONT_SCHEMA,
+  HolonFrontUnreachable,
+  WORDS_PER_MINUTE,
+  buildHolonFront,
+  countWords,
+  readHolonFront,
+  readingMinutes,
+  teaserOf,
+  type AlleleView,
+  type FrontCta,
+  type FrontRef,
+  type GeneLayout,
+  type GeneView,
+  type HolonFront,
+  type HolonFrontInput,
+  type HolonFrontViewer,
+  type HowStep,
+  type ReadHolonFrontOptions,
+} from './front.js';

@@ -1,0 +1,623 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://hubs.network/schemas/holon-front.schema.json",
+  "title": "HolonFront",
+  "description": "A holon's front page: the one view model every surface renders, and the wire contract of the public /api/front/<holon> endpoint. Built by @holons/core/dna buildHolonFront; a reader rejects a document whose `schema` it does not know. Not a lens schema: nothing stores this.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "holon",
+    "name",
+    "about",
+    "teaser",
+    "empty",
+    "genes",
+    "dna",
+    "counts",
+    "walk",
+    "after",
+    "how",
+    "members",
+    "telegram",
+    "viewer"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1,
+      "description": "Wire version of this document."
+    },
+    "holon": {
+      "type": "string",
+      "minLength": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The holon's name, or its short id when it has none."
+    },
+    "picture": {
+      "type": "string",
+      "pattern": "^https?://\\S+$"
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9a-f]{6}$",
+      "description": "Colour band: the purpose gene's colour, else the holon's chosen colour. Absent: the surface's own colour for the holon."
+    },
+    "about": {
+      "type": "string",
+      "description": "The purpose gene's blurb, else the settings description, else ''."
+    },
+    "teaser": {
+      "type": "string",
+      "description": "`about` cut to 280 characters at a word, with an ellipsis; equal to `about` when it fits."
+    },
+    "empty": {
+      "type": "boolean",
+      "description": "The holon has written no DNA yet."
+    },
+    "genes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/gene"
+      },
+      "description": "In front-page order."
+    },
+    "dna": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hash",
+        "short",
+        "updated"
+      ],
+      "properties": {
+        "hash": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          ],
+          "description": "The DNA hash a request acknowledges; null when no gene asks for an acknowledgement."
+        },
+        "short": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}$"
+            }
+          ]
+        },
+        "updated": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "ISO 8601 of the latest gene edit."
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "genes",
+        "alleles",
+        "parts",
+        "words",
+        "minutes"
+      ],
+      "properties": {
+        "genes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "alleles": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "parts": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Steps of the walk."
+        },
+        "words": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Words in the walk's genes."
+        },
+        "minutes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "words / 200, rounded up; at least 1 when there is anything to read."
+        }
+      }
+    },
+    "walk": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/walkStep"
+      }
+    },
+    "after": {
+      "type": "array",
+      "description": "The holon's onboarding steps that follow the request.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "how": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/howStep"
+      },
+      "description": "How joining works, in order."
+    },
+    "members": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "telegram": {
+      "type": "boolean",
+      "description": "Telegram-born holon: the Telegram bot can take the request."
+    },
+    "viewer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cta",
+        "edit"
+      ],
+      "properties": {
+        "cta": {
+          "type": "string",
+          "enum": [
+            "apply",
+            "continue",
+            "review",
+            "linked",
+            "none"
+          ]
+        },
+        "edit": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "icon": {
+      "type": "string",
+      "enum": [
+        "home",
+        "map",
+        "compass",
+        "earth",
+        "flag",
+        "book",
+        "scroll",
+        "link",
+        "calendar",
+        "clock",
+        "key",
+        "lock",
+        "shield",
+        "food",
+        "bed",
+        "tools",
+        "solar",
+        "bolt",
+        "industry",
+        "chip",
+        "code",
+        "robot",
+        "video",
+        "chat",
+        "mail",
+        "send",
+        "phone",
+        "person",
+        "person-check",
+        "people",
+        "community",
+        "handshake",
+        "hand",
+        "care",
+        "teach",
+        "walk",
+        "travel",
+        "coins",
+        "gift",
+        "heart",
+        "star",
+        "trophy",
+        "balance",
+        "seedling",
+        "leaf",
+        "tree",
+        "water",
+        "sun",
+        "moon",
+        "fire",
+        "spa",
+        "idea",
+        "eye",
+        "search",
+        "target",
+        "network",
+        "cycle",
+        "lab",
+        "broom",
+        "pencil",
+        "check",
+        "info",
+        "warning",
+        "dna"
+      ]
+    },
+    "link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "href"
+      ],
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "href": {
+          "type": "string"
+        },
+        "icon": {
+          "$ref": "#/definitions/icon"
+        }
+      }
+    },
+    "frontRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gene",
+        "title"
+      ],
+      "properties": {
+        "gene": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+        },
+        "title": {
+          "type": "string"
+        }
+      }
+    },
+    "detail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "body"
+      ],
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/link"
+          }
+        },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "src",
+            "alt"
+          ],
+          "properties": {
+            "src": {
+              "type": "string"
+            },
+            "alt": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "allele": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "expressedIn"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+        },
+        "title": {
+          "type": "string"
+        },
+        "kicker": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "icon": {
+          "$ref": "#/definitions/icon"
+        },
+        "link": {
+          "$ref": "#/definitions/link"
+        },
+        "detail": {
+          "$ref": "#/definitions/detail"
+        },
+        "ref": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,63}/[a-z0-9][a-z0-9_-]{0,63}$",
+          "description": "This card shows <gene>/<allele>; its content is already that allele's."
+        },
+        "from": {
+          "$ref": "#/definitions/frontRef",
+          "description": "A ref only: the gene the card lives in."
+        },
+        "expressedIn": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/frontRef"
+          },
+          "description": "The other genes that show this card."
+        }
+      }
+    },
+    "gene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "blurb",
+        "order",
+        "ack",
+        "alleles",
+        "lang",
+        "updated",
+        "hash",
+        "layout",
+        "words",
+        "expressedIn"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "purpose",
+            "values",
+            "agreements",
+            "practices",
+            "roles",
+            "tools",
+            "terms",
+            "custom"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "blurb": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9a-f]{6}$"
+        },
+        "order": {
+          "type": "number"
+        },
+        "ack": {
+          "type": "string",
+          "enum": [
+            "none",
+            "read",
+            "agree"
+          ]
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/link"
+          }
+        },
+        "alleles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/allele"
+          }
+        },
+        "lang": {
+          "type": "string"
+        },
+        "updated": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "geneHash: what the walk acknowledges."
+        },
+        "layout": {
+          "type": "string",
+          "enum": [
+            "cards",
+            "longform",
+            "blurb"
+          ]
+        },
+        "words": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expressedIn": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/frontRef"
+          }
+        }
+      }
+    },
+    "walkStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gene",
+        "hash",
+        "kind",
+        "title",
+        "ack"
+      ],
+      "properties": {
+        "gene": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "purpose",
+            "values",
+            "agreements",
+            "practices",
+            "roles",
+            "tools",
+            "terms",
+            "custom"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "ack": {
+          "type": "string",
+          "enum": [
+            "read",
+            "agree"
+          ]
+        }
+      }
+    },
+    "howStep": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "parts",
+            "minutes"
+          ],
+          "properties": {
+            "kind": {
+              "const": "read"
+            },
+            "parts": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "minutes": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "send"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id",
+            "title"
+          ],
+          "properties": {
+            "kind": {
+              "const": "step"
+            },
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "linked"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
