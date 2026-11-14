@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it } from 'vitest';
 import { assertPrivatizable, audienceTag, holonOfTag, holonsOf, isPubkeyHolonId, normScope } from './scope.js';
+import { GUARDED_LENSES } from '../holosphere/capabilities.js';
 
 const PK = 'ab'.repeat(32);
 
@@ -38,6 +39,8 @@ describe('scope helpers', () => {
 
   it('assertPrivatizable names the reason', () => {
     expect(() => assertPrivatizable('settings')).toThrow(/cannot be private/);
+    expect(() => assertPrivatizable('genes')).toThrow(/cannot be private/);
+    for (const lens of GUARDED_LENSES) expect(() => assertPrivatizable(lens)).toThrow(/cannot be private/);
     expect(() => assertPrivatizable('')).toThrow(/lens name/);
     expect(() => assertPrivatizable('claims', { isAppend: () => true })).toThrow(/append-only/);
     expect(() => assertPrivatizable('events', { isStandardPrimary: () => true })).toThrow(/standard Nostr kind/);

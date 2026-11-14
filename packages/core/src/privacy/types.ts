@@ -83,7 +83,11 @@ export const GRANT_SUBJECT = 'holons/grant';
 export const GRANT_TYPE = 'holons/grant';
 export const GRANT_VERSION = 2;
 
-/** Lenses that can never be private (the machinery itself, or public by design). */
+/**
+ * Lenses that can never be private (the machinery itself, or public by
+ * design). `genes` is the holon's DNA, a guarded lens read before joining.
+ */
 export const NEVER_PRIVATE_LENSES: readonly string[] = Object.freeze([
   'settings', '_vault', '_members', '_check', 'users', 'federation', 'holons_registry', 'schemas', 'hubclaims',
+  'genes',
 ]);

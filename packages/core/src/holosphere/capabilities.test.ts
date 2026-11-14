@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { createHoloSphere } from './factory.js';
 import { roleOfSync, writeAcceptance } from './authority.js';
-import { CAPABILITIES, GUARDED_SETTINGS_FIELDS, may, requiredRole, whyNot } from './capabilities.js';
+import { CAPABILITIES, GUARDED_LENSES, GUARDED_SETTINGS_FIELDS, may, requiredRole, whyNot } from './capabilities.js';
 import { getFederationSnapshot } from '../federation/snapshot.js';
 import { testKey } from '../protocol/testing.js';
 
@@ -21,8 +21,10 @@ describe('the capability table', () => {
     expect(requiredRole('federation')).toBe('admin');
     expect(requiredRole('settings.guarded')).toBe('admin');
     expect(GUARDED_SETTINGS_FIELDS).toContain('valueEquation');
+    expect(requiredRole('dna')).toBe('admin');
+    expect(GUARDED_LENSES).toEqual(['genes']);
     expect(Object.keys(CAPABILITIES).sort()).toEqual(
-      ['content', 'federation', 'members', 'policy', 'privacy.lock', 'privacy.override', 'settings.guarded'],
+      ['content', 'dna', 'federation', 'members', 'policy', 'privacy.lock', 'privacy.override', 'settings.guarded'],
     );
   });
 
@@ -30,6 +32,10 @@ describe('the capability table', () => {
     expect(may('member', 'content')).toBe(true);
     expect(may('member', 'federation')).toBe(false);
     expect(may('admin', 'federation')).toBe(true);
+    expect(may('member', 'dna')).toBe(false);
+    expect(may('admin', 'dna')).toBe(true);
+    expect(may({ status: 'open', role: null, anchor: null, source: null }, 'dna')).toBe(true);
+    expect(whyNot({ status: 'accepted', role: 'member', anchor: 'x', source: 'log' }, 'dna')).toMatch(/admin/);
     expect(may(null, 'content')).toBe(false);
     expect(may({ status: 'open', role: null, anchor: null, source: null }, 'federation')).toBe(true);
     expect(may({ status: 'held', role: null, anchor: 'x', source: 'log' }, 'content')).toBe(false);

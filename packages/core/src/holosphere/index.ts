@@ -15,6 +15,7 @@ export {
 } from './factory.js';
 export {
   CAPABILITIES,
+  GUARDED_LENSES,
   GUARDED_SETTINGS_FIELDS,
   HOLON_OWNED_GLOBAL_TABLES,
   ROLES,
