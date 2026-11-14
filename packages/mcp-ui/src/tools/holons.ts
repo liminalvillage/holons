@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Thin MCP wrappers around @holons/core/holons and @holons/core/linking:
-// founding a holon with this instance's key, seating keys (NIP-29 shaped
-// join requests), the onboarding a holon walks newcomers through
+// founding a holon with this instance's key, asking to join (`holon_apply`:
+// the NIP-29 request carries the DNA hash the person agreed to, @holons/core/dna),
+// seating keys, the onboarding a holon walks newcomers through
 // (@holons/core/onboarding), the holons this key keeps, and the
 // challenge–response link to a Telegram chat. Every write is signed by the MCP key; it counts
 // where that key is seated (an admin, for seating and linking).
@@ -14,6 +15,8 @@ import {
   approveJoin,
   createHolon,
   forgetHolon,
+  holonDnaHash,
+  joinReadiness,
   leaveHolon,
   listJoinRequests,
   myHolons,
@@ -153,14 +156,14 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
   );
 
   server.registerTool(
-    'holon_join_request',
+    'holon_apply',
     {
       description:
-        "Ask to join a holon as this MCP key: a NIP-29 kind-9021 request carrying a display name and the DNA hash the person agreed to. Before calling, show the person the holon's DNA and get their explicit agreement; pass its hash as `acknowledged` (null only when the holon has no DNA to agree to). A hash that is not the current one is refused (the DNA changed: show it again). An admin seats the key with holon_join_approve; the bot of a Telegram group announces it there. `telegramId` claims a Telegram identity, which counts only when this key is the one that id derives.",
+        "Ask to join a holon as this MCP key: a NIP-29 kind-9021 request carrying a display name and the DNA hash the person agreed to (the one way to ask; there is no request without it). Before calling: dna_get (or dna_walk_steps), show the person the holon's DNA, and get their explicit agreement to it; pass its hash (`dna.hash`) as `acknowledged`. Never pass a hash the person did not agree to. `acknowledged` is null only when the holon has no DNA to agree to. A hash that is not the current one is refused with the current one (the DNA changed since: show it again); so is none when there is a DNA. An admin links the key with holon_join_approve; a Telegram-born holon's bot may link it itself once the hash is the current one. `telegramId` claims a Telegram identity, which counts only when this key is the one that id derives.",
       inputSchema: {
         holon: z.string(),
-        acknowledged: z.string().regex(/^[0-9a-fA-F]{64}$/).nullable().optional(),
-        name: z.string().optional(),
+        acknowledged: z.string().regex(/^[0-9a-fA-F]{64}$/).nullable().optional().describe('The DNA hash the person agreed to (dna_get `dna.hash`); null when the holon has none.'),
+        name: z.string().optional().describe('The display name that goes with the request.'),
         telegramId: z.string().regex(/^\d{1,20}$/).optional(),
       },
     },
@@ -180,12 +183,22 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
   );
   server.registerTool(
     'holon_join_requests',
-    { description: 'The pending join requests of a holon (verified kind-9021 events, newest per key, seated keys left out), collected over a short window.', inputSchema: { holon: z.string(), windowMs: z.number().int().min(100).max(10000).optional() } },
+    {
+      description:
+        "The pending join requests of a holon (verified kind-9021 events, newest per key, seated keys left out), collected over a short window. Each carries the DNA hash it agreed to (`dna`) and its `readiness` against the holon's DNA as it is now: acknowledged, outdated (agreed to an older version), missing (agreed to none), none-required (the holon has no DNA to agree to) or unknown (the genes could not be read). Only acknowledged and none-required keys are ever linked without an admin; holon_join_approve may still link any.",
+      inputSchema: { holon: z.string(), windowMs: z.number().int().min(100).max(10000).optional() },
+    },
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
         const requests = await listJoinRequests(hs, args.holon, { windowMs: args.windowMs });
-        return ok({ holon: args.holon, requests, names: await namesFor(hs, args.holon, requests.map((r) => r.pubkey)) });
+        const current = await holonDnaHash(hs, args.holon).catch(() => undefined);
+        return ok({
+          holon: args.holon,
+          dna: current ?? null,
+          requests: requests.map((r) => ({ ...r, readiness: joinReadiness(r, current) })),
+          names: await namesFor(hs, args.holon, requests.map((r) => r.pubkey)),
+        });
       } catch (err) {
         return fail((err as Error).message);
       }
@@ -195,7 +208,7 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
     'onboarding_get',
     {
       description:
-        "A holon's onboarding: the steps a newcomer walks before their key is linked (`settings.onboarding`), and who is walking them now. With `pubkey`: that one person's progress, card by card.",
+        "A holon's onboarding: the steps a newcomer walks before their key is linked (`settings.onboarding`), and who is walking them now, each with `dna` (their request's standing with the holon's DNA as it is now: acknowledged, outdated, missing, none-required) and `blocked: 'dna'` when every step is done but the key waits for a fresh request with the current DNA hash (holon_apply). With `pubkey`: that one person's progress, card by card.",
       inputSchema: { holon: z.string(), pubkey: z.string().optional() },
     },
     async (args) => {
@@ -206,7 +219,7 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
           return view ? ok(view) : fail('That key is not onboarding in this holon.');
         }
         const [config, people] = await Promise.all([readOnboarding(hs, args.holon), listOnboarding(hs, args.holon)]);
-        return ok({ holon: args.holon, config, onboarding: people.map((v) => ({ pubkey: v.pubkey, name: v.name, step: v.step, home: v.home })) });
+        return ok({ holon: args.holon, config, onboarding: people.map((v) => ({ pubkey: v.pubkey, name: v.name, step: v.step, home: v.home, dna: v.dna, blocked: v.blocked })) });
       } catch (err) {
         return fail((err as Error).message);
       }
@@ -273,7 +286,7 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
     'onboarding_confirm',
     {
       description:
-        "Vouch for an `admin` card of someone's onboarding (the call happened, the buddy met them), as an admin of the holon; they move on, and once every step is done their key is linked. Without `step`/`card`, only re-reads where they stand (and links them when they are through).",
+        "Vouch for an `admin` card of someone's onboarding (the call happened, the buddy met them), as an admin of the holon; they move on, and once every step is done their key is linked (not while their request lacks the holon's current DNA: onboarding_get shows `blocked: 'dna'`, they ask again with holon_apply). Without `step`/`card`, only re-reads where they stand (and links them when they are through).",
       inputSchema: { holon: z.string(), pubkey: z.string(), step: z.string().optional(), card: z.string().optional() },
     },
     async (args) => {
