@@ -409,14 +409,15 @@ export default class JoinRequests {
   }
 
   /**
-   * `/start onboard_<holon>` in a private chat: the person asks from
-   * Telegram itself. Their request is signed with the key their Telegram id
-   * derives, so it is proven like a kiosk login's, and answered at once.
-   * `acknowledged` is the DNA hash they agreed to (the walk's); a holon
-   * with a DNA they have not agreed to (or that changed since) gets no
-   * request — they are pointed at its DNA first.
+   * The person asks from Telegram itself (HolonDna.js walks them through
+   * the holon's DNA first, then calls this). Their request is signed with
+   * the key their Telegram id derives, so it is proven like a kiosk login's,
+   * and answered at once. `acknowledged` is the DNA hash they agreed to (the
+   * walk's); a holon with a DNA they have not agreed to (or that changed
+   * since) gets no request: `onDna` runs (the walk, again) or, without it,
+   * they are pointed at the holon's DNA.
    */
-  async askFromTelegram(ctx, holon, acknowledged = null) {
+  async askFromTelegram(ctx, holon, acknowledged = null, { onDna } = {}) {
     const language = await this.language(holon);
     const from = ctx.from;
     if (!from?.id || !this.secret || !isTelegramGroup(holon)) {
@@ -446,32 +447,24 @@ export default class JoinRequests {
     } catch (e) {
       if (!(e instanceof DnaNotAcknowledged || e instanceof DnaChanged))
         throw e;
-      await ctx.reply(
-        translated(
-          language,
-          'onbDnaFirst',
-          'Before asking to join, read and agree to the DNA of this holon: {{url}}',
-          { url: `https://hubs.network/${encodeURIComponent(holon)}/apply` }
-        )
-      );
+      if (onDna) await onDna(e);
+      else
+        await ctx.reply(
+          translated(
+            language,
+            'onbDnaFirst',
+            'Before asking to join, read and agree to the DNA of this holon: {{url}}',
+            { url: `https://hubs.network/${encodeURIComponent(holon)}/apply` }
+          )
+        );
       return 'dna';
     }
     const request = parseJoinRequest(event, holon);
     if (!request) return 'refused';
     this.seen.add(request.eventId);
     const outcome = await this.handle(request);
-    if (outcome === 'known') {
-      const result = await this.onboarding.nudge(holon, request.pubkey);
-      if (result) await this.onboarding.announce(holon, result, true);
-      else
-        await ctx.reply(
-          translated(
-            language,
-            'onbAlreadyAsked',
-            'You already asked; the admins of this holon decide.'
-          )
-        );
-    } else if (outcome === 'seated' || outcome === 'linked') {
+    if (outcome === 'known') await this.continueFromTelegram(ctx, holon);
+    else if (outcome === 'seated' || outcome === 'linked') {
       await ctx.reply(
         translated(
           language,
@@ -497,6 +490,28 @@ export default class JoinRequests {
       );
     }
     return outcome;
+  }
+
+  /**
+   * Their request is already in: re-read their onboarding and say where it
+   * stands (or that the admins decide).
+   */
+  async continueFromTelegram(ctx, holon) {
+    const language = await this.language(holon);
+    const from = ctx.from;
+    if (!from?.id || !this.secret) return null;
+    const { publicKey } = deriveTelegramNostrKey(String(from.id), this.secret);
+    const result = await this.onboarding.nudge(holon, publicKey);
+    if (result) await this.onboarding.announce(holon, result, true);
+    else
+      await ctx.reply(
+        translated(
+          language,
+          'onbAlreadyAsked',
+          'You already asked; the admins of this holon decide.'
+        )
+      );
+    return result;
   }
 
   /** Approve / Decline, pressed in the group. Chat admins only. */

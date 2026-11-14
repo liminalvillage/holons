@@ -64,6 +64,8 @@ Linked keys are published in the kind-31926 attestation for `telegram:<your id>`
 - `/spoon` - Federates chats, bringing together actions, offers and needs
 - `/fork` - Unbinds federated chats
 - `/federate` - Federates with another holon
+- `/dna` - In a group: what the holon stands for (its DNA, one button per part) and the way to ask to join it. In a private chat: `/dna <holon id>`
+- `/apply <holon id>` - Private chat: walk the holon's DNA (one part per message) and ask to join
 
 ## Content Management
 - `/tag [tag]` - Saves content under the specified tag
