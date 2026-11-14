@@ -553,3 +553,124 @@ describe('readHolonFront', () => {
     await expect(readHolonFront(stuck, H, { catchUpMs: 20 })).rejects.toBeInstanceOf(HolonFrontUnreachable);
   });
 });
+
+// ── readHolonFront on a cold instance ──────────────────────────────────────
+//
+// The deployed front reads from a fresh in-memory instance whose relay wire
+// comes up after construction and whose pulls are bounded: a read goes ahead
+// with whatever is local when its pull runs late. These specs stand a fake
+// relay in front of a cold instance — it serves a founded holon's envelopes
+// per lens, each after its own delay — so the race is the real one.
+
+interface LateRelay {
+  /** The wire comes up this long after the instance is built (default 0). */
+  upAfter?: number;
+  /** Per lens: how long the relay takes to answer; `Infinity` never answers. */
+  delay?: Record<string, number>;
+  /** How long one read waits for its pull before going ahead (default 20 ms). */
+  bound?: number;
+}
+
+const reader = testKey();
+
+/** A cold reader of `source`'s envelopes, behind a relay that answers late. */
+function coldReader(source: HoloSphere, opts: LateRelay = {}): HoloSphere {
+  const { upAfter = 0, delay = {}, bound = 20 } = opts;
+  const hs = createHoloSphere({ appName: 'front-test', privateKey: bytesToHex(reader.sk), store: { adapter: 'memory' } });
+  type Store = { exportEvents(q: { holon?: string | null; lens?: string }): unknown[]; importEvents(e: unknown[], o: { origin: string }): void };
+  const target = hs as unknown as { store: Store; _relays: string[]; _ready: Promise<unknown>; _relayTransport: unknown };
+  const from = (source as unknown as { store: Store }).store;
+  const synced = new Set<string>();
+  const pulls = new Map<string, Promise<void>>();
+  const transport = {
+    ensureSync(holon: string | null, lens: string) {
+      const key = `${holon}|${lens}`;
+      if (synced.has(key)) return Promise.resolve();
+      let pull = pulls.get(key);
+      if (!pull) {
+        const ms = delay[lens] ?? 0;
+        const answered = ms === Infinity ? new Promise<void>(() => {}) : new Promise<void>((r) => setTimeout(r, ms));
+        pull = answered.then(() => {
+          target.store.importEvents(from.exportEvents({ holon, lens }), { origin: 'remote' });
+          synced.add(key);
+        });
+        pulls.set(key, pull);
+      }
+      return Promise.race([pull, new Promise<void>((r) => setTimeout(r, bound))]);
+    },
+    isSynced: (holon: string | null, lens: string) => synced.has(`${holon}|${lens}`),
+    watch: () => () => {},
+    close() {},
+  };
+  target._relays = ['wss://late.invalid'];
+  target._ready = target._ready.then(() => new Promise((r) => setTimeout(r, upAfter))).then(() => {
+    target._relayTransport = transport;
+  });
+  return hs;
+}
+
+describe('readHolonFront on a cold instance', () => {
+  const H = 'holon_frontcoldcold1';
+
+  async function source() {
+    const hs = instance();
+    await foundHolon(hs, H, { name: 'Cold Holon' });
+    await putGene(hs, H, { ...values, alleles: [values.alleles[0]] }, { now: () => new Date('2026-11-10T00:00:00Z') });
+    await putGene(hs, H, purpose, { now: () => new Date('2026-11-11T00:00:00Z') });
+    return hs;
+  }
+
+  it('reads the DNA when the relay wire comes up after the read starts', async () => {
+    const src = await source();
+    const hs = coldReader(src, { upAfter: 30 });
+    const front = await readHolonFront(hs, H, { catchUpMs: 2000 });
+    expect(front).toMatchObject({ empty: false, viewer: { cta: 'apply' } });
+    expect(front.genes.map((g) => g.id)).toEqual(['purpose', 'values']);
+    await Promise.all([hs.close(), src.close()]);
+  });
+
+  it('waits for genes that arrive after the authority, slower than the first pull', async () => {
+    const src = await source();
+    const hs = coldReader(src, { delay: { genes: 150 } });
+    const front = await readHolonFront(hs, H, { catchUpMs: 2000 });
+    expect(front.genes.map((g) => g.id)).toEqual(['purpose', 'values']);
+    expect(front.dna.hash).toBe(dnaHash(await readGenes(src, H)));
+    await Promise.all([hs.close(), src.close()]);
+  });
+
+  it('waits for an authority that arrives after the genes', async () => {
+    const src = await source();
+    const hs = coldReader(src, { delay: { _members: 150, settings: 150 } });
+    const front = await readHolonFront(hs, H, { catchUpMs: 2000 });
+    expect(front).toMatchObject({ empty: false, name: 'Cold Holon', viewer: { cta: 'apply' } });
+    expect(front.genes.map((g) => g.id)).toEqual(['purpose', 'values']);
+    await Promise.all([hs.close(), src.close()]);
+  });
+
+  it('throws HolonFrontUnreachable rather than show no DNA when the genes never arrive', async () => {
+    const src = await source();
+    const hs = coldReader(src, { delay: { genes: Infinity } });
+    await expect(readHolonFront(hs, H, { catchUpMs: 500 })).rejects.toBeInstanceOf(HolonFrontUnreachable);
+    await Promise.all([hs.close(), src.close()]);
+  });
+
+  it('throws HolonFrontUnreachable rather than say nobody speaks for it when the authority never arrives', async () => {
+    const src = await source();
+    const hs = coldReader(src, { delay: { _members: Infinity, settings: Infinity } });
+    await expect(readHolonFront(hs, H, { catchUpMs: 500 })).rejects.toBeInstanceOf(HolonFrontUnreachable);
+    await Promise.all([hs.close(), src.close()]);
+  });
+
+  it('still shows no gene of a holon nobody speaks for, once the relay has answered', async () => {
+    const src = instance();
+    const nobody = '-1009999999998';
+    const store = (src as unknown as { store: { apply(e: unknown, o: unknown): void } }).store;
+    const forged = { ...terms, alleles: [{ id: 'free', title: 'Free', body: 'FORGED BY STRANGER' }], updated: '2026-11-12T00:00:00.000Z' };
+    store.apply(buildEvent({ holon: nobody, lens: GENES_LENS, item: forged, sk: testKey().sk, created_at: Math.floor(Date.now() / 1000), extraTags: [['n', 'front-test']] }), { origin: 'remote' });
+    const hs = coldReader(src, { upAfter: 30, delay: { genes: 60 } });
+    const front = await readHolonFront(hs, nobody, { catchUpMs: 2000 });
+    expect(front).toMatchObject({ empty: true, genes: [], viewer: { cta: 'none' } });
+    expect(JSON.stringify(front)).not.toContain('FORGED BY STRANGER');
+    await Promise.all([hs.close(), src.close()]);
+  });
+});

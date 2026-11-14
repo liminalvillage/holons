@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildEvent } from 'holosphere/nostr-events.js';
 import { createHoloSphere } from './factory.js';
-import { createReadAuthority, resolveHolonAuthority, writeAcceptance } from './authority.js';
+import { authoritySettled, caughtUp, createReadAuthority, resolveHolonAuthority, writeAcceptance } from './authority.js';
 import { testKey } from '../protocol/testing.js';
 
 const APP = 'authority-core-test';
@@ -264,5 +264,53 @@ describe('vouchFor: pointers and copies an unseated key wrote', () => {
     const authority = createReadAuthority();
     expect(await authority.vouchFor(hs, { holon: R, lens: 'quests', id: 'c1', claim: copy, author: partner.pk, createdAt: T0 + 5, resolved: copy })).toBe(false);
     await hs.close();
+  });
+});
+
+describe('a cold instance', () => {
+  // A relay wire that comes up a moment after the instance is built, as on a
+  // fresh serverless function, serving `source`'s envelopes.
+  function late(source: ReturnType<typeof sphere>, upAfter: number) {
+    const hs = sphere();
+    const t = hs as unknown as { _relays: string[]; _ready: Promise<unknown>; _relayTransport: unknown };
+    const synced = new Set<string>();
+    const transport = {
+      async ensureSync(holon: string | null, lens: string) {
+        hs.store.importEvents(source.store.exportEvents({ holon, lens }), { origin: 'remote' });
+        synced.add(`${holon}|${lens}`);
+      },
+      isSynced: (holon: string | null, lens: string) => synced.has(`${holon}|${lens}`),
+      watch: () => () => {},
+      close() {},
+    };
+    t._relays = ['wss://late.invalid'];
+    t._ready = t._ready.then(() => new Promise((r) => setTimeout(r, upAfter))).then(() => {
+      t._relayTransport = transport;
+    });
+    return hs;
+  }
+
+  it('writeAcceptance waits for the relay wire before it reads the log: never "open" for want of a pull', async () => {
+    const bot = testKey();
+    const source = sphere(bot.sk);
+    await source.foundHolon('-900', { at: T0 });
+    const hs = late(source, 30);
+    expect(caughtUp(hs, '-900', '_members')).toBe(false);
+    expect(authoritySettled(hs, '-900')).toBe(false);
+    expect(await writeAcceptance(hs, '-900', '')).toMatchObject({ status: 'held', anchor: bot.pk, source: 'log' });
+    expect(authoritySettled(hs, '-900')).toBe(true);
+    await Promise.all([hs.close(), source.close()]);
+  });
+
+  it('a local-only instance is always caught up, and a pubkey holon or an h3 cell always settled', async () => {
+    const hs = sphere();
+    await hs.ready();
+    expect(caughtUp(hs, '-901', '_members')).toBe(true);
+    const relayed = late(hs, 50);
+    const key = testKey().pk;
+    expect(authoritySettled(relayed, key)).toBe(true);
+    expect(authoritySettled(relayed, '89283082803ffff')).toBe(true);
+    expect(authoritySettled(relayed, '-901')).toBe(false);
+    await Promise.all([relayed.close(), hs.close()]);
   });
 });

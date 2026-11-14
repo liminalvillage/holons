@@ -20,7 +20,7 @@
 // shape is `schemas/holon-front.schema.json`; a spec keeps the two equal.
 
 import type { HoloSphere } from 'holosphere';
-import { writeAcceptance } from '../holosphere/authority.js';
+import { authoritySettled, caughtUp, writeAcceptance } from '../holosphere/authority.js';
 import { may } from '../holosphere/capabilities.js';
 import { readHolonPeople } from '../holons/people.js';
 import { joinRequestRecords, mayLink } from '../holons/requests.js';
@@ -29,7 +29,7 @@ import { normalizeOnboarding } from '../onboarding/config.js';
 import { readHolonColor } from '../settings/color.js';
 import { readHolonSettings } from '../settings/persistence.js';
 import { isTelegramGroupId } from '../tasks/telegram.js';
-import { normalizeGene, purposeAbout, readGenes, sortGenes } from './genes.js';
+import { GENES_LENS, normalizeGene, purposeAbout, readGenes, sortGenes } from './genes.js';
 import type { Allele, Gene } from './types.js';
 import { dnaHash, geneHash, shortHash } from './version.js';
 import { walkSteps, type WalkStep } from './walk.js';
@@ -337,14 +337,23 @@ export interface ReadHolonFrontOptions {
 /** The default bound on {@link readHolonFront}'s relay catch-up. */
 export const FRONT_CATCH_UP_MS = 4000;
 
+/** Pause between two looks at a catch-up that has not finished. */
+const SETTLE_POLL_MS = 200;
+
 /**
  * Read a holon's front page: genes, settings (with the onboarding), member
  * count and — when a viewer is named — where that key stands. Every read is
  * an authorized one: the instance must enforce reads (the factory's
  * default), or a gene a member forged would show as the holon's word. A
  * holon nobody speaks for shows no genes at all (see the gather below).
- * Throws {@link HolonFrontUnreachable} when the catch-up takes longer than
- * `catchUpMs`.
+ *
+ * "No genes" is only ever said when it is the relays' answer. On a cold
+ * instance the holon's authority (`_members`, anchored settings) or its
+ * genes may not have arrived when the first read returns — the read's own
+ * bound let it go ahead with an empty store — and that would read as "nobody
+ * speaks for it" or "it has no DNA". Until both are caught up the front
+ * looks again; past `catchUpMs` it throws {@link HolonFrontUnreachable}
+ * rather than present an unknown as an empty DNA.
  */
 export async function readHolonFront(hs: HoloSphere, holon: string, opts: ReadHolonFrontOptions = {}): Promise<HolonFront> {
   if (!(hs as { enforceActive?: boolean }).enforceActive) throw new Error('readHolonFront needs a HoloSphere that enforces reads');
@@ -352,18 +361,31 @@ export async function readHolonFront(hs: HoloSphere, holon: string, opts: ReadHo
   if (!h) throw new Error('readHolonFront needs a holon id');
   const viewer = String(opts.viewer ?? '').toLowerCase();
   const ms = opts.catchUpMs ?? FRONT_CATCH_UP_MS;
+  let done = false;
 
   const gather = (async () => {
-    const [genes, settings, people, standing, records] = await Promise.all([
+    // '' (not undefined): never stand in the instance's own key for an anonymous visitor.
+    const stand = () => writeAcceptance(hs, h, viewer);
+    let [genes, settings, people, standing, records] = await Promise.all([
       readGenes(hs, h),
       readHolonSettings(hs, h),
       // People, not keys: the holon's own key, the bot and one person's
       // several keys are not counted apart (see holonPeople).
       readHolonPeople(hs, h),
-      // '' (not undefined): never stand in the instance's own key for an anonymous visitor.
-      writeAcceptance(hs, h, viewer),
+      stand(),
       viewer ? joinRequestRecords(hs, h) : Promise.resolve(null),
     ]);
+    // Not settled yet: an `open` standing whose log has not arrived, or an
+    // anchored holon whose genes have not. Look again until they are (the
+    // race below gives up for us).
+    for (;;) {
+      const unsettled = standing.status === 'open' ? !authoritySettled(hs, h) : !caughtUp(hs, h, GENES_LENS);
+      if (!unsettled || done) break;
+      await new Promise((r) => setTimeout(r, SETTLE_POLL_MS));
+      if (done) break;
+      standing = await stand();
+      if (standing.status !== 'open') [genes, settings, people] = await Promise.all([readGenes(hs, h), readHolonSettings(hs, h), readHolonPeople(hs, h)]);
+    }
     const linked = !!viewer && standing.status === 'accepted';
     const mine = records?.get(viewer);
     const pending = !linked && mine?.status === 'pending';
@@ -394,6 +416,7 @@ export async function readHolonFront(hs: HoloSphere, holon: string, opts: ReadHo
   try {
     return await Promise.race([gather, timeout]);
   } finally {
+    done = true;
     clearTimeout(timer);
   }
 }

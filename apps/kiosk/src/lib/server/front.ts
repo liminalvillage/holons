@@ -28,7 +28,9 @@
 //
 // Netlify gives a function 10 s. A cold instance catches the holon up from
 // the relays inside a bound (`ENDPOINT_CATCH_UP_MS`, below core's own
-// default); past it the answer is a 504 that says to retry, and the caught-up
+// default); past it — or when the holon's authority or genes have not
+// arrived, which core will not present as "no DNA" — the answer is a 503
+// that says to retry and is never cached, and the caught-up
 // part stays in the in-memory store, so the retry is fast (best effort: a
 // frozen lambda may not finish it).
 //
@@ -57,10 +59,11 @@ export const ENDPOINT_CATCH_UP_MS = 5000;
 export const FRONT_CACHE = "public, s-maxage=300, stale-while-revalidate=3600";
 
 /**
- * An answer with nothing in it — no genes, no one linked — is either a holon
- * that does not exist or a cold read the relays did not answer (refused
- * connection, empty reply). The second must not sit in the CDN for five
- * minutes as if it were the holon's word, so it is kept only briefly.
+ * An answer without a DNA is either a holon that has none (or nobody who
+ * speaks for it) or a read the relays did not fully answer (a refused
+ * connection or an empty reply looks the same as "none"). The second must
+ * not sit in the CDN for five minutes as if it were the holon's word, so any
+ * empty front is kept only briefly, and never served stale.
  */
 export const FRONT_CACHE_EMPTY = "public, s-maxage=30";
 
@@ -152,12 +155,11 @@ export function createFrontService(opts: FrontServiceOptions): FrontService {
       try {
         // No `viewer`: this answer is the anonymous visitor's, whoever asks.
         const front = await readHolonFront(instance(id), id, { catchUpMs });
-        const nothing = front.empty && front.members === 0;
-        return reply(200, front, nothing ? FRONT_CACHE_EMPTY : FRONT_CACHE);
+        return reply(200, front, front.empty ? FRONT_CACHE_EMPTY : FRONT_CACHE);
       } catch (e) {
         if (e instanceof HolonFrontUnreachable)
           return reply(
-            504,
+            503,
             { error: "unreachable", holon: id, message: e.message },
             "no-store",
             { "retry-after": String(RETRY_SECONDS) },

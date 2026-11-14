@@ -25,6 +25,8 @@ export {
   type Capability,
 } from './capabilities.js';
 export {
+  authoritySettled,
+  caughtUp,
   createReadAuthority,
   resolveHolonAuthority,
   roleOfSync,

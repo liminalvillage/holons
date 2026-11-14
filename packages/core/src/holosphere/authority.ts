@@ -150,7 +150,36 @@ type AuthorityCarrier = HoloSphere & {
   _readAuthority?: ReadAuthority;
   currentPubkey?: string;
   _relaySync?: (holon: string, lens: string, opts?: { await?: boolean }) => Promise<unknown>;
+  _relays?: string[];
+  _relayTransport?: { isSynced?: (holon: string | null, lens: string) => boolean } | null;
 };
+
+/**
+ * Has (holon, lens) finished its relay catch-up on this instance, so that
+ * what the store holds is the relays' answer and not just "nothing arrived
+ * yet"? A local-only instance (no relays) is always caught up: its store is
+ * the truth. An instance with relays whose wire is not up yet is not. A
+ * catch-up still running past the read's bound (the read went ahead with
+ * what was local) is not either.
+ */
+export function caughtUp(hs: HoloSphere, holon: string, lens: string): boolean {
+  const host = hs as AuthorityCarrier;
+  const t = host._relayTransport;
+  if (!t) return !host._relays?.length;
+  return typeof t.isSynced === 'function' ? t.isSynced(holon, lens) : true;
+}
+
+/**
+ * Is a holon's authority settled on this instance: does an `open` standing
+ * mean "nobody speaks for it" rather than "its `_members` log (or its
+ * anchored settings) has not arrived yet"? A pubkey holon and an h3 cell
+ * always are: their authority is not read from the relays.
+ */
+export function authoritySettled(hs: HoloSphere, holon: string): boolean {
+  const h = String(holon ?? '').trim();
+  if (!h || isPubkeyHolon(h) || isValidCell(h)) return true;
+  return caughtUp(hs, h, '_members') && caughtUp(hs, h, 'settings');
+}
 
 /**
  * Does `pubkey` (default: the instance's signing key) count for `holon`
@@ -167,6 +196,9 @@ export async function writeAcceptance(hs: HoloSphere, holon: string, pubkey?: st
   // the log (and the anchored settings) up first, and forget the cached
   // answer that may predate them.
   if (h && !isPubkeyHolon(h) && !isValidCell(h)) {
+    // A cold instance brings its relay wire up after construction; until it
+    // is up a pull is a no-op, and the empty store would answer "open".
+    try { await host.ready?.(); } catch { /* init failed: the store decides */ }
     try { await host._relaySync?.(h, '_members', { await: true }); } catch { /* offline: the store decides */ }
     try { await host._relaySync?.(h, 'settings', { await: true }); } catch { /* offline: the store decides */ }
     host._readAuthority?.invalidate(h);

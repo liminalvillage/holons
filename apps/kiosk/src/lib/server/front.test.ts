@@ -279,7 +279,25 @@ describe("GET /api/front/<holon>", () => {
     });
   });
 
-  it("gives up after the catch-up bound with a 504 that says to retry, and does not cache it", async () => {
+  it("keeps a founded holon's empty front only briefly: people linked do not make it the holon's word", async () => {
+    const hs = memoryInstance();
+    await foundHolon(hs, H, { name: "Front Endpoint" });
+    await addHolonMember(hs, H, member.pk, "member");
+    track(hs);
+    const res = await createFrontService({ holosphere: () => hs }).get(H);
+    expect(res.status).toBe(200);
+    const front = await res.json();
+    expect(front).toMatchObject({
+      empty: true,
+      genes: [],
+      viewer: { cta: "apply" },
+    });
+    expect(front.members).toBeGreaterThan(0);
+    expect(res.headers.get("cache-control")).toBe(FRONT_CACHE_EMPTY);
+    expect(FRONT_CACHE_EMPTY).not.toContain("stale-while-revalidate");
+  });
+
+  it("gives up after the catch-up bound with a 503 that says to retry, and does not cache it", async () => {
     const never = new Promise<never>(() => {});
     const stuck = {
       enforceActive: true,
@@ -293,7 +311,7 @@ describe("GET /api/front/<holon>", () => {
       holosphere: () => stuck,
       catchUpMs: 20,
     }).get(H);
-    expect(res.status).toBe(504);
+    expect(res.status).toBe(503);
     expect(res.headers.get("retry-after")).toBe("5");
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(res.headers.get("access-control-allow-origin")).toBe("*");
