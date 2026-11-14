@@ -5,10 +5,10 @@
 // DNA as it is now. Core decides (`joinReadiness`); this only picks the
 // words and the tone. A holon that asks no agreement shows no badge.
 
-import type { JoinReadiness } from '@holons/core/holons';
-import type { CopyKey } from './copy';
+import type { JoinReadiness } from "@holons/core/holons";
+import type { CopyKey } from "./copy";
 
-export type BadgeTone = 'ok' | 'warn' | 'bad' | 'muted';
+export type BadgeTone = "ok" | "warn" | "bad" | "muted";
 
 export interface ReadinessBadge {
   key: CopyKey;
@@ -16,16 +16,18 @@ export interface ReadinessBadge {
 }
 
 /** The badge for a request's readiness, or null when there is nothing to say. */
-export function readinessBadge(readiness: JoinReadiness): ReadinessBadge | null {
+export function readinessBadge(
+  readiness: JoinReadiness,
+): ReadinessBadge | null {
   switch (readiness) {
-    case 'acknowledged':
-      return { key: 'ready.acknowledged', tone: 'ok' };
-    case 'outdated':
-      return { key: 'ready.outdated', tone: 'warn' };
-    case 'missing':
-      return { key: 'ready.missing', tone: 'bad' };
-    case 'unknown':
-      return { key: 'ready.unknown', tone: 'muted' };
+    case "acknowledged":
+      return { key: "ready.acknowledged", tone: "ok" };
+    case "outdated":
+      return { key: "ready.outdated", tone: "warn" };
+    case "missing":
+      return { key: "ready.missing", tone: "bad" };
+    case "unknown":
+      return { key: "ready.unknown", tone: "muted" };
     default:
       return null;
   }

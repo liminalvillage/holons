@@ -1,26 +1,30 @@
 <script lang="ts">
-  // The holon's DNA. The old editor that lived here is gone with the
-  // old model; the read-only front page over @holons/core/dna genes comes
-  // with WP9. Until then this page only says so.
-
+  // SPDX-License-Identifier: AGPL-3.0-or-later
+  // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
+  //
+  // A holon's DNA, read-only: its front page as core builds it
+  // (`@holons/core/dna`). It is edited in the kiosk's editor, which "Edit DNA"
+  // opens — there is one editor, so the dashboard never has a second one.
+  import { onMount } from 'svelte';
   import { page } from '$app/stores';
+  import { ID } from '../../../dashboard/store';
+  import FrontData from '../../../components/dna/FrontData.svelte';
+  import FrontPage from '../../../components/dna/FrontPage.svelte';
 
-  const holonId = $derived($page.params.id);
+  $: holonId = $page.params.id;
+
+  // Keep the dashboard's holon in step with the URL, as every board does.
+  $: if (holonId && holonId !== $ID) ID.set(holonId);
+  onMount(() => {
+    if (holonId) ID.set(holonId);
+  });
 </script>
 
 <svelte:head>
   <title>DNA - {holonId}</title>
+  <meta name="description" content="The DNA of holon {holonId}: its purpose, values, agreements and how to join." />
 </svelte:head>
 
-<div class="placeholder">
-  <h2 class="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">DNA</h2>
-  <p class="text-sm text-gray-600 dark:text-gray-400">
-    This holon's purpose, values and agreements will show here soon.
-  </p>
-</div>
-
-<style lang="postcss">
-  .placeholder {
-    @apply flex flex-col items-center justify-center w-full h-full text-center p-8;
-  }
-</style>
+<FrontData holon={holonId} let:front let:lang>
+  <FrontPage {front} {lang} />
+</FrontData>

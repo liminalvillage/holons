@@ -7,7 +7,11 @@
 // full or blocked (private window, cleared site data), and the walk must
 // work without it — it then starts from nothing on the next visit.
 
-import { emptyWalkState, normalizeWalkState, type WalkState } from '@holons/core/dna';
+import {
+  emptyWalkState,
+  normalizeWalkState,
+  type WalkState,
+} from "@holons/core/dna";
 
 /** The slice of `Storage` this needs; a plain object stands in for it in specs. */
 export interface WalkStorage {
@@ -20,14 +24,17 @@ export const walkKey = (holon: string): string => `dna-walk:${holon}`;
 
 function defaultStorage(): WalkStorage | null {
   try {
-    return typeof localStorage === 'undefined' ? null : localStorage;
+    return typeof localStorage === "undefined" ? null : localStorage;
   } catch {
     return null;
   }
 }
 
 /** What this device remembers of the person's walk through `holon`; a fresh walk when nothing usable. */
-export function loadWalk(holon: string, storage: WalkStorage | null = defaultStorage()): WalkState {
+export function loadWalk(
+  holon: string,
+  storage: WalkStorage | null = defaultStorage(),
+): WalkState {
   try {
     const raw = storage?.getItem(walkKey(holon));
     return raw ? normalizeWalkState(JSON.parse(raw)) : emptyWalkState();
@@ -37,10 +44,15 @@ export function loadWalk(holon: string, storage: WalkStorage | null = defaultSto
 }
 
 /** Remember the walk. A walk with nothing acknowledged forgets the key. Never throws. */
-export function saveWalk(holon: string, state: WalkState, storage: WalkStorage | null = defaultStorage()): void {
+export function saveWalk(
+  holon: string,
+  state: WalkState,
+  storage: WalkStorage | null = defaultStorage(),
+): void {
   try {
     if (!storage) return;
-    if (Object.keys(state.acks).length === 0) storage.removeItem(walkKey(holon));
+    if (Object.keys(state.acks).length === 0)
+      storage.removeItem(walkKey(holon));
     else storage.setItem(walkKey(holon), JSON.stringify(state));
   } catch {
     /* blocked or full: the walk lives in memory for this visit */
