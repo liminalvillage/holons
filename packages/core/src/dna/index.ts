@@ -43,6 +43,36 @@ export {
   type GeneWriteOptions,
 } from './genes.js';
 
+export {
+  addAllele,
+  addGene,
+  adoptIds,
+  availableKinds,
+  checkDrafts,
+  draftGenes,
+  mergeRemote,
+  moveAllele,
+  moveGene,
+  newDraftKey,
+  planWrites,
+  removeAllele,
+  removeDraftGene,
+  saveDrafts,
+  settleDrafts,
+  updateAllele,
+  updateGene,
+  withStarter,
+  type AlleleFields,
+  type DraftAllele,
+  type DraftCheck,
+  type DraftGene,
+  type DraftIssue,
+  type GeneFields,
+  type SaveResult,
+  type SettledGene,
+  type WritePlan,
+} from './edit.js';
+
 export { canonicalJson, dnaHash, geneHash, hashedView, shortHash } from './version.js';
 
 export { STARTER_GENES, STARTER_LANGS, type StarterLang } from './templates.js';
