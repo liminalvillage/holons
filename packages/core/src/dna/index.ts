@@ -46,3 +46,15 @@ export {
 export { canonicalJson, dnaHash, geneHash, hashedView, shortHash } from './version.js';
 
 export { STARTER_GENES, STARTER_LANGS, type StarterLang } from './templates.js';
+
+export {
+  acknowledgeStep,
+  emptyWalkState,
+  normalizeWalkState,
+  unacknowledgeStep,
+  walkProgress,
+  walkSteps,
+  type WalkProgress,
+  type WalkState,
+  type WalkStep,
+} from './walk.js';
