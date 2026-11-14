@@ -8,8 +8,6 @@ import {
   saveUserProfile,
   addUserValues,
   addUserNeeds,
-  joinHolon,
-  leaveHolon,
   type TelegramUserLike,
   type UserDB,
   type UserProfile,
@@ -215,43 +213,6 @@ export function registerUsersTools(server: McpServer, deps: ToolDeps): void {
         const u = resolveTargetUser(userId, user);
         const profile = await addUserNeeds(db, u, holon, needs);
         return ok({ profile });
-      } catch (e) {
-        return fail(e);
-      }
-    },
-  );
-
-  server.tool(
-    'holon_join',
-    'Join a holon by ensuring the user profile exists.',
-    {
-      holon: z.string().describe('Holon id'),
-      user: z.string().describe('JSON-encoded TelegramUserLike'),
-    },
-    async ({ holon, user }) => {
-      try {
-        const db = (await deps.getHoloSphere()) as UserDB;
-        const u = parseJson<TelegramUserLike>('user', user);
-        const result = await joinHolon(db, u, holon);
-        return ok({ joined: Boolean(result.profile), ...result });
-      } catch (e) {
-        return fail(e);
-      }
-    },
-  );
-
-  server.tool(
-    'holon_leave',
-    'Leave a holon by deleting the user profile entry.',
-    {
-      holon: z.string().describe('Holon id'),
-      userId: userIdSchema.describe('Telegram-like user id'),
-    },
-    async ({ holon, userId }) => {
-      try {
-        const db = (await deps.getHoloSphere()) as UserDB;
-        const deleted = await leaveHolon(db, userId, holon);
-        return ok({ deleted, holon, userId });
       } catch (e) {
         return fail(e);
       }

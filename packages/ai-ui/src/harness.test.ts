@@ -24,7 +24,7 @@ describe('isWriteTool', () => {
       'subtask_add',
       'tasks_save',
       'library_borrow',
-      'holon_join',
+      'holon_apply',
       'ui_navigate',
       'navigate',
     ]) {

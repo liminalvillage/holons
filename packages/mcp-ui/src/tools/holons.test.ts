@@ -9,6 +9,8 @@ import { createHoloSphere, signerFromSecretKey } from '@holons/core/holosphere';
 import { applyToHolon, parseJoinRequest } from '@holons/core/holons';
 import { acceptTelegramLink } from '@holons/core/linking';
 import { startOnboarding } from '@holons/core/onboarding';
+import { dnaHash, readGenes } from '@holons/core/dna';
+import { registerDnaTools } from './dna.js';
 import { registerHolonsTools } from './holons.js';
 import type { ToolDeps } from './index.js';
 
@@ -109,12 +111,40 @@ describe('holon tools', () => {
 
     const req = parseJoinRequest(await applyToHolon(hs, H, signerFromSecretKey(ada.sk), { appName: 'mcp-onboarding-test', reason: 'Ada', acknowledged: null }))!;
     await startOnboarding(hs, H, req, { home: '4242', appName: 'mcp-onboarding-test' });
-    expect(payload(await tools.get('onboarding_get')!({ holon: H })).onboarding).toEqual([{ pubkey: ada.pk, name: 'Ada', step: 'call', home: '4242' }]);
+    expect(payload(await tools.get('onboarding_get')!({ holon: H })).onboarding).toEqual([{ pubkey: ada.pk, name: 'Ada', step: 'call', home: '4242', dna: 'none-required', blocked: null }]);
 
     expect((await tools.get('onboarding_confirm')!({ holon: H, pubkey: ada.pk, step: 'call', card: 'nope' })).isError).toBe(true);
     const done = payload(await tools.get('onboarding_confirm')!({ holon: H, pubkey: ada.pk, step: 'call', card: 'onboarding_call' }));
     expect(done).toMatchObject({ success: true, linked: true, view: { finished: true, status: 'approved' } });
     expect(payload(await tools.get('holon_members')!({ holon: H })).members[ada.pk]).toBe('member');
+    await hs.close();
+  });
+
+  it('onboarding: a finished walk waits for the current DNA, and says so', async () => {
+    const me = key();
+    const ada = key();
+    const hs = createHoloSphere({ appName: 'mcp-onboarding-dna-test', privateKey: me.sk, store: { adapter: 'memory' } });
+    (hs as unknown as { publishNostrEvents: () => void }).publishNostrEvents = () => {};
+    (hs as unknown as { subscribeNostr: () => () => void }).subscribeNostr = () => () => {};
+    const deps: ToolDeps = { getHoloSphere: async () => hs, resolveActor: () => ({ id: '7' }) as never, getSignerSecret: () => me.sk };
+    const { server, tools } = capture();
+    registerHolonsTools(server, deps);
+    registerDnaTools(server, deps);
+    const H = payload(await tools.get('holon_create')!({ name: 'Orto' })).holon as string;
+    await tools.get('dna_gene_put')!({ holon: H, gene: { kind: 'values', title: 'Values', blurb: 'Care.' } });
+    await tools.get('onboarding_config_save')!({ holon: H, enabled: true, steps: [{ title: 'Call', cards: [{ title: 'Onboarding call', confirm: 'admin' }] }] });
+
+    // Ada agreed to the DNA as it was; the holon changes a gene before she is through.
+    const agreed = dnaHash(await readGenes(hs, H));
+    const req = parseJoinRequest(await applyToHolon(hs, H, signerFromSecretKey(ada.sk), { appName: 'mcp-onboarding-dna-test', reason: 'Ada', acknowledged: agreed }))!;
+    await tools.get('dna_gene_put')!({ holon: H, gene: { id: 'values', blurb: 'Care, and tending.' } });
+    await startOnboarding(hs, H, req, { home: '4242', appName: 'mcp-onboarding-dna-test' });
+    const done = payload(await tools.get('onboarding_confirm')!({ holon: H, pubkey: ada.pk, step: 'call', card: 'onboarding_call' }));
+    expect(done).toMatchObject({ success: true, linked: false, view: { finished: true, status: 'pending', dna: 'outdated', blocked: 'dna' } });
+    expect(payload(await tools.get('onboarding_get')!({ holon: H })).onboarding).toEqual([
+      { pubkey: ada.pk, name: 'Ada', step: null, home: '4242', dna: 'outdated', blocked: 'dna' },
+    ]);
+    expect(payload(await tools.get('holon_members')!({ holon: H })).members[ada.pk]).toBeUndefined();
     await hs.close();
   });
 });
