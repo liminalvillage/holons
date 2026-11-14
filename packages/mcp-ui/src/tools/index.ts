@@ -16,7 +16,6 @@ const DOMAINS = [
   'calendar',
   'users',
   'checklists',
-  'dna',
   'library',
   'needs',
   'shopping',
