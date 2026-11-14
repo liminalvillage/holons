@@ -19,10 +19,10 @@ import {
   parseJoinRequest,
   recordJoinRequest,
   removeSeat,
-  requestToJoin,
   settleJoinRequest,
   watchAllJoinRequests,
 } from './index.js';
+import { signJoinRequest } from './testing.js';
 
 const founder = testKey();
 const alice = testKey();
@@ -50,10 +50,10 @@ const signer = (sk: Uint8Array) => signerFromSecretKey(bytesToHex(sk));
 describe('a join request names its holon and may claim a Telegram identity', () => {
   it('carries the claim as an `i` tag and parses it back; a malformed claim is dropped', () => {
     const { hs } = instance();
-    const ev = requestToJoin(hs, '-1001234', signer(alice.sk), { appName: APP, reason: 'Alice', telegramId: 4242 });
+    const ev = signJoinRequest(hs, '-1001234', signer(alice.sk), { appName: APP, reason: 'Alice', telegramId: 4242 });
     expect(ev.tags).toContainEqual(['i', 'telegram:4242']);
     expect(parseJoinRequest(ev)).toMatchObject({ holon: '-1001234', telegramId: '4242', pubkey: alice.pk });
-    const plain = requestToJoin(hs, '-1001234', signer(alice.sk), { appName: APP, telegramId: 'not-a-number' });
+    const plain = signJoinRequest(hs, '-1001234', signer(alice.sk), { appName: APP, telegramId: 'not-a-number' });
     expect(plain.tags.some((t) => t[0] === 'i')).toBe(false);
     expect(parseJoinRequest(plain)?.telegramId).toBeUndefined();
   });
@@ -63,8 +63,8 @@ describe('a join request names its holon and may claim a Telegram identity', () 
     const seen: string[] = [];
     const stop = watchAllJoinRequests(hs, { appName: APP, since: 1_800_000_000.7 }, (r) => seen.push(`${r.holon}:${r.pubkey}`));
     expect(filters).toEqual([{ kinds: [GROUP_JOIN_REQUEST_KIND], '#n': [APP], since: 1_800_000_000 }]);
-    const a = requestToJoin(hs, '-1001', signer(alice.sk), { appName: APP });
-    const b = requestToJoin(hs, 'holon_aaaaaaaaaaaaaaaa', signer(bob.sk), { appName: APP });
+    const a = signJoinRequest(hs, '-1001', signer(alice.sk), { appName: APP });
+    const b = signJoinRequest(hs, 'holon_aaaaaaaaaaaaaaaa', signer(bob.sk), { appName: APP });
     feed(a);
     feed(b);
     feed({ ...a, content: 'forged' });
@@ -78,19 +78,19 @@ describe('describeApplicant', () => {
   it('proves a Telegram claim only when the derived key signed the request', async () => {
     const { hs } = instance();
     const derived = deriveTelegramNostrKey('4242', SECRET);
-    const real = parseJoinRequest(requestToJoin(hs, '-1001', signerFromSecretKey(derived.privateKey), { appName: APP, reason: 'Ada', telegramId: '4242' }))!;
-    expect(await describeApplicant(hs, real, { secret: SECRET })).toEqual({ name: 'Ada', telegram: { id: '4242', verified: true } });
+    const real = parseJoinRequest(signJoinRequest(hs, '-1001', signerFromSecretKey(derived.privateKey), { appName: APP, reason: 'Ada', telegramId: '4242' }))!;
+    expect(await describeApplicant(hs, real, { secret: SECRET })).toEqual({ name: 'Ada', telegram: { id: '4242', verified: true }, dna: 'none-required' });
     // Without the secret nothing is proven.
     expect((await describeApplicant(hs, real)).telegram).toEqual({ id: '4242', verified: false });
     // Someone else's key claiming the same Telegram user.
-    const forged = parseJoinRequest(requestToJoin(hs, '-1001', signer(alice.sk), { appName: APP, reason: 'Ada', telegramId: '4242' }))!;
+    const forged = parseJoinRequest(signJoinRequest(hs, '-1001', signer(alice.sk), { appName: APP, reason: 'Ada', telegramId: '4242' }))!;
     expect((await describeApplicant(hs, forged, { secret: SECRET })).telegram).toEqual({ id: '4242', verified: false });
     await hs.close();
   });
 
   it('falls back to the short key when the request gives no usable name', async () => {
     const { hs } = instance();
-    const req = parseJoinRequest(requestToJoin(hs, '-1001', signer(alice.sk), { appName: APP }))!;
+    const req = parseJoinRequest(signJoinRequest(hs, '-1001', signer(alice.sk), { appName: APP }))!;
     const who = await describeApplicant(hs, req);
     expect(who.telegram).toBeUndefined();
     expect(who.name).toBeTruthy();
@@ -103,7 +103,7 @@ describe('the join-request ledger', () => {
   it('remembers an announcement, then the decision; approved keys are listed until declined', async () => {
     const { hs } = instance();
     const { holon: H } = await createHolon(hs, signer(founder.sk), { appName: APP });
-    const req = parseJoinRequest(requestToJoin(hs, H, signer(alice.sk), { appName: APP, reason: 'Alice' }))!;
+    const req = parseJoinRequest(signJoinRequest(hs, H, signer(alice.sk), { appName: APP, reason: 'Alice' }))!;
     expect(await settleJoinRequest(hs, H, alice.pk, 'approved')).toBeNull(); // nothing recorded yet
     await recordJoinRequest(hs, H, req, { messageId: 77, now: () => 1_800_000_000 });
     expect((await joinRequestRecords(hs, H)).get(alice.pk)).toMatchObject({ eventId: req.eventId, name: 'Alice', status: 'pending', messageId: 77 });
@@ -118,7 +118,7 @@ describe('the join-request ledger', () => {
   it('unseating a key withdraws its approval', async () => {
     const { hs } = instance();
     const { holon: H } = await createHolon(hs, signer(founder.sk), { appName: APP });
-    const req = parseJoinRequest(requestToJoin(hs, H, signer(alice.sk), { appName: APP, reason: 'Alice' }))!;
+    const req = parseJoinRequest(signJoinRequest(hs, H, signer(alice.sk), { appName: APP, reason: 'Alice' }))!;
     await recordJoinRequest(hs, H, req, { status: 'approved', now: () => 1_800_000_000 });
     await approveJoin(hs, H, alice.pk, signer(founder.sk), { appName: APP });
     expect(await approvedJoinKeys(hs, H)).toEqual([alice.pk]);

@@ -27,7 +27,7 @@ list appears on every device they sign in on.
 founder is the first admin. Membership is by key:
 
 - a person asks with a kind-9021 join request carrying their display name
-  (`requestToJoin`); admins see them live (`watchJoinRequests`) and seat the
+  (`applyToHolon`, carrying the DNA hash they agreed to); admins see them live (`watchJoinRequests`) and seat the
   key (`approveJoin` = a signed `_members` add + a kind-9000 put-user + the
   refreshed group state), or unseat it (`removeSeat` = remove + kind-9001);
 - a member says goodbye with kind-9022 (`leaveHolon`); an admin removes the seat.

@@ -21,6 +21,7 @@ import { HoloSphere } from 'holosphere';
 import { attachLedger, type LedgerHost } from '../rea/attach.js';
 import { attachRosterMirror, type RosterMirrorHost } from '../tasks/roster-mirror.js';
 import { attachRegistry, type RegistryHost } from './registry.js';
+import { attachGroupState, type GroupStateHost } from '../holons/attach.js';
 import { createWireRegistry } from 'holosphere/store';
 import { createShiftIdentityWire, createShiftWire } from '../shifts/wire.js';
 import { PROTOCOL_LENSES } from '../protocol/events.js';
@@ -147,6 +148,12 @@ export interface CreateHoloSphereOptions {
    */
   registry?: boolean;
   /**
+   * Republish a holon's NIP-29 group state when an admin writes its DNA —
+   * the 39000 `about` is the purpose gene (see `@holons/core/holons`
+   * `attachGroupState`). On by default; `false` for raw tooling.
+   */
+  groupState?: boolean;
+  /**
    * Extra append-only lenses (kind 1808, every signed entry kept — see
    * `@holons/core/protocol`). Core's own logs (`APPEND_LENSES`) are always
    * registered; pass a list to add an app's, or `false` for none at all.
@@ -176,7 +183,7 @@ export function createHoloSphere(options: CreateHoloSphereOptions): HoloSphere;
 export function createHoloSphere(
   options: CreateHoloSphereOptions
 ): HoloSphere | Promise<HoloSphere> {
-  const { appName, privateKey, relays, store, nostr, strict, awaitReady, standardWires, extra, ledger, rosterMirror, registry, appendLenses, enforce } = options;
+  const { appName, privateKey, relays, store, nostr, strict, awaitReady, standardWires, extra, ledger, rosterMirror, registry, groupState, appendLenses, enforce } = options;
 
   // A lens that owns a standard kind needs the store to consume that kind.
   // Built here so no UI has to know the registry exists.
@@ -230,5 +237,6 @@ export function createHoloSphere(
   if (ledger !== false) attachLedger(instance as unknown as LedgerHost);
   if (rosterMirror !== false) attachRosterMirror(instance as unknown as RosterMirrorHost);
   if (registry !== false) attachRegistry(instance as unknown as RegistryHost);
+  if (groupState !== false) attachGroupState(instance as unknown as GroupStateHost);
   return awaitReady ? instance.ready().then(() => instance) : instance;
 }
