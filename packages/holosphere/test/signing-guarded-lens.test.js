@@ -10,6 +10,9 @@
  *    hook would accept it, and neither does an admin's own hologram;
  *  - a record an admin signed keeps counting after they are demoted;
  *  - an admin's tombstone removes it, a member's does not;
+ *  - clocked records fold field by field across admins only;
+ *  - an authority without roles counts every key it accepts, and a role it
+ *    names for a key it does not accept never counts;
  *  - the lens can never be made private.
  */
 import HoloSphere from '../holosphere.js';
@@ -144,6 +147,25 @@ describe('signing: a guarded lens under an authority that knows roles', () => {
     expect(await holo.getPending(HOLON, 'genes')).toEqual([]);   // a counted delete, not pending
   });
 
+  test('clocked genes fold field by field across admins; a member\'s fresher stamp never leaks in', async () => {
+    const holo = make();
+    await holo.ready();
+    const at = `${HOLON}/genes/values`;
+    plant(holo, adminSk, HOLON, 'genes', gene('values', 'Our values', { color: '#00aa00', _clock: { '@': at, title: T0, color: T0 } }), T0);
+    // The second admin recolours it from a copy that saw the title at T0.
+    plant(holo, admin2Sk, HOLON, 'genes', gene('values', 'Our values', { color: '#0000ff', _clock: { '@': at, title: T0, color: T0 + 20 } }), T0 + 20);
+    // The first admin retitles it from a stale copy: only the title is theirs.
+    plant(holo, adminSk, HOLON, 'genes', gene('values', 'Our shared values', { color: '#00aa00', _clock: { '@': at, title: T0 + 30, color: T0 } }), T0 + 30);
+    // A member's write with the freshest stamps on every field.
+    plant(holo, memberSk, HOLON, 'genes', gene('values', 'Anyone in', { color: '#ff0000', _clock: { '@': at, title: T0 + 99, color: T0 + 99 } }), T0 + 40);
+
+    const got = await holo.get(HOLON, 'genes', 'values');
+    expect(got.title).toBe('Our shared values');   // admin 1, newest title stamp
+    expect(got.color).toBe('#0000ff');             // admin 2, newest colour stamp
+    const all = await holo.getAll(HOLON, 'genes');
+    expect(all.map((g) => [g.title, g.color])).toEqual([['Our shared values', '#0000ff']]);
+  });
+
   test('a subscriber sees the admin\'s gene, never a member\'s overwrite', async () => {
     const holo = make();
     await holo.ready();
@@ -206,5 +228,48 @@ describe('signing: a guarded lens under the signed membership log (as of time)',
     await expect(A.privacy.lock({ holon: HOLON, lens: 'genes' })).rejects.toThrow(/cannot be private/);
     await expect(A.privacy.lock({ holon: HOLON, lens: 'genes', item: 'values' })).rejects.toThrow(/cannot be private/);
     expect(A.privacy.isPrivate(HOLON, 'genes')).toBe(false);
+  });
+});
+
+describe('signing: a guarded lens under an authority without roles', () => {
+  const okSk = generateSecretKey(), okPub = getPublicKey(okSk);
+  const strangerSk = generateSecretKey();
+  // The default 'federation' style: a list of accepted keys, no roles. Every
+  // accepted key then speaks for the holon's genes.
+  const authority = async (_holo, holon) => (String(holon) === HOLON ? (pub) => pub === okPub : null);
+
+  test('any accepted key counts for genes; a key it does not accept is pending', async () => {
+    const holo = new HoloSphere({ appName: APP, privateKey: okSk, store: { adapter: 'memory' }, signing: { enforce: 'authority', authority } });
+    spheres.push(holo);
+    await holo.ready();
+    plant(holo, okSk, HOLON, 'genes', gene('values', 'Accepted values'), T0);
+    plant(holo, strangerSk, HOLON, 'genes', gene('values', 'Stranger values'), T0 + 10);
+    plant(holo, strangerSk, HOLON, 'genes', gene('terms', 'Stranger terms', { kind: 'terms' }), T0 + 10);
+    expect((await holo.get(HOLON, 'genes', 'values'))?.title).toBe('Accepted values');
+    expect(await holo.get(HOLON, 'genes', 'terms')).toBeNull();
+    expect((await holo.getPending(HOLON, 'genes')).map((g) => g.id)).toEqual(['terms']);
+  });
+});
+
+describe('signing: a role named for a key the authority does not accept', () => {
+  const adminSk = generateSecretKey(), adminPub = getPublicKey(adminSk);
+  const ghostSk = generateSecretKey(), ghostPub = getPublicKey(ghostSk);
+  // A malformed authority: roleAt calls `ghost` an admin, but it is not accepted.
+  const authority = async (_holo, holon) => {
+    if (String(holon) !== HOLON) return null;
+    const p = (pub) => pub === adminPub;
+    p.roleAt = (pub) => (pub === adminPub || pub === ghostPub ? 'admin' : null);
+    return p;
+  };
+
+  test('the role alone never lets a gene through', async () => {
+    const holo = new HoloSphere({ appName: APP, privateKey: adminSk, store: { adapter: 'memory' }, signing: { enforce: 'authority', authority } });
+    spheres.push(holo);
+    await holo.ready();
+    plant(holo, adminSk, HOLON, 'genes', gene('values', 'Admin values'), T0);
+    plant(holo, ghostSk, HOLON, 'genes', gene('values', 'Ghost values'), T0 + 10);
+    plant(holo, ghostSk, HOLON, 'genes', gene('purpose', 'Ghost purpose', { kind: 'purpose', ack: 'read' }), T0 + 10);
+    expect((await holo.get(HOLON, 'genes', 'values'))?.title).toBe('Admin values');
+    expect(await holo.get(HOLON, 'genes', 'purpose')).toBeNull();
   });
 });

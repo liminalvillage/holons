@@ -237,14 +237,14 @@ export function createSigner({
    * Does an envelope count for a record of a GUARDED lens? Only a plain
    * record (or tombstone) signed by a key that was an admin at the
    * envelope's own time. A pointer or a federated copy stands for something
-   * written elsewhere, so not even an admin's counts here. An authority that
-   * knows no roles falls back to the keys it accepts.
+   * written elsewhere, so not even an admin's counts here. The key must be
+   * one the authority accepts AND, when it knows roles, an admin then: a
+   * role the authority names for a key it does not accept never counts. An
+   * authority that knows no roles falls back to the keys it accepts.
    */
   const guardAdmits = (holo, e, lens, id, isAuth) => {
-    const admin = typeof isAuth.roleAt === 'function'
-      ? isAuth.roleAt(e.pubkey, e.created_at) === 'admin'
-      : isAuth(e.pubkey, e.created_at);
-    if (!admin) return false;
+    if (!isAuth(e.pubkey, e.created_at)) return false;
+    if (typeof isAuth.roleAt === 'function' && isAuth.roleAt(e.pubkey, e.created_at) !== 'admin') return false;
     const claim = claimAt(holo, e, lens, id);
     return !!claim && !isHologram(claim) && !claim._federation;
   };

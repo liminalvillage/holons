@@ -28,4 +28,8 @@ export interface MembershipEnvelope {
 export function buildTimeline(events: MembershipEnvelope[], pinnedGenesis?: string | null): MembershipTimeline;
 
 export const MEMBERSHIP_LENS: '_members';
+export const SETTINGS_LENS: 'settings';
+export { GUARDED_SETTINGS_FIELDS, GUARDED_LENSES } from './capabilities.js';
+/** Is every record of this lens taken whole from admins' envelopes? */
+export function isGuardedLens(lens: string): boolean;
 export function createSigner(opts: Record<string, unknown>): any;

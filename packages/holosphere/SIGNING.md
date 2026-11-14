@@ -228,7 +228,11 @@ signed; a member's settings write still counts for every other field
 `genes`) a record is taken **whole** from the envelopes admins (as of their
 time) signed: a member's write, a vouched pointer or federated copy, even an
 admin's hologram, never counts, and with no admin envelope the record is
-absent (pending). A guarded lens is also never private (`NEVER_PRIVATE`). On the
+absent (pending). Clocked records fold field by field across those admin
+envelopes only. Each author keeps one claim per address, so an admin who later
+rewrites a gene (after being demoted, or by pointing it elsewhere) replaces
+their own earlier, valid version: if no other admin signed it, the gene becomes
+absent until an admin writes it again. A guarded lens is also never private (`NEVER_PRIVATE`). On the
 global `federation` table — keyed by the holon a record describes — the
 record is the newest an admin of *that holon* signed
 (`signer.resolveOwned`, `getFederation` / `getFederationStanding`); a holon
