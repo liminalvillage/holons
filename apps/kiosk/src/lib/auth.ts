@@ -245,6 +245,12 @@ export async function logout(): Promise<void> {
   }
   // Leaving means leaving: a key remembered on this device goes too.
   forgetRememberedKey();
+  // Nor what they ticked on the DNA walk before logging in.
+  try {
+    (await import("./dna")).forgetAnonWalks();
+  } catch {
+    /* best effort: anonymous walks also expire on their own */
+  }
   currentUser.set(null);
   // A shared kiosk must not keep signing as the departed user: drop the
   // paired/adopted session key (in-memory only) along with the identity.

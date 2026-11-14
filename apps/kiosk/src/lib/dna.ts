@@ -260,7 +260,7 @@ export function walkKey(holon: string, person: string | null): string {
 
 type KeyValue = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-function storage(): KeyValue | null {
+function storage(): Storage | null {
   try {
     return typeof localStorage === "undefined" ? null : localStorage;
   } catch {
@@ -268,51 +268,103 @@ function storage(): KeyValue | null {
   }
 }
 
-function readRaw(key: string, store: KeyValue | null): WalkState {
+function readJson(key: string, store: KeyValue | null): unknown {
   try {
     const raw = store?.getItem(key);
-    return normalizeWalkState(raw ? JSON.parse(raw) : null);
+    return raw ? JSON.parse(raw) : null;
   } catch {
-    return normalizeWalkState(null);
+    return null;
+  }
+}
+
+function forget(key: string, store: KeyValue | null): void {
+  try {
+    store?.removeItem(key);
+  } catch {
+    /* kept: harmless */
   }
 }
 
 /**
+ * How long a walk made before any login stays this session's. On a shared
+ * wall the next person to walk up must not inherit (or be signed in with)
+ * what the last one ticked: an anonymous walk older than this is gone, and
+ * only one made just now is folded into the person who logs in next.
+ */
+export const ANON_WALK_TTL_MS = 30 * 60 * 1000;
+
+/** The anonymous walk, when it is recent enough to still be this session's. */
+function readAnon(
+  holon: string,
+  store: KeyValue | null,
+  now: number,
+): WalkState {
+  const key = walkKey(holon, null);
+  const raw = readJson(key, store) as { at?: unknown } | null;
+  const at = typeof raw?.at === "number" ? raw.at : NaN;
+  if (raw && !(now - at >= 0 && now - at <= ANON_WALK_TTL_MS)) {
+    forget(key, store);
+    return normalizeWalkState(null);
+  }
+  return normalizeWalkState(raw);
+}
+
+/**
  * The walk this device kept for `person` (a session key; null before a
- * login) in `holon`. A person who walked before logging in keeps what they
- * acknowledged: the anonymous walk is folded in under their key and
- * forgotten. Whatever was kept, core's `walkProgress` says what is stale.
+ * login) in `holon`. A person who walked just before logging in keeps what
+ * they acknowledged: an anonymous walk from the last `ANON_WALK_TTL_MS` is
+ * folded in under their key; older ones are not. Either way the anonymous
+ * walk is forgotten once someone logs in. Whatever was kept, core's
+ * `walkProgress` says what is stale.
  */
 export function loadWalk(
   holon: string,
   person: string | null,
   store: KeyValue | null = storage(),
+  now: number = Date.now(),
 ): WalkState {
-  const own = readRaw(walkKey(holon, person), store);
-  if (!person) return own;
-  const anon = readRaw(walkKey(holon, null), store);
+  if (!person) return readAnon(holon, store, now);
+  const own = normalizeWalkState(readJson(walkKey(holon, person), store));
+  const anon = readAnon(holon, store, now);
+  forget(walkKey(holon, null), store);
   if (!Object.keys(anon.acks).length) return own;
   const merged = { acks: { ...anon.acks, ...own.acks } };
   saveWalk(holon, person, merged, store);
-  try {
-    store?.removeItem(walkKey(holon, null));
-  } catch {
-    /* kept: harmless */
-  }
   return merged;
 }
 
-/** Keep the walk on this device (best-effort: a private window forgets it). */
+/** Keep the walk on this device (best-effort: a private window forgets it). An anonymous walk is stamped, so it expires. */
 export function saveWalk(
   holon: string,
   person: string | null,
   walk: WalkState,
   store: KeyValue | null = storage(),
+  now: number = Date.now(),
 ): void {
   try {
-    store?.setItem(walkKey(holon, person), JSON.stringify(walk));
+    store?.setItem(
+      walkKey(holon, person),
+      JSON.stringify(person ? walk : { ...walk, at: now }),
+    );
   } catch {
     /* not kept: the walk still works on this screen */
+  }
+}
+
+/** Forget every anonymous walk on this device (on logout: the next person starts clean). */
+export function forgetAnonWalks(
+  store: (KeyValue & Pick<Storage, "key" | "length">) | null = storage(),
+): void {
+  try {
+    if (!store) return;
+    const keys: string[] = [];
+    for (let i = 0; i < store.length; i++) {
+      const k = store.key(i);
+      if (k?.startsWith("dna-walk:") && k.endsWith(":anon")) keys.push(k);
+    }
+    for (const k of keys) store.removeItem(k);
+  } catch {
+    /* best effort */
   }
 }
 

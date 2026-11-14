@@ -17,6 +17,8 @@ import {
   READINESS_LABEL,
   genesSignature,
   handoffHash,
+  ANON_WALK_TTL_MS,
+  forgetAnonWalks,
   loadWalk,
   readinessWarns,
   saveWalk,
@@ -86,14 +88,68 @@ describe("the walk on this device", () => {
     expect(walkKey(H, null)).toBe(`dna-walk:${H}:anon`);
   });
 
-  it("folds a walk made before the login into the person's", () => {
+  it("folds a walk made just before the login into the person's", () => {
     const store = memory();
-    saveWalk(H, null, { acks: { purpose: A, values: A } }, store);
+    const t = 1_000_000;
+    saveWalk(H, null, { acks: { purpose: A, values: A } }, store, t);
     saveWalk(H, "pk1", { acks: { values: B } }, store);
-    expect(loadWalk(H, "pk1", store)).toEqual({
+    expect(loadWalk(H, "pk1", store, t + 60_000)).toEqual({
       acks: { purpose: A, values: B },
     });
     expect(store.m.has(walkKey(H, null))).toBe(false);
+  });
+
+  it("never hands one person's anonymous walk to the next on a shared wall", () => {
+    const store = memory();
+    const t = 1_000_000;
+    // Someone ticked the walk (or followed a ?dna= handoff) and walked away.
+    saveWalk(H, null, { acks: { purpose: A, values: A } }, store, t);
+    const later = t + ANON_WALK_TTL_MS + 1;
+    // The next visitor sees nothing ticked, and the stale walk is gone…
+    expect(loadWalk(H, null, store, later)).toEqual({ acks: {} });
+    expect(store.m.has(walkKey(H, null))).toBe(false);
+    // …and nothing of it is folded into whoever logs in later.
+    saveWalk(H, null, { acks: { purpose: A } }, store, t);
+    expect(loadWalk(H, "pk2", store, later)).toEqual({ acks: {} });
+    expect(store.m.has(walkKey(H, null))).toBe(false);
+  });
+
+  it("folds an anonymous walk into one login only", () => {
+    const store = memory();
+    const t = 1_000_000;
+    saveWalk(H, null, { acks: { purpose: A } }, store, t);
+    expect(loadWalk(H, "pk1", store, t + 1000)).toEqual({
+      acks: { purpose: A },
+    });
+    expect(loadWalk(H, "pk2", store, t + 2000)).toEqual({ acks: {} });
+  });
+
+  it("drops an anonymous walk with no stamp or one from the future", () => {
+    const store = memory();
+    store.setItem(walkKey(H, null), JSON.stringify({ acks: { purpose: A } }));
+    expect(loadWalk(H, "pk1", store, 5)).toEqual({ acks: {} });
+    saveWalk(H, null, { acks: { purpose: A } }, store, 10_000);
+    expect(loadWalk(H, null, store, 5)).toEqual({ acks: {} });
+  });
+
+  it("forgets every anonymous walk on logout, and no one's own", () => {
+    const m = new Map<string, string>();
+    const store = {
+      get length() {
+        return m.size;
+      },
+      key: (i: number) => [...m.keys()][i] ?? null,
+      getItem: (k: string) => m.get(k) ?? null,
+      setItem: (k: string, v: string) => void m.set(k, v),
+      removeItem: (k: string) => void m.delete(k),
+    };
+    saveWalk(H, null, { acks: { purpose: A } }, store);
+    saveWalk("-2", null, { acks: { purpose: A } }, store);
+    saveWalk(H, "pk1", { acks: { purpose: A } }, store);
+    m.set("other", "x");
+    forgetAnonWalks(store);
+    expect([...m.keys()].sort()).toEqual([walkKey(H, "pk1"), "other"].sort());
+    expect(() => forgetAnonWalks(null)).not.toThrow();
   });
 
   it("starts over on anything unreadable, and survives no storage", () => {
