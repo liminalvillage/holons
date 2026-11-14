@@ -93,7 +93,7 @@ genes = sortGenes(genes);
 const issues = validateGenes(genes);
 for (const g of genes) for (const i of validateGene(g, genes.filter((o) => o !== g))) if (!issues.some((x) => x.code === i.code && x.gene === i.gene && x.allele === i.allele && x.field === i.field)) issues.push(i);
 
-const summary = genes.map((g) => ({ id: g.id, kind: g.kind, ack: g.ack, color: g.color ?? null, alleles: g.alleles.length, refs: g.alleles.filter((a) => a.ref).length, details: g.alleles.filter((a) => a.detail).length, links: g.links?.length ?? 0, bytes: geneBytes(g), hash: shortHash(geneHash(g)) }));
+const summary = genes.map((g) => ({ id: g.id, kind: g.kind, ack: g.ack, color: g.color ?? null, alleles: g.alleles.length, refs: g.alleles.filter((a) => a.ref).length, details: g.alleles.filter((a) => a.detail).length, links: g.links?.length ?? 0, bytes: geneBytes(g), hash: shortHash(geneHash(g, genes)) }));
 const hash = dnaHash(genes);
 
 console.log(`Holon ${HOLON} · ${genes.length} genes · ${genes.reduce((n, g) => n + g.alleles.length, 0)} alleles · dnaHash ${hash} (${shortHash(hash)})`);

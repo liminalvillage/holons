@@ -154,7 +154,7 @@
           "expressedIn": []
         }
       ],
-      "hash": "bdd79c43e607f3f69edee4249d48aca2bae3182a3a4a23f0f617272138c939e6",
+      "hash": "adca305ab1fbf34b87c6f0601748873167e5d1d609afd94efe31dc52871cec0a",
       "layout": "cards",
       "words": 25,
       "expressedIn": []
@@ -212,7 +212,7 @@
           "expressedIn": []
         }
       ],
-      "hash": "10d655ab5c772faf18ce78360acce30dbe1e27b31dc56d94cb86db22ffcbd3d3",
+      "hash": "67220459b3de6eb90187dfbb7f03edc3eb62eaacf694d80cf16b9b8d0fb371d7",
       "layout": "cards",
       "words": 22,
       "expressedIn": []
@@ -284,8 +284,8 @@
     }
   ],
   "dna": {
-    "hash": "b5b0ddfcf575c44bfcfaf0f9eb38bb4239af84c347079a82f004eb6c22484907",
-    "short": "b5b0ddfc",
+    "hash": "9027ae137a9a5468ee0bc020645693e17330aa4074497382ed1831405c3dd616",
+    "short": "9027ae13",
     "updated": "2026-11-03T08:00:00.000Z"
   },
   "counts": {
@@ -312,14 +312,14 @@
     },
     {
       "gene": "values",
-      "hash": "bdd79c43e607f3f69edee4249d48aca2bae3182a3a4a23f0f617272138c939e6",
+      "hash": "adca305ab1fbf34b87c6f0601748873167e5d1d609afd94efe31dc52871cec0a",
       "kind": "values",
       "title": "Values",
       "ack": "agree"
     },
     {
       "gene": "agreements",
-      "hash": "10d655ab5c772faf18ce78360acce30dbe1e27b31dc56d94cb86db22ffcbd3d3",
+      "hash": "67220459b3de6eb90187dfbb7f03edc3eb62eaacf694d80cf16b9b8d0fb371d7",
       "kind": "agreements",
       "title": "Agreements",
       "ack": "agree"

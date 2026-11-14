@@ -28,7 +28,7 @@ describe('walkSteps', () => {
   it('is the genes that ask for an acknowledgement, in front-page order', () => {
     const steps = walkSteps(genes);
     expect(steps.map((s) => s.gene)).toEqual(['purpose', 'values', 'terms']);
-    expect(steps[1]).toEqual({ gene: 'values', hash: geneHash(values), kind: 'values', title: 'Values', ack: 'agree' });
+    expect(steps[1]).toEqual({ gene: 'values', hash: geneHash(values, genes), kind: 'values', title: 'Values', ack: 'agree' });
   });
 
   it('does not reorder its input', () => {
@@ -84,6 +84,18 @@ describe('walkProgress', () => {
     const nowSteps = walkSteps(now);
     const state = acknowledgeStep(walkAll(), nowSteps[2]);
     expect(walkProgress(nowSteps, state, dnaHash(now))).toEqual({ current: null, done: ['purpose', 'values', 'terms'], stale: [], complete: true, hash: dnaHash(now) });
+  });
+
+  it('marks a gene stale when a card it shows by ref is edited in a gene the walk skips', () => {
+    const shared = gene({ id: 'tools', kind: 'tools', title: 'Tools', order: 2, ack: 'none', alleles: [{ id: 'nvc', title: 'NVC', body: 'No blame.' }] });
+    const showing = { ...values, alleles: [...values.alleles, { id: 'speech', title: '', ref: 'tools/nvc' }] };
+    const before = [purpose, showing, shared, terms];
+    const state = walkSteps(before).reduce(acknowledgeStep, emptyWalkState());
+    expect(walkProgress(walkSteps(before), state, dnaHash(before))).toMatchObject({ complete: true, hash: dnaHash(before) });
+    const rewritten = { ...shared, alleles: [{ id: 'nvc', title: 'NVC', body: 'Blame whom you like.' }] };
+    const after = [purpose, showing, rewritten, terms];
+    expect(dnaHash(after)).not.toBe(dnaHash(before));
+    expect(walkProgress(walkSteps(after), state, dnaHash(after))).toEqual({ current: 'values', done: ['purpose', 'terms'], stale: ['values'], complete: false, hash: null });
   });
 
   it('is complete at once, with no hash, when nothing asks for an acknowledgement', () => {

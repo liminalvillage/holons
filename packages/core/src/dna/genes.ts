@@ -179,6 +179,16 @@ const resolveRef = (ref: string, genes: readonly Gene[]): Allele | undefined => 
 };
 
 /**
+ * The card a ref allele shows among `genes`: the allele it names, when that
+ * exists and is not itself a ref (one level) — else undefined, and the
+ * front shows nothing there.
+ */
+export function shownByRef(ref: string, genes: readonly Gene[]): Allele | undefined {
+  const target = resolveRef(ref, genes);
+  return target && !target.ref ? target : undefined;
+}
+
+/**
  * Everything wrong with `gene` among the holon's `others` (which may contain
  * an older copy of it, ignored by id). Empty when it can be stored. The
  * editor shows these live; `putGene` refuses on any.

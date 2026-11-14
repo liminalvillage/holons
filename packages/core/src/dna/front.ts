@@ -66,7 +66,7 @@ export type GeneLayout = 'cards' | 'longform' | 'blurb';
 
 export interface GeneView extends Omit<Gene, 'alleles'> {
   alleles: AlleleView[];
-  /** geneHash of the gene as stored: what the walk acknowledges. */
+  /** geneHash of the gene as stored, its refs resolved in the holon's genes: what the walk acknowledges. */
   hash: string;
   layout: GeneLayout;
   /** Words a reader reads in this gene (title, blurb, cards with their details). */
@@ -230,7 +230,7 @@ function geneViews(genes: Gene[]): GeneView[] {
     return {
       ...rest,
       alleles,
-      hash: geneHash(g),
+      hash: geneHash(g, genes),
       layout: !alleles.length ? 'blurb' : g.kind === 'terms' ? 'longform' : 'cards',
       words: countWords(g.title, g.blurb) + alleles.reduce((n, a) => n + alleleWords(a), 0),
       expressedIn,

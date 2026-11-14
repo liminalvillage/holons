@@ -48,7 +48,7 @@ export interface WalkProgress {
 export function walkSteps(genes: readonly Gene[]): WalkStep[] {
   return sortGenes([...genes])
     .filter((g): g is Gene & { ack: 'read' | 'agree' } => g.ack !== 'none')
-    .map((g) => ({ gene: g.id, hash: geneHash(g), kind: g.kind, title: g.title, ack: g.ack }));
+    .map((g) => ({ gene: g.id, hash: geneHash(g, genes), kind: g.kind, title: g.title, ack: g.ack }));
 }
 
 /** A walk nobody started. */

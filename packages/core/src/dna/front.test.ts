@@ -241,7 +241,7 @@ describe('buildHolonFront: the genes', () => {
   });
 
   it('carry the hash of the gene as stored, refs and all', () => {
-    for (const g of ALL) expect(byId(g.id).hash).toBe(geneHash(g));
+    for (const g of ALL) expect(byId(g.id).hash).toBe(geneHash(g, ALL));
   });
 
   it('show a ref as the card it names, saying where it lives', () => {
@@ -278,7 +278,7 @@ describe('buildHolonFront: the genes', () => {
     const broken = gene({ id: 'broken', title: 'Broken', order: 9, alleles: [{ id: 'x', title: '', ref: 'nowhere/x' }, { id: 'y', title: '', ref: 'values/how-we-decide' }, { id: 'z', title: 'Kept' }] });
     const g = full({ genes: [...ALL, broken] }).genes.find((x) => x.id === 'broken')!;
     expect(g.alleles.map((a) => a.id)).toEqual(['z']);
-    expect(g.hash).toBe(geneHash(broken));
+    expect(g.hash).toBe(geneHash(broken, [...ALL, broken]));
   });
 
   it('lay terms out as long-form text, a gene without alleles as its blurb, the rest as cards', () => {

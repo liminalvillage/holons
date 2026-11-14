@@ -8,13 +8,18 @@
 // So the hash covers exactly what a reader is shown and nothing else:
 //   geneHash — id, kind, ack, title, blurb, link labels and targets, and per
 //              allele (in order) id, title, kicker, body, link, detail
-//              (body, steps, links) and ref.
+//              (body, steps, links). A ref allele is hashed as its ref plus
+//              the card it SHOWS, resolved among the holon's genes: what a
+//              reader sees there is the target's text, so editing that text
+//              outdates the acknowledgement of every gene showing it — even
+//              when the target lives in a gene nobody acknowledges.
 //              NOT color, icons, order, the detail image or `updated`.
 //   dnaHash  — the genes that ask for an acknowledgement, sorted by id, so
 //              reordering the front page invalidates nobody's consent.
 
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils';
+import { shownByRef } from './genes.js';
 import type { Allele, Gene, GeneLink } from './types.js';
 
 type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
@@ -56,20 +61,37 @@ function detailView(d: Allele['detail']) {
   return body || steps || links ? { body: body ?? '', steps, links } : undefined;
 }
 
-function alleleView(a: Allele) {
+/** The text of a card: what a reader reads on it, wherever it is shown. */
+function cardView(a: Allele) {
   return {
-    id: a.id,
     title: str(a.title),
     kicker: str(a.kicker),
     body: str(a.body),
     link: linkView(a.link),
     detail: detailView(a.detail),
-    ref: str(a.ref),
   };
 }
 
-/** What a reader of `gene` is shown, as the hash sees it. */
-export function hashedView(gene: Gene) {
+/**
+ * An allele as the hash sees it. A plain one is its id and card. A ref is
+ * its id, the ref and the card it shows (`null` when it shows none, as the
+ * front then shows nothing): its own stored text is never shown, so it is
+ * not hashed either.
+ */
+function alleleView(a: Allele, genes: readonly Gene[]) {
+  const ref = str(a.ref);
+  if (!ref) return { id: a.id, ...cardView(a) };
+  const shown = shownByRef(ref, genes);
+  return { id: a.id, ref, shows: shown ? cardView(shown) : null };
+}
+
+/**
+ * What a reader of `gene` is shown, as the hash sees it. `genes` is the
+ * holon's DNA the gene's refs resolve in (an older copy of `gene` in it is
+ * ignored: refs to its own alleles resolve in `gene` itself).
+ */
+export function hashedView(gene: Gene, genes: readonly Gene[]) {
+  const within = [gene, ...genes.filter((g) => g.id !== gene.id)];
   return {
     id: gene.id,
     kind: gene.kind,
@@ -77,15 +99,19 @@ export function hashedView(gene: Gene) {
     title: gene.title,
     blurb: gene.blurb ?? '',
     links: linksView(gene.links),
-    alleles: (gene.alleles ?? []).map(alleleView),
+    alleles: (gene.alleles ?? []).map((a) => alleleView(a, within)),
   };
 }
 
 const sha256Hex = (text: string): string => bytesToHex(sha256(utf8ToBytes(text)));
 
-/** sha256 (hex) of what a reader of the gene is shown. */
-export function geneHash(gene: Gene): string {
-  return sha256Hex(canonicalJson(hashedView(gene)));
+/**
+ * sha256 (hex) of what a reader of `gene` is shown, its refs resolved among
+ * `genes` (the holon's DNA). There is no form without the DNA: a gene's
+ * hash is only ever the one its reader acknowledges.
+ */
+export function geneHash(gene: Gene, genes: readonly Gene[]): string {
+  return sha256Hex(canonicalJson(hashedView(gene, genes)));
 }
 
 /**
@@ -96,7 +122,7 @@ export function dnaHash(genes: readonly Gene[]): string | null {
   const lines = genes
     .filter((g) => g.ack !== 'none')
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-    .map((g) => `${g.id}:${geneHash(g)}`);
+    .map((g) => `${g.id}:${geneHash(g, genes)}`);
   return lines.length ? sha256Hex(lines.join('\n')) : null;
 }
 

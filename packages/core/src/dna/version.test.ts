@@ -32,6 +32,9 @@ const base = (): Gene => ({
 const purpose = (): Gene => ({ id: 'purpose', kind: 'purpose', title: 'Purpose', blurb: 'Why.', order: 0, ack: 'read', alleles: [], lang: 'en', updated: '' });
 const tools = (): Gene => ({ id: 'tools', kind: 'tools', title: 'Tools', blurb: 'How.', order: 2, ack: 'none', alleles: [{ id: 'triz', title: 'TRIZ' }], lang: 'en', updated: '' });
 
+/** A gene's hash in a DNA of that gene alone. */
+const own = (g: Gene) => geneHash(g, [g]);
+
 /** The same object with its keys (at every depth) in reverse order. */
 function reversed<T>(v: T): T {
   if (Array.isArray(v)) return v.map(reversed) as T;
@@ -47,13 +50,13 @@ describe('canonicalJson', () => {
 
 describe('geneHash', () => {
   it('is 64 hex and stable under key order', () => {
-    const h = geneHash(base());
+    const h = own(base());
     expect(h).toMatch(/^[0-9a-f]{64}$/);
-    expect(geneHash(reversed(base()))).toBe(h);
+    expect(own(reversed(base()))).toBe(h);
   });
 
   it('ignores color, icons, order, the detail image and updated', () => {
-    const h = geneHash(base());
+    const h = own(base());
     const g = base();
     g.color = '#000000';
     g.order = 9;
@@ -63,14 +66,14 @@ describe('geneHash', () => {
     g.alleles[1].link!.icon = 'leaf';
     g.alleles[1].detail!.image = { src: '/other.png', alt: 'Other' };
     g.alleles[1].detail!.links![0].icon = 'scroll';
-    expect(geneHash(g)).toBe(h);
+    expect(own(g)).toBe(h);
     delete g.color;
     delete g.alleles[1].detail!.image;
-    expect(geneHash(g)).toBe(h);
+    expect(own(g)).toBe(h);
   });
 
   it('changes with any text a reader is shown', () => {
-    const h = geneHash(base());
+    const h = own(base());
     const edits: Array<(g: Gene) => void> = [
       (g) => (g.title = 'Our values'),
       (g) => (g.blurb = 'Something else.'),
@@ -93,28 +96,28 @@ describe('geneHash', () => {
     for (const edit of edits) {
       const g = base();
       edit(g);
-      expect(geneHash(g)).not.toBe(h);
+      expect(own(g)).not.toBe(h);
     }
   });
 
   it('treats absent and empty optional parts alike', () => {
-    expect(geneHash({ ...base(), links: [] })).toBe(geneHash({ ...base(), links: undefined }));
+    expect(own({ ...base(), links: [] })).toBe(own({ ...base(), links: undefined }));
     const steps = base();
     steps.alleles[1].detail!.steps = [];
     const noSteps = base();
     delete noSteps.alleles[1].detail!.steps;
-    expect(geneHash(steps)).toBe(geneHash(noSteps));
+    expect(own(steps)).toBe(own(noSteps));
   });
 
   it('treats a detail holding only an image as no detail', () => {
     const plain = (): Gene => ({ ...purpose(), alleles: [{ id: 'x', title: 'X' }] });
-    const h = geneHash(plain());
+    const h = own(plain());
     const pictured = plain();
     pictured.alleles[0].detail = { body: '', image: { src: '/a.png', alt: '' } };
-    expect(geneHash(pictured)).toBe(h);
+    expect(own(pictured)).toBe(h);
     const bare = plain();
     bare.alleles[0].detail = { body: '' };
-    expect(geneHash(bare)).toBe(h);
+    expect(own(bare)).toBe(h);
   });
 
   it('treats an empty detail body and a missing one alike', () => {
@@ -122,7 +125,89 @@ describe('geneHash', () => {
     withBody.alleles[1].detail!.body = '';
     const noBody = base();
     delete (noBody.alleles[1].detail as { body?: string }).body;
-    expect(geneHash(withBody)).toBe(geneHash(noBody));
+    expect(own(withBody)).toBe(own(noBody));
+  });
+});
+
+describe('geneHash of a ref', () => {
+  // A gene asked to be agreed to shows a card that lives in a gene nobody
+  // is asked to acknowledge: the text people agree to is the target's.
+  const frameworks = (): Gene => ({
+    id: 'frameworks',
+    kind: 'tools',
+    title: 'Frameworks',
+    blurb: 'How we work.',
+    order: 3,
+    ack: 'none',
+    alleles: [{ id: 'nvc', title: 'NVC', kicker: 'Speech', body: 'We speak without blame.', icon: 'heart', detail: { body: 'Observe, feel, need, request.', steps: ['observe'] } }],
+    lang: 'en',
+    updated: '',
+  });
+  const agreements = (): Gene => ({
+    id: 'agreements',
+    kind: 'agreements',
+    title: 'Agreements',
+    blurb: 'What we keep.',
+    order: 1,
+    ack: 'agree',
+    alleles: [{ id: 'speech', title: 'stale own title', ref: 'frameworks/nvc' }],
+    lang: 'en',
+    updated: '',
+  });
+  const dna = (edit?: (f: Gene) => void): Gene[] => {
+    const f = frameworks();
+    edit?.(f);
+    return [agreements(), f];
+  };
+
+  it('changes when the text the ref shows is edited in its own gene', () => {
+    const h = geneHash(agreements(), dna());
+    const edits: Array<(f: Gene) => void> = [
+      (f) => (f.alleles[0].title = 'Nonviolent Communication'),
+      (f) => (f.alleles[0].kicker = 'Talk'),
+      (f) => (f.alleles[0].body = 'We speak, and blame whom we like.'),
+      (f) => (f.alleles[0].link = { label: 'More', href: '/nvc' }),
+      (f) => (f.alleles[0].detail!.body = 'Something else entirely.'),
+      (f) => f.alleles[0].detail!.steps!.push('feel'),
+      (f) => (f.alleles[0].ref = 'agreements/speech'),
+      (f) => f.alleles.pop(),
+    ];
+    for (const edit of edits) expect(geneHash(agreements(), dna(edit))).not.toBe(h);
+  });
+
+  it('carries the change into dnaHash although the target gene asks for nothing', () => {
+    const h = dnaHash(dna());
+    expect(dnaHash(dna((f) => (f.alleles[0].body = 'Changed.')))).not.toBe(h);
+  });
+
+  it('ignores what the reader does not see: the target gene, decoration, the ref’s own text', () => {
+    const h = geneHash(agreements(), dna());
+    expect(geneHash(agreements(), dna((f) => (f.title = 'Methods')))).toBe(h);
+    expect(geneHash(agreements(), dna((f) => (f.blurb = 'Other.')))).toBe(h);
+    expect(geneHash(agreements(), dna((f) => (f.alleles[0].icon = 'star')))).toBe(h);
+    expect(geneHash(agreements(), dna((f) => f.alleles.push({ id: 'triz', title: 'TRIZ' })))).toBe(h);
+    const retitled = agreements();
+    retitled.alleles[0].title = 'another stale title';
+    expect(geneHash(retitled, dna())).toBe(h);
+  });
+
+  it('hashes a ref that shows nothing apart from one that shows a card', () => {
+    const h = geneHash(agreements(), dna());
+    expect(geneHash(agreements(), [agreements()])).not.toBe(h);
+    expect(geneHash(agreements(), dna((f) => (f.alleles[0].id = 'gone')))).toBe(geneHash(agreements(), [agreements()]));
+    const retargeted = agreements();
+    retargeted.alleles[0].ref = 'frameworks/other';
+    expect(geneHash(retargeted, dna())).not.toBe(geneHash(agreements(), [agreements()]));
+  });
+
+  it('resolves refs to its own alleles in the gene hashed, not an older copy in the DNA', () => {
+    const self = (body: string): Gene => ({
+      ...frameworks(),
+      ack: 'read',
+      alleles: [{ id: 'nvc', title: 'NVC', body }, { id: 'again', title: '', ref: 'frameworks/nvc' }],
+    });
+    expect(geneHash(self('new'), [self('old')])).toBe(own(self('new')));
+    expect(own(self('new'))).not.toBe(own(self('old')));
   });
 });
 
