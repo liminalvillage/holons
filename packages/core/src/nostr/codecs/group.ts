@@ -4,7 +4,9 @@
 // `settings` → NIP-29 group metadata (39000) + admins (39001), holon-signed.
 // The members list (39002) needs the whole `users` lens, so hosts publish it
 // from `buildGroupState` (see groups.ts) rather than per record.
-// Reverse: a 39000 by a trusted key patches name / purpose / picture.
+// Reverse: a 39000 by a trusted key patches name / picture. Its `about` is
+// derived (the purpose gene, else the description) and never folded back:
+// a holon's purpose is written as its purpose gene, by its admins only.
 
 import type { LensCodec, NostrEventLike, ProjectionCtx, Reversed } from '../types.js';
 import { tagValue } from '../tags.js';
@@ -41,8 +43,6 @@ export const groupCodec: LensCodec<SettingsRecord> = {
     const patch: Partial<SettingsRecord> = {};
     const name = tagValue(event, 'name');
     if (typeof name === 'string' && name.trim()) patch.name = name;
-    const about = tagValue(event, 'about');
-    if (typeof about === 'string' && about.trim()) patch.purpose = about;
     const picture = tagValue(event, 'picture');
     if (typeof picture === 'string' && /^https?:\/\//i.test(picture)) patch.picture = picture;
     return { lens: 'settings', holon, id: holon, kind: event.kind, pubkey: event.pubkey, createdAt: event.created_at, eventId: event.id, patch };
@@ -52,12 +52,8 @@ export const groupCodec: LensCodec<SettingsRecord> = {
     const next: SettingsRecord = { ...current };
     let changed = false;
     for (const [k, v] of Object.entries(r.patch)) {
-      if (v === undefined) continue;
-      if (k === 'purpose' && Array.isArray(current.purpose)) {
-        if (current.purpose.join('\n') === v) continue;
-        next.purpose = String(v).split('\n');
-      } else if ((current as Record<string, unknown>)[k] === v) continue;
-      else (next as Record<string, unknown>)[k] = v;
+      if (v === undefined || (current as Record<string, unknown>)[k] === v) continue;
+      (next as Record<string, unknown>)[k] = v;
       changed = true;
     }
     return changed ? next : null;
