@@ -12,14 +12,11 @@ import {
   approveJoin,
   leaveHolon,
   removeSeat,
-  requestToJoin,
   watchJoinRequests,
   type JoinRequest,
 } from "@holons/core/holons";
 import { addHolonMember, removeHolonMember } from "@holons/core/protocol";
 import type { Role } from "@holons/core/protocol";
-import { get } from "svelte/store";
-import { currentUser } from "./auth";
 import { resolveAppName } from "./config";
 import { getHolosphere } from "./holosphere";
 import { getSessionSecret } from "./sessionKey";
@@ -79,18 +76,12 @@ export async function unseat(hub: string, key: string): Promise<string> {
 }
 
 /**
- * Ask to join `hub` as the session key (a kind-9021, carrying a name). A
- * Telegram login also names its Telegram id: the bot of a Telegram group
- * proves it from the key and links a member of the group at once.
+ * Where a person asks to join `hub`: its walk (`/<hub>/apply`) — they read
+ * and agree to the holon's DNA, then sign the request
+ * (`@holons/core/holons` applyToHolon). There is no ask without it.
  */
-export async function askToJoin(hub: string, name: string): Promise<boolean> {
-  const signer = sessionSigner();
-  if (!signer) return false;
-  const hs = await getHolosphere();
-  const user = get(currentUser);
-  const telegramId = user?.provider === "telegram" ? user.id : undefined;
-  requestToJoin(hs, hub, signer, { ...opts(), reason: name, telegramId });
-  return true;
+export function applyPath(hub: string): string {
+  return `/${encodeURIComponent(hub)}/apply`;
 }
 
 /** Say goodbye (a kind-9022); an admin takes the seat away. */

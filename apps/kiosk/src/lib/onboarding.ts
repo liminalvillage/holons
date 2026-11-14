@@ -13,10 +13,9 @@
 import { get } from "svelte/store";
 import { writeAcceptance } from "@holons/core/holosphere";
 import { holonMembers } from "@holons/core/protocol";
-import { applyTaskCompletion, type Quest } from "@holons/core/tasks";
 import {
-  CARDS_LENS,
   PROFILE_FIELDS,
+  completeOwnCard,
   confirmCard,
   dealCards,
   listOnboarding,
@@ -128,17 +127,7 @@ export async function tickCard(
   card: OnboardingCardView,
 ): Promise<void> {
   const hs = await getHolosphere();
-  const cur = (await hs.get(
-    view.home,
-    CARDS_LENS,
-    card.questId,
-  )) as Quest | null;
-  if (!cur) throw new Error("card not dealt yet");
-  const person = /^\d+$/.test(view.home) ? Number(view.home) : view.home;
-  const done = applyTaskCompletion(cur, person);
-  if (!done.ok && done.reason !== "already-completed")
-    throw new Error(done.reason);
-  if (done.ok) await hs.put(view.home, CARDS_LENS, done.task);
+  await completeOwnCard(hs, view, card);
   await nudge(view.holon);
 }
 

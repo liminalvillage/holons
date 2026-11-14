@@ -22,7 +22,7 @@
   import { sessionKeyPub, dropSessionKey } from "$lib/sessionKey";
   import { forgetRememberedKey } from "$lib/rememberKey";
   import { installMode, promptInstall } from "$lib/install";
-  import { askToJoin, leave } from "$lib/hubmembers";
+  import { applyPath, leave } from "$lib/hubmembers";
   import { isHolonId, isTelegramChatId } from "@holons/core/protocol";
   import { t, tr } from "$lib/i18n";
   import { fedRequests } from "$lib/fedrequests";
@@ -70,15 +70,11 @@
     !!$holonId &&
     (isHolonId($holonId) || isTelegramChatId($holonId)) &&
     !!$sessionKeyPub;
-  async function joinHub() {
-    if (!$holonId || !$currentUser || joinBusy) return;
-    joinBusy = true;
-    try {
-      if (await askToJoin($holonId, displayName($currentUser)))
-        showNotice(tr("menu.linkAsked"));
-    } finally {
-      joinBusy = false;
-    }
+  // Asking goes through the holon's walk: its DNA first, then the request.
+  function joinHub() {
+    if (!$holonId) return;
+    close();
+    void goto(applyPath($holonId));
   }
   async function leaveHub() {
     if (!$holonId || joinBusy) return;

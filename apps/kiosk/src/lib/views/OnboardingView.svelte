@@ -14,8 +14,9 @@
   // layout's `onboardingGate`), and once linked the board opens.
   import { onDestroy } from "svelte";
   import { holonId, holonName, showNotice, standingRecheck } from "$lib/stores";
-  import { currentUser, displayName, isLoggedIn, loginOpen } from "$lib/auth";
-  import { askToJoin } from "$lib/hubmembers";
+  import { isLoggedIn, loginOpen } from "$lib/auth";
+  import { goto } from "$app/navigation";
+  import { applyPath } from "$lib/hubmembers";
   import { sessionKeyPub } from "$lib/sessionKey";
   import {
     fieldLabel,
@@ -92,17 +93,10 @@
 
   $: holonLabel = $holonName || $holonId || "";
 
-  async function start() {
-    if (!$holonId || !$currentUser || busy) return;
-    busy = true;
-    try {
-      if (await askToJoin($holonId, displayName($currentUser))) {
-        asking = true;
-        showNotice($t(mine?.state === "off" ? "onb.offAsked" : "onb.asked"));
-      }
-    } finally {
-      busy = false;
-    }
+  // Asking goes through the holon's walk: its DNA first, then the request.
+  function start() {
+    if (!$holonId || busy) return;
+    void goto(applyPath($holonId));
   }
 
   async function tick(card: OnboardingCardView) {
