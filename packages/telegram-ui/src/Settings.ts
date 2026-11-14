@@ -41,6 +41,11 @@ import {
   unlinkChat,
 } from '@holons/core/linking';
 import { federationLinkState, laneState } from '@holons/core/federation';
+import { purposeAbout, readGenes } from '@holons/core/dna';
+
+/** Where a holon's DNA (its purpose gene included) is edited: the kiosk editor, as /dna links to it. */
+export const dnaEditUrl = (holonId: string | number): string =>
+  `https://hubs.network/${encodeURIComponent(String(holonId))}/dna?edit`;
 import { linkContext, outcomeText } from './federationLinks.js';
 import { ONBOARDING_DEEPLINK, startFromDeeplink } from '../scenes/flow.js';
 import { ONBOARD_PAYLOAD } from './HolonDna.js';
@@ -1445,7 +1450,7 @@ export default class Settings {
 
     // Handle entering remove mode
     this.bot.action(
-      /enter_remove_mode_(values|domains|roles|purpose|currencies)$/,
+      /enter_remove_mode_(values|domains|roles|currencies)$/,
       async ctx => {
         await ctx.answerCbQuery().catch();
         const type = ctx.match[1];
@@ -1455,7 +1460,7 @@ export default class Settings {
 
     // Handle exiting remove mode
     this.bot.action(
-      /exit_remove_mode_(values|domains|roles|purpose|currencies)$/,
+      /exit_remove_mode_(values|domains|roles|currencies)$/,
       async ctx => {
         await ctx.answerCbQuery().catch();
         const type = ctx.match[1];
@@ -1465,7 +1470,7 @@ export default class Settings {
 
     // Handle removing items
     this.bot.action(
-      /remove_(values|domains|roles|purpose|currencies)_(\d+)$/,
+      /remove_(values|domains|roles|currencies)_(\d+)$/,
       async ctx => {
         await ctx.answerCbQuery().catch();
         const type = ctx.match[1];
@@ -1495,43 +1500,6 @@ export default class Settings {
     );
 
     // Duplicate handlers removed - these are already registered dynamically in the loop around line 517-522
-
-    this.bot.action('settings_purpose_change', async ctx => {
-      console.log('PURPOSE ADD button clicked');
-      await ctx.answerCbQuery().catch();
-      try {
-        const holonId = ctx.chat.id;
-        const language = await this.getLanguage(holonId);
-
-        return ctx.scene.enter('input_scene', {
-          promptKey: 'settings_enter_new_items',
-          promptParams: {
-            type: i18next
-              .t('settings_purpose', { lng: language })
-              .toLowerCase(),
-            lng: language,
-          },
-          inputType: 'array',
-          allowEmpty: false,
-          showCancelButton: true,
-          onComplete: async (ctx, newItems) => {
-            const holonId = ctx.chat.id;
-
-            let settings = await this.getSettings(holonId);
-            if (!settings.purpose) {
-              settings.purpose = [];
-            }
-
-            settings.purpose.push(...newItems);
-            await this.setSettings(settings);
-            await this.showArraySettingMenu(ctx, 'purpose', false);
-          },
-        });
-      } catch (error) {
-        console.error('Error entering purpose add scene:', error);
-        return ctx.reply('Error adding purpose. Please try again later.');
-      }
-    });
 
     // Handle federation actions
     this.bot.action('add_federation', async ctx => {
@@ -1780,40 +1748,6 @@ export default class Settings {
 
     // Individual handlers for adding items - using InputScene pattern
     // All handlers clear cache before reading, then pass settings directly to showArraySettingMenu
-    this.bot.action('help_add_purpose', async ctx => {
-      await ctx.answerCbQuery().catch();
-      const holonId = ctx.chat.id;
-      const language = await this.getLanguage(holonId);
-      const self = this;
-
-      let settings = await this.getSettings(holonId);
-      const currentPurpose =
-        settings.purpose || i18next.t('settings_not_set', { lng: language });
-
-      return ctx.scene.enter('input_scene', {
-        promptText:
-          i18next.t('settings_current', {
-            lng: language,
-            value: currentPurpose,
-          }) +
-          '\n\n' +
-          i18next.t('settings_send_new', {
-            lng: language,
-            type: i18next
-              .t('settings_purpose', { lng: language })
-              .toLowerCase(),
-          }),
-        allowEmpty: false,
-        onComplete: async (ctx, input) => {
-          const holonId = ctx.chat.id;
-          let settings = await self.getSettings(holonId);
-          settings.purpose = input;
-          await self.setSettings(settings);
-          await self.showArraySettingMenu(ctx, 'purpose');
-        },
-      });
-    });
-
     this.bot.action('help_add_values', async ctx => {
       await ctx.answerCbQuery().catch();
       const holonId = ctx.chat.id;
@@ -2111,42 +2045,6 @@ export default class Settings {
           lng: language,
           field: i18next.t('settings_name', { lng: language }),
           value: newName,
-        })
-      );
-    });
-
-    this.bot.command('setpurpose', async ctx => {
-      const holonId = ctx.chat.id;
-      const language = await this.getLanguage(holonId);
-      const isAdmin = await utils.isAdmin(ctx);
-
-      if (!isAdmin) {
-        await ctx.reply(i18next.t('settings_admin_only', { lng: language }));
-        return;
-      }
-
-      const args = ctx.message.text.split(' ').slice(1);
-      if (args.length < 2) {
-        await ctx.reply(
-          i18next.t('settings_usage', {
-            lng: language,
-            command: '/setpurpose',
-            example: '/setpurpose new purpose',
-          })
-        );
-        return;
-      }
-
-      const newPurpose = args.slice(1).join(' ');
-      let settings = await this.getSettings(holonId);
-      settings.purpose = newPurpose;
-      await this.setSettings(settings);
-
-      await ctx.reply(
-        i18next.t('settings_updated', {
-          lng: language,
-          field: i18next.t('settings_purpose', { lng: language }),
-          value: newPurpose,
         })
       );
     });
@@ -2896,7 +2794,6 @@ export default class Settings {
       level: 0,
       admin: '',
       values: [],
-      purpose: '',
       domains: [],
       currencies: ['hour', 'euro'], // Default currency for all groups
       // Canonical equation shape lives in @holons/core/scoring so web,
@@ -3916,10 +3813,12 @@ export default class Settings {
     // Create message text
     let messageText = '';
 
-    // Special handling for purpose (which is a string, not an array)
+    // The purpose is the DNA's purpose gene (core owns it): shown here,
+    // edited in the DNA editor.
     if (type === 'purpose') {
       const currentPurpose =
-        settings.purpose || i18next.t('settings_not_set', { lng: language });
+        (await this.getPurpose(holonId)) ||
+        i18next.t('settings_not_set', { lng: language });
 
       // Show purpose in message text
       messageText = `🎯 *${i18next.t('settings_purpose', { lng: language })}*\n\n${currentPurpose}`;
@@ -3929,7 +3828,7 @@ export default class Settings {
         [
           {
             text: `✏️ ${i18next.t('settings_edit', { lng: language })}`,
-            callback_data: 'help_add_purpose',
+            url: dnaEditUrl(holonId),
           },
         ],
         [
@@ -4077,24 +3976,40 @@ export default class Settings {
     }
   }
 
-  // Add setPurpose method
+  /**
+   * The holon's purpose: the DNA's purpose gene, read through core
+   * (`@holons/core/dna`); the old settings field is never read.
+   */
+  async getPurpose(holonId) {
+    try {
+      return purposeAbout(await readGenes(this.db, String(holonId)));
+    } catch {
+      return '';
+    }
+  }
+
+  /** /setpurpose: the purpose is a gene now — show it, and link to the DNA editor. */
   async setPurpose(ctx) {
     const holonId = ctx.message.chat.id;
-    const text = ctx.message.text.replace('/setpurpose', '').trim();
     const language = await this.getLanguage(holonId);
-
-    if (!text) {
-      ctx.reply(i18next.t('settings_specify_purpose', { lng: language }));
-      return;
-    }
-
-    let settings = await this.getSettings(holonId);
-    settings.purpose = text;
-    await this.setSettings(settings);
+    const current =
+      (await this.getPurpose(holonId)) ||
+      i18next.t('settings_not_set', { lng: language });
     await ctx.reply(
-      i18next.t('settings_purpose_set', { lng: language, value: text })
+      `🎯 ${i18next.t('settings_purpose', { lng: language })}: ${current}`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: `✏️ ${i18next.t('settings_edit', { lng: language })}`,
+                url: dnaEditUrl(holonId),
+              },
+            ],
+          ],
+        },
+      }
     );
-    await this.showArraySettingMenu(ctx, 'purpose', false);
   }
 
   async getAdminKeyboard(holonId) {
@@ -5373,6 +5288,7 @@ export default class Settings {
 
     let settings = await this.getSettings(holonId);
     const language = settings.language;
+    const purpose = await this.getPurpose(holonId);
 
     const menuText = `${this.getSettingIcon('holacracy')} ${i18next.t('settings_holacracy', { lng: language, defaultValue: 'Holacracy Settings' })}`;
 
@@ -5381,7 +5297,7 @@ export default class Settings {
         inline_keyboard: [
           [
             {
-              text: `${this.getSettingIcon('purpose')} ${i18next.t('settings_purpose', { lng: language })}: ${settings.purpose ? '✓' : i18next.t('settings_not_set', { lng: language })}`,
+              text: `${this.getSettingIcon('purpose')} ${i18next.t('settings_purpose', { lng: language })}: ${purpose ? '✓' : i18next.t('settings_not_set', { lng: language })}`,
               callback_data: 'settings_purpose',
             },
           ],
