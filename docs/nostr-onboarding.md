@@ -253,7 +253,7 @@ it. Each surface builds the option block with
 | `checklists`, `shopping`, `library` | 30003 (NIP-51 set) | entries as `['item', …]` tags |
 | `appreciation[]` on quests/events | 7 (NIP-25) per appreciator | `+` gives, `-` withdraws |
 | `roles` | 30009 badge definition + kind 8 award (NIP-58) | holon-signed |
-| `settings` | 39000 metadata + 39001 admins (NIP-29) | holon-signed |
+| `settings` | 39000 metadata + 39001 admins (NIP-29), published whole by `publishGroupState` on settings/genes writes, `about` = purpose gene | holon-signed |
 | `users` membership | 9000 / 9021 on join, 9001 on leave, 39002 members | the holon acts as the "group relay" |
 
 Every projected event carries `['n', app]`, `['h', holon]`,

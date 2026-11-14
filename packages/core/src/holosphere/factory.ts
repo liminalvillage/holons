@@ -148,9 +148,11 @@ export interface CreateHoloSphereOptions {
    */
   registry?: boolean;
   /**
-   * Republish a holon's NIP-29 group state when an admin writes its DNA —
-   * the 39000 `about` is the purpose gene (see `@holons/core/holons`
-   * `attachGroupState`). On by default; `false` for raw tooling.
+   * Republish a holon's NIP-29 group state when an admin writes its settings
+   * doc or its DNA — the 39000 `about` is the purpose gene (see
+   * `@holons/core/holons` `attachGroupState`, the one publisher of the group
+   * state; the settings projection emits none). On by default; `false` for
+   * raw tooling.
    */
   groupState?: boolean;
   /**

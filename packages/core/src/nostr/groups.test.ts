@@ -54,11 +54,9 @@ describe('NIP-29 group state (holon-authored)', () => {
     expect(tag(groupMetadataTemplate(ctx, HOLON, settings).tags, 'about')![1]).toBe('A village');
     expect(tag(groupMetadataTemplate(ctx, HOLON, settings, '').tags, 'about')![1]).toBe('A village');
     expect(tag(groupMetadataTemplate(ctx, HOLON, { id: HOLON, purpose: 'x' }).tags, 'about')).toBeUndefined();
-    // The host's own knowledge of the purpose gene, when no about is passed.
-    const known: ProjectionCtx = { ...ctx, aboutFor: (h) => (h === HOLON ? 'From the gene' : undefined) };
-    expect(tag(groupMetadataTemplate(known, HOLON, settings).tags, 'about')![1]).toBe('From the gene');
-    expect(tag(PROJECTION_CODECS.settings.project(HOLON, settings, known)!.primary.tags, 'about')![1]).toBe('From the gene');
-    expect(groupAbout(known, '-1', settings)).toBe('A village');
+    expect(groupAbout(settings, '  From the gene ')).toBe('From the gene');
+    expect(groupAbout(settings)).toBe('A village');
+    expect(groupAbout({})).toBe('');
   });
   it('a join request may carry the DNA hash the person agreed to', () => {
     const hash = 'ab'.repeat(32);
@@ -67,12 +65,12 @@ describe('NIP-29 group state (holon-authored)', () => {
     expect(groupJoinRequestTemplate(ctx, HOLON, 'Ada', 42, 'short').tags.some((t) => t[0] === DNA_TAG)).toBe(false);
     expect(groupJoinRequestTemplate(ctx, HOLON, 'Ada').tags.some((t) => t[0] === DNA_TAG)).toBe(false);
   });
-  it('settings codec projects 39000/39001 for the holon doc only and folds name/picture back, never about', () => {
+  it('settings codec projects nothing (publishGroupState owns the group state) and folds name/picture back, never about', () => {
     const settings = PROJECTION_CODECS.settings;
     expect(settings.project(HOLON, { id: 'other', name: 'x' }, ctx)).toBeNull();
-    const out = settings.project(HOLON, { id: HOLON, name: 'Liminal', admin: '42' }, ctx)!;
-    expect(out.primary.kind).toBe(GROUP_METADATA_KIND);
-    expect(out.companions![0].template.kind).toBe(GROUP_ADMINS_KIND);
+    // A settings write cannot know the purpose gene: it must never send a 39000 of its own.
+    expect(settings.project(HOLON, { id: HOLON, name: 'Liminal', admin: '42', description: 'A village' }, ctx)).toBeNull();
+    expect(settings.kinds).toEqual([GROUP_METADATA_KIND]);
     const r = settings.parse!({ kind: GROUP_METADATA_KIND, pubkey: PUB, created_at: 1, content: '', tags: [['d', HOLON], ['name', 'Liminal Village'], ['about', 'Grow\nShare']] }, ctx)!;
     expect(r).toMatchObject({ lens: 'settings', holon: HOLON, id: HOLON });
     expect(r.patch).toEqual({ name: 'Liminal Village' });

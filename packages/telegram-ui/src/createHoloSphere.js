@@ -249,9 +249,6 @@ function buildProjectionOptions(appName, privateKey, lenses) {
     holonPubkey,
     cellToLatLng,
     timezoneFor,
-    // The 39000 `about` a settings write projects: the purpose gene, as the
-    // trust cache last read it (the description stands in until it has).
-    aboutFor: trust.aboutFor,
     pubkeyFor,
     userIdFor: trust.userIdFor,
     providerPubkey,
@@ -555,11 +552,6 @@ export function createTrustCache(
       return list;
     },
     userIdFor: pubkey => byPubkey.get(pubkey),
-    /** The purpose gene's blurb as last read, for the settings projection. */
-    aboutFor: holon => {
-      const about = abouts.get(String(holon));
-      return about ? about : undefined;
-    },
     /**
      * A gene of `holon` was written or removed: read its purpose again and
      * republish the group state from what it was last built of.

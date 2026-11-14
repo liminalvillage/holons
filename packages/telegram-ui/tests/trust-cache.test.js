@@ -89,7 +89,6 @@ describe('createTrustCache', () => {
     const about = t => t.tags.find(x => x[0] === 'about')?.[1];
     await trust.trustedAuthors('-1');
     expect(about(published.find(t => t.kind === 39000))).toBe('A test');
-    expect(trust.aboutFor('-1')).toBeUndefined();
 
     genes = [
       {
@@ -109,7 +108,6 @@ describe('createTrustCache', () => {
     await vi.waitFor(() => expect(published).toHaveLength(1));
     expect(published[0].kind).toBe(39000);
     expect(about(published[0])).toBe('Grow together');
-    expect(trust.aboutFor('-1')).toBe('Grow together');
     // A write elsewhere republishes nothing.
     await fake.put('-1', 'quests', { id: 'q' });
     await trust.genesChanged('-1');

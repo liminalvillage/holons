@@ -1,36 +1,32 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 //
-// `settings` → NIP-29 group metadata (39000) + admins (39001), holon-signed.
-// The members list (39002) needs the whole `users` lens, so hosts publish it
-// from `buildGroupState` (see groups.ts) rather than per record.
+// `settings` ← NIP-29 group metadata (39000), reverse only.
+// A settings write projects NOTHING: the group state (39000 metadata, 39001
+// admins, 39002 members) is published whole by `@holons/core/holons`
+// `publishGroupState` (wired on every settings and genes write by
+// `attachGroupState`), because its `about` is the purpose gene — which a
+// per-record projection cannot read — and a second publisher of the same
+// replaceable event would put the description back.
 // Reverse: a 39000 by a trusted key patches name / picture. Its `about` is
 // derived (the purpose gene, else the description) and never folded back:
 // a holon's purpose is written as its purpose gene, by its admins only.
 
 import type { LensCodec, NostrEventLike, ProjectionCtx, Reversed } from '../types.js';
 import { tagValue } from '../tags.js';
-import { GROUP_ADMINS_KIND, GROUP_METADATA_KIND, groupAdminsTemplate, groupMetadataTemplate, type GroupSettingsLike } from '../groups.js';
+import { GROUP_METADATA_KIND, type GroupSettingsLike } from '../groups.js';
 
 export interface SettingsRecord extends GroupSettingsLike {
   id?: string | number;
 }
 
-/** The settings doc is keyed by the holon id; other records on the lens are not the holon. */
-function isHolonSettings(holon: string, item: SettingsRecord): boolean {
-  return item.id !== undefined && item.id !== null && String(item.id) === holon;
-}
-
 export const groupCodec: LensCodec<SettingsRecord> = {
   lens: 'settings',
-  kinds: [GROUP_METADATA_KIND, GROUP_ADMINS_KIND],
+  kinds: [GROUP_METADATA_KIND],
   primary: '30078',
-  project(holon, item, ctx) {
-    if (!isHolonSettings(holon, item)) return null;
-    return {
-      primary: groupMetadataTemplate(ctx, holon, item),
-      companions: [{ template: groupAdminsTemplate(ctx, holon, item) }],
-    };
+  // The group state has one publisher, `publishGroupState` (see above).
+  project() {
+    return null;
   },
   // A group is not retracted when its settings doc is; membership outlives metadata.
   retract() {

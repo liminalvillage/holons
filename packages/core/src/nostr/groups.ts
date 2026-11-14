@@ -40,13 +40,11 @@ const base = (ctx: ProjectionCtx, holon: string): string[][] => [
 
 /**
  * The holon's `about`: its purpose gene's blurb (`@holons/core/dna`
- * `purposeAbout`), else the settings description. `about` given → that
- * purpose; not given → what the host knows (`ctx.aboutFor`). Never a
+ * `purposeAbout`, passed as `about`), else the settings description. Never a
  * settings field of its own: the about is derived, and never folded back.
  */
-export function groupAbout(ctx: ProjectionCtx, holon: string, settings: GroupSettingsLike, about?: string | null): string {
-  const purpose = typeof about === 'string' ? about : ctx.aboutFor?.(holon);
-  if (typeof purpose === 'string' && purpose.trim()) return purpose.trim();
+export function groupAbout(settings: GroupSettingsLike, about?: string | null): string {
+  if (typeof about === 'string' && about.trim()) return about.trim();
   return typeof settings.description === 'string' ? settings.description.trim() : '';
 }
 
@@ -55,7 +53,7 @@ export function groupMetadataTemplate(ctx: ProjectionCtx, holon: string, setting
   const tags: string[][] = [['d', holon], ...base(ctx, holon)];
   const name = settings.name || settings.title;
   if (typeof name === 'string' && name.trim()) tags.push(['name', name]);
-  const text = groupAbout(ctx, holon, settings, about);
+  const text = groupAbout(settings, about);
   if (text) tags.push(['about', text]);
   if (typeof settings.picture === 'string' && /^https?:\/\//i.test(settings.picture)) tags.push(['picture', settings.picture]);
   tags.push([settings.isPublic === false ? 'private' : 'public']);

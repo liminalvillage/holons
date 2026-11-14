@@ -34,12 +34,6 @@ export interface ProjectionCtx {
   holonPubkey: string;
   /** Unix seconds; injectable for tests. */
   now?: () => number;
-  /**
-   * The holon's purpose, as its purpose gene says it (`@holons/core/dna`
-   * `purposeAbout`) — the 39000 `about`. Undefined when the host does not
-   * know (yet): the settings description stands in.
-   */
-  aboutFor?: (holon: string) => string | undefined;
   /** IANA zone for a holon (from its settings lens) → `start_tzid`. */
   timezoneFor?: (holon: string) => string | undefined;
   /** h3-js `cellToLatLng`, injected so core stays dependency-free. */

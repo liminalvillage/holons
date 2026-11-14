@@ -127,7 +127,7 @@ through the reverse sync below. Codecs live in `@holons/core/nostr`;
 | `checklists`, `shopping`, `library` | 30003 (NIP-51 set) | entries as `['item', …]` tags |
 | `quests`/`events` `appreciation[]` | 7 (NIP-25 reaction) per appreciator | signed by the APPRECIATOR's key on the record's address; `+` gives, `-` withdraws (Holons' reading of NIP-25) |
 | `roles` | 30009 badge definition + kind 8 award (NIP-58) | holon-signed; award lists current holders with a key, re-issued only when holders change; no 30008 (user-owned) |
-| `settings` (the holon doc) | 39000 group metadata + 39001 admins (NIP-29) | holon-signed; 39000 edits by a trusted key fold back into name/purpose/picture |
+| `settings` (the holon doc) | none projected per record: 39000/39001/39002 come whole from `publishGroupState` (core `attachGroupState`, on settings and genes writes) | 39000 edits by a trusted key fold back into name/picture; the `about` (purpose gene) never folds back |
 | `users` (membership) | 9000 put-user (holon) + 9021 join request (member) on join, 9001 remove-user on leave (NIP-29) | plus 39002 members published by the host from `buildGroupState` |
 
 Every projected event carries `['n', appname]`, `['h', holon]`,
@@ -196,8 +196,9 @@ Still not built: a lens making the standard kind *authoritative*
 
 A holon is a NIP-29 group whose id is the holon id (the `h` tag). The relay
 (strfry) does not implement NIP-29, so the **holon key** publishes what a
-NIP-29 relay would sign: 39000 metadata (from `settings`: name, purpose →
-`about`, picture, `public`, `closed`), 39001 admins (holon key +
+NIP-29 relay would sign: 39000 metadata (from `settings`: name, picture,
+`public`, `closed`; `about` = the purpose gene's blurb, else the
+description), 39001 admins (holon key +
 `settings.admin` when their derived key resolves) and 39002 members (every
 `users` record whose key resolves, via `buildGroupState` in
 `@holons/core/nostr`, republished by the host only when the state hash

@@ -12,6 +12,7 @@ import { signerFromSecretKey } from '../holosphere/signers.js';
 import { putGene, readGenes } from '../dna/genes.js';
 import { dnaHash } from '../dna/version.js';
 import { DNA_TAG } from '../nostr/groups.js';
+import { projectionOptionsFor } from '../nostr/projections.js';
 import type { NostrEventLike } from '../nostr/types.js';
 import { testKey } from '../protocol/testing.js';
 import {
@@ -181,6 +182,52 @@ describe('the group state follows the DNA', () => {
     // The purpose gene gone: the description stands in again.
     await hs.delete(holon, 'genes', 'purpose');
     expect(about(published.filter((e) => e.kind === 39000).at(-1))).toBe('A garden');
+    await hs.close();
+  });
+
+  it('a settings write after a purpose gene keeps the gene as the about (kiosk/MCP instance, projections on)', async () => {
+    // Built like the kiosk and the MCP server build theirs: projections on, no host `about` knowledge.
+    const nostr = projectionOptionsFor({ appName: APP, privateKey: bytesToHex(founder.sk) });
+    const hs = createHoloSphere({ appName: APP, privateKey: bytesToHex(founder.sk), store: { adapter: 'memory' }, nostr });
+    const published: NostrEventLike[] = [];
+    const h = hs as unknown as { publishNostrEvents(e: unknown): void; subscribeNostr(): () => void };
+    h.publishNostrEvents = (e) => published.push(...((Array.isArray(e) ? e : [e]) as NostrEventLike[]));
+    h.subscribeNostr = () => () => {};
+    const { holon } = await createHolon(hs, signer(founder.sk), { appName: APP, name: 'Orto' });
+    const settingsOf = async () => (await hs.get(holon, 'settings', holon)) as Record<string, unknown>;
+    await hs.put(holon, 'settings', { ...(await settingsOf()), id: holon, description: 'A garden' });
+    await putGene(hs, holon, { kind: 'purpose', title: 'Purpose', blurb: 'Grow food together.' });
+    const meta = () => published.filter((e) => e.kind === 39000);
+    expect(about(meta().at(-1))).toBe('Grow food together.');
+
+    // The settings projection sends no 39000 of its own: it could not know the gene.
+    const settingsHook = nostr.projections!.find((p) => p.lens === 'settings')!;
+    expect(settingsHook.project(holon, 'settings', { ...(await settingsOf()), name: 'Orto Nuovo' })).toBeNull();
+
+    // A setting the group state does not say (the language) sends nothing.
+    published.length = 0;
+    await hs.put(holon, 'settings', { ...(await settingsOf()), language: 'it' });
+    expect(meta()).toEqual([]);
+    // A setting it does say (the name): republished whole, the about still the gene.
+    await hs.put(holon, 'settings', { ...(await settingsOf()), name: 'Orto Nuovo' });
+    expect(meta()).toHaveLength(1);
+    expect(meta()[0].tags).toContainEqual(['name', 'Orto Nuovo']);
+    expect(about(meta()[0])).toBe('Grow food together.');
+    expect(meta()[0].pubkey).toBe(founder.pk);
+    // Another record of the lens is not the holon: nothing.
+    published.length = 0;
+    await hs.put(holon, 'settings', { id: 'not-the-holon', name: 'x' });
+    expect(meta()).toEqual([]);
+    await hs.close();
+  });
+
+  it("a key that may not seat republishes nothing on a settings write", async () => {
+    const { hs, published } = instance();
+    const { holon } = await createHolon(hs, signer(founder.sk), { appName: APP, name: 'Orto' });
+    await hs.login(bytesToHex(alice.sk));
+    published.length = 0;
+    await hs.put(holon, 'settings', { ...((await hs.get(holon, 'settings', holon)) as object), id: holon, name: 'Taken over' });
+    expect(published.filter((e) => e.kind === 39000)).toEqual([]);
     await hs.close();
   });
 
