@@ -19,7 +19,7 @@ export default class NotificationService {
   /**
    * Create a new NotificationService
    * @param {Telegraf} bot - The Telegraf bot instance
-   * @param {object} config - Configuration from booking.json
+   * @param {object} config - Notification configuration
    */
   constructor(bot, config) {
     this.bot = bot;

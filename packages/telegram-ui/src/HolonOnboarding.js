@@ -253,6 +253,28 @@ export default class HolonOnboarding {
       return;
     }
 
+    // Every step is done, but the DNA changed since they agreed to it: the
+    // key is linked once they walk it again and ask again (HolonDna.js).
+    if (view.blocked === 'dna') {
+      if (dmTo)
+        await this.post(
+          dmTo,
+          translated(
+            language,
+            'onbDnaChanged',
+            '⚠️ The DNA of <b>{{holon}}</b> changed since you agreed to it. Review it and ask again, and your key is linked.',
+            { holon: holonName }
+          ),
+          Markup.inlineKeyboard([
+            Markup.button.callback(
+              translated(language, 'dnaBlocked', 'The DNA changed: review it'),
+              `dnas:${holon}`
+            ),
+          ])
+        );
+      return;
+    }
+
     const si = view.steps.findIndex(s => s.id === view.step);
     const step = view.steps[si];
     if (!step) return;

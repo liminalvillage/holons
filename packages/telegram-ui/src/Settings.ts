@@ -43,6 +43,7 @@ import {
 import { federationLinkState, laneState } from '@holons/core/federation';
 import { linkContext, outcomeText } from './federationLinks.js';
 import { ONBOARDING_DEEPLINK, startFromDeeplink } from '../scenes/flow.js';
+import { ONBOARD_PAYLOAD } from './HolonDna.js';
 
 // Re-export so other modules (web, ai-ui) can import the canonical settings
 // shape from either `./Settings.js` or `@holons/core/settings`.
@@ -176,6 +177,7 @@ export default class Settings {
     /** The /key service, for `/start keylink_…` (set by the container). */
     this.keys = null;
     this.joinRequests = null;
+    this.holonDna = null;
 
     this._settingsCache = new Map();
     this._cacheTTL = 60 * 1000;
@@ -288,9 +290,18 @@ export default class Settings {
 
         // Handle deeplink payloads (e.g. /start join_-1002282981272_quests_itemId)
         const payload = ctx.message.text.split(' ')[1];
-        // `onboard_<holon>`: ask to link your key to a holon from Telegram;
-        // a holon with an onboarding walks you through it first.
-        const onboard = /^onboard_(-?\d{1,20})$/.exec(payload ?? '');
+        // `onboard_<holon>` or `onboard_<holon>_<hash16>`: ask to link your
+        // key to a holon from Telegram. The person walks the holon's DNA
+        // first (HolonDna.js); a link that carries the DNA's hash skips the
+        // reading, not the agreement, and a stale hash is walked again. A
+        // holon with an onboarding walks you through that after the request.
+        const onboard = ONBOARD_PAYLOAD.exec(payload ?? '');
+        if (onboard && chatType === 'private' && this.holonDna) {
+          await this.holonDna.begin(ctx, onboard[1], {
+            handoff: onboard[2] ?? null,
+          });
+          return;
+        }
         if (onboard && chatType === 'private' && this.joinRequests) {
           await this.joinRequests.askFromTelegram(ctx, onboard[1]);
           return;
@@ -2717,6 +2728,11 @@ export default class Settings {
   /** The join-request service answers `/start onboard_<holon>` deep links. */
   setJoinRequestsInstance(joinRequests) {
     this.joinRequests = joinRequests;
+  }
+
+  /** The DNA service walks `/start onboard_<holon>[_<hash16>]` deep links. */
+  setHolonDnaInstance(holonDna) {
+    this.holonDna = holonDna;
   }
 
   setHolonsInstance(holonsInstance) {

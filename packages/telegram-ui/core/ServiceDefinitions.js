@@ -12,7 +12,6 @@ import Quests from '../src/Quests.js';
 import Shopping from '../src/Shopping.js';
 import Lunation from '../src/Lunation.js';
 import Onboarding from '../src/Onboarding.js';
-import BookingSystem from '../src/BookingSystem.js';
 import Expenses from '../src/Expenses.js';
 import Settings from '../src/Settings.js';
 import Bigtalk from '../src/Bigtalk.js';
@@ -24,6 +23,7 @@ import Participation from '../src/RSVP.js';
 import Shifts from '../src/Shifts.js';
 import Keys from '../src/Keys.js';
 import JoinRequests from '../src/JoinRequests.js';
+import HolonDna from '../src/HolonDna.js';
 import FederationRequests from '../src/FederationRequests.js';
 import AppsPin from '../src/AppsPin.js';
 import { linkHolons, unlinkHolons } from '../src/federationLinks.js';
@@ -525,6 +525,15 @@ export const serviceDefinitions = {
     dependencies: ['telebot', 'database', 'settings'],
   },
 
+  // /dna: a holon's DNA as Telegram messages, and the walk (one gene per
+  // message, an explicit agreement) that precedes asking to join it.
+  holonDna: {
+    factory: ({ telebot, database, settings, joinRequests }) =>
+      new HolonDna(telebot, database, settings, { joinRequests }),
+    singleton: true,
+    dependencies: ['telebot', 'database', 'settings', 'joinRequests'],
+  },
+
   // Federation requests reach the Telegram group: a partner that linked to
   // a chat (and could not speak for it) is announced once, with Accept /
   // Decline for the chat's admins.
@@ -560,13 +569,6 @@ export const serviceDefinitions = {
 
   onboarding: {
     factory: ({ telebot, database }) => new Onboarding(telebot, database),
-    singleton: true,
-    dependencies: ['telebot', 'database'],
-  },
-
-  bookingSystem: {
-    factory: ({ telebot, database }) =>
-      new BookingSystem(telebot, database, './data/booking.json'),
     singleton: true,
     dependencies: ['telebot', 'database'],
   },
@@ -657,6 +659,9 @@ export const postInitHooks = {
     }
     if (typeof settings.setJoinRequestsInstance === 'function') {
       settings.setJoinRequestsInstance(await container.get('joinRequests'));
+    }
+    if (typeof settings.setHolonDnaInstance === 'function') {
+      settings.setHolonDnaInstance(await container.get('holonDna'));
     }
   },
 };

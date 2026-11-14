@@ -60,7 +60,7 @@ export function startOnboarding(ctx, db) {
 }
 
 /**
- * Does the bot already know this person? Any one of: an onboarding DNA, a
+ * Does the bot already know this person? Any one of: a saved profile, a
  * profile in their own holon, or a hub they belong to (joining one records
  * it in their holon's `holons` lens).
  */
@@ -124,11 +124,6 @@ export function nextStep(ctx) {
     (Number.isInteger(ctx.session.stage) ? ctx.session.stage : -1) + 1;
   ctx.session.stage = stage;
   return ctx.scene.enter(stage >= sequence.length ? 'done' : sequence[stage]);
-}
-
-/** The run is over before its last step (a community's DNA has no more). */
-export function finishSequence(ctx) {
-  return ctx.scene.enter('done');
 }
 
 /** Open `sceneId` as a single edit from the menu scene `menuId`. */

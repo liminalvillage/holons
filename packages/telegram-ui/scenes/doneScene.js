@@ -6,9 +6,6 @@ const doneScene = new Scenes.BaseScene('done');
 
 /** The closing words follow what was really written, not what was hoped. */
 function closingMessage(ctx) {
-  if (ctx.session.saved === 'community') {
-    return "Thank you! Your community's DNA is saved in the decentralized database.";
-  }
   if (ctx.session.saved === true) {
     return 'Thank you so much for your time! Your profile is saved in the decentralized database. I will let you know when you have a match!';
   }

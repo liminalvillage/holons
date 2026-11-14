@@ -15,11 +15,11 @@ welcomeScene.enter(async ctx => {
   const holonId = ctx.chat.id;
 
   if (holonId < 0) {
-    // Group Chats
+    // A group has no profile of its own here: its DNA is /dna.
     await ctx.reply(
-      'Welcome to our community onboarding process! Please answer the following questions from the community perspective to create your DNA'
+      'My profile is filled in a private chat with me. For what this group stands for, send /dna.'
     );
-    return ctx.scene.enter('dna');
+    return ctx.scene.leave();
   }
 
   // Check existing profile for individual users
@@ -28,16 +28,13 @@ welcomeScene.enter(async ctx => {
 
     if (data) {
       return ctx.reply(
-        'Welcome back! Would you like to make some changes to your DNA?',
+        'Welcome back! Would you like to make some changes to your profile?',
         Markup.inlineKeyboard([
           [
-            Markup.button.callback('See DNA', 'DNA'),
             Markup.button.callback('Restart Wizard', 'wizard'),
-          ],
-          [
             Markup.button.callback('Change Profile', 'change'),
-            Markup.button.callback('Reset Profile', 'delete'),
           ],
+          [Markup.button.callback('Reset Profile', 'delete')],
         ])
       );
     } else {
@@ -50,12 +47,6 @@ welcomeScene.enter(async ctx => {
 });
 
 // Action handlers
-welcomeScene.action('DNA', async ctx => {
-  await ctx.answerCbQuery().catch(() => {});
-  const data = await readDna(ctx.session.db, ctx.from.id);
-  ctx.reply('Your current DNA:\n\n' + JSON.stringify(data, null, 2));
-});
-
 welcomeScene.action('change', async ctx => {
   await ctx.answerCbQuery().catch(() => {});
   await ctx.reply(
@@ -83,15 +74,12 @@ welcomeScene.action('wizard', async ctx => {
   return wizard(ctx);
 });
 
-welcomeScene.action('dnawizard', async ctx => {
-  await ctx.answerCbQuery().catch(() => {});
-  return dnawizard(ctx);
-});
-
 welcomeScene.action('delete', async ctx => {
   await ctx.answerCbQuery().catch(() => {});
   await clearDna(ctx.session.db, ctx.from.id);
-  await ctx.reply('Your DNA has been deleted, type /start to create a new DNA');
+  await ctx.reply(
+    'Your profile has been deleted, type /start to create a new one'
+  );
 });
 
 // Scene navigation actions
@@ -126,11 +114,6 @@ function wizard(ctx) {
     return nextStep(ctx);
   }
   return startSequence(ctx, DEFAULT_SEQUENCE);
-}
-
-function dnawizard(ctx) {
-  ctx.session.wizard = false;
-  return ctx.scene.enter('dna');
 }
 
 export default welcomeScene;
