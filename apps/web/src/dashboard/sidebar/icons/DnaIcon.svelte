@@ -1,4 +1,6 @@
 <script lang="ts">
+  // SPDX-License-Identifier: AGPL-3.0-or-later
+  // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
   export let active = false;
 </script>
 
