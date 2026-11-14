@@ -2252,8 +2252,7 @@ export const it: Record<MessageKey, Msg> = {
   "onb.previewNote": "Ciò che vede chi arriva. Scegli un passo su cui stare.",
   "onb.previewAt": "Stai sul passo",
   "dnaEdit.row": "DNA",
-  "dnaEdit.rowSub":
-    "— ciò che si legge e si accetta prima di unirsi",
+  "dnaEdit.rowSub": "— ciò che si legge e si accetta prima di unirsi",
   "dnaEdit.open": "Modifica il DNA",
   "dnaEdit.title": "Modifica il DNA",
   "dnaEdit.tabGenes": "Geni",

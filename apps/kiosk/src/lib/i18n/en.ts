@@ -2212,8 +2212,7 @@ export const en = {
   "onb.previewNote": "What a newcomer sees. Pick a step to stand on.",
   "onb.previewAt": "Stand on step",
   "dnaEdit.row": "DNA",
-  "dnaEdit.rowSub":
-    "— what people read and agree to before they join",
+  "dnaEdit.rowSub": "— what people read and agree to before they join",
   "dnaEdit.open": "Edit DNA",
   "dnaEdit.title": "Edit DNA",
   "dnaEdit.tabGenes": "Genes",
