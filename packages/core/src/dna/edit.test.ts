@@ -169,6 +169,13 @@ describe('live issues', () => {
     expect(check.issues).toEqual([expect.objectContaining({ code: 'ref-missing', geneKey: d0[0].key, alleleKey: withRef.allele!.key })]);
   });
 
+  it('flags a disallowed link live instead of dropping it', () => {
+    let d = built();
+    d = updateGene(d, d[0].key, { links: [{ label: 'Evil', href: 'javascript:alert(1)' }] });
+    const check = checkDrafts(d);
+    expect(check.issues).toEqual([expect.objectContaining({ code: 'bad-link', geneKey: d[0].key })]);
+  });
+
   it('measures each gene as stored and flags one over 48 KB', () => {
     let d = built();
     const small = checkDrafts(d).bytes.get(d[0].key)!;

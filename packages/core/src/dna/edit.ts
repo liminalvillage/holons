@@ -19,7 +19,7 @@
 // holosphere, and the screens ask `may(…, 'dna')` before offering an editor.
 
 import type { HoloSphere } from 'holosphere';
-import { geneBytes, geneSlug, normalizeGene, putGene, removeGene, reorderGenes, sortGenes, validateGenes } from './genes.js';
+import { geneBytes, geneSlug, normalizeGeneDraft, putGene, removeGene, reorderGenes, sortGenes, validateGenes } from './genes.js';
 import { STARTER_GENES } from './templates.js';
 import {
   GENE_KINDS,
@@ -217,8 +217,8 @@ export function settleDrafts(drafts: readonly DraftGene[]): SettledGene[] {
     taken.add(id);
     const { key: _key, alleles, starter, ...rest } = d;
     // A blank allele is not stored; ask core which rows it keeps, one by one.
-    const kept = alleles.filter((a) => (normalizeGene({ id: 'x', title: 'x', alleles: [a] })?.alleles.length ?? 0) > 0);
-    const gene = normalizeGene({ ...rest, id, order, updated: stamp, alleles: kept.map(({ key: _k, ...a }) => a) });
+    const kept = alleles.filter((a) => (normalizeGeneDraft({ id: 'x', title: 'x', alleles: [a] })?.alleles.length ?? 0) > 0);
+    const gene = normalizeGeneDraft({ ...rest, id, order, updated: stamp, alleles: kept.map(({ key: _k, ...a }) => a) });
     if (gene) out.push({ key: d.key, gene, alleleKeys: kept.map((a) => a.key), ...(starter ? { starter } : {}) });
   });
   return out;

@@ -10,6 +10,7 @@ import {
   geneBytes,
   geneSlug,
   normalizeGene,
+  normalizeGeneDraft,
   purposeAbout,
   putGene,
   readGenes,
@@ -105,6 +106,46 @@ describe('normalizeGene', () => {
       { id: 'care-2', title: 'Care' },
       { id: 'other-care', title: '', ref: 'other/care' },
     ]);
+  });
+
+  it('drops links and images a reader must never render (javascript:, //host, data:)', () => {
+    const raw = {
+      id: 'x',
+      title: 'X',
+      links: [
+        { label: 'Evil', href: 'javascript:alert(1)' },
+        { label: 'Evil too', href: ' JavaScript:alert(1)' },
+        { label: 'Elsewhere', href: '//evil.org/x' },
+        { label: 'Data', href: 'data:text/html,<script>1</script>' },
+        { label: 'Web', href: 'https://a.org' },
+        { label: 'Mail', href: 'mailto:a@b.org' },
+        { label: 'Chat', href: 'tg://resolve?domain=x' },
+        { label: 'Here', href: '/x/dna' },
+        { label: 'Anchor', href: '#care' },
+      ],
+      alleles: [
+        {
+          title: 'Care',
+          link: { label: 'Go', href: 'vbscript:x' },
+          detail: { body: 'b', links: [{ label: 'Bad', href: '//x' }, { label: 'Ok', href: 'http://ok.org' }], image: { src: 'javascript:x', alt: 'a' } },
+        },
+        { title: 'Pic', detail: { image: { src: 'data:image/png;base64,AA', alt: '' } } },
+        { title: 'Good pic', detail: { image: { src: 'https://img.org/a.png', alt: 'A' } } },
+        { title: 'Site pic', detail: { image: { src: '/a.png', alt: '' } } },
+      ],
+    };
+    const g = normalizeGene(raw)!;
+    expect(g.links!.map((l) => l.href)).toEqual(['https://a.org', 'mailto:a@b.org', 'tg://resolve?domain=x', '/x/dna', '#care']);
+    expect(g.alleles[0]).toEqual({ id: 'care', title: 'Care', detail: { body: 'b', links: [{ label: 'Ok', href: 'http://ok.org' }] } });
+    // An allele whose only detail was a bad image has no detail left.
+    expect(g.alleles[1]).toEqual({ id: 'pic', title: 'Pic' });
+    expect(g.alleles[2].detail!.image).toEqual({ src: 'https://img.org/a.png', alt: 'A' });
+    expect(g.alleles[3].detail!.image).toEqual({ src: '/a.png', alt: '' });
+    // A writer's draft keeps them, so validation names each instead of dropping it silently.
+    const draft = normalizeGeneDraft(raw)!;
+    expect(draft.links).toHaveLength(9);
+    expect(codes(validateGene(draft)).filter((c) => c === 'bad-link')).toHaveLength(8);
+    expect(validateGene(g)).toEqual([]);
   });
 
   it('keeps a stated allele id as it is, so a duplicate is reported, not renamed', () => {
@@ -284,6 +325,17 @@ describe('the genes lens', () => {
     expect(codes((err as GeneInvalid).issues).sort()).toEqual(['duplicate-kind', 'too-long']);
     expect((await readGenes(hs, HOLON)).map((g) => g.id)).toEqual(['purpose']);
     await expect(putGene(hs, HOLON, { title: '' })).rejects.toBeInstanceOf(GeneInvalid);
+  });
+
+  it('refuses a disallowed link on write, and never hands one stored by someone else to a reader', async () => {
+    const hs = instance();
+    const err = await putGene(hs, HOLON, { kind: 'purpose', title: 'Purpose', links: [{ label: 'x', href: 'javascript:alert(1)' }] }).catch((e) => e);
+    expect(err).toBeInstanceOf(GeneInvalid);
+    expect(codes((err as GeneInvalid).issues)).toEqual(['bad-link']);
+    // A record put on the lens directly (another client, a relay) is cleaned on read.
+    await hs.put(HOLON, GENES_LENS, { id: 'tools', kind: 'tools', title: 'Tools', links: [{ label: 'x', href: '//evil.org' }, { label: 'ok', href: '/ok' }] });
+    const [tools] = await readGenes(hs, HOLON);
+    expect(tools.links).toEqual([{ label: 'ok', href: '/ok' }]);
   });
 
   it('reorders without changing the DNA hash, writing only what moved', async () => {

@@ -56,27 +56,38 @@ export function geneSlug(raw: unknown): string {
 /** Stored text: trimmed, in Unicode NFC, so the same words typed on any system hash alike. */
 const text = (v: unknown): string => (typeof v === 'string' ? v.normalize('NFC').trim() : '');
 
-function normalizeLink(raw: unknown): GeneLink | undefined {
+/**
+ * How far normalizing trusts a link. `safe` (every reader) drops a link or
+ * image whose target is not on the allow-list (`HREF`, `IMAGE_SRC`), so no
+ * renderer ever puts `javascript:` or `//host` into a page. `draft` (the
+ * writers: `putGene`, the editor's live check) keeps them, so `validateGene`
+ * can name the bad link instead of it vanishing silently.
+ */
+type Trust = 'safe' | 'draft';
+
+function normalizeLink(raw: unknown, trust: Trust): GeneLink | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const r = raw as Record<string, unknown>;
   const href = text(r.href);
   if (!href) return undefined;
+  if (trust === 'safe' && !HREF.test(href)) return undefined;
   const label = text(r.label) || href;
   return { label, href, ...(isAlleleIcon(r.icon) ? { icon: r.icon } : {}) };
 }
 
-function normalizeLinks(raw: unknown): GeneLink[] {
-  return Array.isArray(raw) ? raw.map(normalizeLink).filter((l): l is GeneLink => !!l) : [];
+function normalizeLinks(raw: unknown, trust: Trust): GeneLink[] {
+  return Array.isArray(raw) ? raw.map((l) => normalizeLink(l, trust)).filter((l): l is GeneLink => !!l) : [];
 }
 
-function normalizeDetail(raw: unknown): AlleleDetail | undefined {
+function normalizeDetail(raw: unknown, trust: Trust): AlleleDetail | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const r = raw as Record<string, unknown>;
   const body = text(r.body);
   const steps = Array.isArray(r.steps) ? r.steps.map(text).filter(Boolean) : [];
-  const links = normalizeLinks(r.links);
+  const links = normalizeLinks(r.links, trust);
   const img = (r.image && typeof r.image === 'object' ? r.image : {}) as Record<string, unknown>;
-  const src = text(img.src);
+  const given = text(img.src);
+  const src = trust === 'safe' && !IMAGE_SRC.test(given) ? '' : given;
   if (!body && !steps.length && !links.length && !src) return undefined;
   return {
     body,
@@ -92,7 +103,7 @@ function unique(id: string, taken: Set<string>): string {
   return out;
 }
 
-function normalizeAlleles(raw: unknown): Allele[] {
+function normalizeAlleles(raw: unknown, trust: Trust): Allele[] {
   if (!Array.isArray(raw)) return [];
   const taken = new Set<string>();
   const out: Allele[] = [];
@@ -110,8 +121,8 @@ function normalizeAlleles(raw: unknown): Allele[] {
     taken.add(id);
     const kicker = text(r.kicker);
     const body = text(r.body);
-    const link = normalizeLink(r.link);
-    const detail = normalizeDetail(r.detail);
+    const link = normalizeLink(r.link, trust);
+    const detail = normalizeDetail(r.detail, trust);
     out.push({
       id,
       title,
@@ -130,10 +141,26 @@ function normalizeAlleles(raw: unknown): Allele[] {
  * Whatever is stored → a gene, or null when it is not one (not an object,
  * deleted, or nothing to name it by). Unknown fields (`_clock`, `_verified`,
  * …) are dropped, an unknown kind is `custom`, a missing `ack` is the kind's
- * default, blank alleles and links without a target drop out. Limits are
+ * default, blank alleles and links without a target drop out, and so does
+ * any link or image whose target is not allowed (`javascript:`, `//host`,
+ * `data:` …): what every reader gets is safe to put into a page. Limits are
  * NOT enforced here: `validateGene` reports them.
  */
 export function normalizeGene(raw: unknown): Gene | null {
+  return toGene(raw, 'safe');
+}
+
+/**
+ * A gene as a writer is about to store it: `normalizeGene`, but a link or
+ * image with a disallowed target is kept, so `validateGene` reports it
+ * (`bad-link`) and the write is refused instead of silently changed.
+ * Never render what this returns.
+ */
+export function normalizeGeneDraft(raw: unknown): Gene | null {
+  return toGene(raw, 'draft');
+}
+
+function toGene(raw: unknown, trust: Trust): Gene | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const r = raw as Record<string, unknown>;
   if (r._deleted) return null;
@@ -145,7 +172,7 @@ export function normalizeGene(raw: unknown): Gene | null {
   const n = typeof r.order === 'number' ? r.order : typeof r.order === 'string' && r.order.trim() ? Number(r.order) : NaN;
   const order = Number.isFinite(n) ? n : 0;
   const color = typeof r.color === 'string' && COLOR.test(r.color.trim()) ? r.color.trim().toLowerCase() : undefined;
-  const links = normalizeLinks(r.links);
+  const links = normalizeLinks(r.links, trust);
   return {
     id,
     kind,
@@ -155,7 +182,7 @@ export function normalizeGene(raw: unknown): Gene | null {
     order,
     ack,
     ...(links.length ? { links } : {}),
-    alleles: normalizeAlleles(r.alleles),
+    alleles: normalizeAlleles(r.alleles, trust),
     lang: text(r.lang).slice(0, 16) || 'en',
     updated: text(r.updated),
   };
@@ -395,7 +422,7 @@ export async function putGene(hs: HoloSphere, holon: string, input: GeneDraft, o
     typeof draft.order === 'number' && Number.isFinite(draft.order)
       ? draft.order
       : (before?.order ?? (existing.length ? Math.max(...existing.map((g) => g.order)) + 1 : 0));
-  const gene = normalizeGene({ ...draft, id, kind, order, updated: (opts.now?.() ?? new Date()).toISOString() });
+  const gene = normalizeGeneDraft({ ...draft, id, kind, order, updated: (opts.now?.() ?? new Date()).toISOString() });
   if (!gene) throw new GeneInvalid([{ code: 'bad-id', gene: id, field: 'id', message: 'the gene needs an id or a title' }]);
   const issues = validateGene(gene, existing);
   if (issues.length) throw new GeneInvalid(issues);
