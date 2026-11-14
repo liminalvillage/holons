@@ -16,7 +16,12 @@
  * holons are people.
  */
 
-import { attestationIdentityMap, parseIdentifier } from '../shifts/attestation.js';
+import type { HoloSphere } from 'holosphere';
+import { resolveHolonAuthority } from '../holosphere/authority.js';
+import { trustedIdentityProviders } from '../protocol/bootstrap.js';
+import { holonMembers, isTelegramChatId } from '../protocol/founding.js';
+import { partiesFromAttestations } from '../protocol/identity.js';
+import { attestationIdentityMap, parseIdentifier, type IdentityAttestation } from '../shifts/attestation.js';
 import { SHIFT_IDENTITY_LENS, attestationsFrom } from '../shifts/wire.js';
 import { normalizeId } from '../identity/ids.js';
 import { userName, type NameOptions, type NameRecord } from '../identity/index.js';
@@ -313,4 +318,90 @@ export function findPeople<P extends { id: string; name?: string; username?: str
     if (score >= 0) scored.push([score, p]);
   }
   return scored.sort((a, b) => a[0] - b[0]).slice(0, limit).map(([, p]) => p);
+}
+
+// ── People behind a holon's keys ───────────────────────────────────────────
+
+export interface HolonPeopleInput {
+  holon: string;
+  /** The keys linked to the holon (its signed `_members` log). */
+  keys: Iterable<string>;
+  /** The key that speaks for the holon (the genesis of its log), when known. */
+  anchor?: string | null;
+  /** The holon's settings: `holonPubkey`, `identityProviders`, `nostrTrustedPubkeys` are read. */
+  settings?: Record<string, unknown> | null;
+  /** The kind-31926 directory; only the providers the holon trusts count. */
+  attestations?: Iterable<IdentityAttestation> | null;
+}
+
+const hexOf = (v: unknown): string => {
+  const k = typeof v === 'string' ? v.trim().toLowerCase() : '';
+  return HEX64.test(k) ? k : '';
+};
+
+/**
+ * The people behind a holon's linked keys — keys are not people:
+ *
+ *   - the holon's own key is the holon. A Telegram-born holon is founded by
+ *     the bot with the holon key it holds, so its anchor and
+ *     `settings.holonPubkey` are nobody; a keyed holon is founded from a
+ *     screen by a person's own key, which therefore counts. A pubkey holon
+ *     is its own key, and a holon is never its own member;
+ *   - the identity providers a holon names (`settings.identityProviders`)
+ *     are services — the bot keys that attest who a key is — not people;
+ *   - one person's keys (their derived Telegram key, a linked personal key,
+ *     a linked kiosk device key) fold into that person through the trusted
+ *     kind-31926 directory, which lists every key linked by proof;
+ *   - a key attested as another holon is not a person.
+ *
+ * What cannot be told: a key nobody linked — a kiosk device key its person
+ * never linked, or a bot key the holon does not name as a provider — counts
+ * as one person.
+ *
+ * Returns the person ids (a Telegram id where the directory names one, else
+ * the key), sorted.
+ */
+export function holonPeople(input: HolonPeopleInput): string[] {
+  const holon = normalizeId(input.holon);
+  const settings = input.settings ?? {};
+  const notPeople = new Set<string>();
+  for (const k of Array.isArray(settings.identityProviders) ? settings.identityProviders : []) if (hexOf(k)) notPeople.add(hexOf(k));
+  if (isTelegramChatId(holon)) {
+    for (const k of [input.anchor, settings.holonPubkey]) if (hexOf(k)) notPeople.add(hexOf(k));
+  }
+  const trusted = trustedIdentityProviders(settings, hexOf(input.anchor) || null);
+  const attested = [...(input.attestations ?? [])].filter((a) => trusted.has(String(a.provider ?? '').toLowerCase()));
+  const partyOf = partiesFromAttestations(attested);
+  const people = new Set<string>();
+  for (const raw of input.keys) {
+    const key = hexOf(raw);
+    if (!key || notPeople.has(key)) continue;
+    const person = normalizeId(partyOf.get(key) ?? key);
+    if (!person || person === holon || HOLONISH.test(person)) continue;
+    people.add(person);
+  }
+  return [...people].sort(byId.compare);
+}
+
+/**
+ * {@link holonPeople} read from the holon: its linked keys, its anchor, its
+ * settings (pass them when already read) and the identity directory. A part
+ * that cannot be read counts as absent.
+ */
+export async function readHolonPeople(hs: HoloSphere, holon: string, opts: { settings?: Record<string, unknown> | null } = {}): Promise<string[]> {
+  const h = String(holon ?? '').trim();
+  const host = hs as HoloSphere & { getAllGlobal?: (lens: string) => Promise<unknown> };
+  const [members, settings, directory] = await Promise.all([
+    holonMembers(hs, h).catch(() => new Map<string, unknown>()),
+    opts.settings !== undefined ? opts.settings : (hs.get(h, 'settings', h).catch(() => null) as Promise<Record<string, unknown> | null>),
+    typeof host.getAllGlobal === 'function' ? host.getAllGlobal(SHIFT_IDENTITY_LENS).catch(() => []) : Promise.resolve([]),
+  ]);
+  let anchor: string | null = null;
+  try {
+    anchor = resolveHolonAuthority(hs, h).anchor;
+  } catch {
+    /* no authority: no anchor */
+  }
+  const settingsRecord = settings && typeof settings === 'object' && !Array.isArray(settings) ? settings : null;
+  return holonPeople({ holon: h, keys: members.keys(), anchor, settings: settingsRecord, attestations: attestationsFrom(recordsOf(directory) as never) });
 }

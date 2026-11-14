@@ -22,10 +22,10 @@
 import type { HoloSphere } from 'holosphere';
 import { writeAcceptance } from '../holosphere/authority.js';
 import { may } from '../holosphere/capabilities.js';
+import { readHolonPeople } from '../holons/people.js';
 import { joinRequestRecords, mayLink } from '../holons/requests.js';
 import { cleanName, isPlaceholderName, shortId } from '../identity/ids.js';
 import { normalizeOnboarding } from '../onboarding/config.js';
-import { holonMembers } from '../protocol/founding.js';
 import { readHolonColor } from '../settings/color.js';
 import { readHolonSettings } from '../settings/persistence.js';
 import { isTelegramGroupId } from '../tasks/telegram.js';
@@ -122,7 +122,7 @@ export interface HolonFront {
   /** The holon's onboarding steps that follow the request (none while its onboarding is off). */
   after: { id: string; title: string }[];
   how: HowStep[];
-  /** People linked to the holon. */
+  /** People linked to the holon — people, not keys (`holonPeople`): never the holon's own key or its bot, one person's keys once. */
   members: number;
   /** Telegram-born holon: the Telegram bot can take the request. */
   telegram: boolean;
@@ -147,7 +147,7 @@ export interface HolonFrontInput {
   genes: readonly unknown[];
   /** The onboarding config, or the raw `settings.onboarding`; default: the onboarding stored in `settings`. */
   onboarding?: unknown;
-  /** People linked to the holon. */
+  /** People linked to the holon (`readHolonPeople`: people, not keys). */
   members?: number;
   /** Something signed speaks for the holon, so an ask can be answered. Default true. */
   anchored?: boolean;
@@ -354,10 +354,12 @@ export async function readHolonFront(hs: HoloSphere, holon: string, opts: ReadHo
   const ms = opts.catchUpMs ?? FRONT_CATCH_UP_MS;
 
   const gather = (async () => {
-    const [genes, settings, members, standing, records] = await Promise.all([
+    const [genes, settings, people, standing, records] = await Promise.all([
       readGenes(hs, h),
       readHolonSettings(hs, h),
-      holonMembers(hs, h),
+      // People, not keys: the holon's own key, the bot and one person's
+      // several keys are not counted apart (see holonPeople).
+      readHolonPeople(hs, h),
       // '' (not undefined): never stand in the instance's own key for an anonymous visitor.
       writeAcceptance(hs, h, viewer),
       viewer ? joinRequestRecords(hs, h) : Promise.resolve(null),
@@ -376,7 +378,7 @@ export async function readHolonFront(hs: HoloSphere, holon: string, opts: ReadHo
       // as the holon's word. No admin exists there to sign a real one, so
       // none is shown.
       genes: standing.status === 'open' ? [] : genes,
-      members: members.size,
+      members: people.length,
       anchored: standing.status !== 'open',
       viewer: viewer ? { linked, admin: may(standing, 'dna'), request } : null,
     });

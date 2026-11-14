@@ -180,7 +180,8 @@
     },
     "members": {
       "type": "integer",
-      "minimum": 0
+      "minimum": 0,
+      "description": "People linked to the holon: people, not keys (never the holon's own key or its bot; one person's linked keys once)."
     },
     "telegram": {
       "type": "boolean",

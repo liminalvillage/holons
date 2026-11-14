@@ -8,6 +8,7 @@ import { buildEvent } from 'holosphere/nostr-events.js';
 import type { HoloSphere } from 'holosphere';
 import frontSchema from '../../schemas/holon-front.schema.json' with { type: 'json' };
 import { createHoloSphere } from '../holosphere/factory.js';
+import { readHolonPeople } from '../holons/people.js';
 import { recordJoinRequest } from '../holons/requests.js';
 import { addHolonMember, foundHolon } from '../protocol/founding.js';
 import { testKey } from '../protocol/testing.js';
@@ -516,6 +517,27 @@ describe('readHolonFront', () => {
     const front = await readHolonFront(hs, nobody);
     expect(front).toMatchObject({ empty: true, genes: [], viewer: { cta: 'none' } });
     expect(JSON.stringify(front)).not.toContain('FORGED BY STRANGER');
+    await hs.close();
+  });
+
+  it('counts people, not keys: the bot that founded a Telegram holon and one person’s two keys', async () => {
+    const T = '-1001111111111';
+    const hs = instance();
+    // The bot founds a Telegram chat with the holon key it holds (here: the instance key).
+    await (hs as unknown as { foundHolon(h: string): Promise<void> }).foundHolon(T);
+    const adaTelegram = testKey();
+    const adaKiosk = testKey();
+    await addHolonMember(hs, T, adaTelegram.pk, 'member');
+    await addHolonMember(hs, T, adaKiosk.pk, 'member');
+    await addHolonMember(hs, T, member.pk, 'member');
+    await hs.put(T, 'settings', { id: T, name: 'Chat', holonPubkey: founder.pk, identityProviders: [founder.pk] });
+    // The bot's directory: both of Ada's keys are Telegram user 7.
+    (hs as unknown as { getAllGlobal(lens: string): Promise<unknown[]> }).getAllGlobal = async () => [
+      { provider: founder.pk, identifier: 'telegram:7', platform: 'telegram', platformId: '7', pubkeys: [adaTelegram.pk, adaKiosk.pk].sort(), createdAt: 1, eventId: 'e1' },
+    ];
+    expect((await hs.getMembers(T)).size).toBe(4);
+    expect((await readHolonPeople(hs, T)).slice().sort()).toEqual(['7', member.pk].sort());
+    expect((await readHolonFront(hs, T)).members).toBe(2);
     await hs.close();
   });
 

@@ -63,17 +63,34 @@ export interface LensBootstrap {
 const HEX64 = /^[0-9a-f]{64}$/i;
 const hexKey = (v: unknown): string | null => (typeof v === 'string' && HEX64.test(v) ? v.toLowerCase() : null);
 
+const hexList = (v: unknown): string[] => (Array.isArray(v) ? v.map(hexKey).filter((k): k is string => !!k) : []);
+
+/**
+ * The identity providers a holon believes: its own key, the providers its
+ * settings name (`identityProviders`, `nostrTrustedPubkeys`) and any the
+ * caller adds. Anyone can publish a kind-31926 saying a key is someone; only
+ * these count.
+ */
+export function trustedIdentityProviders(
+  settings: Record<string, unknown> | null | undefined,
+  holonPubkey?: string | null,
+  extra?: Iterable<string> | null,
+): Set<string> {
+  const s = settings ?? {};
+  const own = hexKey(holonPubkey) ?? hexKey(s.holonPubkey);
+  return new Set<string>([
+    ...(own ? [own] : []),
+    ...hexList(s.identityProviders),
+    ...hexList(s.nostrTrustedPubkeys),
+    ...[...(extra ?? [])].map(hexKey).filter((k): k is string => !!k),
+  ]);
+}
+
 /** Assemble the provisional signer set and party map from lens data. */
 export function bootstrapFromLenses(input: LensBootstrapInput): LensBootstrap {
   const settings = input.settings ?? {};
   const holonPubkey = hexKey(input.holonPubkey) ?? hexKey(settings.holonPubkey);
-  const hexList = (v: unknown): string[] => (Array.isArray(v) ? v.map(hexKey).filter((k): k is string => !!k) : []);
-  const trustedProviders = new Set<string>([
-    ...(holonPubkey ? [holonPubkey] : []),
-    ...hexList(settings.identityProviders),
-    ...hexList(settings.nostrTrustedPubkeys),
-    ...[...(input.providers ?? [])].map(hexKey).filter((k): k is string => !!k),
-  ]);
+  const trustedProviders = trustedIdentityProviders(settings, holonPubkey, input.providers);
   const attestations = [...(input.attestations ?? [])].filter((a) => trustedProviders.has(String(a.provider ?? '').toLowerCase()));
   const keyToParty = partiesFromAttestations(attestations, {
     coordinatorPubkey: input.coordinatorPubkey,

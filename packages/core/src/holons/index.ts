@@ -518,10 +518,13 @@ export {
 // ── People across holons ───────────────────────────────────────────────────
 export {
   findPeople,
+  holonPeople,
   loadFederationPeople,
   loadPeopleAcross,
   peopleAcross,
+  readHolonPeople,
   type FederationPeopleHost,
+  type HolonPeopleInput,
   type FederationPeopleOptions,
   type FederationPerson,
   type HolonBridge,

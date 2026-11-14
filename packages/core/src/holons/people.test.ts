@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it, vi } from 'vitest';
-import { findPeople, loadFederationPeople, loadPeopleAcross, peopleAcross } from './people.js';
+import { findPeople, holonPeople, loadFederationPeople, loadPeopleAcross, peopleAcross } from './people.js';
 
 const KEY_A = 'a'.repeat(64);
 const KEY_B = 'b'.repeat(64);
@@ -160,5 +160,70 @@ describe('findPeople', () => {
 		expect(findPeople(people, '23').map((p) => p.id)).toEqual([]);
 		expect(findPeople(people, '  ')).toEqual([]);
 		expect(findPeople(people, 'a', 1)).toHaveLength(1);
+	});
+});
+
+describe('holonPeople', () => {
+	const BOT = 'b0'.repeat(32);
+	const OLD_BOT = 'b1'.repeat(32);
+	const PROVIDER = 'c0'.repeat(32);
+	const ADA_TG = 'a0'.repeat(32);
+	const ADA_KIOSK = 'a1'.repeat(32);
+	const BEA = 'be'.repeat(32);
+	const STRANGER = 'dd'.repeat(32);
+	const att = (provider: string, identifier: string, pubkeys: string[], createdAt = 1) => {
+		const [platform, platformId] = identifier.split(':');
+		return { provider, identifier, platform, platformId, pubkeys, createdAt, id: `${provider.slice(0, 4)}-${identifier}` };
+	};
+	const TG = '-1001234567890';
+	const tgSettings = { holonPubkey: BOT, identityProviders: [PROVIDER, OLD_BOT] };
+
+	it('counts people, not keys: the bot, its providers and one person’s keys once', () => {
+		expect(
+			holonPeople({
+				holon: TG,
+				keys: [BOT, OLD_BOT, ADA_TG, ADA_KIOSK, BEA],
+				anchor: BOT,
+				settings: tgSettings,
+				attestations: [att(PROVIDER, 'telegram:7', [ADA_TG, ADA_KIOSK])],
+			}),
+		).toEqual(['7', BEA]);
+	});
+
+	it('takes the anchor of a Telegram-born holon for the bot even when its settings do not name it', () => {
+		expect(holonPeople({ holon: TG, keys: [BOT, BEA], anchor: BOT })).toEqual([BEA]);
+		expect(holonPeople({ holon: TG, keys: [BOT, BEA], settings: { holonPubkey: BOT } })).toEqual([BEA]);
+	});
+
+	it('counts the founder of a keyed holon: a person founded it from a screen', () => {
+		const H = 'holon_abcdefghijkl';
+		expect(holonPeople({ holon: H, keys: [ADA_KIOSK, BEA], anchor: ADA_KIOSK, settings: { holonPubkey: ADA_KIOSK } })).toEqual([ADA_KIOSK, BEA]);
+	});
+
+	it('folds keys only through a provider the holon trusts', () => {
+		const out = holonPeople({
+			holon: TG,
+			keys: [BOT, ADA_TG, BEA],
+			anchor: BOT,
+			settings: tgSettings,
+			// A stranger saying Bea is Ada does not merge them.
+			attestations: [att(PROVIDER, 'telegram:7', [ADA_TG]), att(STRANGER, 'telegram:7', [BEA])],
+		});
+		expect(out).toEqual(['7', BEA]);
+	});
+
+	it('trusts the holon key and the keys its settings name as providers', () => {
+		const keys = [BOT, ADA_TG, ADA_KIOSK];
+		expect(holonPeople({ holon: TG, keys, anchor: BOT, attestations: [att(BOT, 'telegram:7', [ADA_TG, ADA_KIOSK])] })).toEqual(['7']);
+		expect(holonPeople({ holon: TG, keys, anchor: BOT, settings: { nostrTrustedPubkeys: [STRANGER] }, attestations: [att(STRANGER, 'telegram:7', [ADA_TG, ADA_KIOSK])] })).toEqual(['7']);
+	});
+
+	it('never counts the holon itself, nor a key attested as another holon', () => {
+		expect(holonPeople({ holon: BEA, keys: [BEA, ADA_TG] })).toEqual([ADA_TG]);
+		expect(holonPeople({ holon: TG, keys: [BOT, ADA_TG, BEA], anchor: BOT, settings: tgSettings, attestations: [att(PROVIDER, 'telegram:-1009876543210', [ADA_TG])] })).toEqual([BEA]);
+	});
+
+	it('counts a key nobody linked as one person, and skips what is not a key', () => {
+		expect(holonPeople({ holon: TG, keys: [ADA_TG.toUpperCase(), ` ${ADA_TG} `, 'not-a-key', '', ADA_KIOSK] })).toEqual([ADA_TG, ADA_KIOSK]);
 	});
 });

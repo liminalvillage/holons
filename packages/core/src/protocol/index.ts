@@ -106,7 +106,7 @@ export {
   type CheckpointVerdict,
 } from './checkpoint.js';
 
-export { bootstrapFromLenses, type LensBootstrap, type LensBootstrapInput } from './bootstrap.js';
+export { bootstrapFromLenses, trustedIdentityProviders, type LensBootstrap, type LensBootstrapInput } from './bootstrap.js';
 
 export { lensContext, type LensContext, type LensContextInput } from './context.js';
 
