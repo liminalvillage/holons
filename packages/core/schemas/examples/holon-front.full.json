@@ -1,0 +1,374 @@
+{
+  "schema": 1,
+  "holon": "-1001234567890",
+  "name": "Orto Village",
+  "picture": "https://example.org/l.png",
+  "color": "#2a9d8f",
+  "about": "A village that learns to live well together.",
+  "teaser": "A village that learns to live well together.",
+  "empty": false,
+  "genes": [
+    {
+      "id": "purpose",
+      "kind": "purpose",
+      "title": "Purpose",
+      "blurb": "A village that learns to live well together.",
+      "color": "#2a9d8f",
+      "order": 0,
+      "ack": "read",
+      "links": [
+        {
+          "label": "Manifesto",
+          "href": "https://example.org/manifesto",
+          "icon": "scroll"
+        }
+      ],
+      "lang": "en",
+      "updated": "2026-11-01T10:00:00.000Z",
+      "alleles": [],
+      "hash": "32818f87e89d04bcb84695bb12cbb6e5b7b94fce272fd94e247abbca10e88da3",
+      "layout": "blurb",
+      "words": 9,
+      "expressedIn": []
+    },
+    {
+      "id": "frameworks",
+      "kind": "practices",
+      "title": "Frameworks",
+      "blurb": "The ways we work.",
+      "order": 1,
+      "ack": "agree",
+      "lang": "en",
+      "updated": "2026-11-03T08:00:00.000Z",
+      "alleles": [
+        {
+          "id": "sociocracy",
+          "title": "Sociocracy",
+          "kicker": "Governance",
+          "body": "Consent decisions in circles.",
+          "icon": "compass",
+          "detail": {
+            "body": "Circles decide by consent.",
+            "steps": [
+              "Propose",
+              "Object",
+              "Consent"
+            ],
+            "links": [
+              {
+                "label": "Guide",
+                "href": "https://example.org/s3"
+              }
+            ],
+            "image": {
+              "src": "https://example.org/s.png",
+              "alt": "Circles"
+            }
+          },
+          "expressedIn": [
+            {
+              "gene": "values",
+              "title": "Values"
+            },
+            {
+              "gene": "agreements",
+              "title": "Agreements"
+            }
+          ]
+        },
+        {
+          "id": "nvc",
+          "title": "Nonviolent communication",
+          "body": "Needs before strategies.",
+          "expressedIn": [
+            {
+              "gene": "agreements",
+              "title": "Agreements"
+            }
+          ]
+        }
+      ],
+      "hash": "ad493ff3f31f0cb347f2689b3c7d78fc72d7dd1f351c886b4c1f066f116118dd",
+      "layout": "cards",
+      "words": 23,
+      "expressedIn": [
+        {
+          "gene": "values",
+          "title": "Values"
+        },
+        {
+          "gene": "agreements",
+          "title": "Agreements"
+        }
+      ]
+    },
+    {
+      "id": "values",
+      "kind": "values",
+      "title": "Values",
+      "blurb": "What we hold on to.",
+      "order": 2,
+      "ack": "agree",
+      "lang": "en",
+      "updated": "2026-11-02T12:00:00.000Z",
+      "alleles": [
+        {
+          "id": "care",
+          "title": "Care",
+          "body": "We look after each other.",
+          "link": {
+            "label": "More",
+            "href": "/care"
+          },
+          "expressedIn": []
+        },
+        {
+          "title": "Sociocracy",
+          "kicker": "Governance",
+          "body": "Consent decisions in circles.",
+          "icon": "compass",
+          "detail": {
+            "body": "Circles decide by consent.",
+            "steps": [
+              "Propose",
+              "Object",
+              "Consent"
+            ],
+            "links": [
+              {
+                "label": "Guide",
+                "href": "https://example.org/s3"
+              }
+            ],
+            "image": {
+              "src": "https://example.org/s.png",
+              "alt": "Circles"
+            }
+          },
+          "id": "how-we-decide",
+          "ref": "frameworks/sociocracy",
+          "from": {
+            "gene": "frameworks",
+            "title": "Frameworks"
+          },
+          "expressedIn": []
+        }
+      ],
+      "hash": "bdd79c43e607f3f69edee4249d48aca2bae3182a3a4a23f0f617272138c939e6",
+      "layout": "cards",
+      "words": 25,
+      "expressedIn": []
+    },
+    {
+      "id": "agreements",
+      "kind": "agreements",
+      "title": "Agreements",
+      "blurb": "What we promise.",
+      "order": 3,
+      "ack": "agree",
+      "lang": "en",
+      "updated": "",
+      "alleles": [
+        {
+          "title": "Sociocracy",
+          "kicker": "Governance",
+          "body": "Consent decisions in circles.",
+          "icon": "compass",
+          "detail": {
+            "body": "Circles decide by consent.",
+            "steps": [
+              "Propose",
+              "Object",
+              "Consent"
+            ],
+            "links": [
+              {
+                "label": "Guide",
+                "href": "https://example.org/s3"
+              }
+            ],
+            "image": {
+              "src": "https://example.org/s.png",
+              "alt": "Circles"
+            }
+          },
+          "id": "decide",
+          "ref": "frameworks/sociocracy",
+          "from": {
+            "gene": "frameworks",
+            "title": "Frameworks"
+          },
+          "expressedIn": []
+        },
+        {
+          "title": "Nonviolent communication",
+          "body": "Needs before strategies.",
+          "id": "talk",
+          "ref": "frameworks/nvc",
+          "from": {
+            "gene": "frameworks",
+            "title": "Frameworks"
+          },
+          "expressedIn": []
+        }
+      ],
+      "hash": "10d655ab5c772faf18ce78360acce30dbe1e27b31dc56d94cb86db22ffcbd3d3",
+      "layout": "cards",
+      "words": 22,
+      "expressedIn": []
+    },
+    {
+      "id": "tools",
+      "kind": "tools",
+      "title": "Tools",
+      "blurb": "What we use.",
+      "order": 4,
+      "ack": "none",
+      "lang": "en",
+      "updated": "",
+      "alleles": [
+        {
+          "id": "kiosk",
+          "title": "Kiosk",
+          "icon": "chip",
+          "expressedIn": []
+        }
+      ],
+      "hash": "01582af1889e1639c3077148b0ab21d16b17f04ffef46e2d14e434923c3f2e31",
+      "layout": "cards",
+      "words": 5,
+      "expressedIn": []
+    },
+    {
+      "id": "roles",
+      "kind": "roles",
+      "title": "Roles",
+      "blurb": "Coming soon.",
+      "order": 5,
+      "ack": "none",
+      "lang": "en",
+      "updated": "",
+      "alleles": [],
+      "hash": "fcc68f226a9f91b3b1600694e72980d6fe642ed4cdca0b119adc38a0b16d0cc3",
+      "layout": "blurb",
+      "words": 3,
+      "expressedIn": []
+    },
+    {
+      "id": "terms",
+      "kind": "terms",
+      "title": "Terms",
+      "blurb": "Money and time.",
+      "order": 6,
+      "ack": "agree",
+      "lang": "en",
+      "updated": "",
+      "alleles": [
+        {
+          "id": "stay",
+          "title": "Staying",
+          "body": "A night costs ten euros, shared meals included.",
+          "expressedIn": []
+        },
+        {
+          "id": "leave",
+          "title": "Leaving",
+          "body": "Tell us a week before you go.",
+          "expressedIn": []
+        }
+      ],
+      "hash": "f332acddcfa517ac63df93eab26148612d4e71ed9dff6e742aa90a5ff3cdc759",
+      "layout": "longform",
+      "words": 21,
+      "expressedIn": []
+    }
+  ],
+  "dna": {
+    "hash": "b5b0ddfcf575c44bfcfaf0f9eb38bb4239af84c347079a82f004eb6c22484907",
+    "short": "b5b0ddfc",
+    "updated": "2026-11-03T08:00:00.000Z"
+  },
+  "counts": {
+    "genes": 7,
+    "alleles": 9,
+    "parts": 5,
+    "words": 100,
+    "minutes": 1
+  },
+  "walk": [
+    {
+      "gene": "purpose",
+      "hash": "32818f87e89d04bcb84695bb12cbb6e5b7b94fce272fd94e247abbca10e88da3",
+      "kind": "purpose",
+      "title": "Purpose",
+      "ack": "read"
+    },
+    {
+      "gene": "frameworks",
+      "hash": "ad493ff3f31f0cb347f2689b3c7d78fc72d7dd1f351c886b4c1f066f116118dd",
+      "kind": "practices",
+      "title": "Frameworks",
+      "ack": "agree"
+    },
+    {
+      "gene": "values",
+      "hash": "bdd79c43e607f3f69edee4249d48aca2bae3182a3a4a23f0f617272138c939e6",
+      "kind": "values",
+      "title": "Values",
+      "ack": "agree"
+    },
+    {
+      "gene": "agreements",
+      "hash": "10d655ab5c772faf18ce78360acce30dbe1e27b31dc56d94cb86db22ffcbd3d3",
+      "kind": "agreements",
+      "title": "Agreements",
+      "ack": "agree"
+    },
+    {
+      "gene": "terms",
+      "hash": "f332acddcfa517ac63df93eab26148612d4e71ed9dff6e742aa90a5ff3cdc759",
+      "kind": "terms",
+      "title": "Terms",
+      "ack": "agree"
+    }
+  ],
+  "after": [
+    {
+      "id": "profile",
+      "title": "Your profile"
+    },
+    {
+      "id": "call",
+      "title": "Onboarding call"
+    }
+  ],
+  "how": [
+    {
+      "kind": "read",
+      "parts": 5,
+      "minutes": 1
+    },
+    {
+      "kind": "send"
+    },
+    {
+      "kind": "step",
+      "id": "profile",
+      "title": "Your profile"
+    },
+    {
+      "kind": "step",
+      "id": "call",
+      "title": "Onboarding call"
+    },
+    {
+      "kind": "linked"
+    }
+  ],
+  "members": 42,
+  "telegram": true,
+  "viewer": {
+    "cta": "apply",
+    "edit": false
+  }
+}

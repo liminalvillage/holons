@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "holon": "holon_abcdefabcdefabcd",
+  "name": "Casa",
+  "about": "A house in the hills.",
+  "teaser": "A house in the hills.",
+  "empty": true,
+  "genes": [],
+  "dna": {
+    "hash": null,
+    "short": null,
+    "updated": null
+  },
+  "counts": {
+    "genes": 0,
+    "alleles": 0,
+    "parts": 0,
+    "words": 0,
+    "minutes": 0
+  },
+  "walk": [],
+  "after": [],
+  "how": [
+    {
+      "kind": "send"
+    },
+    {
+      "kind": "linked"
+    }
+  ],
+  "members": 0,
+  "telegram": false,
+  "viewer": {
+    "cta": "apply",
+    "edit": false
+  }
+}
