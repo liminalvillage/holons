@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it } from "vitest";
-import { opensOnboarding, pathForTab, tabForPath } from "./tabroute";
+import {
+  PAGE_SEGMENTS,
+  hrefForPage,
+  opensOnboarding,
+  pageForPath,
+  pathForPage,
+  pathForTab,
+  tabForPath,
+} from "./tabroute";
+import { TABS } from "./stores";
 
 describe("tabForPath", () => {
   it("reads a bare tab path", () => {
@@ -55,6 +64,52 @@ describe("opensOnboarding", () => {
   it("gives way to a tab once the board opens", () => {
     expect(pathForTab("/liminal/onboarding", "calendar")).toBe(
       "/liminal/calendar",
+    );
+  });
+});
+
+describe("page segments", () => {
+  it("are dna, apply and onboarding, and never a tab", () => {
+    expect([...PAGE_SEGMENTS]).toEqual(["dna", "apply", "onboarding"]);
+    for (const p of PAGE_SEGMENTS)
+      expect(
+        TABS.some((t) => t.id === p),
+        p,
+      ).toBe(false);
+  });
+
+  it("are read off the last segment, with or without a holon", () => {
+    expect(pageForPath("/dna")).toBe("dna");
+    expect(pageForPath("/liminal/apply")).toBe("apply");
+    expect(pageForPath("/-1003864542239/DNA/")).toBe("dna");
+    expect(pageForPath("/liminal/onboarding")).toBe("onboarding");
+    expect(pageForPath("/liminal")).toBeNull();
+    expect(pageForPath("/liminal/tasks")).toBeNull();
+    expect(tabForPath("/liminal/dna")).toBeNull();
+  });
+
+  it("swap with tabs and with each other, keeping the holon as written", () => {
+    expect(pathForPage("/liminal/tasks", "dna")).toBe("/liminal/dna");
+    expect(pathForPage("/liminal/dna", "apply")).toBe("/liminal/apply");
+    expect(pathForPage("/liminal/apply", null)).toBe("/liminal");
+    expect(pathForPage("/", "dna")).toBe("/dna");
+    expect(pathForPage("/-1003864542239", "apply")).toBe(
+      "/-1003864542239/apply",
+    );
+    expect(pathForTab("/liminal/dna", "calendar")).toBe("/liminal/calendar");
+  });
+
+  it("links keep the query but drop one page's own parameters", () => {
+    const url = {
+      pathname: "/liminal/dna",
+      search: "?app=HolonsDebug&edit&dna=abc",
+    };
+    expect(hrefForPage(url, "apply")).toBe("/liminal/apply?app=HolonsDebug");
+    expect(hrefForPage(url, "apply", { dna: "f".repeat(8) })).toBe(
+      "/liminal/apply?app=HolonsDebug&dna=ffffffff",
+    );
+    expect(hrefForPage({ pathname: "/liminal", search: "" }, "dna")).toBe(
+      "/liminal/dna",
     );
   });
 });

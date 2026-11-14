@@ -22,6 +22,7 @@
 // The names themselves are data: edit `hubs.json` next to this file.
 
 import { nostrUtils } from "holosphere";
+import { JOIN_PAGES } from "@holons/core/onboarding";
 import hubs from "./hubs.json";
 
 /** Base domain the kiosk is served under; subdomains of it select a holon. */
@@ -37,9 +38,25 @@ export const BASE_DOMAIN = "hubs.network";
  * one-line data edit, no code. Labels are lowercased here so an entry typed
  * in any case still matches a hostname (DNS is case-insensitive).
  */
+/**
+ * Words a holon can never be named: the page segments (`/dna`, `/apply`,
+ * `/onboarding` — this holon's front page, its walk, its onboarding) and
+ * `api`. Without this, a hub registered as "dna" would turn every `/dna`
+ * into that hub's board instead of the front page of the one on screen.
+ */
+export const RESERVED_LABELS: ReadonlySet<string> = new Set<string>([
+  ...JOIN_PAGES,
+  "api",
+]);
+
 export const SUBDOMAIN_HOLONS: Record<string, string> = Object.fromEntries(
   Object.entries(hubs as Record<string, string>)
-    .filter(([label, id]) => label.trim() && String(id ?? "").trim())
+    .filter(
+      ([label, id]) =>
+        label.trim() &&
+        String(id ?? "").trim() &&
+        !RESERVED_LABELS.has(label.trim().toLowerCase()),
+    )
     .map(([label, id]) => [label.trim().toLowerCase(), String(id).trim()]),
 );
 
@@ -90,7 +107,7 @@ export function holonForHost(host: string): string | null {
   if (!sub) return null;
   const declared = SUBDOMAIN_HOLONS[sub];
   if (declared && declared.trim()) return declared;
-  if (RESERVED_SUBDOMAINS.has(sub)) return null;
+  if (RESERVED_SUBDOMAINS.has(sub) || RESERVED_LABELS.has(sub)) return null;
   return holonIdFromLabel(sub);
 }
 
@@ -116,7 +133,7 @@ export function holonForPath(pathname: string): string | null {
   const seg = decodeURIComponent(
     pathname.replace(/^\/+/, "").split("/")[0] ?? "",
   ).trim();
-  if (!seg || seg.toLowerCase() === "api") return null;
+  if (!seg) return null;
   return holonForToken(seg);
 }
 
@@ -158,7 +175,7 @@ const FOUNDED_ID_RE = /^(holon|hub)_[a-z0-9]{12,32}$/;
  */
 function holonForToken(token: string): string | null {
   const tok = token.trim();
-  if (!tok) return null;
+  if (!tok || RESERVED_LABELS.has(tok.toLowerCase())) return null;
   const byLabel = SUBDOMAIN_HOLONS[tok.toLowerCase()];
   if (byLabel && byLabel.trim()) return byLabel;
   const identity = identityToken(tok);
@@ -289,5 +306,6 @@ export function parseHolonAdd(input: string): string | null {
   const known = parseHolonPaste(input);
   if (known) return known;
   const tok = (input ?? "").trim();
+  if (RESERVED_LABELS.has(tok.toLowerCase())) return null;
   return /^[a-z0-9][a-z0-9_-]*$/i.test(tok) ? tok : null;
 }

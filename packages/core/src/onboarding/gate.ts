@@ -6,7 +6,15 @@
 // rule for every surface that has a board (the kiosk today), pure.
 
 /** The page segments that are not tabs: `/<holon>/dna`, `/<holon>/apply`, `/<holon>/onboarding`. */
-export type JoinPage = 'dna' | 'apply' | 'onboarding';
+export const JOIN_PAGES = ['dna', 'apply', 'onboarding'] as const;
+
+export type JoinPage = (typeof JOIN_PAGES)[number];
+
+/** A URL segment as a join page (any case), or null when it names none. */
+export function joinPageOf(segment: unknown): JoinPage | null {
+  const s = typeof segment === 'string' ? segment.trim().toLowerCase() : '';
+  return (JOIN_PAGES as readonly string[]).includes(s) ? (s as JoinPage) : null;
+}
 
 export type JoinGate = 'board' | 'front' | 'apply' | 'onboarding';
 
