@@ -15,11 +15,7 @@ export class ChainError extends Error {
   constructor(
     message: string,
     public readonly kind:
-      | "no-wallet"
-      | "rejected"
-      | "no-contract"
-      | "wrong-network"
-      | "failed",
+      "no-wallet" | "rejected" | "no-contract" | "wrong-network" | "failed",
   ) {
     super(message);
     this.name = "ChainError";

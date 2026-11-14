@@ -57,8 +57,7 @@
    * of a pan starting under it. Null leaves cards tap-only.
    */
   export let onDragStart:
-    | ((e: PointerEvent, ev: CalendarEvent) => void)
-    | null = null;
+    ((e: PointerEvent, ev: CalendarEvent) => void) | null = null;
   /** The board has lifted a card: the timeline must not pan under the drag. */
   export let lifting = false;
   /** Lead the toolbar with the year window's Lines/Dial switch. */

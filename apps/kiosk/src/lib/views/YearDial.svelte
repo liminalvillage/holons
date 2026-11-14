@@ -44,8 +44,7 @@
   export let onSelectDay: ((date: Date) => void) | null = null;
   export let dropDay: string | null = null;
   export let onDragStart:
-    | ((e: PointerEvent, ev: CalendarEvent) => void)
-    | null = null;
+    ((e: PointerEvent, ev: CalendarEvent) => void) | null = null;
   /** Lead the toolbar with the year window's Lines/Dial switch. */
   export let showShape = false;
   /**

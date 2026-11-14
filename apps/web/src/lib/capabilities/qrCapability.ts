@@ -22,12 +22,7 @@ import { sha256 } from "@noble/hashes/sha256";
 // ============================================================================
 
 export type CapabilityExpiration =
-  | "permanent"
-  | "24h"
-  | "7d"
-  | "30d"
-  | "1year"
-  | "custom";
+  "permanent" | "24h" | "7d" | "30d" | "1year" | "custom";
 
 export interface QRCapabilityToken {
   /** Unique identifier for this capability */
