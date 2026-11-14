@@ -36,7 +36,7 @@ subpath export makes new domains importable without editing a central file.
 | `checklists` | Checklist/subtask CRUD shared across UIs. |
 | `shopping` | Shopping-list CRUD. |
 | `settings` | Holon settings, flow settings, federation-link helpers. |
-| `dna` | Holon DNA: chromosomes, sequences, values/tools/practices library. |
+| `dna` | Holon DNA: genes (purpose, values, agreements, practices, roles, tools, terms) and alleles in the `genes` lens; the DNA hash an applicant acknowledges; starter genes. |
 | `categories` | Shared category → color palette. |
 | `commands` | Abstract command/intent registry + dispatch for CLI/AI/text UIs. |
 | `rea` | REA event store/factory: every user action recorded as a ValueFlows `vf:EconomicEvent` (https://valueflo.ws) for scoring and flows. |
