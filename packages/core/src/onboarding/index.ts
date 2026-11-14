@@ -99,8 +99,8 @@ export interface OnboardingView {
 export function viewOf(holon: string, config: OnboardingConfig, record: JoinRequestRecord, facts: OnboardingFacts): OnboardingView {
   const at = advance(config, record, facts);
   const current = at.step === null ? config.steps.length : config.steps.findIndex((s) => s.id === at.step);
-  // Not read: say what the record last said.
-  const dna = facts.dna === undefined ? (record.dna ? 'acknowledged' : 'none-required') : joinReadiness(record, facts.dna);
+  // Not read: nobody can say (`unknown`) — a stale hash is no acknowledgement.
+  const dna = joinReadiness(record, facts.dna);
   const blocked = record.status === 'pending' && at.finished && (facts.dna === undefined ? record.blocked === 'dna' : !mayLink(record, facts.dna)) ? 'dna' : null;
   return {
     holon,
@@ -214,7 +214,7 @@ async function run(
   // Through every step, but the request agreed to another DNA than the
   // holon's now (or to none): hold the link until a fresh request.
   // A DNA that could not be read holds it too — never link on a guess.
-  const dnaOk = facts.dna !== undefined && mayLink(record, facts.dna);
+  const dnaOk = mayLink(record, facts.dna); // unread genes (undefined) never link
   if (at.finished && !dnaOk) next = { ...next, blocked: 'dna' };
   else if (at.finished && opts.signer) {
     await approveJoin(hs, holon, record.id, opts.signer, { appName: opts.appName, name: record.name, now: opts.now });

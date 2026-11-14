@@ -24,8 +24,8 @@ export interface OnboardingFacts {
   profile: OnboardingProfile | null;
   /**
    * The holon's DNA hash as it is now (`@holons/core/dna` dnaHash; null: no
-   * DNA to agree to). Undefined: not read — the view then says nothing
-   * about it. It never moves a step: it decides only whether a finished
+   * DNA to agree to). Undefined: not read — the view then says `unknown`
+   * and nothing links. It never moves a step: it decides only whether a finished
    * onboarding may link the key (`@holons/core/holons` mayLink).
    */
   dna?: string | null;

@@ -240,11 +240,17 @@ export default class JoinRequests {
         { name, handle, interpolation: { escapeValue: false } }
       ),
       tgId && inChat
-        ? translated(
-            language,
-            'joinInChatDna',
-            'They are in this group, but their request does not carry the current DNA.'
-          )
+        ? who.dna === 'unknown'
+          ? translated(
+              language,
+              'joinInChatDnaUnknown',
+              "They are in this group, but the holon's DNA could not be read to check their request."
+            )
+          : translated(
+              language,
+              'joinInChatDna',
+              'They are in this group, but their request does not carry the current DNA.'
+            )
         : tgId
           ? translated(
               language,
@@ -267,7 +273,13 @@ export default class JoinRequests {
               ? translated(language, 'readyAcknowledged', 'DNA acknowledged')
               : who.dna === 'outdated'
                 ? translated(language, 'readyOutdated', 'DNA outdated')
-                : translated(language, 'readyMissing', 'DNA not acknowledged'),
+                : who.dna === 'unknown'
+                  ? translated(language, 'readyUnknown', 'DNA not readable')
+                  : translated(
+                      language,
+                      'readyMissing',
+                      'DNA not acknowledged'
+                    ),
           ]),
       translated(
         language,
@@ -357,7 +369,10 @@ export default class JoinRequests {
    * the holon has none (the roster sync derives their key from it, so the
    * seat holds) and seat the key now — only when their request agreed to
    * the holon's DNA as it is now (core `mayLink`); otherwise an admin
-   * decides, with the readiness shown.
+   * decides, with the readiness shown. `readiness` comes from
+   * `describeApplicant`: only 'acknowledged' and 'none-required' (both from
+   * a successful read of the genes) link; 'unknown' (unreadable genes) and
+   * anything else never do.
    */
   async autoLink(holon, request, tgId, user, readiness) {
     const signer = this._signer();

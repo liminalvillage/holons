@@ -219,6 +219,43 @@ describe('a join request for a Telegram group', () => {
     expect(telegram.sendMessage).toHaveBeenCalledTimes(1);
   });
 
+  it('never links a proven member when the DNA cannot be read: the admins decide', async () => {
+    const ada = deriveTelegramNostrKey('4242', SECRET);
+    const { hs, telegram, service, ask } = await setup({
+      chatMember: async () => ({
+        status: 'member',
+        user: { id: 4242, first_name: 'Ada' },
+      }),
+    });
+    const getAll = hs.getAll.bind(hs);
+    hs.getAll = async (holon, lens, ...rest) => {
+      if (lens === 'genes') throw new Error('relay down');
+      return getAll(holon, lens, ...rest);
+    };
+    const t0 = Math.floor(Date.now() / 1000);
+    const first = ask(ada.privateKey, {
+      reason: 'Ada',
+      telegramId: 4242,
+      now: () => t0,
+    });
+    expect(await service.handle(first)).toBe('posted');
+    expect((await holonMembers(hs, T)).has(ada.publicKey)).toBe(false);
+    const text = telegram.sendMessage.mock.calls[0][1];
+    expect(text).toMatch(/DNA could not be read/);
+    expect(text).toMatch(/DNA not readable/);
+    // A re-ask on the pending record is no way round it.
+    const again = ask(ada.privateKey, {
+      reason: 'Ada',
+      telegramId: 4242,
+      now: () => t0 + 5,
+    });
+    expect(await service.handle(again)).toBe('known');
+    expect((await holonMembers(hs, T)).has(ada.publicKey)).toBe(false);
+    expect((await joinRequestRecords(hs, T)).get(ada.publicKey)).toMatchObject({
+      status: 'pending',
+    });
+  });
+
   it('asks the admins about a proven Telegram user who is not in the group', async () => {
     const ada = deriveTelegramNostrKey('4242', SECRET);
     const { hs, telegram, service, ask } = await setup({

@@ -113,7 +113,9 @@ describe('joinReadiness and mayLink', () => {
     [null, A, 'missing', false],
     [{ dna: A }, null, 'none-required', true],
     [{}, null, 'none-required', true],
-    [{}, undefined, 'none-required', true],
+    // The genes could not be read: nobody can say, nothing links on its own.
+    [{ dna: A }, undefined, 'unknown', false],
+    [{}, undefined, 'unknown', false],
   ] as const)('%j against %s → %s', (subject, current, readiness, link) => {
     expect(joinReadiness(subject, current)).toBe(readiness);
     expect(mayLink(subject, current)).toBe(link);
@@ -126,6 +128,16 @@ describe('joinReadiness and mayLink', () => {
     expect((await describeApplicant(hs, ok)).dna).toBe('acknowledged');
     expect((await describeApplicant(hs, none)).dna).toBe('missing');
     expect((await describeApplicant(hs, ok, { dnaHash: 'c'.repeat(64) })).dna).toBe('outdated');
+    // Genes that cannot be read are not "nothing to agree to".
+    const getAll = hs.getAll.bind(hs);
+    (hs as unknown as { getAll: typeof getAll }).getAll = (async (h: string, lens: string, ...rest: unknown[]) => {
+      if (lens === 'genes') throw new Error('relay down');
+      return (getAll as (...a: unknown[]) => Promise<unknown>)(h, lens, ...rest);
+    }) as typeof getAll;
+    expect((await describeApplicant(hs, none)).dna).toBe('unknown');
+    expect((await describeApplicant(hs, ok)).dna).toBe('unknown');
+    expect(mayLink(ok, undefined)).toBe(false);
+    (hs as unknown as { getAll: typeof getAll }).getAll = getAll;
     await hs.close();
   });
 });

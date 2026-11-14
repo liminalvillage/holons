@@ -192,11 +192,18 @@ export async function recordJoinRequest(hs: HoloSphere, holon: string, request: 
  *   outdated       it carries an older one — the DNA changed since
  *   missing        it carries none, and the holon has a DNA to agree to
  *   none-required  the holon asks no agreement (no gene asks for one)
+ *   unknown        the holon's DNA could not be read: nobody can say, so
+ *                  nothing links on its own — never link on a guess
  */
-export type JoinReadiness = 'acknowledged' | 'outdated' | 'missing' | 'none-required';
+export type JoinReadiness = 'acknowledged' | 'outdated' | 'missing' | 'none-required' | 'unknown';
 
-/** A request's (or its record's) standing with the DNA whose hash is `current`. Pure. */
+/**
+ * A request's (or its record's) standing with the DNA whose hash is
+ * `current`: a hash, `null` when the holon asks no agreement, `undefined`
+ * when its genes could not be read (→ `unknown`). Pure.
+ */
 export function joinReadiness(subject: { dna?: string | null } | null | undefined, current: string | null | undefined): JoinReadiness {
+  if (current === undefined) return 'unknown';
   if (!current) return 'none-required';
   const signed = typeof subject?.dna === 'string' ? subject.dna.toLowerCase() : '';
   if (!signed) return 'missing';
@@ -206,8 +213,9 @@ export function joinReadiness(subject: { dna?: string | null } | null | undefine
 /**
  * May this key be linked WITHOUT an admin deciding — by the Telegram bot's
  * proof, or at the end of an onboarding? Only with the current DNA agreed
- * to (or none to agree to). An admin who links by hand may still do so;
- * every admin list shows the readiness.
+ * to (or none to agree to) — never when the DNA could not be read
+ * (`current` undefined). An admin who links by hand may still do so; every
+ * admin list shows the readiness.
  */
 export function mayLink(subject: { dna?: string | null } | null | undefined, current: string | null | undefined): boolean {
   const r = joinReadiness(subject, current);
@@ -244,7 +252,7 @@ export interface Applicant {
   name: string;
   /** The Telegram identity the request claims. `verified`: the claim is proven. */
   telegram?: { id: string; verified: boolean };
-  /** The request's standing with the holon's DNA as it is now. */
+  /** The request's standing with the holon's DNA as it is now; `unknown` when the genes could not be read. */
   dna: JoinReadiness;
 }
 
@@ -285,13 +293,15 @@ export async function describeApplicant(hs: HoloSphere, request: JoinRequest, op
       /* no profile readable */
     }
   }
-  let current: string | null = null;
+  // Unreadable genes stay `undefined` → `unknown`: a read error must never
+  // pass for "nothing to agree to" (that would let a key link on a guess).
+  let current: string | null | undefined;
   if (opts.dnaHash !== undefined) current = opts.dnaHash;
   else {
     try {
       current = await holonDnaHash(hs, request.holon);
     } catch {
-      current = null;
+      current = undefined;
     }
   }
   return { name: name || shortId(request.pubkey), ...(telegram ? { telegram } : {}), dna: joinReadiness(request, current) };

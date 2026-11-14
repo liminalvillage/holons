@@ -25,6 +25,7 @@ import {
   saveOnboarding,
   saveProfile,
   startOnboarding,
+  viewOf,
   type JoinGateInput,
   type OnboardingConfig,
 } from './index.js';
@@ -158,5 +159,16 @@ describe('joinGate', () => {
   ];
   it.each(rows)('%s', (_name, input, gate) => {
     expect(joinGate(input)).toBe(gate);
+  });
+});
+
+describe('the view when the DNA was not read', () => {
+  it('says unknown, never acknowledged on a stale hash', () => {
+    const record = { id: alice.pk, eventId: 'e'.repeat(64), name: 'Alice', status: 'pending' as const, at: 1, dna: 'a'.repeat(64) };
+    const facts = { completed: new Set<string>(), profile: null };
+    expect(viewOf('h', config, record, facts).dna).toBe('unknown');
+    expect(viewOf('h', config, { ...record, dna: undefined }, facts).dna).toBe('unknown');
+    expect(viewOf('h', config, record, { ...facts, dna: 'a'.repeat(64) }).dna).toBe('acknowledged');
+    expect(viewOf('h', config, record, { ...facts, dna: null }).dna).toBe('none-required');
   });
 });
