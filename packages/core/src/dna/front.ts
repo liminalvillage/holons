@@ -341,7 +341,8 @@ export const FRONT_CATCH_UP_MS = 4000;
  * Read a holon's front page: genes, settings (with the onboarding), member
  * count and — when a viewer is named — where that key stands. Every read is
  * an authorized one: the instance must enforce reads (the factory's
- * default), or a gene a member forged would show as the holon's word.
+ * default), or a gene a member forged would show as the holon's word. A
+ * holon nobody speaks for shows no genes at all (see the gather below).
  * Throws {@link HolonFrontUnreachable} when the catch-up takes longer than
  * `catchUpMs`.
  */
@@ -369,7 +370,12 @@ export async function readHolonFront(hs: HoloSphere, holon: string, opts: ReadHo
     return buildHolonFront({
       holon: h,
       settings,
-      genes,
+      // Nobody speaks for a holon whose standing is 'open' (no genesis, no
+      // self-signed anchor), so the signer's read hands back raw items and
+      // the genes lens' admin guard never runs: a stranger's gene would show
+      // as the holon's word. No admin exists there to sign a real one, so
+      // none is shown.
+      genes: standing.status === 'open' ? [] : genes,
       members: members.size,
       anchored: standing.status !== 'open',
       viewer: viewer ? { linked, admin: may(standing, 'dna'), request } : null,
