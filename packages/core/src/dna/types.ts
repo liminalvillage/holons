@@ -74,7 +74,7 @@ export interface Gene {
   updated: string;
 }
 
-/** What an editor hands `putGene`: any part may be missing; an id is made when there is none. */
+/** What an editor hands `putGene`: any part may be missing (a stored gene keeps the parts not named); an id is made when there is none. */
 export type GeneDraft = Partial<Omit<Gene, 'alleles' | 'links'>> & {
   alleles?: Array<Partial<Allele>>;
   links?: Array<Partial<GeneLink>>;

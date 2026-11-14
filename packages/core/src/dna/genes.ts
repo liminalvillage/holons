@@ -53,7 +53,8 @@ export function geneSlug(raw: unknown): string {
     .replace(/[-_]+$/, '');
 }
 
-const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+/** Stored text: trimmed, in Unicode NFC, so the same words typed on any system hash alike. */
+const text = (v: unknown): string => (typeof v === 'string' ? v.normalize('NFC').trim() : '');
 
 function normalizeLink(raw: unknown): GeneLink | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -252,12 +253,16 @@ export function validateGene(gene: Gene, others: readonly Gene[] = []): GeneIssu
     }
   }
 
-  // Another gene showing one of ours that this version no longer has.
+  // Another gene showing one of ours that this version no longer has, or
+  // that this version turns into a ref (refs go one level only).
   for (const o of rest) {
     for (const a of o.alleles) {
       const m = a.ref ? REF.exec(a.ref) : null;
-      if (m && m[1] === g && !alleles.some((x) => x.id === m[2]))
-        add({ code: 'referenced', allele: m[2], field: 'alleles', message: `${o.id}/${a.id} shows ${a.ref}, which this gene no longer has` });
+      if (!m || m[1] !== g) continue;
+      const shown = alleles.find((x) => x.id === m[2]);
+      if (!shown) add({ code: 'referenced', allele: m[2], field: 'alleles', message: `${o.id}/${a.id} shows ${a.ref}, which this gene no longer has` });
+      else if (shown.ref)
+        add({ code: 'referenced', allele: m[2], field: 'ref', message: `${o.id}/${a.id} shows ${a.ref}, so it cannot itself be a ref (one level only)` });
     }
   }
 
@@ -275,13 +280,19 @@ export function validateGenes(genes: readonly Gene[]): GeneIssue[] {
     ids.add(g.id);
   }
   const seen = new Set<string>();
+  let counted = false;
   for (const g of genes) {
     if (seen.has(g.id)) continue;
     seen.add(g.id);
-    // A single kind is reported once, on its later genes, not on every copy.
+    // A single kind is reported once, on its later genes, not on every copy;
+    // too many genes once, not once per gene.
     const others = genes.filter((o) => o !== g);
     for (const i of validateGene(g, others)) {
       if (i.code === 'duplicate-kind' && !genes.slice(0, genes.indexOf(g)).some((o) => o.kind === g.kind)) continue;
+      if (i.code === 'too-many' && i.field === 'genes') {
+        if (counted) continue;
+        counted = true;
+      }
       issues.push(i);
     }
   }
@@ -350,13 +361,18 @@ export function subscribeGenes(hs: HoloSphere, holon: string, cb: (genes: Gene[]
 /**
  * Store a gene: normalized, given an id when it has none (a single kind
  * takes the kind as its id; others a slug of the title), kept at its place
- * or put last, stamped `updated`. Throws `GeneInvalid` with every issue
- * instead of storing an invalid gene. Returns what was stored.
+ * or put last, stamped `updated`. A draft for a stored gene changes only
+ * the parts it names; the rest stay as stored. Throws `GeneInvalid` with
+ * every issue instead of storing an invalid gene. Returns what was stored.
  */
-export async function putGene(hs: HoloSphere, holon: string, draft: GeneDraft, opts: GeneWriteOptions = {}): Promise<Gene> {
+export async function putGene(hs: HoloSphere, holon: string, input: GeneDraft, opts: GeneWriteOptions = {}): Promise<Gene> {
   const existing = await readGenes(hs, holon);
+  const named = geneSlug(input.id);
+  const stored = named ? existing.find((g) => g.id === named) : undefined;
+  const given = Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) as GeneDraft;
+  const draft: GeneDraft = stored ? { ...stored, ...given } : given;
   const kind: GeneKind = (GENE_KINDS as readonly string[]).includes(draft.kind as string) ? (draft.kind as GeneKind) : 'custom';
-  let id = geneSlug(draft.id);
+  let id = named;
   if (!id) {
     const base = SINGLE_KINDS.includes(kind) ? kind : geneSlug(draft.title) || kind;
     id = unique(

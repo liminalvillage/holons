@@ -209,10 +209,21 @@ describe('validateGene', () => {
       expect(validateGene(gene(), [tools])).toEqual([]);
       expect(validateGene(gene({ alleles: [] }), [tools])).toEqual([expect.objectContaining({ code: 'referenced', allele: 'care' })]);
     });
+
+    it('keep an allele another gene shows from becoming a ref itself', () => {
+      const agreements = gene({ id: 'agreements', kind: 'agreements', alleles: [{ id: 'consent', title: 'Consent' }] });
+      const nested = gene({ alleles: [{ id: 'care', title: '', ref: 'agreements/consent' }] });
+      expect(validateGene(nested, [tools, agreements])).toEqual([expect.objectContaining({ code: 'referenced', allele: 'care', field: 'ref' })]);
+    });
   });
 });
 
 describe('validateGenes', () => {
+  it('reports too many genes once, not once per gene', () => {
+    const all = Array.from({ length: GENE_LIMITS.genes + 1 }, (_, i) => gene({ id: `g${i}`, kind: 'custom' }));
+    expect(validateGenes(all)).toEqual([expect.objectContaining({ code: 'too-many', field: 'genes', actual: 13 })]);
+  });
+
   it('reports a second purpose once, and ids used twice', () => {
     const issues = validateGenes([gene({ id: 'a', kind: 'purpose' }), gene({ id: 'b', kind: 'purpose' }), gene({ id: 'b', kind: 'custom' })]);
     expect(issues.filter((i) => i.code === 'duplicate-kind').map((i) => i.gene)).toEqual(['b']);
@@ -248,6 +259,21 @@ describe('the genes lens', () => {
     const edited = await putGene(hs, HOLON, { kind: 'purpose', id: 'purpose', title: 'Purpose', blurb: 'Edited.' });
     expect(edited.order).toBe(0);
     expect(purposeAbout(await readGenes(hs, HOLON))).toBe('Edited.');
+  });
+
+  it('changes only what a draft for a stored gene names', async () => {
+    const hs = instance();
+    await putGene(hs, HOLON, { kind: 'values', id: 'values', title: 'Values', ack: 'read', alleles: [{ title: 'Care' }] });
+    const edited = await putGene(hs, HOLON, { id: 'values', blurb: 'New.', kind: undefined });
+    expect(edited).toMatchObject({ kind: 'values', ack: 'read', title: 'Values', blurb: 'New.', alleles: [{ id: 'care', title: 'Care' }] });
+  });
+
+  it('stores text in one Unicode form, so composed and decomposed typing agree', async () => {
+    const hs = instance();
+    const composed = await putGene(hs, HOLON, { kind: 'custom', id: 'a', title: 'Caf\u00e9' });
+    const decomposed = await putGene(hs, HOLON, { kind: 'custom', id: 'a', title: 'Cafe\u0301' });
+    expect(decomposed.title).toBe(composed.title);
+    expect(dnaHash([decomposed])).toBe(dnaHash([composed]));
   });
 
   it('refuses an invalid gene with every issue, and stores nothing', async () => {
@@ -294,6 +320,17 @@ describe('the genes lens', () => {
     await putGene(hs, HOLON, { kind: 'practices', id: 'practices', title: 'Practices', alleles: [{ id: 'triz', ref: 'tools/triz' }] });
     const err = await putGene(hs, HOLON, { kind: 'tools', id: 'tools', title: 'Tools', alleles: [] }).catch((e) => e);
     expect(codes((err as GeneInvalid).issues)).toEqual(['referenced']);
+  });
+
+  it('refuses to turn an allele another gene shows into a ref', async () => {
+    const hs = instance();
+    await putGene(hs, HOLON, { kind: 'tools', id: 'tools', title: 'Tools', alleles: [{ id: 'triz', title: 'TRIZ' }] });
+    await putGene(hs, HOLON, { kind: 'practices', id: 'practices', title: 'Practices', alleles: [{ id: 'triz', ref: 'tools/triz' }] });
+    await putGene(hs, HOLON, { kind: 'values', id: 'values', title: 'Values', alleles: [{ id: 'care', title: 'Care' }] });
+    const err = await putGene(hs, HOLON, { kind: 'tools', id: 'tools', title: 'Tools', alleles: [{ id: 'triz', ref: 'values/care' }] }).catch((e) => e);
+    expect(err).toBeInstanceOf(GeneInvalid);
+    expect(codes((err as GeneInvalid).issues)).toEqual(['referenced']);
+    expect(validateGenes(await readGenes(hs, HOLON))).toEqual([]);
   });
 
   it('is watched as one sorted list, until stopped', async () => {

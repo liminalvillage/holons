@@ -43,15 +43,27 @@ const linkView = (l: GeneLink | undefined) => (l ? { label: l.label, href: l.hre
 
 const linksView = (ls: GeneLink[] | undefined) => (ls ?? []).map((l) => ({ label: l.label, href: l.href }));
 
+/**
+ * The detail as a reader is shown it: body, steps and links. A detail that
+ * holds only an image (or nothing) is no detail to the hash, so attaching a
+ * picture never outdates anyone's acknowledgement.
+ */
+function detailView(d: Allele['detail']) {
+  if (!d) return undefined;
+  const body = str(d.body);
+  const steps = d.steps?.length ? d.steps : undefined;
+  const links = d.links?.length ? linksView(d.links) : undefined;
+  return body || steps || links ? { body: body ?? '', steps, links } : undefined;
+}
+
 function alleleView(a: Allele) {
-  const d = a.detail;
   return {
     id: a.id,
     title: str(a.title),
     kicker: str(a.kicker),
     body: str(a.body),
     link: linkView(a.link),
-    detail: d ? { body: d.body, steps: d.steps?.length ? d.steps : undefined, links: d.links?.length ? linksView(d.links) : undefined } : undefined,
+    detail: detailView(a.detail),
     ref: str(a.ref),
   };
 }

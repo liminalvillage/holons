@@ -105,6 +105,25 @@ describe('geneHash', () => {
     delete noSteps.alleles[1].detail!.steps;
     expect(geneHash(steps)).toBe(geneHash(noSteps));
   });
+
+  it('treats a detail holding only an image as no detail', () => {
+    const plain = (): Gene => ({ ...purpose(), alleles: [{ id: 'x', title: 'X' }] });
+    const h = geneHash(plain());
+    const pictured = plain();
+    pictured.alleles[0].detail = { body: '', image: { src: '/a.png', alt: '' } };
+    expect(geneHash(pictured)).toBe(h);
+    const bare = plain();
+    bare.alleles[0].detail = { body: '' };
+    expect(geneHash(bare)).toBe(h);
+  });
+
+  it('treats an empty detail body and a missing one alike', () => {
+    const withBody = base();
+    withBody.alleles[1].detail!.body = '';
+    const noBody = base();
+    delete (noBody.alleles[1].detail as { body?: string }).body;
+    expect(geneHash(withBody)).toBe(geneHash(noBody));
+  });
 });
 
 describe('dnaHash', () => {
