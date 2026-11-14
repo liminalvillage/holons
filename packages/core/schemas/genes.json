@@ -1,0 +1,97 @@
+{
+  "title": "genes",
+  "description": "Records stored at (holonId, 'genes', <geneId>). One record per gene of the holon's DNA; the record id is the gene id (a slug). Admin-guarded and never private. Shape and limits: @holons/core/dna (normalizeGene, validateGene). A serialized record stays under 48 KB.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["purpose", "values", "agreements", "practices", "roles", "tools", "terms", "custom"]
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "blurb": {
+      "type": "string",
+      "maxLength": 600
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$",
+      "description": "Decoration; not part of the gene hash."
+    },
+    "order": {
+      "type": "number",
+      "description": "Front-page position; not part of the gene hash."
+    },
+    "ack": {
+      "type": "string",
+      "enum": ["none", "read", "agree"],
+      "description": "What a person asking to join acknowledges: nothing, that they read it, or that they agree."
+    },
+    "links": {
+      "type": "array",
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/link" }
+    },
+    "alleles": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$" },
+          "title": { "type": "string", "maxLength": 200 },
+          "kicker": { "type": "string", "maxLength": 200 },
+          "body": { "type": "string", "maxLength": 8000, "description": "At most 2000 characters, 8000 in a terms gene." },
+          "icon": { "type": "string", "description": "A semantic key from ALLELE_ICONS, never an emoji." },
+          "link": { "$ref": "#/$defs/link" },
+          "detail": {
+            "type": "object",
+            "required": ["body"],
+            "properties": {
+              "body": { "type": "string", "maxLength": 4000 },
+              "steps": { "type": "array", "maxItems": 24, "items": { "type": "string", "maxLength": 600 } },
+              "links": { "type": "array", "maxItems": 12, "items": { "$ref": "#/$defs/link" } },
+              "image": {
+                "type": "object",
+                "required": ["src"],
+                "properties": { "src": { "type": "string" }, "alt": { "type": "string" } }
+              }
+            }
+          },
+          "ref": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}/[a-z0-9][a-z0-9_-]{0,63}$",
+            "description": "<geneId>/<alleleId>: shows that allele here (one level)."
+          }
+        }
+      }
+    },
+    "lang": {
+      "type": "string",
+      "maxLength": 16
+    },
+    "updated": {
+      "type": "string",
+      "description": "ISO 8601 of the last edit."
+    }
+  },
+  "required": ["id", "kind", "title", "order", "ack", "alleles"],
+  "$defs": {
+    "link": {
+      "type": "object",
+      "required": ["label", "href"],
+      "properties": {
+        "label": { "type": "string", "maxLength": 200 },
+        "href": { "type": "string", "maxLength": 2048 },
+        "icon": { "type": "string" }
+      }
+    }
+  }
+}

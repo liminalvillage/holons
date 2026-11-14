@@ -46,6 +46,7 @@ await hs.setSchema('quests', questsSchema);
 | [`settings`](settings.json) | singleton (holonId) | `id`, `name` | |
 | [`canvases`](canvases.json) | per-canvas `id` | `id` | The web dashboard's holon canvas. |
 | [`taskchat`](taskchat.json) | `<ms base36>-<rand>` | `id`, `task`, `text`, `at` | One record per message of a task's chat, in the task's home holon; projected as NIP-29 kind 9. |
+| [`genes`](genes.json) | gene id (slug) | `id`, `kind`, `title`, `order`, `ack`, `alleles` | A holon's DNA, one record per gene. Admin-guarded, never private, ≤ 48 KB serialized. Read and written via `@holons/core/dna`. |
 | [`fedrequests`](fedrequests.json) | asking holon id | `id`, `from`, `to`, `kind`, `inbound`, `outbound`, `status`, `proposedAt`, `at` | Stored in the ASKED holon; written by admins of either side, others ignored. Answered via `answerFederationRequest`. |
 | [`offers`](offers.json) | Telegram `message_id` | `id` | Holds both Murmurations-style offers (`exchange_type`/`item_type`) and simpler `/offer`/`/want` requests. |
 | [`announcements`](announcements.json) | Telegram `message_id` | `id`, `user`, `content` | Federated to partner chats. |

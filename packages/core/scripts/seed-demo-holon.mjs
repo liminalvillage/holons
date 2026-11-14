@@ -32,7 +32,7 @@
 import { argv, exit, env } from 'node:process';
 import { HoloSphere } from 'holosphere';
 import { resolveRelays } from '../dist/holosphere/relays.js';
-import { getAllDefaultChromosomes } from '../dist/dna/index.js';
+import { STARTER_GENES } from '../dist/dna/index.js';
 
 const DEFAULT_HOLON = 'demo123';
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -1150,59 +1150,15 @@ function buildSettings(holonId) {
 }
 
 // ---------------------------------------------------------------------------
-// DNA + chromosome library — uses the canonical defaults from
-// @holons/core/dna, then pins ~12 of them into a DNA sequence.
+// DNA — the starter genes from @holons/core/dna, with the demo's own purpose.
 // ---------------------------------------------------------------------------
-function buildDNA(holonId) {
-	const nowIso = new Date(NOW).toISOString();
-	const seeds = getAllDefaultChromosomes();
-	const library = {};
-	const chromosomeIds = [];
-	for (const s of seeds) {
-		const id = `chr-${s.type}-${s.name
-			.toLowerCase()
-			.replace(/[^a-z0-9]+/g, '-')
-			.replace(/^-|-$/g, '')}`;
-		library[id] = {
-			id,
-			holonId,
-			name: s.name,
-			type: s.type,
-			description: s.description,
-			icon: s.icon ?? '',
-			created: nowIso,
-			updated: nowIso
-		};
-		chromosomeIds.push(id);
-	}
-	// Pin a curated DNA sequence (must stay <=20 per dna validation).
-	const picks = [
-		'chr-value-everyone-contributes',
-		'chr-value-self-organization',
-		'chr-value-commons-stewardship',
-		'chr-value-gift-economy',
-		'chr-value-local-wisdom',
-		'chr-value-wholeness',
-		'chr-tool-sociocracy-consent',
-		'chr-tool-open-space-technology',
-		'chr-tool-world-caf',
-		'chr-tool-appreciative-inquiry',
-		'chr-practice-weekly-community-calls',
-		'chr-practice-monthly-retrospectives',
-		'chr-practice-rotating-facilitation',
-		'chr-practice-non-violent-communication',
-		'chr-practice-celebration-rituals'
-	].filter((id) => library[id]);
-
-	const dna = {
-		holonId,
-		chromosomeIds: picks,
-		created: nowIso,
-		updated: nowIso,
-		version: 1
-	};
-
-	return { library, dna };
+function buildGenes() {
+	const updated = new Date(NOW).toISOString();
+	return STARTER_GENES('en').map((g) =>
+		g.kind === 'purpose'
+			? { ...g, blurb: 'Steward land and culture so that what we build outlives us: orchard, workshop, kitchen and care circles, shared.', updated }
+			: { ...g, updated }
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -1540,29 +1496,9 @@ async function main() {
 	console.log('\n[1/9] Users …');
 	await putAll(holosphere, holonId, 'users', userRecords, flags.timeoutMs, flags.concurrency);
 
-	// 2) DNA + chromosome library — single-doc writes via `holosphere.put`
-	console.log('\n[2/9] DNA + chromosome library …');
-	const { library, dna } = buildDNA(holonId);
-	try {
-		await withTimeout(
-			holosphere.put(holonId, 'chromosome_library', { id: 'chromosome_library', ...library }),
-			flags.timeoutMs,
-			'chromosome_library'
-		);
-		console.log('  chromosome_library: 1 written');
-	} catch (e) {
-		console.error(`  ! chromosome_library: ${e?.message ?? e}`);
-	}
-	try {
-		await withTimeout(
-			holosphere.put(holonId, 'dna_sequence', { id: 'dna_sequence', ...dna }),
-			flags.timeoutMs,
-			'dna_sequence'
-		);
-		console.log('  dna_sequence: 1 written');
-	} catch (e) {
-		console.error(`  ! dna_sequence: ${e?.message ?? e}`);
-	}
+	// 2) DNA — one record per gene in the `genes` lens
+	console.log('\n[2/9] DNA genes …');
+	await putAll(holosphere, holonId, 'genes', buildGenes(), flags.timeoutMs, flags.concurrency);
 
 	// 3) Tasks + events — both stored in the `quests` lens
 	console.log('\n[3/9] Tasks …');

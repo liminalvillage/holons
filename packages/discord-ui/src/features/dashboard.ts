@@ -68,7 +68,7 @@ export const dashboardFeature: Feature = {
               '**People & roles:** `/join` `/members` `/roles` `/role`',
               '**Library:** `/library`',
               '**Comms:** `/announce` `/tag` `/rsvp`',
-              '**Admin:** `/settings` `/federation` `/dna` `/dashboard`',
+              '**Admin:** `/settings` `/federation` `/dashboard`',
             ].join('\n')
           ),
       ],
