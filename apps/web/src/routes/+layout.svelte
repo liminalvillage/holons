@@ -219,7 +219,6 @@
 				await holosphere.put(userPublicKey, 'settings', {
 					id: userPublicKey,
 					...(chosenName ? { name: chosenName } : {}),
-					purpose: 'Personal holon',
 					createdAt: Date.now(),
 					createdBy: userPublicKey
 				}, { timeout: SPLASH_OP_TIMEOUT_MS });
