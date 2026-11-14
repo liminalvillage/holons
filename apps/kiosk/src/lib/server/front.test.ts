@@ -18,6 +18,7 @@ import {
   createFrontService,
   deployedHolosphere,
   FRONT_CACHE,
+  FRONT_CACHE_EMPTY,
   HOLON_ID,
 } from "./front";
 
@@ -235,6 +236,8 @@ describe("GET /api/front/<holon>", () => {
       "holon_nobodyhome1",
     );
     expect(res.status).toBe(200);
+    // A read the relays never answered looks the same: not kept for minutes.
+    expect(res.headers.get("cache-control")).toBe(FRONT_CACHE_EMPTY);
     const front = await res.json();
     expect(validate(front), JSON.stringify(validate.errors)).toBe(true);
     expect(front).toMatchObject({

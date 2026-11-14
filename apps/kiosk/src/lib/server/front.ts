@@ -51,6 +51,14 @@ export const FRONT_CATCH_UP_MS = 5000;
  */
 export const FRONT_CACHE = "public, s-maxage=300, stale-while-revalidate=3600";
 
+/**
+ * An answer with nothing in it — no genes, no one linked — is either a holon
+ * that does not exist or a cold read the relays did not answer (refused
+ * connection, empty reply). The second must not sit in the CDN for five
+ * minutes as if it were the holon's word, so it is kept only briefly.
+ */
+export const FRONT_CACHE_EMPTY = "public, s-maxage=30";
+
 /** Seconds a client is asked to wait before retrying a cold read that ran out of time. */
 const RETRY_SECONDS = 5;
 
@@ -139,7 +147,8 @@ export function createFrontService(opts: FrontServiceOptions): FrontService {
       try {
         // No `viewer`: this answer is the anonymous visitor's, whoever asks.
         const front = await readHolonFront(instance(id), id, { catchUpMs });
-        return reply(200, front, FRONT_CACHE);
+        const nothing = front.empty && front.members === 0;
+        return reply(200, front, nothing ? FRONT_CACHE_EMPTY : FRONT_CACHE);
       } catch (e) {
         if (e instanceof HolonFrontUnreachable)
           return reply(
