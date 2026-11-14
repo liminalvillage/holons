@@ -77,7 +77,9 @@ welcomeScene.action('wizard', async ctx => {
 welcomeScene.action('delete', async ctx => {
   await ctx.answerCbQuery().catch(() => {});
   await clearDna(ctx.session.db, ctx.from.id);
-  await ctx.reply('Your profile has been deleted, type /start to create a new one');
+  await ctx.reply(
+    'Your profile has been deleted, type /start to create a new one'
+  );
 });
 
 // Scene navigation actions

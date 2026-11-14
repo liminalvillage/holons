@@ -12,6 +12,7 @@ import { createHoloSphere, signerFromSecretKey } from '@holons/core/holosphere';
 import { deriveTelegramNostrKey } from '@holons/core/auth';
 import { holonMembers, syncMembersLog } from '@holons/core/protocol';
 import { joinRequestRecords } from '@holons/core/holons';
+import { dnaHash, putGene, readGenes } from '@holons/core/dna';
 import {
   onboardingCardId,
   readProfile,
@@ -252,6 +253,68 @@ describe('a holon with an onboarding', () => {
       step: 'call',
     });
     service.shutdown();
+  });
+
+  it('holds the link when the DNA changes mid-way, says so, and links after the re-ask', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const { hs, service, sent, buttons } = await setup();
+      await saveOnboarding(hs, T, {
+        enabled: true,
+        steps: [steps[2]],
+      });
+      await putGene(hs, T, {
+        kind: 'values',
+        title: 'Values',
+        alleles: [{ title: 'Care', body: 'We look after each other.' }],
+      });
+      const ada = deriveTelegramNostrKey(ADA, SECRET);
+      const start = { from: { id: 4242, first_name: 'Ada' }, reply: vi.fn() };
+      const first = dnaHash(await readGenes(hs, T));
+      expect(await service.askFromTelegram(start, T, first)).toBe('onboarding');
+
+      // An admin rewrites the DNA while she is on her last step.
+      vi.setSystemTime(Date.now() + 5000);
+      await putGene(hs, T, {
+        id: 'values',
+        alleles: [{ title: 'Care', body: 'And the land.' }],
+      });
+      const done = buttons(
+        sent()
+          .filter(m => m.chat === ADA)
+          .at(-1)
+      ).find(b => /^onbdone:/.test(b.callback_data ?? '')).callback_data;
+      const press = {
+        chat: { id: Number(ADA) },
+        from: { id: 4242 },
+        match: [done, ...done.split(':').slice(1)],
+        answerCbQuery: vi.fn(async () => {}),
+      };
+      await service.onboarding.done(press);
+
+      // Every step is done, but nothing is linked; she is told why, with the way back.
+      expect((await holonMembers(hs, T)).has(ada.publicKey)).toBe(false);
+      const record = (await joinRequestRecords(hs, T)).get(ada.publicKey);
+      expect(record).toMatchObject({ status: 'pending', blocked: 'dna' });
+      const dm = sent()
+        .filter(m => m.chat === ADA)
+        .at(-1);
+      expect(dm.text).toMatch(/changed since you agreed/);
+      expect(buttons(dm).map(b => b.callback_data)).toEqual([`dnas:${T}`]);
+
+      // She walks the new DNA and asks again: the record takes it, she is linked.
+      vi.setSystemTime(Date.now() + 5000);
+      const second = dnaHash(await readGenes(hs, T));
+      expect(second).not.toBe(first);
+      await service.askFromTelegram(start, T, second);
+      expect((await holonMembers(hs, T)).get(ada.publicKey)).toBe('member');
+      expect(
+        (await joinRequestRecords(hs, T)).get(ada.publicKey)
+      ).toMatchObject({ status: 'approved', dna: second });
+      service.shutdown();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('leaves a holon without an onboarding to Link / Decline', async () => {
