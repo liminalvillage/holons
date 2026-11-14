@@ -22,7 +22,7 @@ import { isHologram } from './hologram.js';
 import { isLocked } from './store/sealed.js';
 import { GLOBAL_HOLON } from './store/address.js';
 import { hasClock, foldClaims, clockAddress } from './store/clock.js';
-import { GUARDED_SETTINGS_FIELDS } from './capabilities.js';
+import { GUARDED_SETTINGS_FIELDS, GUARDED_LENSES } from './capabilities.js';
 
 const MEMBERSHIP_LENS = '_members'; // signed membership log lens
 
@@ -91,7 +91,10 @@ export function buildTimeline(events, pinnedGenesis) {
 /** The lens a holon's settings record lives in. */
 export const SETTINGS_LENS = 'settings';
 
-export { GUARDED_SETTINGS_FIELDS } from './capabilities.js';
+export { GUARDED_SETTINGS_FIELDS, GUARDED_LENSES } from './capabilities.js';
+
+/** Is `lens` one whose records are an admin's whole (capabilities.js)? */
+export const isGuardedLens = (lens) => GUARDED_LENSES.includes(String(lens));
 
 /** Newest first, ties by larger id (the store's LWW tie-break). */
 const newestFirst = (a, b) => (b.created_at - a.created_at) || (a.id < b.id ? 1 : -1);
@@ -231,13 +234,32 @@ export function createSigner({
   }
 
   /**
+   * Does an envelope count for a record of a GUARDED lens? Only a plain
+   * record (or tombstone) signed by a key that was an admin at the
+   * envelope's own time. A pointer or a federated copy stands for something
+   * written elsewhere, so not even an admin's counts here. An authority that
+   * knows no roles falls back to the keys it accepts.
+   */
+  const guardAdmits = (holo, e, lens, id, isAuth) => {
+    const admin = typeof isAuth.roleAt === 'function'
+      ? isAuth.roleAt(e.pubkey, e.created_at) === 'admin'
+      : isAuth(e.pubkey, e.created_at);
+    if (!admin) return false;
+    const claim = claimAt(holo, e, lens, id);
+    return !!claim && !isHologram(claim) && !claim._federation;
+  };
+
+  /**
    * The claims that count at one address, newest first: seated authors'
    * envelopes plus vouched pointers/copies. `resolved` maps a vouched
-   * event's id to the value it stands for.
+   * event's id to the value it stands for. A GUARDED lens counts only its
+   * admins' plain claims, and nothing is ever vouched for it.
    */
   async function countedEvents(holo, holon, lens, id, isAuth, rawItem) {
     const events = [], resolved = new Map();
+    const guarded = isGuardedLens(lens);
     for (const e of envelopes(holo, holon, lens, id)) {
+      if (guarded) { if (guardAdmits(holo, e, lens, id, isAuth)) events.push(e); continue; }
       if (isAuth(e.pubkey, e.created_at)) { events.push(e); continue; }
       const value = await vouchedValue(holo, holon, lens, id, e, rawItem);
       if (value) { events.push(e); resolved.set(e.id, value); }
@@ -256,12 +278,22 @@ export function createSigner({
   }
 
   /**
-   * The guarded fields of a settings record, taken from admins' envelopes.
-   * `events` are the counted envelopes at this address, newest first; a
-   * field no admin ever wrote is dropped. Lenses other than settings, and
-   * authorities that do not know roles, pass through untouched.
+   * A counted record as the capability table lets it stand. `events` are
+   * the counted envelopes at this address, newest first.
+   *
+   *   GUARDED_LENSES  the record is an admin's WHOLE. countedEvents already
+   *                   kept only admins' plain claims (no member, no vouched
+   *                   pointer or copy), so whatever they fold to stands, and
+   *                   with none the record is pending, never shown.
+   *   settings        the guarded fields come from admins' envelopes; a
+   *                   field no admin ever wrote is dropped, and every other
+   *                   field is the newest counted writer's.
+   *
+   * Other lenses, and settings under an authority that knows no roles, pass
+   * through untouched.
    */
-  function guardSettings(holo, holon, lens, id, item, events, isAuth) {
+  function guardRecord(holo, holon, lens, id, item, events, isAuth) {
+    if (isGuardedLens(lens)) return item;
     if (lens !== SETTINGS_LENS || !item || typeof item !== 'object' || typeof isAuth?.roleAt !== 'function') return item;
     const out = { ...item };
     for (const field of GUARDED_SETTINGS_FIELDS) {
@@ -382,7 +414,7 @@ export function createSigner({
             }
           }
           if (!item) continue; // an unresolved pointer is neither shown nor pending
-          items.push(guardSettings(holo, holon, lens, id, item, authorized, isAuth));
+          items.push(guardRecord(holo, holon, lens, id, item, authorized, isAuth));
           report.accounted++;
           report.byPubkey[authorized[0].pubkey] = (report.byPubkey[authorized[0].pubkey] || 0) + 1;
         } else {
@@ -402,7 +434,7 @@ export function createSigner({
       const { events, resolved } = await countedEvents(holo, holon, lens, key, isAuth);
       if (!events.length) return null;
       const item = materialize(currentClaim(holo, holon, events, lens, key, resolved), opts);
-      return guardSettings(holo, holon, lens, key, item, events, isAuth);
+      return guardRecord(holo, holon, lens, key, item, events, isAuth);
     },
 
     /**

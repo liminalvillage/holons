@@ -33,7 +33,7 @@ import {
 import { eventToItem } from './nostr-events.js';
 import { sendDirectMessage, subscribeDirectMessages } from './nostr-dm.js';
 import { holonAnchor, isAcceptedSender, isPubkeyHolon, membersTimeline } from './authority.js';
-import { roleSatisfies } from './capabilities.js';
+import { roleSatisfies, GUARDED_LENSES } from './capabilities.js';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 
 export const VAULT_LENS = '_vault';
@@ -41,9 +41,14 @@ export const GRANT_SUBJECT = 'holons/grant';
 export const GRANT_TYPE = 'holons/grant';
 export const GRANT_VERSION = 2;
 
-/** Lenses that can never be private: the machinery itself, or public by design. */
+/**
+ * Lenses that can never be private: the machinery itself, or public by
+ * design. A guarded lens (capabilities.js, the holon's DNA) is read by
+ * everyone before they ask to join, so it is always in the clear.
+ */
 export const NEVER_PRIVATE = Object.freeze([
     'settings', VAULT_LENS, '_members', '_check', 'users', 'federation', 'holons_registry', 'schemas', 'hubclaims',
+    ...GUARDED_LENSES,
 ]);
 
 /** How far back the grant subscription looks (NIP-59 back-dates wraps by up to two days; grants may wait months). */

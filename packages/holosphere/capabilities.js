@@ -11,12 +11,14 @@
 //   member  content and the ordinary settings fields; making a scope
 //           private (the locker owns its vault)
 //   admin   the trust decisions: who is seated, the money and trust fields
-//           of settings, the rules of a log, the federation record (which
-//           partners, which lenses flow), and overriding a member's vault
+//           of settings, the holon's DNA (the `genes` lens), the rules of a
+//           log, the federation record (which partners, which lenses flow),
+//           and overriding a member's vault
 //
 // A holon nobody speaks for (no log, no anchored records, an H3 cell) is
 // open: every claim shows and nothing here applies. The signer reads this
-// table for settings and the federation table, the privacy layer for the
+// table for settings, the guarded lenses and the federation table, the
+// privacy layer for the
 // vault, core re-exports it for every surface to grey out what would not
 // count.
 
@@ -35,6 +37,8 @@ export const CAPABILITIES = Object.freeze({
   federation: 'admin',
   /** A log's rule (`_policy`). */
   policy: 'admin',
+  /** The holon's DNA: every record of the lenses in GUARDED_LENSES. */
+  dna: 'admin',
   /** Making a lens or a card private. The locker owns the vault. */
   'privacy.lock': 'member',
   /** Unlocking or taking over a scope another key locked. */
@@ -61,6 +65,16 @@ export const GUARDED_SETTINGS_FIELDS = Object.freeze([
 ]);
 
 /**
+ * Lenses whose records are an admin's WHOLE: under an authorized read each
+ * record is the one the newest envelope signed by an admin (as of its time)
+ * claims, and nothing else — no member's write, no vouched pointer or
+ * federated copy, not even an admin's hologram. With no such envelope the
+ * record is absent. `genes` is the holon's DNA: its terms decide who may
+ * join, so a member who could rewrite them could wave anyone in.
+ */
+export const GUARDED_LENSES = Object.freeze(['genes']);
+
+/**
  * Global tables whose records belong to the holon named by their id: such a
  * record counts only from an admin of that holon.
  */
@@ -78,4 +92,4 @@ export function roleSatisfies(role, action) {
   return role === 'member' && need === 'member';
 }
 
-export default { ROLES, CAPABILITIES, GUARDED_SETTINGS_FIELDS, HOLON_OWNED_GLOBAL_TABLES, requiredRole, roleSatisfies };
+export default { ROLES, CAPABILITIES, GUARDED_SETTINGS_FIELDS, GUARDED_LENSES, HOLON_OWNED_GLOBAL_TABLES, requiredRole, roleSatisfies };
