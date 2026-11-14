@@ -39,7 +39,7 @@ saveprofileScene.action('private', async ctx => {
   ctx.session.saved = false;
   if (await readDna(ctx.session.db, ctx.from.id)) {
     await ctx.reply(
-      'The DNA you saved earlier is unchanged. To remove it, run /onboarding and choose Reset Profile.'
+      'The profile you saved earlier is unchanged. To remove it, run /onboarding and choose Reset Profile.'
     );
   }
   return completeStep(ctx);

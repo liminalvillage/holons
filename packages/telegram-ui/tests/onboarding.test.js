@@ -7,7 +7,6 @@ import Onboarding from '../src/Onboarding.js';
 import Settings from '../src/Settings.ts';
 import InputScene from '../utils/InputScene.js';
 import { Calendar } from '../src/Calendar.js';
-import dnaData from '../data/dna.json' with { type: 'json' };
 import {
   backToMenu,
   completeStep,
@@ -449,24 +448,14 @@ describe('/onboarding in a group', () => {
     vi.restoreAllMocks();
   });
 
-  it("saves the community's answers in the group's holon and stops there", async () => {
+  it("is a person's profile, so a group is sent to /dna and nothing is written", async () => {
     const bot = harness(groupChat);
     const opening = await bot.text('/onboarding');
-    expect(sent(opening, 'community perspective')).toBeDefined();
-    expect(sent(opening, 'Open to visitors')).toBeDefined();
-
-    let last;
-    for (let i = 0; i < dnaData.dna.length; i++) last = await bot.tap('dna_0');
-
-    expect(sent(last, "community's DNA is saved")).toBeDefined();
-    expect(sent(last, 'arrive')).toBeUndefined();
+    expect(sent(opening, 'private chat')).toBeDefined();
+    expect(sent(opening, '/dna')).toBeDefined();
+    expect(sent(opening, 'community perspective')).toBeUndefined();
+    expect(bot.puts).toEqual([]);
     expect(bot.errors).toEqual([]);
-
-    expect(bot.puts).toHaveLength(1);
-    const [holon, lens, record] = bot.puts[0];
-    expect([holon, lens]).toEqual(['-1001', 'dna']);
-    expect(Object.keys(record.community)).toHaveLength(dnaData.dna.length);
-    expect(record.community.open_to_visitors).toBe('Yes');
   });
 });
 

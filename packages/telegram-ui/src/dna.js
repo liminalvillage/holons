@@ -1,9 +1,10 @@
 /**
- * @fileoverview A member's onboarding "DNA" — the answers the wizard scenes
- * collect (values, category, ikigai, LinkedIn link, hexagon, video,
- * questions, summary, booking dates). One record per user in the user's own personal holon:
- * `<userId>/dna/<userId>`. A group answering as a community gets the same
- * record in its own holon, `<chatId>/dna/<chatId>`, under `community`.
+ * @fileoverview A member's profile — the answers the wizard scenes collect
+ * (values, category, ikigai, LinkedIn link, hexagon, video, questions,
+ * summary, booking dates). One record per user in the user's own personal
+ * holon: `<userId>/dna/<userId>`. The lens keeps its storage name `dna`; in
+ * words it is "My profile", never a holon's DNA (that is `@holons/core/dna`
+ * and `/dna`, see HolonDna.js).
  *
  * The scenes used to write each field straight into the raw graph; every
  * read and write now goes through holosphere so the record is signed,

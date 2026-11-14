@@ -24,7 +24,6 @@ import onboardingScene from '../scenes/onboardingScene.js';
 import saveprofileScene from '../scenes/saveprofileScene.js';
 import summarizeScene from '../scenes/summarizeScene.js';
 import welcomeScene from '../scenes/welcomeScene.js';
-import { dnaScene, createScenesForDNA } from '../scenes/dnaScene.js';
 import done from '../scenes/doneScene.js';
 import { startOnboarding } from '../scenes/flow.js';
 
@@ -33,8 +32,9 @@ import { startOnboarding } from '../scenes/flow.js';
  *
  * @class Onboarding
  * @description Manages the user onboarding process through a series of
- * Telegraf scenes including welcome, values selection, DNA
- * questionnaire, and profile creation. Stores user responses for
+ * Telegraf scenes including welcome, values selection, and profile
+ * creation (a person's own "My profile", never a holon's DNA: that is
+ * `/dna`, see HolonDna.js). Stores user responses for
  * profile building.
  *
  * @property {Object} bot - Telegraf bot instance
@@ -67,17 +67,22 @@ export default class Onboarding {
       saveprofileScene,
       summarizeScene,
       h3Scene,
-      dnaScene,
       done,
-    ]
-      .concat(createScenesForQuestions())
-      .concat(createScenesForDNA());
+    ].concat(createScenesForQuestions());
 
     scenes.forEach(scene => {
       bot.stage.register(scene);
     });
 
-    bot.command('onboarding', ctx => startOnboarding(ctx, this.db));
+    bot.command('onboarding', ctx => {
+      // Your profile is filled in a private chat; a group's DNA is /dna.
+      if (ctx.chat?.type !== 'private') {
+        return ctx.reply(
+          'My profile is filled in a private chat with me. For what this group stands for, send /dna.'
+        );
+      }
+      return startOnboarding(ctx, this.db);
+    });
 
     bot.command('ikigai', ikigaiCommand(this.db));
 
