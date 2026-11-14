@@ -90,6 +90,7 @@
   } from "$lib/onboarding";
   import FederationLens from "./FederationLens.svelte";
   import OnboardingEditor from "./OnboardingEditor.svelte";
+  import DnaEditor from "./DnaEditor.svelte";
   import { isHolonId, isTelegramChatId } from "@holons/core/protocol";
   import { keyLoginOffered } from "$lib/login/providers";
   import { linkedTelegramChats, type LinkRecord } from "@holons/core/linking";
@@ -99,6 +100,7 @@
   import { onDestroy } from "svelte";
   import { getHolosphere } from "$lib/holosphere";
   import {
+    may,
     resolveHolonAuthority,
     writeAcceptance,
     type HolonAuthority,
@@ -321,6 +323,8 @@
   let onbPeople: OnboardingView[] = [];
   let onbBusy = false;
   let onbEditing = false;
+  // The holon's DNA (@holons/core/dna): its genes, edited by its admins.
+  let dnaEditing = false;
   async function loadOnb(id: string) {
     try {
       const { config, people } = await loadOnboardingAdmin(id);
@@ -956,6 +960,24 @@
         </button>
       {/if}
     </div>
+
+    {#if $isLoggedIn && may($standing, "dna")}
+      <!-- The DNA: what people read, and agree to, before they join. Only
+           whoever the holon's authority counts as an admin edits it. -->
+      <div class="field">
+        {$t("dnaEdit.row")}
+        <span class="sub">{$t("dnaEdit.rowSub")}</span>
+        <button
+          type="button"
+          class="found ghost"
+          on:click={() => (dnaEditing = true)}
+          ><Icon name="dna" /> {$t("dnaEdit.open")}</button
+        >
+      </div>
+      {#if dnaEditing && $holonId}
+        <DnaEditor holon={$holonId} on:close={() => (dnaEditing = false)} />
+      {/if}
+    {/if}
 
     {#if $holonId && $fedRequests.length}
       <!-- Other holons asking to federate with this one. Each holon's admins
