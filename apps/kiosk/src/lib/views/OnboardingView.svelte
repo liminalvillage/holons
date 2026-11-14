@@ -10,17 +10,25 @@
   // $lib/onboarding) — this view re-reads every few seconds while they
   // walk, so its moves show without a reload.
   //
-  // It is not a tab: while the key is not seated it IS the board (the
-  // layout's `onboardingGate`), and once linked the board opens.
+  // It is not a tab: while the key is not linked it IS the board (core's
+  // joinGate, the layout's `joinPage`), and once linked the board opens.
+  // Asking happens on the walk (`/apply`), never here: a person who has not
+  // asked yet is pointed there, one who just asked is told it was sent, and
+  // one whose request no longer carries the holon's DNA as it is now (an
+  // admin changed it since) is asked to review it — nothing links until
+  // they send it again.
   import { onDestroy } from "svelte";
+  import { page } from "$app/stores";
   import { holonId, holonName, showNotice, standingRecheck } from "$lib/stores";
   import { isLoggedIn, loginOpen } from "$lib/auth";
-  import { goto } from "$app/navigation";
-  import { applyPath } from "$lib/hubmembers";
+  import { askedHere } from "$lib/hubmembers";
+  import { hrefForPage } from "$lib/tabroute";
+  import Icon from "$lib/components/Icon.svelte";
   import { sessionKeyPub } from "$lib/sessionKey";
   import {
     fieldLabel,
     loadMyOnboarding,
+    myOnboarding,
     previewSteps,
     saveMyProfile,
     tickCard,
@@ -37,8 +45,11 @@
   import { t } from "$lib/i18n";
   import OnboardingSteps from "$lib/components/OnboardingSteps.svelte";
 
+  // The last read, kept in $lib/onboarding (one per holon on screen).
   let mine: MyOnboarding | null = null;
+  $: mine = $myOnboarding?.holon === $holonId ? $myOnboarding.mine : null;
   let busy = false;
+  /** This screen sent the request a moment ago: its record is on the way. */
   let asking = false;
   let timer: ReturnType<typeof setInterval> | null = null;
   /** What the person is typing, per profile field key. */
@@ -51,7 +62,9 @@
     try {
       const next = await loadMyOnboarding(holon);
       if (holon !== $holonId) return;
-      mine = next;
+      myOnboarding.set({ holon, mine: next });
+      asking =
+        (next.state === "none" || next.state === "off") && askedHere(holon);
       if (next.state === "walking") {
         const fill: Record<string, string> = {};
         for (const f of fieldsOf(next)) {
@@ -93,11 +106,19 @@
 
   $: holonLabel = $holonName || $holonId || "";
 
-  // Asking goes through the holon's walk: its DNA first, then the request.
-  function start() {
-    if (!$holonId || busy) return;
-    void goto(applyPath($holonId));
-  }
+  $: applyHref = hrefForPage($page.url, "apply");
+  // Their request does not carry the DNA as it is now: nothing links until
+  // they walk the changed parts and send it again (core's mayLink).
+  $: dnaBanner =
+    mine?.state === "walking" &&
+    mine.view.status === "pending" &&
+    (mine.view.blocked === "dna" ||
+      mine.view.dna === "outdated" ||
+      mine.view.dna === "missing")
+      ? mine.view.dna === "missing"
+        ? "missing"
+        : "changed"
+      : null;
 
   async function tick(card: OnboardingCardView) {
     if (mine?.state !== "walking" || busy) return;
@@ -187,8 +208,6 @@
     };
     touched.add(key);
   }
-
-  $: if (mine && mine.state !== "none" && mine.state !== "off") asking = false;
 </script>
 
 <div class="onboarding">
@@ -209,31 +228,45 @@
       <p class="state">{$t("onb.loading")}</p>
     {:else if mine.state === "linked"}
       <p class="state">{$t("onb.linked", { holon: holonLabel })}</p>
-    {:else if mine.state === "off"}
-      <p class="state">
-        {$t("onb.off", { holon: holonLabel })}
-        <br />
-        <button
-          class="cta"
-          type="button"
-          disabled={busy || asking}
-          on:click={start}
-          >{asking ? $t("onb.offAsked") : $t("onb.offAsk")}</button
-        >
-      </p>
-    {:else if mine.state === "none"}
-      <p class="state">
-        {$t("onb.intro", { holon: holonLabel })}
-        <br />
-        <button
-          class="cta"
-          type="button"
-          disabled={busy || asking}
-          on:click={start}>{asking ? $t("onb.asked") : $t("onb.ask")}</button
-        >
-      </p>
-      <OnboardingSteps steps={previewSteps($holonId ?? "", mine.config, -1)} />
+    {:else if mine.state === "none" || mine.state === "off"}
+      {#if asking}
+        <div class="sent" role="status">
+          <span class="sent__ico" aria-hidden="true"><Icon name="send" /></span>
+          <p>{$t("walk.sent")}</p>
+        </div>
+        {#if mine.config.enabled}
+          <OnboardingSteps
+            steps={previewSteps($holonId ?? "", mine.config, -1)}
+          />
+        {/if}
+      {:else}
+        <p class="state">
+          {$t("onb.notAsked", { holon: holonLabel })}
+          <br /><a class="cta" href={applyHref}>{$t("front.apply")}</a>
+        </p>
+      {/if}
     {:else}
+      {#if dnaBanner}
+        <div class="banner" role="status">
+          <span class="banner__ico" aria-hidden="true"
+            ><Icon name="warning" /></span
+          >
+          <div class="banner__text">
+            <p class="banner__title">
+              {$t(dnaBanner === "missing" ? "onb.dnaMissing" : "front.blocked")}
+            </p>
+            <p>
+              {$t(
+                dnaBanner === "missing"
+                  ? "onb.dnaMissingHint"
+                  : "onb.dnaChangedHint",
+                { holon: holonLabel },
+              )}
+            </p>
+          </div>
+          <a class="cta" href={applyHref}>{$t("onb.dnaReview")}</a>
+        </div>
+      {/if}
       <p class="intro">{$t("onb.intro", { holon: holonLabel })}</p>
       <OnboardingSteps steps={mine.view.steps} let:card>
         {#if card.confirm === "admin"}
@@ -428,5 +461,67 @@
   }
   .cta:disabled {
     opacity: 0.55;
+  }
+  a.cta {
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
+  }
+  .sent {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 1rem 0 0.6rem;
+    text-align: center;
+  }
+  .sent p {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: 1.3rem;
+    color: var(--ink);
+  }
+  .sent__ico {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 1.3rem;
+    background: var(--teal-wash);
+    color: var(--teal-ink);
+  }
+  .banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem 0.9rem;
+    margin: 0.4rem 0 1rem;
+    padding: 0.9rem 1rem;
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--caution) 12%, var(--card));
+    border: 1px solid color-mix(in srgb, var(--caution) 35%, var(--line));
+  }
+  .banner__ico {
+    font-size: 1.3rem;
+    color: var(--caution);
+  }
+  .banner__text {
+    flex: 1 1 14rem;
+    min-width: 0;
+  }
+  .banner__text p {
+    margin: 0;
+    font-size: 0.92rem;
+    line-height: 1.45;
+    color: var(--ink-soft);
+  }
+  .banner__text .banner__title {
+    font-weight: 700;
+    color: var(--ink);
+    margin-bottom: 0.15rem;
+  }
+  .banner .cta {
+    margin-top: 0;
   }
 </style>

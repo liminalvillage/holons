@@ -10,6 +10,12 @@ import type { WriteStanding } from "@holons/core/holosphere";
 import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
 import type { Checklist } from "@holons/core/checklists";
+import {
+  joinGate,
+  type JoinGate,
+  type JoinGateInput,
+  type JoinPage,
+} from "@holons/core/onboarding";
 import type { ShiftOccurrence, ShiftRsvp } from "@holons/core/shifts";
 import {
   toEvents,
@@ -736,20 +742,45 @@ export const offersEnabled = derived(
 export const appService = writable<TabId | null>(null);
 
 /**
- * Onboarding is not a tab: it IS the board for a key the holon has not
- * seated yet. Opened for it — the bot's Mini App or a link to
- * `/<holon>/onboarding` (set once on boot) — it shows until the key is
- * seated, logged in or not.
+ * The page the URL names instead of the board — `/<holon>/dna` (the front
+ * page), `/<holon>/apply` (the walk), `/<holon>/onboarding` — or null. Set
+ * by the layout from the path on boot and after every navigation.
  */
-export const onboardingOpened = writable(false);
+export const explicitPage = writable<JoinPage | null>(null);
 
 /**
- * The board is the onboarding and nothing else: the logged-in key is not
- * seated in a holon that walks newcomers through one (or is walking it
- * already), or the screen was opened for it. Set by the layout from the
- * key's standing; lifts the moment the key is seated.
+ * What the layout learnt about the key on screen and the holon, for the
+ * gate: the logged-in key, its standing, whether its request is in, and
+ * whether the holon has a front to show a newcomer. Null until read (and
+ * again on every new holon).
  */
-export const onboardingGate = writable(false);
+export const gateFacts = writable<Omit<JoinGateInput, "explicit"> | null>(null);
+
+/**
+ * What the holon's page shows: its board, its front page, the walk, or the
+ * key's onboarding — core's `joinGate`, from the URL and the facts. A wall
+ * display nobody logged into keeps its board.
+ */
+export const joinPage: Readable<JoinGate> = derived(
+  [explicitPage, gateFacts],
+  ([$explicit, $facts]) => joinGate({ ...($facts ?? {}), explicit: $explicit }),
+);
+
+/** The board is replaced by a page (front, walk or onboarding). */
+export const boardGated: Readable<boolean> = derived(
+  joinPage,
+  ($p) => $p !== "board",
+);
+
+/**
+ * Leaving the page for the board would show the board: the same gate
+ * without the URL's page says so. False while a key that is not linked would
+ * only be sent back to the front page.
+ */
+export const boardBehind: Readable<boolean> = derived(
+  gateFacts,
+  ($facts) => joinGate({ ...($facts ?? {}), explicit: null }) === "board",
+);
 
 /**
  * Ask the layout to re-read where this key stands now — the onboarding

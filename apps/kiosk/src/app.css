@@ -68,6 +68,13 @@
     "Avenir Next", "Avenir", "Futura", "Century Gothic", "Questrial",
     "Trebuchet MS", ui-sans-serif, system-ui, sans-serif;
 
+  /* A reading face for the pages people read rather than operate — a
+     holon's front page and the walk through its DNA. System fonts only
+     (offline-first): the book faces Apple, Windows and Android ship. */
+  --font-serif:
+    "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+    "Noto Serif", Georgia, ui-serif, serif;
+
   /* Fluid base size: the whole UI is rem-based, so scaling the root font scales
      the entire kiosk responsively — phone, tablet, or a big entrance display. */
   font-size: clamp(14px, 0.55vw + 11px, 22px);

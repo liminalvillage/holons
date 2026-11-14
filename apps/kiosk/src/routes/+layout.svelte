@@ -114,13 +114,16 @@
     openQuest,
     openThing,
     appService,
-    onboardingOpened,
-    onboardingGate,
+    explicitPage,
+    gateFacts,
+    joinPage,
+    boardGated,
     standingRecheck,
     type TabId,
   } from "$lib/stores";
-  import { opensOnboarding, pathForTab, tabForPath } from "$lib/tabroute";
+  import { pageForPath, pathForTab, tabForPath } from "$lib/tabroute";
   import { onboardingView, readOnboarding } from "@holons/core/onboarding";
+  import { readGenes } from "@holons/core/dna";
   import { miniAppLaunch, settleMiniApp } from "$lib/miniapp";
   import {
     linkedCardFromSearch,
@@ -287,6 +290,10 @@
     // `subscribeFederated` folds in the partners this holon receives that lens
     // from (per-lens/directional, handled inside HoloSphere) and tags their
     // items `_federation`; the local holon's own items stream immediately.
+    // The front page and the walk read their own (lib/dna.ts): a screen
+    // opened on `/dna` or `/apply` binds none of the board's lenses until the
+    // board itself is asked for (see `deferredBoard` below).
+    const deferred = get(joinPage) === "front" || get(joinPage) === "apply";
     if (boundHolon !== id) {
       // New holon → hide the board and wait for its data to settle before
       // revealing, so the entrance animation plays once on the full set.
@@ -307,29 +314,37 @@
       // The subscription streams what arrives; this pull says when the first
       // read is over, so an empty board can tell "still reading" from "clear".
       questsPulled.set(false);
-      void Promise.resolve()
-        .then(() => hs.getAll(id, "quests"))
-        .catch(() => {})
-        .finally(() => {
-          if (boundHolon === id) questsPulled.set(true);
-        });
-      questsSub = hs.subscribeFederated(
-        id,
-        "quests",
-        (items) => {
-          lensEmitAt.quests = Date.now();
-          lastQuestItems = items as Quest[];
-          emitQuests();
-        },
-        { includeFederated: fed },
-      );
-      hiddenSub = subscribeLens<HiddenEntry>(hs, id, HIDDEN_LENS, (entries) => {
-        hiddenSet = hiddenIdSet(entries);
-        emitQuests();
-      });
-      // Another holon's onboarding is not this one's: the standing below
-      // decides afresh.
-      if (id !== boundHolon) onboardingGate.set(false);
+      questsSub = hiddenSub = null;
+      deferredBoard = deferred ? id : null;
+      if (!deferred) {
+        void Promise.resolve()
+          .then(() => hs.getAll(id, "quests"))
+          .catch(() => {})
+          .finally(() => {
+            if (boundHolon === id) questsPulled.set(true);
+          });
+        questsSub = hs.subscribeFederated(
+          id,
+          "quests",
+          (items) => {
+            lensEmitAt.quests = Date.now();
+            lastQuestItems = items as Quest[];
+            emitQuests();
+          },
+          { includeFederated: fed },
+        );
+        hiddenSub = subscribeLens<HiddenEntry>(
+          hs,
+          id,
+          HIDDEN_LENS,
+          (entries) => {
+            hiddenSet = hiddenIdSet(entries);
+            emitQuests();
+          },
+        );
+      }
+      // Another holon's standing is not this one's: the gate decides afresh.
+      if (id !== boundHolon) gateFacts.set(null);
       boundHolon = id;
       boundFed = fed;
       holonName.set("");
@@ -367,6 +382,11 @@
       // Partner display names (best-effort) for the per-item source chips.
       partnerNames.set({});
       hydratePartnerNames(hs, id);
+    }
+
+    if (deferredBoard === id) {
+      booting = false;
+      return;
     }
 
     // The Library and Roles lenses are toggleable — spin each subscription up
@@ -467,6 +487,14 @@
         hiddenSub?.unsubscribe();
       };
     }
+  }
+
+  // A page opened first left the board unbound; the moment the board is what
+  // shows, bind it in full (the same path a heal takes).
+  let deferredBoard: string | null = null;
+  $: if (deferredBoard && $joinPage === "board") {
+    deferredBoard = null;
+    rebindAll();
   }
 
   // Fill the `partnerNames` store (partner id → display name) from the
@@ -575,7 +603,7 @@
       if (
         status === "held" &&
         get(currentUser) &&
-        !get(onboardingGate) &&
+        !get(boardGated) &&
         !standingSaid.has(mark)
       ) {
         standingSaid.add(mark);
@@ -608,37 +636,62 @@
     void refreshStanding(boundHolon);
   $: if ($standingRecheck && boundHolon) void refreshStanding(boundHolon, true);
 
-  // ── Onboarding instead of the board ─────────────────────────────────────
+  // ── The board, or a page instead of it ────────────────────────────────
   //
-  // A logged-in key the holon has not seated sees only the holon's
-  // onboarding — no tasks, no calendar — when the holon walks newcomers
-  // through one, or the key is walking it already. A screen opened for the
-  // onboarding (its link, the bot's Mini App) shows it to anyone not seated.
-  // A wall display with nobody logged in keeps its board.
+  // Core's `joinGate` decides (see `joinPage` in $lib/stores): `/dna` and
+  // `/apply` for anyone; a logged-in key with a request in sees its
+  // onboarding; one that is not linked sees the front page of a holon that
+  // has a DNA or an onboarding to show; a wall display with nobody logged in
+  // keeps its board. This only gathers the facts.
   async function refreshGate(
     hs: HoloSphere,
     id: string,
     key: string,
     status: "accepted" | "held" | "open",
   ) {
-    let gate = false;
-    if (status !== "accepted" && get(onboardingOpened)) gate = true;
-    else if (status === "held" && get(sessionKeyPub)) {
+    const sessionKey = get(sessionKeyPub);
+    let facts = {
+      sessionKey,
+      standing: status,
+      pending: false,
+      front: null as { genes: boolean; onboarding: boolean } | null,
+    };
+    // Only a key the holon holds apart is walked anywhere: a linked key
+    // has its board, an open holon (nobody speaks for it) asks nothing.
+    if (status === "held" && sessionKey) {
       try {
-        const [config, mine] = await Promise.all([
+        const [config, mine, genes] = await Promise.all([
           readOnboarding(hs, id),
-          onboardingView(hs, id, get(sessionKeyPub)!),
+          onboardingView(hs, id, sessionKey),
+          readGenes(hs, id),
         ]);
-        gate =
-          (config.enabled && config.steps.length > 0) ||
-          mine?.status === "pending";
+        facts = {
+          ...facts,
+          pending: mine?.status === "pending",
+          front: {
+            genes: genes.length > 0,
+            onboarding: config.enabled && config.steps.length > 0,
+          },
+        };
       } catch {
-        gate = get(onboardingGate);
+        const cur = get(gateFacts);
+        facts = {
+          ...facts,
+          pending: !!cur?.pending,
+          front: cur?.front ?? null,
+        };
       }
     }
     if (id !== boundHolon || key !== hs.currentPubkey) return;
-    onboardingGate.set(gate);
+    gateFacts.set(facts);
   }
+
+  // The page the URL names: read on boot (onMount) and after every
+  // navigation — the walk's "Send" lands on `/onboarding`, Settings' ask on
+  // `/apply`, the header's name on `/dna`.
+  afterNavigate(({ to }) => {
+    if (to?.url) explicitPage.set(pageForPath(to.url.pathname));
+  });
 
   // ── Write-echo watchdog ─────────────────────────────────────────────────--
   //
@@ -724,6 +777,9 @@
 
   onMount(() => {
     const bootHolon = resolveHolonId();
+    // A page the URL names (`/dna`, `/apply`, `/onboarding`) is known before
+    // the holon binds, so a front page never binds the board it stands in for.
+    explicitPage.set(pageForPath(location.pathname));
     holonIdStore.set(bootHolon);
     // No holon named: the front door is the dock with the earth showing (the
     // map), not an empty board window. Set before `mounted` so the window
@@ -736,7 +792,6 @@
     // data is still streaming in: register the ask so the tab claims the
     // screen the moment it appears instead of being reset to the fallback.
     const urlTab = tabForPath(location.pathname);
-    if (opensOnboarding(location.pathname)) onboardingOpened.set(true);
     // Opened as a Telegram Mini App for one service (`t.me/<bot>/tasks` →
     // /tasks): the screen IS that service — set before the tab logic below
     // and before rotation starts, both of which read it.
@@ -893,7 +948,13 @@
   let lastSyncedTab: TabId | null = null;
   let routerReady = false;
   afterNavigate(() => (routerReady = true));
-  $: if (routerReady && mounted && !isHome && $activeTab !== lastSyncedTab) {
+  $: if (
+    routerReady &&
+    mounted &&
+    !isHome &&
+    !$boardGated &&
+    $activeTab !== lastSyncedTab
+  ) {
     lastSyncedTab = $activeTab;
     const path = pathForTab(location.pathname, $activeTab);
     if (path !== location.pathname)
@@ -1267,8 +1328,8 @@
     </div>
 
     <!-- Zoomed detail / edit overlay for the tapped post-it or card — none
-         while the board is the onboarding. -->
-    {#if !$onboardingGate}<DetailModal />{/if}
+         while a page (front, walk, onboarding) stands in for the board. -->
+    {#if !$boardGated}<DetailModal />{/if}
   {/if}
 {/if}
 

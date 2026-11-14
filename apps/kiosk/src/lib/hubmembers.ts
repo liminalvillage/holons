@@ -7,21 +7,32 @@
 // hands it the session key and remembers which requests this screen waved
 // away — NIP-29 has no "decline" event, so a decline is local.
 
+import { get } from "svelte/store";
 import { signerFromSecretKey, type NostrSigner } from "@holons/core/holosphere";
 import {
+  applyToHolon,
   approveJoin,
+  joinReadiness,
   leaveHolon,
   removeSeat,
   watchJoinRequests,
+  type JoinReadiness,
   type JoinRequest,
 } from "@holons/core/holons";
+import { dnaHash, subscribeGenes } from "@holons/core/dna";
 import { addHolonMember, removeHolonMember } from "@holons/core/protocol";
 import type { Role } from "@holons/core/protocol";
 import { resolveAppName } from "./config";
 import { getHolosphere } from "./holosphere";
-import { getSessionSecret } from "./sessionKey";
+import { getSessionSecret, sessionKeyPub } from "./sessionKey";
+import { currentUser } from "./auth";
 
 export type { JoinRequest };
+
+/** A join request with where it stands on the holon's DNA as it is now. */
+export interface ReadiedRequest extends JoinRequest {
+  readiness: JoinReadiness;
+}
 
 /** The adopted session key as a signer, or null when nobody's key is up. */
 export function sessionSigner(): NostrSigner | null {
@@ -31,22 +42,44 @@ export function sessionSigner(): NostrSigner | null {
 
 const opts = () => ({ appName: resolveAppName() });
 
-/** Live join requests of `hub` (verified, newest per key, seated keys left out). */
+/**
+ * Live join requests of `hub` (verified, newest per key, seated keys left
+ * out), each with its readiness against the holon's DNA as it is now
+ * (core `joinReadiness`): re-said whenever a request or a gene changes.
+ */
 export function watchRequests(
   hub: string,
-  onChange: (requests: JoinRequest[]) => void,
+  onChange: (requests: ReadiedRequest[]) => void,
 ): () => void {
-  let stop: (() => void) | null = null;
+  let stops: Array<() => void> = [];
   let stopped = false;
+  let latest: JoinRequest[] = [];
+  // undefined until the genes are read: `unknown`, never a guess.
+  let current: string | null | undefined;
+  const emit = () => {
+    if (stopped) return;
+    onChange(
+      latest
+        .filter((x) => !isDismissed(hub, x.pubkey))
+        .map((r) => ({ ...r, readiness: joinReadiness(r, current) })),
+    );
+  };
   void getHolosphere().then((hs) => {
     if (stopped) return;
-    stop = watchJoinRequests(hs, hub, (r) =>
-      onChange(r.filter((x) => !isDismissed(hub, x.pubkey))),
-    );
+    stops = [
+      watchJoinRequests(hs, hub, (r) => {
+        latest = r;
+        emit();
+      }),
+      subscribeGenes(hs, hub, (genes) => {
+        current = dnaHash(genes);
+        emit();
+      }),
+    ];
   });
   return () => {
     stopped = true;
-    stop?.();
+    for (const stop of stops) stop();
   };
 }
 
@@ -76,12 +109,72 @@ export async function unseat(hub: string, key: string): Promise<string> {
 }
 
 /**
- * Where a person asks to join `hub`: its walk (`/<hub>/apply`) — they read
- * and agree to the holon's DNA, then sign the request
- * (`@holons/core/holons` applyToHolon). There is no ask without it.
+ * Ask to join `hub` as the session key, agreeing to the DNA whose hash is
+ * `acknowledged` (null: the holon showed none to agree to) — core's
+ * `applyToHolon`, which refuses a hash that is not the DNA now
+ * (`DnaChanged`). A Telegram login also names its Telegram id, so the bot of
+ * a Telegram group can prove it and link a member of the group at once.
+ * Remembered on this screen as asked (see `askedHere`).
  */
-export function applyPath(hub: string): string {
-  return `/${encodeURIComponent(hub)}/apply`;
+export async function applyFor(
+  hub: string,
+  acknowledged: string | null,
+  name: string,
+): Promise<void> {
+  const signer = sessionSigner();
+  if (!signer) throw new Error("not logged in");
+  const hs = await getHolosphere();
+  const user = get(currentUser);
+  const telegramId = user?.provider === "telegram" ? user.id : undefined;
+  await applyToHolon(hs, hub, signer, {
+    ...opts(),
+    acknowledged,
+    reason: name,
+    telegramId,
+  });
+  markAsked(hub, signer.pubkey);
+}
+
+// ── Asked on this screen ───────────────────────────────────────────────────
+//
+// A request travels to whoever answers for the holon (its bot, its admins)
+// and comes back as a record a moment later; meanwhile the onboarding
+// screen says it was sent instead of "you haven't asked".
+
+const ASKED_KEY = "kiosk_asked_joins";
+const ASKED_FOR_MS = 15 * 60 * 1000;
+
+function askedMarks(): Record<string, number> {
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(ASKED_KEY) ?? "{}");
+    return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+const askedMemory: Record<string, number> = {};
+
+function markAsked(hub: string, pubkey: string): void {
+  const mark = `${hub}|${pubkey.toLowerCase()}`;
+  askedMemory[mark] = Date.now();
+  try {
+    sessionStorage.setItem(
+      ASKED_KEY,
+      JSON.stringify({ ...askedMarks(), [mark]: Date.now() }),
+    );
+  } catch {
+    /* this screen's memory still has it */
+  }
+}
+
+/** The session key asked to join `hub` from this screen a moment ago. */
+export function askedHere(hub: string, now = Date.now()): boolean {
+  const pub = get(sessionKeyPub);
+  if (!pub) return false;
+  const mark = `${hub}|${pub.toLowerCase()}`;
+  const at = askedMemory[mark] ?? askedMarks()[mark];
+  return typeof at === "number" && now - at < ASKED_FOR_MS;
 }
 
 /** Say goodbye (a kind-9022); an admin takes the seat away. */

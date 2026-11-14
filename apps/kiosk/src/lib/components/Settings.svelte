@@ -63,16 +63,17 @@
   } from "$lib/palette";
   import { currentUser, isLoggedIn, loginOpen } from "$lib/auth";
   import { goto } from "$app/navigation";
+  import { page } from "$app/stores";
+  import { hrefForPage } from "$lib/tabroute";
   import { sessionKeyPub } from "$lib/sessionKey";
   import { nameOf } from "$lib/names";
   import { shortId } from "@holons/core/identity";
   import {
-    applyPath,
     dismissJoin,
     seat,
     unseat,
     watchRequests,
-    type JoinRequest,
+    type ReadiedRequest,
   } from "$lib/hubmembers";
   import { segmentFor } from "$lib/dock";
   import {
@@ -92,6 +93,7 @@
   import FederationLens from "./FederationLens.svelte";
   import OnboardingEditor from "./OnboardingEditor.svelte";
   import DnaEditor from "./DnaEditor.svelte";
+  import { READINESS_LABEL, readinessWarns } from "$lib/dna";
   import { isHolonId, isTelegramChatId } from "@holons/core/protocol";
   import { keyLoginOffered } from "$lib/login/providers";
   import { linkedTelegramChats, type LinkRecord } from "@holons/core/linking";
@@ -163,7 +165,7 @@
   let keyBusy = false;
   // Keys asking to be seated (NIP-29 join requests), watched while this
   // panel is open and the adopted key admins a key-founded hub.
-  let joinRequests: JoinRequest[] = [];
+  let joinRequests: ReadiedRequest[] = [];
   let stopRequests: (() => void) | null = null;
   let inviteCopied = false;
   // Hubs that seat members by key: founded from a screen, or born in
@@ -180,7 +182,8 @@
   // sign the request there.
   function askSeat() {
     if (!$holonId) return;
-    void goto(applyPath($holonId));
+    settingsOpen.set(false);
+    void goto(hrefForPage($page.url, "apply"));
   }
 
   // Linking this key to the person's Telegram account: the proof is signed
@@ -411,7 +414,7 @@
     }
   }
 
-  async function approve(req: JoinRequest) {
+  async function approve(req: ReadiedRequest) {
     if (!$holonId || keyBusy) return;
     keyBusy = true;
     try {
@@ -425,7 +428,7 @@
     }
   }
 
-  function decline(req: JoinRequest) {
+  function decline(req: ReadiedRequest) {
     if (!$holonId) return;
     dismissJoin($holonId, req.pubkey);
     joinRequests = joinRequests.filter((r) => r.pubkey !== req.pubkey);
@@ -1244,7 +1247,13 @@
                             view.steps.find((st) => st.id === view.step)
                               ?.title ?? "",
                         })}</span
-                      ></span
+                      >{#if READINESS_LABEL[view.dna]}<span
+                          class="ready"
+                          class:warn={readinessWarns(view.dna)}
+                          >{$t(
+                            READINESS_LABEL[view.dna] ?? "ready.missing",
+                          )}</span
+                        >{/if}</span
                     >
                     <div class="map-lanes">
                       {#each openAdminCards(view) as card (card.id)}
@@ -1272,7 +1281,13 @@
                   <span class="map-lens key-label" title={req.pubkey}
                     >{req.reason.trim() || $nameOf(req.pubkey)}<span
                       class="shared">{shortId(req.pubkey)}</span
-                    ></span
+                    >{#if READINESS_LABEL[req.readiness]}<span
+                        class="ready"
+                        class:warn={readinessWarns(req.readiness)}
+                        >{$t(
+                          READINESS_LABEL[req.readiness] ?? "ready.missing",
+                        )}</span
+                      >{/if}</span
                   >
                   <div class="map-lanes">
                     <button
@@ -1677,6 +1692,23 @@
     opacity: 0.7;
   }
   .hex-note.warn {
+    color: var(--caution);
+  }
+  /* Where a request stands on the holon's DNA (core joinReadiness): an
+     admin may still link by hand, but sees it first. */
+  .map-lens .ready {
+    display: inline-block;
+    margin-left: 0.5rem;
+    padding: 0.05rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.72em;
+    font-weight: 600;
+    background: var(--teal-wash);
+    color: var(--ink);
+    vertical-align: 0.1em;
+  }
+  .map-lens .ready.warn {
+    background: color-mix(in srgb, var(--caution) 14%, var(--card));
     color: var(--caution);
   }
   .hex-note {
