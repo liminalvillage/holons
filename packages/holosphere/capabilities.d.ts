@@ -8,12 +8,15 @@ export const CAPABILITIES: Readonly<{
   members: 'admin';
   federation: 'admin';
   policy: 'admin';
+  dna: 'admin';
   'privacy.lock': 'member';
   'privacy.override': 'admin';
 }>;
 export type Capability = keyof typeof CAPABILITIES;
 /** Settings fields that come from an admin's envelope under an authorized read. */
 export const GUARDED_SETTINGS_FIELDS: readonly string[];
+/** Lenses whose records come whole from an admin's envelope under an authorized read. */
+export const GUARDED_LENSES: readonly string[];
 /** Global tables whose records belong to the holon named by their id (admin-signed). */
 export const HOLON_OWNED_GLOBAL_TABLES: readonly string[];
 /** The weakest role an action needs; unknown actions need an admin. */

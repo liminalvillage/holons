@@ -12,8 +12,9 @@
  *
  *   member  content, ordinary settings fields, making a scope private
  *   admin   seating keys, the guarded settings fields (money, trust, the
- *           value equation), the rules of a log, the federation record,
- *           overriding a member's vault
+ *           value equation), the holon's DNA (`dna`: the GUARDED_LENSES),
+ *           the rules of a log, the federation record, overriding a
+ *           member's vault
  *
  * Nothing is refused at write time. A write whose signer lacks the role is
  * recorded on the relays and ignored by every reader — so surfaces grey the
@@ -22,6 +23,7 @@
 
 import {
   CAPABILITIES,
+  GUARDED_LENSES,
   GUARDED_SETTINGS_FIELDS,
   HOLON_OWNED_GLOBAL_TABLES,
   ROLES,
@@ -32,7 +34,7 @@ import {
 import type { Role } from '../protocol/types.js';
 import type { WriteStanding } from './authority.js';
 
-export { CAPABILITIES, GUARDED_SETTINGS_FIELDS, HOLON_OWNED_GLOBAL_TABLES, ROLES, requiredRole, type Capability };
+export { CAPABILITIES, GUARDED_LENSES, GUARDED_SETTINGS_FIELDS, HOLON_OWNED_GLOBAL_TABLES, ROLES, requiredRole, type Capability };
 
 /**
  * Would a key with this standing (or bare role) count for `action`?

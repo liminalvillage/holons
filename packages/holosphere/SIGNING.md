@@ -216,13 +216,23 @@ read, by everyone, with one table (`capabilities.js`, re-exported by
 | making a lens or card private (the locker owns its vault) | member |
 | seating keys (`_members`) | admin |
 | the guarded settings fields: `holonPubkey`, `admin`, `nostrTrustedPubkeys`, `identityProviders`, `valueEquation`/`equation`, `allocation`, `pot`, `payout`, `bundle`, `treasury` | admin |
+| the holon's DNA: every record of a guarded lens (`GUARDED_LENSES`: `genes`) | admin |
 | a log's rule (`_policy`) | admin |
 | the federation record — partners, and which lenses flow each way | admin |
 | unlocking or taking over a scope another key locked | admin |
 
-The signer applies it twice. On `settings`, each guarded field is taken from
-the newest envelope an **admin** (as of its time) signed; a member's settings
-write still counts for every other field (`GUARDED_SETTINGS_FIELDS`). On the
+The signer applies it three times (`guardRecord`). On `settings`, each
+guarded field is taken from the newest envelope an **admin** (as of its time)
+signed; a member's settings write still counts for every other field
+(`GUARDED_SETTINGS_FIELDS`). On a guarded lens (`GUARDED_LENSES`, today only
+`genes`) a record is taken **whole** from the envelopes admins (as of their
+time) signed: a member's write, a vouched pointer or federated copy, even an
+admin's hologram, never counts, and with no admin envelope the record is
+absent (pending). Clocked records fold field by field across those admin
+envelopes only. Each author keeps one claim per address, so an admin who later
+rewrites a gene (after being demoted, or by pointing it elsewhere) replaces
+their own earlier, valid version: if no other admin signed it, the gene becomes
+absent until an admin writes it again. A guarded lens is also never private (`NEVER_PRIVATE`). On the
 global `federation` table — keyed by the holon a record describes — the
 record is the newest an admin of *that holon* signed
 (`signer.resolveOwned`, `getFederation` / `getFederationStanding`); a holon
