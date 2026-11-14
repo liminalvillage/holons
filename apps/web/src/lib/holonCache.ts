@@ -28,6 +28,8 @@ import {
 } from "./scoring/ContributionScoring";
 import { queryManager } from "./holosphere/QueryManager";
 import { mergeSelfIntoUsers } from "./util/usersWithSelf";
+import { purposeAbout, subscribeGenes } from "@holons/core/dna";
+import { readPurpose } from "./dna/purpose";
 
 // Types
 export interface CachedUser {
@@ -46,7 +48,6 @@ export interface CachedUser {
 export interface CachedSettings {
   id: string;
   name?: string;
-  purpose?: string;
   hex?: string;
   equation?: ScoreEquation;
   [key: string]: any;
@@ -54,6 +55,8 @@ export interface CachedSettings {
 
 interface HolonCacheEntry {
   settings: CachedSettings | null;
+  /** The purpose gene's blurb (`purposeAbout`): the purpose no longer lives in the settings. */
+  purpose: string;
   users: Map<string, CachedUser>;
   equation: ScoreEquation;
   lastUpdated: number;
@@ -63,7 +66,7 @@ interface HolonCacheEntry {
 const holonCache = new Map<string, HolonCacheEntry>();
 const subscriptions = new Map<
   string,
-  { settings?: () => void; users?: () => void }
+  { settings?: () => void; users?: () => void; genes?: () => void }
 >();
 const preloadPromises = new Map<string, Promise<void>>();
 
@@ -74,6 +77,7 @@ function getOrCreateEntry(holonId: string): HolonCacheEntry {
   if (!holonCache.has(holonId)) {
     holonCache.set(holonId, {
       settings: null,
+      purpose: "",
       users: new Map(),
       equation: { ...DEFAULT_EQUATION },
       lastUpdated: 0,
@@ -89,6 +93,14 @@ function getOrCreateEntry(holonId: string): HolonCacheEntry {
  */
 export function getCachedSettings(holonId: string): CachedSettings | null {
   return holonCache.get(holonId)?.settings ?? null;
+}
+
+/**
+ * The holon's purpose, synchronously: the purpose gene's blurb, '' when it
+ * has none or has not been read yet.
+ */
+export function getCachedPurpose(holonId: string): string {
+  return holonCache.get(holonId)?.purpose ?? "";
 }
 
 /**
@@ -209,10 +221,12 @@ export async function preloadHolon(
       // path for that shape). Users is a collection — routed through
       // QueryManager so the underlying subscription is shared.
       queryManager.init(holosphere);
-      const [settingsData, usersData] = await Promise.all([
+      const [settingsData, usersData, purpose] = await Promise.all([
         holosphere.get(holonId, "settings", holonId).catch(() => null),
         queryManager.query(holonId, "users").catch(() => [] as any[]),
+        readPurpose(holosphere, holonId),
       ]);
+      getOrCreateEntry(holonId).purpose = purpose;
 
       // Update settings cache
       if (settingsData) {
@@ -249,7 +263,11 @@ export function subscribeToHolon(holosphere: any, holonId: string): () => void {
     return () => unsubscribeFromHolon(holonId);
   }
 
-  const subs: { settings?: () => void; users?: () => void } = {};
+  const subs: {
+    settings?: () => void;
+    users?: () => void;
+    genes?: () => void;
+  } = {};
 
   // Subscribe to settings changes — holosphere.subscribe is sync and
   // always returns `{ unsubscribe }`.
@@ -265,6 +283,15 @@ export function subscribeToHolon(holosphere: any, holonId: string): () => void {
     ).unsubscribe;
   } catch (e) {
     console.error("[HolonCache] Settings subscription error:", e);
+  }
+
+  // The purpose is the DNA's purpose gene: follow the genes.
+  try {
+    subs.genes = subscribeGenes(holosphere, holonId, (genes) => {
+      getOrCreateEntry(holonId).purpose = purposeAbout(genes);
+    });
+  } catch (e) {
+    console.error("[HolonCache] Genes subscription error:", e);
   }
 
   // Subscribe to user changes via QueryManager so the underlying
@@ -303,6 +330,7 @@ export function unsubscribeFromHolon(holonId: string): void {
   if (subs) {
     if (subs.settings) subs.settings();
     if (subs.users) subs.users();
+    if (subs.genes) subs.genes();
     subscriptions.delete(holonId);
   }
 }
