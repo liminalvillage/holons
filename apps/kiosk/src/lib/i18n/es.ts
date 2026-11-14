@@ -2243,7 +2243,7 @@ export const es: Record<MessageKey, Msg> = {
   "onb.previewAt": "Estar en el paso",
   "dnaEdit.row": "ADN",
   "dnaEdit.rowSub":
-    "Lo que se lee y se acepta antes de unirse: propósito, valores, acuerdos.",
+    "— lo que se lee y se acepta antes de unirse",
   "dnaEdit.open": "Editar el ADN",
   "dnaEdit.title": "Editar el ADN",
   "dnaEdit.tabGenes": "Genes",

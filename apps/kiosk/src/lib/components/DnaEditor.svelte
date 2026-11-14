@@ -195,20 +195,23 @@
     });
   }
 
-  /** Items another gene's item may show: saved, and not itself a shown item. */
-  $: targets = drafts.flatMap((o) =>
-    o.id
-      ? o.alleles
-          .filter((x) => x.id && !x.ref)
-          .map((x) => ({
-            geneKey: o.key,
-            value: `${o.id}/${x.id}`,
-            label: `${o.title || o.id} · ${x.title || x.id}`,
-            title: x.title || x.id,
-            gene: o.title || o.id,
-          }))
-      : [],
-  );
+  /**
+   * Items another gene's item may show: those already stored (a ref to
+   * something not written yet would be refused), and not themselves a ref.
+   */
+  $: targets = baseline
+    .filter((o) => !removed.includes(o.id))
+    .flatMap((o) =>
+      o.alleles
+        .filter((x) => !x.ref)
+        .map((x) => ({
+          geneId: o.id,
+          value: `${o.id}/${x.id}`,
+          label: `${o.title || o.id} · ${x.title || x.id}`,
+          title: x.title || x.id,
+          gene: o.title || o.id,
+        })),
+    );
   const targetOf = (ref: string | undefined) =>
     ref ? targets.find((x) => x.value === ref) : undefined;
 
@@ -823,7 +826,7 @@
 
                           {#if a.ref || showing.has(a.key)}
                             {@const options = targets.filter(
-                              (x) => x.geneKey !== g.key,
+                              (x) => x.geneId !== g.id,
                             )}
                             <label class="field">
                               <span>{$t("dnaEdit.refPick")}</span>

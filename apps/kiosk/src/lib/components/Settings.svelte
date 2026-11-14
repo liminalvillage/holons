@@ -967,12 +967,14 @@
       <div class="field">
         {$t("dnaEdit.row")}
         <span class="sub">{$t("dnaEdit.rowSub")}</span>
-        <button
-          type="button"
-          class="found ghost"
-          on:click={() => (dnaEditing = true)}
-          ><Icon name="dna" /> {$t("dnaEdit.open")}</button
-        >
+        <div>
+          <button
+            type="button"
+            class="found ghost"
+            on:click={() => (dnaEditing = true)}
+            ><Icon name="dna" /> {$t("dnaEdit.open")}</button
+          >
+        </div>
       </div>
       {#if dnaEditing && $holonId}
         <DnaEditor holon={$holonId} on:close={() => (dnaEditing = false)} />

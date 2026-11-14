@@ -2213,7 +2213,7 @@ export const en = {
   "onb.previewAt": "Stand on step",
   "dnaEdit.row": "DNA",
   "dnaEdit.rowSub":
-    "What people read and agree to before they join: purpose, values, agreements.",
+    "— what people read and agree to before they join",
   "dnaEdit.open": "Edit DNA",
   "dnaEdit.title": "Edit DNA",
   "dnaEdit.tabGenes": "Genes",
