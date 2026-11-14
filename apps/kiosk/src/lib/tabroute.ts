@@ -55,11 +55,6 @@ export function pageForPath(pathname: string): PageSegment | null {
   return joinPageOf(lastOf(segmentsOf(pathname)));
 }
 
-/** Was this URL opened for the holon's onboarding? */
-export function opensOnboarding(pathname: string): boolean {
-  return pageForPath(pathname) === "onboarding";
-}
-
 /** The path without its tab or page segment: what names the holon. */
 function holonSegments(pathname: string): string[] {
   const segs = segmentsOf(pathname);

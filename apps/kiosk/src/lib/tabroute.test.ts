@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   PAGE_SEGMENTS,
   hrefForPage,
-  opensOnboarding,
   pageForPath,
   pathForPage,
   pathForTab,
@@ -53,12 +52,12 @@ describe("pathForTab", () => {
   });
 });
 
-describe("opensOnboarding", () => {
+describe("the onboarding page", () => {
   it("is the onboarding segment, which is no tab", () => {
-    expect(opensOnboarding("/liminal/onboarding")).toBe(true);
-    expect(opensOnboarding("/Onboarding/")).toBe(true);
+    expect(pageForPath("/liminal/onboarding")).toBe("onboarding");
+    expect(pageForPath("/Onboarding/")).toBe("onboarding");
     expect(tabForPath("/liminal/onboarding")).toBeNull();
-    expect(opensOnboarding("/liminal/tasks")).toBe(false);
+    expect(pageForPath("/liminal/tasks")).toBeNull();
   });
 
   it("gives way to a tab once the board opens", () => {
@@ -73,7 +72,7 @@ describe("page segments", () => {
     expect([...PAGE_SEGMENTS]).toEqual(["dna", "apply", "onboarding"]);
     for (const p of PAGE_SEGMENTS)
       expect(
-        TABS.some((t) => t.id === p),
+        TABS.some((t) => (t.id as string) === p),
         p,
       ).toBe(false);
   });
