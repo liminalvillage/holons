@@ -15,16 +15,27 @@ import { registerAllTools, type ToolDeps } from './index.js';
 type Handler = (args: Record<string, unknown>) => Promise<{ isError?: boolean; content: Array<{ text: string }> }>;
 
 function capture() {
+  const dups: string[] = [];
   const tools = new Map<string, { def: { inputSchema?: Record<string, ZodTypeAny> }; run: Handler }>();
   const server = {
+    // A real McpServer throws when a name is registered twice (registerAllTools then swallows
+    // it and drops the rest of the domain), so the fake must not hide a collision.
     registerTool: (name: string, def: { inputSchema?: Record<string, ZodTypeAny> }, run: Handler) => {
+      if (tools.has(name)) {
+        dups.push(name);
+        throw new Error(`Tool ${name} is already registered`);
+      }
       tools.set(name, { def, run });
     },
     tool: (name: string, ...rest: unknown[]) => {
+      if (tools.has(name)) {
+        dups.push(name);
+        throw new Error(`Tool ${name} is already registered`);
+      }
       tools.set(name, { def: {}, run: rest[rest.length - 1] as Handler });
     },
   };
-  return { server: server as never, tools };
+  return { server: server as never, tools, dups };
 }
 const payload = (r: { content: Array<{ text: string }> }) => JSON.parse(r.content[0].text);
 const key = () => {
@@ -48,6 +59,7 @@ const RETIRED = [
   'dna_sequence_validate',
   'dna_defaults_get',
   'holon_join_request',
+  'holon_join', // joined without the DNA hash; user_profile_ensure writes the profile, holon_apply asks
 ];
 
 function setup() {
@@ -71,10 +83,11 @@ function setup() {
 
 describe('tool list', () => {
   it('registers the new DNA tools and none of the retired ones', async () => {
-    const { server, tools } = capture();
+    const { server, tools, dups } = capture();
     const deps: ToolDeps = { getHoloSphere: async () => ({}), resolveActor: () => ({ id: '1' }) as never };
     await registerAllTools(server, deps);
     const names = [...tools.keys()];
+    expect(dups).toEqual([]);
     expect(names.filter((n) => n.startsWith('dna_') || n.startsWith('gene') || n.includes('chromosome')).sort()).toEqual([
       'dna_gene_put',
       'dna_gene_remove',
@@ -86,8 +99,24 @@ describe('tool list', () => {
     expect(names).toContain('holon_apply');
     for (const gone of RETIRED) expect(names, gone).not.toContain(gone);
     expect(names.filter((n) => /join_request$/.test(n))).toEqual([]);
-    expect(names).toEqual(expect.arrayContaining(['holon_join_requests', 'holon_join_approve', 'holon_leave']));
-  });
+    expect(names).toEqual(expect.arrayContaining(['holon_join_requests', 'holon_join_approve', 'holon_leave', 'holon_list_mine', 'holon_remember', 'user_profile_ensure']));
+  }, 30_000);
+});
+
+describe('tool list on a real McpServer', () => {
+  it('registers every domain: no name is taken twice, so none is dropped', async () => {
+    const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
+    const server = new McpServer({ name: 'test', version: '0.0.0' });
+    const deps: ToolDeps = { getHoloSphere: async () => ({}), resolveActor: () => ({ id: '1' }) as never };
+    await registerAllTools(server, deps);
+    const names = Object.keys((server as unknown as { _registeredTools: Record<string, unknown> })._registeredTools);
+    expect(names).toEqual(
+      expect.arrayContaining(['holon_apply', 'holon_leave', 'holon_list_mine', 'holon_remember', 'holon_telegram_unlink', 'user_profile_ensure', 'dna_get']),
+    );
+    for (const gone of RETIRED) expect(names, gone).not.toContain(gone);
+    const leave = (server as unknown as { _registeredTools: Record<string, { description?: string }> })._registeredTools.holon_leave;
+    expect(leave.description).toMatch(/9022/);
+  }, 30_000);
 });
 
 describe('dna tools', () => {

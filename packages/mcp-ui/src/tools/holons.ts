@@ -185,7 +185,7 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
     'holon_join_requests',
     {
       description:
-        "The pending join requests of a holon (verified kind-9021 events, newest per key, seated keys left out), collected over a short window. Each carries the DNA hash it agreed to (`dna`) and its `readiness` against the holon's DNA as it is now: acknowledged, outdated (agreed to an older version), missing (agreed to none), none-required (the holon has no DNA to agree to) or unknown (the genes could not be read). Only acknowledged and none-required keys are ever linked without an admin; holon_join_approve may still link any.",
+        "The pending join requests of a holon (verified kind-9021 events, newest per key, linked keys left out), collected over a short window. Each carries the DNA hash it agreed to (`dna`) and its `readiness` against the holon's DNA as it is now: acknowledged, outdated (agreed to an older version), missing (agreed to none), none-required (the holon has no DNA to agree to) or unknown (the genes could not be read). Only acknowledged and none-required keys are ever linked without an admin; holon_join_approve may still link any.",
       inputSchema: { holon: z.string(), windowMs: z.number().int().min(100).max(10000).optional() },
     },
     async (args) => {
@@ -306,7 +306,7 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
   );
   server.registerTool(
     'holon_leave',
-    { description: 'Leave a holon as this MCP key: a NIP-29 kind-9022. An admin removes the seat.', inputSchema: { holon: z.string() } },
+    { description: 'Leave a holon as this MCP key: a NIP-29 kind-9022. An admin unlinks the key.', inputSchema: { holon: z.string() } },
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
