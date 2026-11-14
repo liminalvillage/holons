@@ -164,7 +164,9 @@ export type DraftIssue =
   /** A question of the holon's own without its wording is not saved. */
   | { kind: 'unnamed-field'; step: string; card: string; field: string }
   /** A profile card whose every field was removed falls back to the defaults. */
-  | { kind: 'no-fields'; step: string; card: string };
+  | { kind: 'no-fields'; step: string; card: string }
+  /** A choice without a single option is saved as a text question. */
+  | { kind: 'no-options'; step: string; card: string; field: string };
 
 /** What in the draft would not survive a save, for the editor to point at. */
 export function draftIssues(config: OnboardingConfig): DraftIssue[] {
@@ -177,8 +179,11 @@ export function draftIssues(config: OnboardingConfig): DraftIssue[] {
       if (c.confirm !== 'profile') continue;
       const fields = c.fields ?? DEFAULT_PROFILE_FIELDS;
       if (!fields.length) out.push({ kind: 'no-fields', step: s.id, card: c.id });
-      for (const f of fields)
+      for (const f of fields) {
         if (!f.label.trim() && !PROFILE_FIELDS.some((k) => k.key === f.key)) out.push({ kind: 'unnamed-field', step: s.id, card: c.id, field: f.key });
+        if ((f.type === 'choice' || f.type === 'multi') && !(f.options ?? []).some((o) => o.label?.trim()))
+          out.push({ kind: 'no-options', step: s.id, card: c.id, field: f.key });
+      }
     }
   }
   return out;

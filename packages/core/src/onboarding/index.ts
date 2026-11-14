@@ -42,7 +42,8 @@ import { cleanName } from '../identity/ids.js';
 import { readHolonSettings } from '../settings/persistence.js';
 import { completedCards, dealCards, onboardingCardId } from './cards.js';
 import { normalizeOnboarding, readOnboarding, type OnboardingCard, type OnboardingConfig } from './config.js';
-import { DEFAULT_PROFILE_FIELDS, missingProfileFields, readProfile } from './profile.js';
+import { DEFAULT_PROFILE_FIELDS, missingProfileFields } from './profile.js';
+import { readOnboardingAnswers } from './answers.js';
 import { advance, cardDone, cardKey, confirmable, stepDone, type OnboardingFacts } from './reducer.js';
 
 export * from './config.js';
@@ -51,6 +52,7 @@ export * from './reducer.js';
 export * from './profile.js';
 export * from './cards.js';
 export * from './gate.js';
+export * from './answers.js';
 
 /** Where a person's onboarding cards live: their proven Telegram id, else their key. */
 export function onboardingHome(request: Pick<JoinRequest, 'pubkey'>, verifiedTelegramId?: string | null): string {
@@ -142,7 +144,8 @@ export function previewSteps(holon: string, config: OnboardingConfig, at = 0): O
 async function factsFor(hs: HoloSphere, holon: string, home: string, config: OnboardingConfig): Promise<OnboardingFacts> {
   const [completed, profile, dna] = await Promise.all([
     completedCards(hs, holon, home, config),
-    readProfile(hs, home),
+    // The profile, with the sealed answers to this holon's own questions over it.
+    readOnboardingAnswers(hs, home, holon),
     holonDnaHash(hs, holon).catch(() => undefined),
   ]);
   return { completed, profile, ...(dna !== undefined ? { dna } : {}) };
