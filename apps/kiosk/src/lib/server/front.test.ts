@@ -220,6 +220,37 @@ describe("GET /api/front/<holon>", () => {
     expect(JSON.stringify(body)).not.toContain("Join without asking");
   });
 
+  it("never serves a gene a stranger signed on a holon nobody speaks for", async () => {
+    const hs = track(memoryInstance());
+    const nobody = "-1009999999999";
+    const store = (
+      hs as unknown as { store: { apply(e: unknown, o: unknown): void } }
+    ).store;
+    store.apply(
+      buildEvent({
+        holon: nobody,
+        lens: GENES_LENS,
+        item: gene({
+          id: "purpose",
+          kind: "purpose",
+          title: "Purpose",
+          blurb: "FORGED BY STRANGER",
+          updated: "2026-11-12T00:00:00.000Z",
+        }),
+        sk: member.sk,
+        created_at: Math.floor(Date.now() / 1000),
+        extraTags: [["n", "front-endpoint-test"]],
+      }),
+      { origin: "remote" },
+    );
+    const res = await createFrontService({ holosphere: () => hs }).get(nobody);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe(FRONT_CACHE_EMPTY);
+    const body = await res.json();
+    expect(body).toMatchObject({ empty: true, genes: [], about: "" });
+    expect(JSON.stringify(body)).not.toContain("FORGED BY STRANGER");
+  });
+
   it("answers the anonymous visitor's view whatever the caller sends", async () => {
     const hs = track(await foundedHolon());
     const service = createFrontService({ holosphere: () => hs });

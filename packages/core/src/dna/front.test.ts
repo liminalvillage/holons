@@ -503,6 +503,18 @@ describe('readHolonFront', () => {
     await hs.close();
   });
 
+  it('shows no gene of a holon nobody speaks for: a stranger-signed gene is not its DNA', async () => {
+    const hs = instance();
+    const nobody = '-1009999999999';
+    const store = (hs as unknown as { store: { apply(e: unknown, o: unknown): void } }).store;
+    const forged = { ...terms, alleles: [{ id: 'free', title: 'Free', body: 'FORGED BY STRANGER' }], updated: '2026-11-12T00:00:00.000Z' };
+    store.apply(buildEvent({ holon: nobody, lens: GENES_LENS, item: forged, sk: testKey().sk, created_at: Math.floor(Date.now() / 1000), extraTags: [['n', 'front-test']] }), { origin: 'remote' });
+    const front = await readHolonFront(hs, nobody);
+    expect(front).toMatchObject({ empty: true, genes: [], viewer: { cta: 'none' } });
+    expect(JSON.stringify(front)).not.toContain('FORGED BY STRANGER');
+    await hs.close();
+  });
+
   it('refuses an instance that does not enforce reads', async () => {
     const hs = instance({ enforce: false });
     await expect(readHolonFront(hs, H)).rejects.toThrow(/enforces reads/);

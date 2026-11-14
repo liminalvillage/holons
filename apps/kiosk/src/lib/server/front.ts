@@ -27,9 +27,14 @@
 //     hooks, and nothing here puts a record.
 //
 // Netlify gives a function 10 s. A cold instance catches the holon up from
-// the relays inside `readHolonFront`'s bound (`FRONT_CATCH_UP_MS` by
+// the relays inside a bound (`ENDPOINT_CATCH_UP_MS`, below core's own
 // default); past it the answer is a 504 that says to retry, and the caught-up
-// part stays in the in-memory store, so the retry is fast.
+// part stays in the in-memory store, so the retry is fast (best effort: a
+// frozen lambda may not finish it).
+//
+// A caller can vary the id to get past the CDN; the cost is bounded by
+// Netlify's concurrency and by `maxHolons` (a fresh instance per 100
+// distinct ids). A per-IP limit would be the next step.
 
 import type { HoloSphere } from "holosphere";
 import { createHoloSphere } from "@holons/core/holosphere";
@@ -42,7 +47,7 @@ type Env = Record<string, string | undefined>;
 export const HOLON_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** Upper bound on one request's relay catch-up: inside Netlify's 10 s with room for the rest. */
-export const FRONT_CATCH_UP_MS = 5000;
+export const ENDPOINT_CATCH_UP_MS = 5000;
 
 /**
  * The CDN keeps an answer five minutes and may serve a stale one for an hour
@@ -91,7 +96,7 @@ function reply(
 export interface FrontServiceOptions {
   /** Builds the instance a read uses. Called lazily, again after a rotation. */
   holosphere: () => HoloSphere;
-  /** Bound on the relay catch-up of one read (default {@link FRONT_CATCH_UP_MS}). */
+  /** Bound on the relay catch-up of one read (default {@link ENDPOINT_CATCH_UP_MS}). */
   catchUpMs?: number;
   /**
    * Distinct holons one instance serves before it is replaced by a fresh
@@ -108,7 +113,7 @@ export interface FrontService {
 
 /** The endpoint: `get` answers a holon's front, `options` the CORS preflight. */
 export function createFrontService(opts: FrontServiceOptions): FrontService {
-  const catchUpMs = opts.catchUpMs ?? FRONT_CATCH_UP_MS;
+  const catchUpMs = opts.catchUpMs ?? ENDPOINT_CATCH_UP_MS;
   const maxHolons = opts.maxHolons ?? 100;
   let current: HoloSphere | null = null;
   const served = new Set<string>();
