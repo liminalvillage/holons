@@ -22,7 +22,7 @@ import {
   type HolonFront,
   type HolonFrontInput,
 } from './front.js';
-import { GENES_LENS, putGene } from './genes.js';
+import { GENES_LENS, putGene, readGenes } from './genes.js';
 import { ALLELE_ICONS } from './icons.js';
 import { ACK_MODES, GENE_KINDS, type Gene } from './types.js';
 import { dnaHash, geneHash } from './version.js';
@@ -485,7 +485,11 @@ describe('readHolonFront', () => {
     expect((await readHolonFront(hs, H, { viewer: member.pk })).viewer).toEqual({ cta: 'linked', edit: false });
     const asker = testKey();
     expect((await readHolonFront(hs, H, { viewer: asker.pk })).viewer).toEqual({ cta: 'apply', edit: false });
+    // In, but agreed to no DNA: review it; agreed to the current one: continue.
     await recordJoinRequest(hs, H, { pubkey: asker.pk, at: 1, reason: 'Ada', eventId: 'e'.repeat(64), holon: H });
+    expect((await readHolonFront(hs, H, { viewer: asker.pk })).viewer).toEqual({ cta: 'review', edit: false });
+    const hash = dnaHash(await readGenes(hs, H))!;
+    await recordJoinRequest(hs, H, { pubkey: asker.pk, at: 2, reason: 'Ada', eventId: 'f'.repeat(64), holon: H, dna: hash });
     expect((await readHolonFront(hs, H, { viewer: asker.pk })).viewer).toEqual({ cta: 'continue', edit: false });
     expect((await readHolonFront(hs, H)).viewer).toEqual({ cta: 'apply', edit: false });
     vi.useRealTimers();

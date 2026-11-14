@@ -30,6 +30,8 @@ import { resolveHolonAuthority } from '../holosphere/authority.js';
 import { may } from '../holosphere/capabilities.js';
 import { cleanName, isPlaceholderName, shortId } from '../identity/ids.js';
 import { createNameResolver, type ResolverHost } from '../identity/resolver.js';
+import { readGenes } from '../dna/genes.js';
+import { dnaHash } from '../dna/version.js';
 import type { JoinRequest } from './index.js';
 
 /** The lens holding what a holon answered to each asking key. */
@@ -51,6 +53,20 @@ export interface JoinRequestRecord {
   /** Who settled it, in the surface's own terms (a Telegram user id). */
   by?: string;
   telegramId?: string;
+  /**
+   * The DNA hash the request carries (its `dna` tag): the version of the
+   * holon's DNA the person signed their agreement to. Absent: they agreed
+   * to none. A newer request from the same key replaces it.
+   */
+  dna?: string;
+  /** Unix seconds the request this answers was signed: a re-ask counts only when newer. */
+  asked?: number;
+  /**
+   * `dna`: every onboarding step is done, but the request does not carry
+   * the holon's current DNA hash, so the key waits — a fresh request with
+   * the current hash lets it through (`mayLink`).
+   */
+  blocked?: 'dna';
   /**
    * Onboarding progress (`@holons/core/onboarding`), present while the holon
    * walks this key through its onboarding. `home` is the holon the person's
@@ -118,20 +134,97 @@ export interface RecordJoinRequestInput {
   now?: () => number;
 }
 
-/** Note a request as announced (or already settled). Counts only from an admin's key. */
+/**
+ * Note a request as announced (or already settled). Counts only from an
+ * admin's key.
+ *
+ * A newer request from a key whose record is still pending (a re-ask: the
+ * person walked a changed DNA again and signed its new hash) UPDATES that
+ * record — its event, its `dna`, its time — and keeps everything else
+ * (where the onboarding stands, the announcement). An older or the same
+ * request leaves a pending record as it is.
+ */
 export async function recordJoinRequest(hs: HoloSphere, holon: string, request: JoinRequest, input: RecordJoinRequestInput = {}): Promise<JoinRequestRecord> {
+  const now = (input.now ?? nowSec)();
+  if (!input.status || input.status === 'pending') {
+    let cur: JoinRequestRecord | undefined;
+    try {
+      cur = (await joinRequestRecords(hs, holon)).get(request.pubkey.toLowerCase());
+    } catch {
+      cur = undefined;
+    }
+    if (cur?.status === 'pending') {
+      if (cur.eventId === request.eventId || (cur.asked ?? 0) >= request.at) return cur;
+      const { dna: _old, blocked: _blocked, ...rest } = cur;
+      const next: JoinRequestRecord = {
+        ...rest,
+        eventId: request.eventId,
+        asked: request.at,
+        at: now,
+        ...(request.dna ? { dna: request.dna } : {}),
+        ...(typeof input.messageId === 'number' ? { messageId: input.messageId } : {}),
+      };
+      await hs.put(holon, JOIN_REQUESTS_LENS, next);
+      return next;
+    }
+  }
   const record: JoinRequestRecord = {
     id: request.pubkey,
     eventId: request.eventId,
     name: cleanName(input.name ?? request.reason),
     status: input.status ?? 'pending',
-    at: (input.now ?? nowSec)(),
+    at: now,
+    asked: request.at,
+    ...(request.dna ? { dna: request.dna } : {}),
     ...(typeof input.messageId === 'number' ? { messageId: input.messageId } : {}),
     ...(input.by !== undefined ? { by: String(input.by) } : {}),
     ...(input.telegramId ? { telegramId: input.telegramId } : {}),
   };
   await hs.put(holon, JOIN_REQUESTS_LENS, record);
   return record;
+}
+
+// ── The DNA a request agreed to ────────────────────────────────────────────
+
+/**
+ * Where a request stands with the holon's DNA as it is now:
+ *   acknowledged   it carries the current DNA hash
+ *   outdated       it carries an older one — the DNA changed since
+ *   missing        it carries none, and the holon has a DNA to agree to
+ *   none-required  the holon asks no agreement (no gene asks for one)
+ *   unknown        the holon's DNA could not be read: nobody can say, so
+ *                  nothing links on its own — never link on a guess
+ */
+export type JoinReadiness = 'acknowledged' | 'outdated' | 'missing' | 'none-required' | 'unknown';
+
+/**
+ * A request's (or its record's) standing with the DNA whose hash is
+ * `current`: a hash, `null` when the holon asks no agreement, `undefined`
+ * when its genes could not be read (→ `unknown`). Pure.
+ */
+export function joinReadiness(subject: { dna?: string | null } | null | undefined, current: string | null | undefined): JoinReadiness {
+  if (current === undefined) return 'unknown';
+  if (!current) return 'none-required';
+  const signed = typeof subject?.dna === 'string' ? subject.dna.toLowerCase() : '';
+  if (!signed) return 'missing';
+  return signed === current.toLowerCase() ? 'acknowledged' : 'outdated';
+}
+
+/**
+ * May this key be linked WITHOUT an admin deciding — by the Telegram bot's
+ * proof, or at the end of an onboarding? Only with the current DNA agreed
+ * to (or none to agree to) — never when the DNA could not be read
+ * (`current` undefined). An admin who links by hand may still do so; every
+ * admin list shows the readiness.
+ */
+export function mayLink(subject: { dna?: string | null } | null | undefined, current: string | null | undefined): boolean {
+  const r = joinReadiness(subject, current);
+  return r === 'acknowledged' || r === 'none-required';
+}
+
+/** The holon's DNA hash as this instance reads its genes (null: nothing to agree to). */
+export async function holonDnaHash(hs: HoloSphere, holon: string): Promise<string | null> {
+  return dnaHash(await readGenes(hs, holon));
 }
 
 /**
@@ -159,11 +252,15 @@ export interface Applicant {
   name: string;
   /** The Telegram identity the request claims. `verified`: the claim is proven. */
   telegram?: { id: string; verified: boolean };
+  /** The request's standing with the holon's DNA as it is now; `unknown` when the genes could not be read. */
+  dna: JoinReadiness;
 }
 
 export interface DescribeApplicantOptions {
   /** `NOSTR_DERIVATION_SECRET`: without it a Telegram claim stays unproven. */
   secret?: string;
+  /** The holon's current DNA hash, when the caller has it; read from its genes otherwise. */
+  dnaHash?: string | null;
 }
 
 /**
@@ -196,5 +293,16 @@ export async function describeApplicant(hs: HoloSphere, request: JoinRequest, op
       /* no profile readable */
     }
   }
-  return { name: name || shortId(request.pubkey), ...(telegram ? { telegram } : {}) };
+  // Unreadable genes stay `undefined` → `unknown`: a read error must never
+  // pass for "nothing to agree to" (that would let a key link on a guess).
+  let current: string | null | undefined;
+  if (opts.dnaHash !== undefined) current = opts.dnaHash;
+  else {
+    try {
+      current = await holonDnaHash(hs, request.holon);
+    } catch {
+      current = undefined;
+    }
+  }
+  return { name: name || shortId(request.pubkey), ...(telegram ? { telegram } : {}), dna: joinReadiness(request, current) };
 }

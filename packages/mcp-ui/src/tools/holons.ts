@@ -19,7 +19,9 @@ import {
   myHolons,
   rememberHolon,
   removeSeat,
-  requestToJoin,
+  applyToHolon,
+  DnaChanged,
+  DnaNotAcknowledged,
 } from '@holons/core/holons';
 import {
   completeTelegramLink,
@@ -31,7 +33,17 @@ import {
   unlinkTelegram,
 } from '@holons/core/linking';
 import { readHolonClaim, telegramDeepLinks } from '@holons/core/claims';
-import { confirmCard, listOnboarding, onboardingView, readOnboarding, refreshOnboarding, saveOnboarding } from '@holons/core/onboarding';
+import {
+  PROFILE_FIELDS,
+  PROFILE_FIELD_TYPES,
+  confirmCard,
+  listOnboarding,
+  onboardingView,
+  readOnboarding,
+  refreshOnboarding,
+  saveOnboarding,
+  type ProfileFieldType,
+} from '@holons/core/onboarding';
 import { addHolonMember, holonMembers, myHolonRole, removeHolonMember, syncFoundingAuthority } from '@holons/core/protocol';
 import type { ToolDeps } from './index.js';
 import { namesFor } from './names.js';
@@ -142,15 +154,26 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
 
   server.registerTool(
     'holon_join_request',
-    { description: 'Ask to join a holon as this MCP key: a NIP-29 kind-9021 request carrying a display name. An admin seats the key with holon_join_approve; the bot of a Telegram group announces it there. `telegramId` claims a Telegram identity, which counts only when this key is the one that id derives.', inputSchema: { holon: z.string(), name: z.string().optional(), telegramId: z.string().regex(/^\d{1,20}$/).optional() } },
+    {
+      description:
+        "Ask to join a holon as this MCP key: a NIP-29 kind-9021 request carrying a display name and the DNA hash the person agreed to. Before calling, show the person the holon's DNA and get their explicit agreement; pass its hash as `acknowledged` (null only when the holon has no DNA to agree to). A hash that is not the current one is refused (the DNA changed: show it again). An admin seats the key with holon_join_approve; the bot of a Telegram group announces it there. `telegramId` claims a Telegram identity, which counts only when this key is the one that id derives.",
+      inputSchema: {
+        holon: z.string(),
+        acknowledged: z.string().regex(/^[0-9a-fA-F]{64}$/).nullable().optional(),
+        name: z.string().optional(),
+        telegramId: z.string().regex(/^\d{1,20}$/).optional(),
+      },
+    },
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
         const signer = signerOf();
         if (!signer) return fail('No signing secret configured (HOLOSPHERE_NSEC).');
-        const ev = requestToJoin(hs, args.holon, signer, { ...opts(hs), reason: args.name, telegramId: args.telegramId });
+        const ev = await applyToHolon(hs, args.holon, signer, { ...opts(hs), acknowledged: args.acknowledged ?? null, reason: args.name, telegramId: args.telegramId });
         return ok({ success: true, holon: args.holon, pubkey: ev.pubkey, eventId: ev.id });
       } catch (err) {
+        if (err instanceof DnaNotAcknowledged) return fail(err.message, { dna: err.current, reason: 'dna-not-acknowledged' });
+        if (err instanceof DnaChanged) return fail(err.message, { dna: err.current, reason: 'dna-changed' });
         return fail((err as Error).message);
       }
     },
@@ -212,10 +235,18 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
                   fields: z
                     .array(
                       z.object({
-                        key: z.string().describe('Profile record key. Known: first_name, last_name, ikigai, summary, values, category, linkedin, arrival, departure; any other is a question of the holon\'s own.'),
+                        key: z.string().describe(`Profile record key. Known: ${PROFILE_FIELDS.map((f) => f.key).join(', ')}; any other is a question of the holon's own.`),
                         label: z.string().optional().describe('The question; a known key has a default.'),
-                        type: z.enum(['text', 'longtext', 'date', 'url', 'list']).optional(),
+                        type: z.enum(PROFILE_FIELD_TYPES as [ProfileFieldType, ...ProfileFieldType[]]).optional().describe('`choice`: one of `options`; `multi`: any of them.'),
                         required: z.boolean().optional().describe('Default true.'),
+                        options: z
+                          .array(z.object({ value: z.string().optional(), label: z.string(), hint: z.string().optional() }))
+                          .optional()
+                          .describe('A `choice` / `multi` field: what may be picked.'),
+                        sealed: z
+                          .boolean()
+                          .optional()
+                          .describe("Keep the answer sealed for the person and the holon's admins. Default: true for the holon's own questions, false for the known keys."),
                       }),
                     )
                     .optional()

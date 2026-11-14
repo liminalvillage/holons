@@ -31,6 +31,7 @@ import {
 import { createLinkedKeysResolver, linkedKeysOf } from '@holons/core/users';
 import { syncMembersLog } from '@holons/core/protocol';
 import { approvedJoinKeys } from '@holons/core/holons';
+import { GENES_LENS, purposeAbout, readGenes } from '@holons/core/dna';
 import { bridgeTelegramRoster, linkedAdmins } from '@holons/core/linking';
 import { sync as syncPrivacy } from '@holons/core/privacy';
 import KeyManager from './KeyManager.js';
@@ -156,6 +157,7 @@ export default function createHoloSphere(appName, options = {}) {
     extra: { logLevel: logLevel || 'INFO', ...extra },
   });
   projectionHost.instance = instance;
+  attachGenesHook(instance);
   console.log(
     `[holosphere] relays → ${relays.join(', ')} (store: ${store.adapter}${store.dir ? ` ${store.dir}` : ''})`
   );
@@ -216,6 +218,7 @@ function buildProjectionOptions(appName, privateKey, lenses) {
     Uint8Array.from(Buffer.from(privateKey, 'hex'))
   );
   const trust = createTrustCache(holonPubkey, secret);
+  projectionHost.trust = trust;
   // A member's linked keys (personal-holon `users` record) for the kind-31926
   // attestation companion; `invalidateLinkedKeys` after /key link|unlink.
   linkedKeys = createLinkedKeysResolver({
@@ -294,17 +297,39 @@ export function createTrustCache(
     providerPubkey = null;
   }
   const groupHashes = new Map(); // holon -> [hash of 39000, 39001, 39002]
+  const abouts = new Map(); // holon -> the purpose gene's blurb ('' = none)
+  const lastState = new Map(); // holon -> { settings, memberIds } last published from
   let warned = false;
 
-  /** Republish the holon's NIP-29 state when (and only when) it changed. */
+  /** The holon's purpose gene's blurb, read again (undefined: not readable). */
+  async function readAbout(holon) {
+    const hs = projectionHost.instance;
+    if (!hs || typeof hs.getAll !== 'function') return undefined;
+    try {
+      const about = purposeAbout(await readGenes(hs, String(holon)));
+      abouts.set(String(holon), about);
+      return about;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Republish the holon's NIP-29 state when (and only when) it changed. The
+   * 39000 `about` is the purpose gene's blurb, else the settings
+   * description (never a settings purpose).
+   */
   function publishGroupState(holon, settings, memberIds) {
+    lastState.set(String(holon), { settings, memberIds });
     if (!ctx || !publish) return;
     try {
       const templates = buildGroupState(
         ctx,
         String(holon),
         settings || {},
-        memberIds
+        memberIds,
+        [],
+        abouts.get(String(holon)) ?? ''
       );
       const hashes = templates.map(groupStateHash);
       const prev = groupHashes.get(String(holon)) || [];
@@ -399,6 +424,7 @@ export function createTrustCache(
     } catch {
       /* no approvals readable */
     }
+    await readAbout(holon);
     publishGroupState(holon, settings, memberIds);
     // A dashboard hub linked to this chat (@holons/core/linking) seats its
     // admin here; the signed log must keep that seat through every sync.
@@ -526,7 +552,48 @@ export function createTrustCache(
       return list;
     },
     userIdFor: pubkey => byPubkey.get(pubkey),
+    /**
+     * A gene of `holon` was written or removed: read its purpose again and
+     * republish the group state from what it was last built of.
+     */
+    async genesChanged(holon) {
+      if (holon == null || String(holon).includes('/')) return;
+      await readAbout(holon);
+      const last = lastState.get(String(holon));
+      if (last) publishGroupState(holon, last.settings, last.memberIds);
+    },
   };
+}
+
+/**
+ * After this instance writes or removes a gene, the trust cache re-reads the
+ * holon's purpose and republishes its group state (the 39000 `about` is the
+ * purpose gene). Fire-and-forget: the write is never held up.
+ */
+function attachGenesHook(instance) {
+  if (!instance || instance.__genesHook) return;
+  const rawPut = instance.put?.bind(instance);
+  const rawDelete = instance.delete?.bind(instance);
+  const changed = holon => {
+    const p = projectionHost.trust?.genesChanged?.(holon);
+    if (p && typeof p.catch === 'function')
+      p.catch(e =>
+        console.warn('[holosphere] group state after a DNA change:', e?.message)
+      );
+  };
+  if (rawPut)
+    instance.put = async (holon, lens, ...rest) => {
+      const result = await rawPut(holon, lens, ...rest);
+      if (lens === GENES_LENS) changed(holon);
+      return result;
+    };
+  if (rawDelete)
+    instance.delete = async (holon, lens, ...rest) => {
+      const result = await rawDelete(holon, lens, ...rest);
+      if (lens === GENES_LENS) changed(holon);
+      return result;
+    };
+  Object.defineProperty(instance, '__genesHook', { value: true });
 }
 
 /** `7d`, `12h`, `30m`, `3600` (seconds) → seconds; undefined when unparsable. */
@@ -539,7 +606,12 @@ export function parseDuration(raw) {
 }
 
 /** The most recent instance, so timezoneFor can read settings without a cycle. */
-const projectionHost = { instance: null, notifier: null, privateKey: null };
+const projectionHost = {
+  instance: null,
+  notifier: null,
+  privateKey: null,
+  trust: null,
+};
 
 /**
  * The holon key as a signer, for what the bot publishes on a chat's behalf
@@ -552,9 +624,11 @@ export function holonSigner() {
     : null;
 }
 
-/** Test seam: point the projection host at a fake instance. */
-export function setProjectionHostForTests(instance) {
+/** Test seam: point the projection host at a fake instance (and, optionally, a trust cache). */
+export function setProjectionHostForTests(instance, trust = null) {
   projectionHost.instance = instance;
+  projectionHost.trust = trust;
+  if (instance) attachGenesHook(instance);
 }
 
 let linkedKeys = null;

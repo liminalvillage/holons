@@ -22,9 +22,9 @@ import {
   publishGroupState,
   rememberHolon,
   removeSeat,
-  requestToJoin,
   watchJoinRequests,
 } from './index.js';
+import { signJoinRequest } from './testing.js';
 
 const founder = testKey();
 const alice = testKey();
@@ -54,7 +54,7 @@ describe('join requests', () => {
   it('a request is a verified 9021 for the holon; anything else parses to null', () => {
     const { hs, published } = instance();
     const H = 'holon_aaaaaaaaaaaaaaaa';
-    const ev = requestToJoin(hs, H, signer(alice.sk), { appName: APP, reason: 'Alice' });
+    const ev = signJoinRequest(hs, H, signer(alice.sk), { appName: APP, reason: 'Alice' });
     expect(published).toEqual([ev]);
     expect(ev.kind).toBe(GROUP_JOIN_REQUEST_KIND);
     expect(joinRequestFilter(H)).toEqual({ kinds: [GROUP_JOIN_REQUEST_KIND], '#h': [H] });
@@ -78,9 +78,9 @@ describe('join requests', () => {
     const stop = watchJoinRequests(hs, H, (reqs) => seen.push(reqs.map((r) => `${r.pubkey}:${r.reason}`)));
     await tick();
     const other = instance();
-    const a1 = requestToJoin(other.hs, H, signer(alice.sk), { appName: APP, reason: 'Alice', now: () => 1_800_000_000 });
-    const a2 = requestToJoin(other.hs, H, signer(alice.sk), { appName: APP, reason: 'Alice again', now: () => 1_800_000_010 });
-    const b1 = requestToJoin(other.hs, H, signer(bob.sk), { appName: APP, reason: 'Bob' });
+    const a1 = signJoinRequest(other.hs, H, signer(alice.sk), { appName: APP, reason: 'Alice', now: () => 1_800_000_000 });
+    const a2 = signJoinRequest(other.hs, H, signer(alice.sk), { appName: APP, reason: 'Alice again', now: () => 1_800_000_010 });
+    const b1 = signJoinRequest(other.hs, H, signer(bob.sk), { appName: APP, reason: 'Bob' });
     feed(a2);
     feed(a1); // older: ignored
     feed(b1); // already seated: never listed

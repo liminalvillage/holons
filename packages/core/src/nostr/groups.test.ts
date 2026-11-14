@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import {
   GROUP_ADMINS_KIND, GROUP_JOIN_REQUEST_KIND, GROUP_MEMBERS_KIND, GROUP_METADATA_KIND, GROUP_PUT_USER_KIND, GROUP_REMOVE_USER_KIND,
-  PROJECTION_CODECS, buildGroupState, groupStateHash, parseGroupMembers, wrapDirectMessage, unwrapDirectMessage, directMessageFilter,
+  DNA_TAG, PROJECTION_CODECS, buildGroupState, groupAbout, groupJoinRequestTemplate, groupMetadataTemplate, groupStateHash, parseGroupMembers, wrapDirectMessage, unwrapDirectMessage, directMessageFilter,
   type ProjectionCtx,
 } from './index.js';
 
@@ -18,7 +18,7 @@ const tag = (t: string[][], n: string) => t.find((x) => x[0] === n);
 
 describe('NIP-29 group state (holon-authored)', () => {
   it('builds metadata, admins and members with a stable hash', () => {
-    const [meta, admins, members] = buildGroupState(ctx, HOLON, { id: HOLON, name: 'Liminal', purpose: ['Grow', 'Share'], admin: '@bob', picture: 'https://x/p.png' }, [42, 7, 'nobody', 42]);
+    const [meta, admins, members] = buildGroupState(ctx, HOLON, { id: HOLON, name: 'Liminal', admin: '@bob', picture: 'https://x/p.png' }, [42, 7, 'nobody', 42], [], 'Grow\nShare');
     expect(meta.kind).toBe(GROUP_METADATA_KIND);
     expect(tag(meta.tags, 'd')![1]).toBe(HOLON);
     expect(tag(meta.tags, 'name')![1]).toBe('Liminal');
@@ -29,7 +29,7 @@ describe('NIP-29 group state (holon-authored)', () => {
     expect(members.kind).toBe(GROUP_MEMBERS_KIND);
     expect(members.tags.filter((t) => t[0] === 'p').map((t) => t[1])).toEqual([ALICE, BOB]);
     expect(parseGroupMembers(members)).toEqual([ALICE, BOB]);
-    const again = buildGroupState({ ...ctx, now: () => 1 }, HOLON, { id: HOLON, name: 'Liminal', purpose: ['Grow', 'Share'], admin: '@bob', picture: 'https://x/p.png' }, [7, 42]);
+    const again = buildGroupState({ ...ctx, now: () => 1 }, HOLON, { id: HOLON, name: 'Liminal', admin: '@bob', picture: 'https://x/p.png' }, [7, 42], [], 'Grow\nShare');
     expect(groupStateHash(again[2])).toBe(groupStateHash(members)); // order- and time-independent
     expect(groupStateHash(buildGroupState(ctx, HOLON, { id: HOLON, name: 'Liminal' }, [7])[2])).not.toBe(groupStateHash(members));
   });
@@ -48,17 +48,39 @@ describe('NIP-29 group state (holon-authored)', () => {
     expect(rm.tags).toEqual(expect.arrayContaining([['h', HOLON], ['p', ALICE]]));
     expect(users.retract(HOLON, 'nobody', ctx)).toEqual([]);
   });
-  it('settings codec projects 39000/39001 for the holon doc only and folds 39000 back', () => {
+  it('the 39000 about is the purpose gene, else the description — never a settings purpose', () => {
+    const settings = { id: HOLON, name: 'Liminal', description: 'A village', purpose: 'stale settings purpose' };
+    expect(tag(groupMetadataTemplate(ctx, HOLON, settings, 'Grow together').tags, 'about')![1]).toBe('Grow together');
+    expect(tag(groupMetadataTemplate(ctx, HOLON, settings).tags, 'about')![1]).toBe('A village');
+    expect(tag(groupMetadataTemplate(ctx, HOLON, settings, '').tags, 'about')![1]).toBe('A village');
+    expect(tag(groupMetadataTemplate(ctx, HOLON, { id: HOLON, purpose: 'x' }).tags, 'about')).toBeUndefined();
+    expect(groupAbout(settings, '  From the gene ')).toBe('From the gene');
+    expect(groupAbout(settings)).toBe('A village');
+    expect(groupAbout({})).toBe('');
+  });
+  it('a join request may carry the DNA hash the person agreed to', () => {
+    const hash = 'ab'.repeat(32);
+    expect(groupJoinRequestTemplate(ctx, HOLON, 'Ada', 42, hash).tags).toContainEqual([DNA_TAG, hash]);
+    expect(groupJoinRequestTemplate(ctx, HOLON, 'Ada', 42, hash.toUpperCase()).tags).toContainEqual([DNA_TAG, hash]);
+    expect(groupJoinRequestTemplate(ctx, HOLON, 'Ada', 42, 'short').tags.some((t) => t[0] === DNA_TAG)).toBe(false);
+    expect(groupJoinRequestTemplate(ctx, HOLON, 'Ada').tags.some((t) => t[0] === DNA_TAG)).toBe(false);
+  });
+  it('settings codec projects nothing (publishGroupState owns the group state) and folds name/picture back, never about', () => {
     const settings = PROJECTION_CODECS.settings;
     expect(settings.project(HOLON, { id: 'other', name: 'x' }, ctx)).toBeNull();
-    const out = settings.project(HOLON, { id: HOLON, name: 'Liminal', admin: '42' }, ctx)!;
-    expect(out.primary.kind).toBe(GROUP_METADATA_KIND);
-    expect(out.companions![0].template.kind).toBe(GROUP_ADMINS_KIND);
+    // A settings write cannot know the purpose gene: it must never send a 39000 of its own.
+    expect(settings.project(HOLON, { id: HOLON, name: 'Liminal', admin: '42', description: 'A village' }, ctx)).toBeNull();
+    expect(settings.kinds).toEqual([GROUP_METADATA_KIND]);
     const r = settings.parse!({ kind: GROUP_METADATA_KIND, pubkey: PUB, created_at: 1, content: '', tags: [['d', HOLON], ['name', 'Liminal Village'], ['about', 'Grow\nShare']] }, ctx)!;
     expect(r).toMatchObject({ lens: 'settings', holon: HOLON, id: HOLON });
-    const next = settings.merge!({ id: HOLON, name: 'Liminal', purpose: ['Old'] }, r, ctx)!;
-    expect(next).toMatchObject({ name: 'Liminal Village', purpose: ['Grow', 'Share'] });
-    expect(settings.merge!({ id: HOLON, name: 'Liminal Village', purpose: ['Grow', 'Share'] }, r, ctx)).toBeNull();
+    expect(r.patch).toEqual({ name: 'Liminal Village' });
+    const next = settings.merge!({ id: HOLON, name: 'Liminal' }, r, ctx)!;
+    expect(next).toEqual({ id: HOLON, name: 'Liminal Village' });
+    expect(next).not.toHaveProperty('purpose');
+    expect(settings.merge!({ id: HOLON, name: 'Liminal Village' }, r, ctx)).toBeNull();
+    // An about alone changes nothing.
+    const aboutOnly = settings.parse!({ kind: GROUP_METADATA_KIND, pubkey: PUB, created_at: 2, content: '', tags: [['d', HOLON], ['about', 'Forged purpose']] }, ctx)!;
+    expect(settings.merge!({ id: HOLON, name: 'Liminal' }, aboutOnly, ctx)).toBeNull();
   });
 });
 

@@ -6,7 +6,7 @@
 //
 // Any holon can switch an onboarding on (`settings.onboarding`, see
 // config.ts). From then on a request to link a key (a kind-9021,
-// `@holons/core/holons` requestToJoin) is not answered at once. Instead:
+// `@holons/core/holons` applyToHolon) is not answered at once. Instead:
 //
 //   1. Whoever answers for the holon (its bot, or an admin's screen) starts
 //      the person's onboarding on the request's record — `startOnboarding`.
@@ -15,7 +15,10 @@
 //      key. They are ordinary cards, so the person ticks them like any card.
 //   3. `refreshOnboarding` reads what they did, moves them on (the reducer),
 //      deals the next step, and once every step is done links the key
-//      (`approveJoin`). An admin card counts only by `confirmCard`.
+//      (`approveJoin`) — only while their request carries the holon's DNA
+//      as it is NOW (`mayLink`). An admin who changes the DNA meanwhile
+//      holds the link (`blocked: 'dna'`) until a fresh request with the new
+//      hash arrives. An admin card counts only by `confirmCard`.
 //
 // Progress lives on the holon's `joinrequests` record, which counts only
 // from an admin's key — the person's ticks are facts read from their holon,
@@ -25,12 +28,22 @@ import type { HoloSphere } from 'holosphere';
 import { writeAcceptance } from '../holosphere/authority.js';
 import type { NostrSigner } from '../holosphere/signers.js';
 import { approveJoin, type JoinRequest } from '../holons/index.js';
-import { JOIN_REQUESTS_LENS, joinRequestRecords, type JoinRequestRecord, type JoinRequestStatus } from '../holons/requests.js';
+import {
+  JOIN_REQUESTS_LENS,
+  holonDnaHash,
+  joinReadiness,
+  joinRequestRecords,
+  mayLink,
+  type JoinReadiness,
+  type JoinRequestRecord,
+  type JoinRequestStatus,
+} from '../holons/requests.js';
 import { cleanName } from '../identity/ids.js';
 import { readHolonSettings } from '../settings/persistence.js';
 import { completedCards, dealCards, onboardingCardId } from './cards.js';
 import { normalizeOnboarding, readOnboarding, type OnboardingCard, type OnboardingConfig } from './config.js';
-import { DEFAULT_PROFILE_FIELDS, missingProfileFields, readProfile } from './profile.js';
+import { DEFAULT_PROFILE_FIELDS, missingProfileFields } from './profile.js';
+import { readOnboardingAnswers } from './answers.js';
 import { advance, cardDone, cardKey, confirmable, stepDone, type OnboardingFacts } from './reducer.js';
 
 export * from './config.js';
@@ -38,6 +51,8 @@ export * from './edit.js';
 export * from './reducer.js';
 export * from './profile.js';
 export * from './cards.js';
+export * from './gate.js';
+export * from './answers.js';
 
 /** Where a person's onboarding cards live: their proven Telegram id, else their key. */
 export function onboardingHome(request: Pick<JoinRequest, 'pubkey'>, verifiedTelegramId?: string | null): string {
@@ -70,6 +85,13 @@ export interface OnboardingView {
   /** The step they are on; null once through. */
   step: string | null;
   finished: boolean;
+  /** Their request's standing with the holon's DNA as it is now. */
+  dna: JoinReadiness;
+  /**
+   * `dna`: every step is done, but the request does not carry the current
+   * DNA — the key is linked once they walk the changed DNA and ask again.
+   */
+  blocked: 'dna' | null;
   steps: OnboardingStepView[];
 }
 
@@ -77,6 +99,9 @@ export interface OnboardingView {
 export function viewOf(holon: string, config: OnboardingConfig, record: JoinRequestRecord, facts: OnboardingFacts): OnboardingView {
   const at = advance(config, record, facts);
   const current = at.step === null ? config.steps.length : config.steps.findIndex((s) => s.id === at.step);
+  // Not read: nobody can say (`unknown`) — a stale hash is no acknowledgement.
+  const dna = joinReadiness(record, facts.dna);
+  const blocked = record.status === 'pending' && at.finished && (facts.dna === undefined ? record.blocked === 'dna' : !mayLink(record, facts.dna)) ? 'dna' : null;
   return {
     holon,
     pubkey: record.id,
@@ -85,6 +110,8 @@ export function viewOf(holon: string, config: OnboardingConfig, record: JoinRequ
     status: record.status,
     step: at.step,
     finished: at.finished,
+    dna,
+    blocked,
     steps: config.steps.map((step, i) => ({
       id: step.id,
       title: step.title,
@@ -115,8 +142,13 @@ export function previewSteps(holon: string, config: OnboardingConfig, at = 0): O
 }
 
 async function factsFor(hs: HoloSphere, holon: string, home: string, config: OnboardingConfig): Promise<OnboardingFacts> {
-  const [completed, profile] = await Promise.all([completedCards(hs, holon, home, config), readProfile(hs, home)]);
-  return { completed, profile };
+  const [completed, profile, dna] = await Promise.all([
+    completedCards(hs, holon, home, config),
+    // The profile, with the sealed answers to this holon's own questions over it.
+    readOnboardingAnswers(hs, home, holon),
+    holonDnaHash(hs, holon).catch(() => undefined),
+  ]);
+  return { completed, profile, ...(dna !== undefined ? { dna } : {}) };
 }
 
 const isOnboarding = (r: JoinRequestRecord | undefined): r is JoinRequestRecord & { home: string } => !!r?.home;
@@ -176,14 +208,20 @@ async function run(
 ): Promise<OnboardingResult> {
   const facts = await factsFor(hs, holon, record.home, config);
   const at = advance(config, record, facts);
-  let next: JoinRequestRecord = { ...record, step: at.step ?? DONE };
+  const { blocked: wasBlocked, ...rest } = record;
+  let next: JoinRequestRecord = { ...rest, step: at.step ?? DONE };
   let linked = false;
-  if (at.finished && opts.signer) {
+  // Through every step, but the request agreed to another DNA than the
+  // holon's now (or to none): hold the link until a fresh request.
+  // A DNA that could not be read holds it too — never link on a guess.
+  const dnaOk = mayLink(record, facts.dna); // unread genes (undefined) never link
+  if (at.finished && !dnaOk) next = { ...next, blocked: 'dna' };
+  else if (at.finished && opts.signer) {
     await approveJoin(hs, holon, record.id, opts.signer, { appName: opts.appName, name: record.name, now: opts.now });
     next = { ...next, status: 'approved', by: 'onboarding' };
     linked = true;
   }
-  if (dirty || at.changed || linked) {
+  if (dirty || at.changed || linked || (next.blocked ?? null) !== (wasBlocked ?? null)) {
     next = { ...next, at: (opts.now ?? nowSec)() };
     await hs.put(holon, JOIN_REQUESTS_LENS, next);
   }
@@ -225,6 +263,8 @@ export async function startOnboarding(hs: HoloSphere, holon: string, request: Jo
     home: opts.home,
     step: config.steps[0]?.id ?? DONE,
     confirmed: [],
+    asked: request.at,
+    ...(request.dna ? { dna: request.dna } : {}),
     ...(opts.telegramId ? { telegramId: opts.telegramId } : {}),
     ...(typeof opts.messageId === 'number' ? { messageId: opts.messageId } : {}),
   };

@@ -19,8 +19,9 @@ import {
   approvedJoinKeys,
   joinRequestRecords,
   parseJoinRequest,
-  requestToJoin,
 } from '@holons/core/holons';
+import { dnaHash, putGene, readGenes } from '@holons/core/dna';
+import { groupJoinRequestTemplate } from '@holons/core/nostr';
 import JoinRequests from '../src/JoinRequests.js';
 import {
   createTrustCache,
@@ -78,9 +79,22 @@ async function setup({ chatMember, admin = true } = {}) {
     isAdmin: async () => admin,
   });
   service.bot = { telegram };
-  const ask = (sk, opts = {}) =>
+  // A request as a person's surface signs it (any DNA hash, or none).
+  const ask = (sk, { reason = '', telegramId, dna, now } = {}) =>
     parseJoinRequest(
-      requestToJoin(hs, T, signerFromSecretKey(sk), { appName: APP, ...opts })
+      signerFromSecretKey(sk).sign(
+        groupJoinRequestTemplate(
+          {
+            appName: APP,
+            holonPubkey: B.pk,
+            ...(now ? { now } : {}),
+          },
+          T,
+          reason,
+          telegramId,
+          dna
+        )
+      )
     );
   const press = (pubkey, from = { id: 7, username: 'boss' }) => ({
     chat: { id: Number(T), type: 'supergroup' },
@@ -158,6 +172,88 @@ describe('a join request for a Telegram group', () => {
       username: 'ada',
     });
     expect(await service.handle(req)).toBe('seated');
+  });
+
+  it('links a proven member only with the current DNA; a re-ask with it links them', async () => {
+    const ada = deriveTelegramNostrKey('4242', SECRET);
+    const { hs, telegram, service, ask } = await setup({
+      chatMember: async () => ({
+        status: 'member',
+        user: { id: 4242, first_name: 'Ada' },
+      }),
+    });
+    await putGene(hs, T, {
+      kind: 'values',
+      title: 'Values',
+      alleles: [{ title: 'Care' }],
+    });
+    const hash = dnaHash(await readGenes(hs, T));
+    const t0 = Math.floor(Date.now() / 1000);
+    // Agreed to no DNA: the admins decide, and see why.
+    const first = ask(ada.privateKey, {
+      reason: 'Ada',
+      telegramId: 4242,
+      now: () => t0,
+    });
+    expect(await service.handle(first)).toBe('posted');
+    const text = telegram.sendMessage.mock.calls[0][1];
+    expect(text).toMatch(
+      /in this group, but their request does not carry the current DNA/
+    );
+    expect(text).toMatch(/DNA not acknowledged/);
+    expect((await holonMembers(hs, T)).has(ada.publicKey)).toBe(false);
+    // She walks the DNA and asks again: the record takes the hash, she is linked.
+    const again = ask(ada.privateKey, {
+      reason: 'Ada',
+      telegramId: 4242,
+      dna: hash,
+      now: () => t0 + 5,
+    });
+    expect(await service.handle(again)).toBe('linked');
+    expect((await holonMembers(hs, T)).get(ada.publicKey)).toBe('member');
+    expect((await joinRequestRecords(hs, T)).get(ada.publicKey)).toMatchObject({
+      status: 'approved',
+      dna: hash,
+      eventId: again.eventId,
+    });
+    expect(telegram.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('never links a proven member when the DNA cannot be read: the admins decide', async () => {
+    const ada = deriveTelegramNostrKey('4242', SECRET);
+    const { hs, telegram, service, ask } = await setup({
+      chatMember: async () => ({
+        status: 'member',
+        user: { id: 4242, first_name: 'Ada' },
+      }),
+    });
+    const getAll = hs.getAll.bind(hs);
+    hs.getAll = async (holon, lens, ...rest) => {
+      if (lens === 'genes') throw new Error('relay down');
+      return getAll(holon, lens, ...rest);
+    };
+    const t0 = Math.floor(Date.now() / 1000);
+    const first = ask(ada.privateKey, {
+      reason: 'Ada',
+      telegramId: 4242,
+      now: () => t0,
+    });
+    expect(await service.handle(first)).toBe('posted');
+    expect((await holonMembers(hs, T)).has(ada.publicKey)).toBe(false);
+    const text = telegram.sendMessage.mock.calls[0][1];
+    expect(text).toMatch(/DNA could not be read/);
+    expect(text).toMatch(/DNA not readable/);
+    // A re-ask on the pending record is no way round it.
+    const again = ask(ada.privateKey, {
+      reason: 'Ada',
+      telegramId: 4242,
+      now: () => t0 + 5,
+    });
+    expect(await service.handle(again)).toBe('known');
+    expect((await holonMembers(hs, T)).has(ada.publicKey)).toBe(false);
+    expect((await joinRequestRecords(hs, T)).get(ada.publicKey)).toMatchObject({
+      status: 'pending',
+    });
   });
 
   it('asks the admins about a proven Telegram user who is not in the group', async () => {

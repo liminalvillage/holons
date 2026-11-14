@@ -6,7 +6,8 @@
 // A holon is founded when a key signs the genesis of its `_members` log
 // (`@holons/core/protocol` founding); from then on the log says who counts.
 // This module is the shape a person meets it in, on any surface: create a
-// holon, ask to join one, seat or unseat a key, and keep the holon's
+// holon, ask to join one (`applyToHolon`, carrying the DNA version the
+// person agreed to), seat or unseat a key, and keep the holon's
 // NIP-29 shadow current. "Holon" is what hubs.network calls one category of
 // holon — the rules here are the same for every holon a key can found.
 //
@@ -28,6 +29,7 @@ import { eventToItem } from 'holosphere/nostr-events.js';
 import { resolveHolonAuthority } from '../holosphere/authority.js';
 import type { NostrSigner } from '../holosphere/signers.js';
 import {
+  DNA_TAG,
   GROUP_JOIN_REQUEST_KIND,
   TELEGRAM_CLAIM_PREFIX,
   buildGroupState,
@@ -43,6 +45,8 @@ import { addHolonMember, foundHolon, holonMembers, myHolonRole, newHolonId, remo
 import { readMembersLog } from '../protocol/membership.js';
 import type { Role } from '../protocol/types.js';
 import { cleanName, isPlaceholderName } from '../identity/ids.js';
+import { purposeAbout, readGenes } from '../dna/genes.js';
+import { dnaHash, shortHash } from '../dna/version.js';
 import { approvedJoinKeys, settleJoinRequest } from './requests.js';
 
 const HEX64 = /^[0-9a-f]{64}$/i;
@@ -120,6 +124,8 @@ export interface JoinRequest {
   holon: string;
   /** The Telegram user the request CLAIMS to be (its `i` tag) — unproven, see `describeApplicant`. */
   telegramId?: string;
+  /** The DNA hash the person signed their agreement to (its `dna` tag, 64 hex), when any. */
+  dna?: string;
 }
 
 /** The relay filter for a holon's join requests. */
@@ -146,6 +152,7 @@ export function parseJoinRequest(event: NostrEventLike | null | undefined, holon
   }
   const claim = (event.tags ?? []).find((t) => t[0] === 'i' && typeof t[1] === 'string' && t[1].startsWith(TELEGRAM_CLAIM_PREFIX))?.[1];
   const telegramId = claim?.slice(TELEGRAM_CLAIM_PREFIX.length);
+  const dna = (event.tags ?? []).find((t) => t[0] === DNA_TAG && typeof t[1] === 'string' && HEX64.test(t[1]))?.[1]?.toLowerCase();
   return {
     pubkey: event.pubkey.toLowerCase(),
     at: event.created_at,
@@ -153,10 +160,17 @@ export function parseJoinRequest(event: NostrEventLike | null | undefined, holon
     eventId: event.id,
     holon: h,
     ...(telegramId && /^\d{1,20}$/.test(telegramId) ? { telegramId } : {}),
+    ...(dna ? { dna } : {}),
   };
 }
 
-export interface JoinOptions extends HolonPublishOptions {
+export interface ApplyOptions extends HolonPublishOptions {
+  /**
+   * The DNA hash the person agreed to (the walk's, `@holons/core/dna`
+   * `walkProgress().hash`, or the front page's `dna.hash`) — null when the
+   * holon showed them no DNA to agree to.
+   */
+  acknowledged: string | null;
   /** Carried in the request — by convention the person's display name. */
   reason?: string;
   /**
@@ -167,10 +181,54 @@ export interface JoinOptions extends HolonPublishOptions {
   telegramId?: string | number;
 }
 
-/** Ask to join: a kind-9021 signed by the person. Never writes a profile (see the header). */
-export function requestToJoin(hs: HoloSphere, holon: string, signer: NostrSigner, opts: JoinOptions = {}): SignedEvent {
+/** The holon's DNA changed since the person read it: walk it again. */
+export class DnaChanged extends Error {
+  readonly holon: string;
+  /** The DNA hash now (null: the holon no longer asks for an agreement). */
+  readonly current: string | null;
+  readonly acknowledged: string | null;
+  constructor(holon: string, current: string | null, acknowledged: string | null) {
+    super(`The DNA of ${holon} changed since it was read (now ${shortHash(current) ?? 'none'}, agreed to ${shortHash(acknowledged) ?? 'none'})`);
+    this.name = 'DnaChanged';
+    this.holon = holon;
+    this.current = current;
+    this.acknowledged = acknowledged;
+  }
+}
+
+/** The holon has a DNA to agree to, and the person agreed to none. */
+export class DnaNotAcknowledged extends Error {
+  readonly holon: string;
+  readonly current: string;
+  constructor(holon: string, current: string) {
+    super(`Asking to join ${holon} needs an agreement to its DNA (${shortHash(current)})`);
+    this.name = 'DnaNotAcknowledged';
+    this.holon = holon;
+    this.current = current;
+  }
+}
+
+/**
+ * Ask to join a holon — the ONE way, on every surface: a kind-9021 signed
+ * by the person, carrying the DNA hash they agreed to (`['dna', hash]`).
+ *
+ * The genes are read again here (as this instance reads them: an enforcing
+ * instance counts only what the holon's admins wrote), and the request is
+ * signed only when the person agreed to the DNA as it is NOW:
+ *   • `DnaNotAcknowledged` — the holon has a DNA and they agreed to none;
+ *   • `DnaChanged` — they agreed to another version (or to one the holon no
+ *     longer has).
+ * The holon checks again when it reads the request (`joinReadiness`): this
+ * is the person's side of the same rule. Never writes a profile (see the
+ * header).
+ */
+export async function applyToHolon(hs: HoloSphere, holon: string, signer: NostrSigner, opts: ApplyOptions): Promise<SignedEvent> {
+  const current = dnaHash(await readGenes(hs, holon));
+  const acknowledged = typeof opts.acknowledged === 'string' && opts.acknowledged.trim() ? opts.acknowledged.trim().toLowerCase() : null;
+  if (current && !acknowledged) throw new DnaNotAcknowledged(holon, current);
+  if (acknowledged !== current) throw new DnaChanged(holon, current, acknowledged);
   const ctx = holonProjectionCtx(hs, holon, opts);
-  const event = signer.sign(groupJoinRequestTemplate(ctx, holon, opts.reason ?? '', opts.telegramId));
+  const event = signer.sign(groupJoinRequestTemplate(ctx, holon, opts.reason ?? '', opts.telegramId, current));
   hs.publishNostrEvents(event);
   return event;
 }
@@ -331,8 +389,9 @@ const published = new WeakMap<object, Map<string, string[]>>();
 
 /**
  * Publish the holon's NIP-29 state (39000 metadata, 39001 admins, 39002
- * members) from its settings and signed log — only the events whose content
- * changed since this instance last published them. Returns what was sent.
+ * members) from its settings, its purpose gene (the `about`) and its signed
+ * log — only the events whose content changed since this instance last
+ * published them. Returns what was sent.
  */
 export async function publishGroupState(hs: HoloSphere, holon: string, signer: NostrSigner, opts: HolonPublishOptions = {}): Promise<EventTemplate[]> {
   const members = await holonMembers(hs, holon);
@@ -345,7 +404,13 @@ export async function publishGroupState(hs: HoloSphere, holon: string, signer: N
   } catch {
     /* no settings yet */
   }
-  const templates = buildGroupState(ctx, holon, settings, [...members.keys()], admins);
+  let about = '';
+  try {
+    about = purposeAbout(await readGenes(hs, holon));
+  } catch {
+    /* no genes readable: the description stands in */
+  }
+  const templates = buildGroupState(ctx, holon, settings, [...members.keys()], admins, about);
   const hashes = templates.map(groupStateHash);
   let perHolon = published.get(hs);
   if (!perHolon) published.set(hs, (perHolon = new Map()));
@@ -421,13 +486,18 @@ export {
   JOIN_REQUESTS_LENS,
   approvedJoinKeys,
   describeApplicant,
+  holonDnaHash,
+  joinReadiness,
   joinRequestRecords,
+  mayLink,
   recordJoinRequest,
   settleJoinRequest,
   type Applicant,
   type DescribeApplicantOptions,
+  type JoinReadiness,
   type JoinRequestRecord,
   type JoinRequestStatus,
+  type RecordJoinRequestInput,
 } from './requests.js';
 
 // ── Trust ──────────────────────────────────────────────────────────────────

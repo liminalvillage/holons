@@ -13,19 +13,18 @@
 import { get } from "svelte/store";
 import { writeAcceptance } from "@holons/core/holosphere";
 import { holonMembers } from "@holons/core/protocol";
-import { applyTaskCompletion, type Quest } from "@holons/core/tasks";
 import {
-  CARDS_LENS,
   PROFILE_FIELDS,
+  completeOwnCard,
   confirmCard,
   dealCards,
   listOnboarding,
   onboardingView,
   previewSteps,
   readOnboarding,
-  readProfile,
+  readOnboardingAnswers,
   saveOnboarding,
-  saveProfile,
+  saveOnboardingAnswers,
   type OnboardingCardView,
   type OnboardingConfig,
   type OnboardingProfile,
@@ -103,7 +102,8 @@ export async function loadMyOnboarding(holon: string): Promise<MyOnboarding> {
     config,
     view,
     canTick,
-    profile: await readProfile(hs, view.home),
+    // The profile, with the sealed answers to this holon's own questions.
+    profile: await readOnboardingAnswers(hs, view.home, holon),
   };
 }
 
@@ -128,27 +128,22 @@ export async function tickCard(
   card: OnboardingCardView,
 ): Promise<void> {
   const hs = await getHolosphere();
-  const cur = (await hs.get(
-    view.home,
-    CARDS_LENS,
-    card.questId,
-  )) as Quest | null;
-  if (!cur) throw new Error("card not dealt yet");
-  const person = /^\d+$/.test(view.home) ? Number(view.home) : view.home;
-  const done = applyTaskCompletion(cur, person);
-  if (!done.ok && done.reason !== "already-completed")
-    throw new Error(done.reason);
-  if (done.ok) await hs.put(view.home, CARDS_LENS, done.task);
+  await completeOwnCard(hs, view, card);
   await nudge(view.holon);
 }
 
-/** Fill in the person's profile (their own holon), then nudge. */
+/**
+ * Keep what the person answered on a profile card (their own holon): the
+ * shared fields on their profile, the holon's own questions sealed for the
+ * holon's admins. Then nudge.
+ */
 export async function saveMyProfile(
   view: OnboardingView,
-  fields: Partial<OnboardingProfile>,
+  fields: readonly ProfileField[],
+  values: Record<string, string | string[]>,
 ): Promise<void> {
   const hs = await getHolosphere();
-  await saveProfile(hs, view.home, fields);
+  await saveOnboardingAnswers(hs, view.home, view.holon, fields, values);
   await nudge(view.holon);
 }
 

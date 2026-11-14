@@ -24,7 +24,7 @@ export const GROUP_LEAVE_REQUEST_KIND = 9022;
 export interface GroupSettingsLike {
   name?: string;
   title?: string;
-  purpose?: string | string[];
+  /** The `about` fallback when the holon has no purpose gene. */
   description?: string;
   picture?: string | null;
   admin?: string;
@@ -38,13 +38,23 @@ const base = (ctx: ProjectionCtx, holon: string): string[][] => [
   [HOLONS_ORIGIN_TAG, 'group', holon, holon],
 ];
 
-/** 39000 — name/about/picture + public|private, open|closed. */
-export function groupMetadataTemplate(ctx: ProjectionCtx, holon: string, settings: GroupSettingsLike): EventTemplate {
+/**
+ * The holon's `about`: its purpose gene's blurb (`@holons/core/dna`
+ * `purposeAbout`, passed as `about`), else the settings description. Never a
+ * settings field of its own: the about is derived, and never folded back.
+ */
+export function groupAbout(settings: GroupSettingsLike, about?: string | null): string {
+  if (typeof about === 'string' && about.trim()) return about.trim();
+  return typeof settings.description === 'string' ? settings.description.trim() : '';
+}
+
+/** 39000 — name/about/picture + public|private, open|closed. `about`: the purpose gene's blurb (see `groupAbout`). */
+export function groupMetadataTemplate(ctx: ProjectionCtx, holon: string, settings: GroupSettingsLike, about?: string | null): EventTemplate {
   const tags: string[][] = [['d', holon], ...base(ctx, holon)];
   const name = settings.name || settings.title;
   if (typeof name === 'string' && name.trim()) tags.push(['name', name]);
-  const about = Array.isArray(settings.purpose) ? settings.purpose.filter((p) => typeof p === 'string').join('\n') : settings.purpose ?? settings.description;
-  if (typeof about === 'string' && about.trim()) tags.push(['about', about]);
+  const text = groupAbout(settings, about);
+  if (text) tags.push(['about', text]);
   if (typeof settings.picture === 'string' && /^https?:\/\//i.test(settings.picture)) tags.push(['picture', settings.picture]);
   tags.push([settings.isPublic === false ? 'private' : 'public']);
   tags.push(['closed']); // membership is granted by the holon (Telegram join), never self-served
@@ -100,15 +110,21 @@ export function groupRemoveUserTemplate(ctx: ProjectionCtx, holon: string, pubke
 /** The `i` tag value a join request claims a Telegram identity with (NIP-39 spelling). */
 export const TELEGRAM_CLAIM_PREFIX = 'telegram:';
 
+/** The tag a join request names the DNA version the person agreed to with: `['dna', <64 hex>]`. */
+export const DNA_TAG = 'dna';
+
 /**
  * 9021/9022 — signed by the member. `telegramId` adds an `i` tag claiming
  * that Telegram user: a claim only, proven by whoever holds the derivation
  * secret (the key a Telegram login derives is the one that signed this).
+ * `dna` (the holon's DNA hash, 64 hex) adds `['dna', hash]`: the person's
+ * signed statement that they agree to that version of the holon's DNA.
  */
-export function groupJoinRequestTemplate(ctx: ProjectionCtx, holon: string, reason = '', telegramId?: string | number): EventTemplate {
+export function groupJoinRequestTemplate(ctx: ProjectionCtx, holon: string, reason = '', telegramId?: string | number, dna?: string | null): EventTemplate {
   const tags: string[][] = [['h', holon], ...base(ctx, holon)];
   const tg = telegramId === undefined || telegramId === null ? '' : String(telegramId);
   if (/^\d{1,20}$/.test(tg)) tags.push(['i', `${TELEGRAM_CLAIM_PREFIX}${tg}`]);
+  if (typeof dna === 'string' && /^[0-9a-f]{64}$/i.test(dna)) tags.push([DNA_TAG, dna.toLowerCase()]);
   return { kind: GROUP_JOIN_REQUEST_KIND, created_at: nowOf(ctx), tags, content: reason };
 }
 
@@ -119,13 +135,21 @@ export function groupLeaveRequestTemplate(ctx: ProjectionCtx, holon: string): Ev
 /**
  * The full holon-authored group state for one holon. `members` = ids from the
  * `users` lens (or member pubkeys, with an identity `pubkeyFor`); `admins` =
- * extra admin keys from the signed `_members` log. Hosts publish these
+ * extra admin keys from the signed `_members` log; `about` = the purpose
+ * gene's blurb (see `groupAbout`). Hosts publish these
  * (signed with the holon key) whenever the hash changes — see the bot's group
  * publisher and `@holons/core/holons` `publishGroupState`.
  */
-export function buildGroupState(ctx: ProjectionCtx, holon: string, settings: GroupSettingsLike, memberIds: Array<string | number>, admins: Iterable<string> = []): EventTemplate[] {
+export function buildGroupState(
+  ctx: ProjectionCtx,
+  holon: string,
+  settings: GroupSettingsLike,
+  memberIds: Array<string | number>,
+  admins: Iterable<string> = [],
+  about?: string | null,
+): EventTemplate[] {
   return [
-    groupMetadataTemplate(ctx, holon, settings),
+    groupMetadataTemplate(ctx, holon, settings, about),
     groupAdminsTemplate(ctx, holon, settings, admins),
     groupMembersTemplate(ctx, holon, memberIds),
   ];

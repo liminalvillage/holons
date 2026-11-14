@@ -15,7 +15,9 @@
 //     posted in the group with a Confirm button only its admins can press.
 //   • A profile card asks what the holon put on it (its `fields`): ✏️
 //     opens the questions one by one, each answered by replying to it, and
-//     the answers land in the person's profile (their holon's `dna`).
+//     the answers land in the person's profile (their holon's `dna`) — or,
+//     for the holon's own questions, in their sealed answers to it, which
+//     only they and the holon's admins read (core `saveOnboardingAnswers`).
 //   • Every tick moves them on (core `refreshOnboarding`): the next step's
 //     cards and a DM; once every step is done the key is linked.
 //
@@ -35,9 +37,9 @@ import {
   onboardingCardId,
   onboardingHome,
   readOnboarding,
-  readProfile,
+  readOnboardingAnswers,
   refreshOnboarding,
-  saveProfile,
+  saveOnboardingAnswers,
   startOnboarding,
 } from '@holons/core/onboarding';
 import { joinRequestRecords } from '@holons/core/holons';
@@ -413,7 +415,7 @@ export default class HolonOnboarding {
    */
   async askNext(holon, home, at, language) {
     const fields = at.card.fields ?? DEFAULT_PROFILE_FIELDS;
-    const profile = await readProfile(this.db, home);
+    const profile = await readOnboardingAnswers(this.db, home, holon);
     const [field] = missingProfileFields(profile, fields);
     if (!field) {
       this.asking.delete(home);
@@ -432,7 +434,22 @@ export default class HolonOnboarding {
             )
           : field.type === 'list'
             ? translated(language, 'onbFieldList', 'Separate them with commas.')
-            : '';
+            : field.type === 'choice'
+              ? translated(language, 'onbFieldChoice', 'One of: {{options}}', {
+                  options: (field.options ?? []).map(o => o.label).join(' · '),
+                })
+              : field.type === 'multi'
+                ? translated(
+                    language,
+                    'onbFieldMulti',
+                    'Any of these, separated by commas: {{options}}',
+                    {
+                      options: (field.options ?? [])
+                        .map(o => o.label)
+                        .join(' · '),
+                    }
+                  )
+                : '';
     const sent = await this.post(
       home,
       `✏️ <b>${esc(field.label)}</b>${hint ? `\n<i>${esc(hint)}</i>` : ''}`,
@@ -478,7 +495,9 @@ export default class HolonOnboarding {
       await this.askNext(asked.holon, home, at, language);
       return;
     }
-    await saveProfile(this.db, home, { [field.key]: fieldValue(field, text) });
+    await saveOnboardingAnswers(this.db, home, asked.holon, [field], {
+      [field.key]: fieldValue(field, text),
+    });
     await this.askNext(asked.holon, home, at, language);
   }
 

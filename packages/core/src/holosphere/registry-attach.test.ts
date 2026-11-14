@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createHoloSphere } from './factory.js';
 import { testKey } from '../protocol/testing.js';
 import { foundHolon } from '../protocol/founding.js';
+import { putGene, removeGene } from '../dna/genes.js';
 import {
   HOLONS_REGISTRY_TABLE,
   attachRegistry,
@@ -41,8 +42,14 @@ describe('isRegistrableHolon', () => {
 
 describe('registryEntryFromSettings', () => {
   it('keeps an existing creation time and name when the settings carry none', () => {
-    const e = registryEntryFromSettings('-1', { purpose: 'p' }, { name: 'Old', created: '2024-01-01T00:00:00.000Z' });
-    expect(e).toMatchObject({ id: '-1', name: 'Old', purpose: 'p', created: '2024-01-01T00:00:00.000Z', type: 'community' });
+    const e = registryEntryFromSettings('-1', {}, { name: 'Old', created: '2024-01-01T00:00:00.000Z', purpose: 'listed' });
+    expect(e).toMatchObject({ id: '-1', name: 'Old', purpose: 'listed', created: '2024-01-01T00:00:00.000Z', type: 'community' });
+  });
+
+  it('the purpose is the purpose gene, never a settings field', () => {
+    expect(registryEntryFromSettings('-1', { purpose: 'from settings' }, null)?.purpose).toBe('');
+    expect(registryEntryFromSettings('-1', { purpose: 'from settings' }, { purpose: 'listed' }, 'from the gene')?.purpose).toBe('from the gene');
+    expect(registryEntryFromSettings('-1', {}, { purpose: 'listed' }, '')?.purpose).toBe('');
   });
 
   it('a stand-in name never replaces a real one', () => {
@@ -77,6 +84,20 @@ describe('attachRegistry', () => {
     expect(spy).toHaveBeenCalledTimes(2);
     const row = await hs.getGlobal(HOLONS_REGISTRY_TABLE, '-1007');
     expect(row?.name).toBe('B');
+  });
+
+  it('a purpose gene written or removed refreshes the listed purpose', async () => {
+    const hs = fresh();
+    const H = '-1012';
+    await hs.put(H, 'settings', { id: H, name: 'Orchard', purpose: 'a stale settings purpose' });
+    expect((await hs.getGlobal(HOLONS_REGISTRY_TABLE, H))?.purpose).toBe('');
+    await putGene(hs, H, { kind: 'purpose', title: 'Purpose', blurb: 'Grow fruit together.' });
+    expect(await hs.getGlobal(HOLONS_REGISTRY_TABLE, H)).toMatchObject({ name: 'Orchard', purpose: 'Grow fruit together.' });
+    // A settings save keeps the gene's purpose.
+    await hs.put(H, 'settings', { id: H, name: 'Orchard', language: 'it' });
+    expect((await hs.getGlobal(HOLONS_REGISTRY_TABLE, H))?.purpose).toBe('Grow fruit together.');
+    await removeGene(hs, H, 'purpose');
+    expect((await hs.getGlobal(HOLONS_REGISTRY_TABLE, H))?.purpose).toBe('');
   });
 
   it('skips non-settings lenses, addresses and map cells', async () => {

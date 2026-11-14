@@ -2,7 +2,7 @@
   import { readHolonSettings } from '@holons/core/settings';
   import { onMount, onDestroy, getContext } from 'svelte';
   import { get } from 'svelte/store';
-  import { approveJoin, removeSeat, requestToJoin, watchJoinRequests, type JoinRequest } from '@holons/core/holons';
+  import { approveJoin, removeSeat, watchJoinRequests, type JoinRequest } from '@holons/core/holons';
   import {
     completeTelegramLink,
     federateLinkedChat,
@@ -18,7 +18,6 @@
   import { isHolonId, isTelegramChatId } from '@holons/core/protocol';
   import { signerFromSecretKey, writeAcceptance } from '@holons/core/holosphere';
   import { nostrPrivateKey } from '$lib/stores/nostr';
-  import { telegramUser } from '$lib/stores/telegram';
   import { settingsStore, settingsHelpers, supportedLanguages } from '../stores/settings';
   import { skin, setSkin, accentOverride, setAccent, clearAccent, DEFAULT_ACCENT } from '$lib/stores/skin';
 
@@ -254,28 +253,10 @@
   // (its bot founds the signed log). A person's own holon and a cell seat nobody.
   const keyed = (id: string | null | undefined) => !!id && (isHolonId(id) || isTelegramChatId(id));
   // Where the signed-in key stands here — the rule every read applies. The way
-  // in by key alone is a signed ask (kind-9021) an admin answers; the
-  // signature is the proof of holding the key, nothing else is challenged.
+  // in by key alone is a signed ask (kind-9021) an admin answers, made on the
+  // holon's walk (`/<id>/apply`): its DNA first, then the request.
   let standing: 'accepted' | 'held' | 'open' | null = null;
-  let askBusy = false;
-  let asked = new Set<string>();
-  $: askedHere = asked.has(`${holonId}|${holosphere?.currentPubkey ?? ''}`);
-  async function askSeat() {
-    const s = signer();
-    if (!holosphere || !s || askBusy) return;
-    askBusy = true;
-    try {
-      const u = get(telegramUser) as { id?: string | number; first_name?: string; username?: string } | null;
-      // A Telegram login names its Telegram id: the bot of a Telegram group
-      // proves it from the key and links a member of the group at once.
-      requestToJoin(holosphere, holonId, s, { ...publishOpts(), reason: u?.first_name || u?.username || '', telegramId: u?.id });
-      asked = new Set(asked).add(`${holonId}|${holosphere.currentPubkey}`);
-    } catch (err) {
-      console.warn('[settings] could not ask to join:', err);
-    } finally {
-      askBusy = false;
-    }
-  }
+  $: applyHref = `/${encodeURIComponent(holonId)}/apply`;
 
   async function loadFounding(id: string) {
     if (!holosphere) return;
@@ -914,22 +895,12 @@
               {#if keyed(holonId) && standing === 'held'}
                 <p class="hub-key__note hub-key__note--warn">
                   You (<strong>{resolvedName(holosphere?.currentPubkey ?? '', $nameMap)}</strong>) aren't linked to this hub yet,
-                  so only this device sees your changes. Ask below — the ask is signed by your key, nothing else is needed.
+                  so only this device sees your changes. Ask below: you read this hub's DNA, then your key signs the request.
                   {#if isTelegramChatId(holonId)}
                     Or link this key to your Telegram account: send <code>/key</code> to the bot in a private chat.
                   {/if}
                 </p>
-                {#if askedHere}
-                  <p class="hub-key__note">
-                    {isTelegramChatId(holonId) && String(holonId).startsWith('-')
-                      ? 'Asked — the admins were told in the Telegram group.'
-                      : 'Asked — an admin links your key.'}
-                  </p>
-                {:else}
-                  <button type="button" class="btn btn--primary btn--sm" disabled={askBusy || !signer()} on:click={askSeat}>
-                    Link my key
-                  </button>
-                {/if}
+                <a class="btn btn--primary btn--sm" href={applyHref}>Link my key</a>
               {:else if keyed(holonId) && standing === 'accepted'}
                 <p class="hub-key__note">Your key is linked to this hub: your changes count for everyone.</p>
               {/if}

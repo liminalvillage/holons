@@ -61,12 +61,13 @@
     resolveCssColor,
     setHolonColor,
   } from "$lib/palette";
-  import { currentUser, displayName, isLoggedIn, loginOpen } from "$lib/auth";
+  import { currentUser, isLoggedIn, loginOpen } from "$lib/auth";
+  import { goto } from "$app/navigation";
   import { sessionKeyPub } from "$lib/sessionKey";
   import { nameOf } from "$lib/names";
   import { shortId } from "@holons/core/identity";
   import {
-    askToJoin,
+    applyPath,
     dismissJoin,
     seat,
     unseat,
@@ -173,21 +174,12 @@
   // since the layout last asked shows without a reload. The ask is a
   // kind-9021 signed by the key — that signature is the proof of holding
   // it; nothing else is challenged.
-  let askBusy = false;
-  let asked = new Set<string>();
-  async function askSeat() {
-    if (!$holonId || !$currentUser || !$sessionKeyPub || askBusy) return;
-    askBusy = true;
-    try {
-      if (await askToJoin($holonId, displayName($currentUser))) {
-        asked = new Set(asked).add(`${$holonId}|${$sessionKeyPub}`);
-        showNotice(tr("menu.linkAsked"));
-      }
-    } finally {
-      askBusy = false;
-    }
+  // Asking goes through the holon's walk: read and agree to its DNA, then
+  // sign the request there.
+  function askSeat() {
+    if (!$holonId) return;
+    void goto(applyPath($holonId));
   }
-  $: askedHere = !!$holonId && asked.has(`${$holonId}|${$sessionKeyPub ?? ""}`);
 
   // Linking this key to the person's Telegram account: the proof is signed
   // and published here, Telegram only taps. The link stays shown until the
@@ -1099,26 +1091,10 @@
                 </button>
               {/if}
             {/if}
-            {#if askedHere}
-              <p class="hex-note">
-                {$t(
-                  ($holonId ?? "").startsWith("-") &&
-                    isTelegramChatId($holonId ?? "")
-                    ? "members.askedTelegram"
-                    : "members.asked",
-                )}
-              </p>
-            {:else}
-              <button
-                type="button"
-                class="found"
-                disabled={askBusy}
-                on:click={askSeat}
-              >
-                <Icon name="key" />
-                {$t("members.linkMe")}
-              </button>
-            {/if}
+            <button type="button" class="found" on:click={askSeat}>
+              <Icon name="key" />
+              {$t("members.linkMe")}
+            </button>
           {:else if $writeStanding === "held" && keyLoginOffered()}
             <p class="hex-note warn">{$t("members.youNoKey")}</p>
             <button

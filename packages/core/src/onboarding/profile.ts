@@ -9,7 +9,13 @@
 // What a holon asks of it is the holon's to say: a profile card lists the
 // fields it needs (`ProfileField`), and the card is done once every
 // required one is filled. The catalog below names the fields every surface
-// already knows; a holon may add its own questions under keys of its own.
+// already knows; a holon may add its own questions under keys of its own,
+// as text or as a choice among options (`choice`: one, `multi`: any).
+//
+// A holon's own questions are the holon's business, not the person's public
+// profile: their answers are SEALED (`sealed`, the default for a key the
+// catalog does not know) — kept in the person's holon under `answers/<holon>`,
+// readable by the person and the holon's admins only (see answers.ts).
 
 import type { HoloSphere } from 'holosphere';
 
@@ -31,10 +37,26 @@ export interface OnboardingProfile {
   [key: string]: unknown;
 }
 
-/** How a field is asked: a line, a paragraph, a date, a link, or a list. */
-export type ProfileFieldType = 'text' | 'longtext' | 'date' | 'url' | 'list';
+/**
+ * How a field is asked: a line, a paragraph, a date, a link, a list, one
+ * option among its `options` (`choice`), or any of them (`multi`).
+ */
+export type ProfileFieldType = 'text' | 'longtext' | 'date' | 'url' | 'list' | 'choice' | 'multi';
 
-export const PROFILE_FIELD_TYPES: readonly ProfileFieldType[] = ['text', 'longtext', 'date', 'url', 'list'];
+export const PROFILE_FIELD_TYPES: readonly ProfileFieldType[] = ['text', 'longtext', 'date', 'url', 'list', 'choice', 'multi'];
+
+/** One answer a `choice` or `multi` field offers. */
+export interface ProfileOption {
+  /** What is stored: lowercase letters, digits, `_` and `-`. */
+  value: string;
+  /** What the person reads. */
+  label: string;
+  /** A line under the label. */
+  hint?: string;
+}
+
+/** Most options a field offers. */
+export const MAX_PROFILE_OPTIONS = 40;
 
 /** One thing a holon asks a newcomer's profile to hold. */
 export interface ProfileField {
@@ -45,6 +67,16 @@ export interface ProfileField {
   type: ProfileFieldType;
   /** Must be filled for the card to count as done. */
   required: boolean;
+  /** A `choice` / `multi` field: what may be picked (at least one). */
+  options?: ProfileOption[];
+  /**
+   * The answer is kept sealed for the person and the holon's admins
+   * (`answers/<holon>` in the person's holon), never on their public
+   * profile. Unset: sealed unless the key is one of the catalog's — a
+   * holon's own question is sealed unless it says otherwise (see
+   * {@link isSealedField}; normalizing keeps it only where it differs).
+   */
+  sealed?: boolean;
 }
 
 /** The fields every surface knows, with the question each one asks. */
@@ -68,11 +100,50 @@ export const DEFAULT_PROFILE_FIELDS: readonly ProfileField[] = Object.freeze([ca
 /** Keys a field may not take: the record's own. */
 const RESERVED = new Set(['id', '_deleted', '_clock', '_meta']);
 
+const optionValue = (raw: unknown): string =>
+  String(raw ?? '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '_')
+    .replace(/^[_-]+|[_-]+$/g, '')
+    .slice(0, 48);
+
+/** Whatever is stored → the options a field offers: each value once, at most {@link MAX_PROFILE_OPTIONS}. */
+export function normalizeProfileOptions(raw: unknown): ProfileOption[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ProfileOption[] = [];
+  const seen = new Set<string>();
+  for (const o of raw) {
+    const doc = (o && typeof o === 'object' ? o : { value: o, label: o }) as Record<string, unknown>;
+    const word = (v: unknown) => (typeof v === 'string' ? v.trim() : typeof v === 'number' && Number.isFinite(v) ? String(v) : '');
+    const label = word(doc.label) || word(doc.value);
+    const value = optionValue(doc.value ?? label);
+    if (!value || !label || seen.has(value)) continue;
+    seen.add(value);
+    const hint = typeof doc.hint === 'string' ? doc.hint.trim() : '';
+    out.push({ value, label, ...(hint ? { hint } : {}) });
+    if (out.length >= MAX_PROFILE_OPTIONS) break;
+  }
+  return out;
+}
+
+/** Is `type` one that picks among options? */
+export const isChoiceField = (field: Pick<ProfileField, 'type'>): boolean => field.type === 'choice' || field.type === 'multi';
+
+/** Is the field's answer sealed? A catalog key is not unless it says so; a holon's own question is unless it says not. */
+export function isSealedField(field: Pick<ProfileField, 'key' | 'sealed'>): boolean {
+  return typeof field.sealed === 'boolean' ? field.sealed : !PROFILE_FIELDS.some((k) => k.key === field.key);
+}
+
 /**
  * Whatever is stored → usable fields. A field needs a key (made safe) and
  * a question (a known key keeps its catalog one), each key once,
- * an unknown type is `text`, `required` unless said otherwise. Nothing
- * usable → the default fields: a profile card always asks something.
+ * an unknown type is `text`, `required` unless said otherwise, `sealed`
+ * only where it differs from the default (see {@link isSealedField}). A `choice` or `multi` field
+ * without a single usable option asks for text instead. Nothing usable →
+ * the default fields: a profile card always asks something.
  */
 export function normalizeProfileFields(raw: unknown): ProfileField[] {
   if (!Array.isArray(raw)) return DEFAULT_PROFILE_FIELDS.map((f) => ({ ...f }));
@@ -90,8 +161,12 @@ export function normalizeProfileFields(raw: unknown): ProfileField[] {
     const label = (typeof doc.label === 'string' ? doc.label.trim() : '') || known?.label || '';
     if (!key || !label || RESERVED.has(key) || seen.has(key)) continue;
     seen.add(key);
-    const type = PROFILE_FIELD_TYPES.includes(doc.type as ProfileFieldType) ? (doc.type as ProfileFieldType) : (known?.type ?? 'text');
-    out.push({ key, label, type, required: doc.required !== false });
+    let type = PROFILE_FIELD_TYPES.includes(doc.type as ProfileFieldType) ? (doc.type as ProfileFieldType) : (known?.type ?? 'text');
+    const options = isChoiceField({ type }) ? normalizeProfileOptions(doc.options) : [];
+    if (isChoiceField({ type }) && !options.length) type = 'text';
+    // Kept only where it differs from the default for its key.
+    const sealed = typeof doc.sealed === 'boolean' && doc.sealed !== isSealedField({ key }) ? { sealed: doc.sealed } : {};
+    out.push({ key, label, type, required: doc.required !== false, ...(options.length ? { options } : {}), ...sealed });
   }
   return out.length ? out : DEFAULT_PROFILE_FIELDS.map((f) => ({ ...f }));
 }
@@ -101,9 +176,23 @@ export function fieldFilled(value: unknown): boolean {
   return Array.isArray(value) ? value.some((x) => String(x ?? '').trim()) : typeof value === 'string' ? value.trim() !== '' : typeof value === 'number';
 }
 
+/** The options of a choice field a stored value picks (unknown values dropped). */
+function picked(field: ProfileField, value: unknown): string[] {
+  const values = (Array.isArray(value) ? value : value == null ? [] : [value]).map((v) => String(v ?? '').trim()).filter(Boolean);
+  const offered = new Set((field.options ?? []).map((o) => o.value));
+  return values.filter((v) => offered.has(v));
+}
+
+/** Does this stored value answer this field? A choice must pick one of its options (a `choice` exactly one). */
+export function fieldAnswered(field: ProfileField, value: unknown): boolean {
+  if (!isChoiceField(field)) return fieldFilled(value);
+  const n = picked(field, value).length;
+  return field.type === 'choice' ? n === 1 && !Array.isArray(value) : n > 0;
+}
+
 /** The required fields the profile has not answered yet. */
 export function missingProfileFields(profile: OnboardingProfile | null | undefined, fields: readonly ProfileField[]): ProfileField[] {
-  return fields.filter((f) => f.required && !fieldFilled(profile?.[f.key]));
+  return fields.filter((f) => f.required && !fieldAnswered(f, profile?.[f.key]));
 }
 
 /** Has the profile everything these fields require? */
@@ -111,30 +200,64 @@ export function profileComplete(profile: OnboardingProfile | null | undefined, f
   return missingProfileFields(profile, fields).length === 0;
 }
 
-/** A stored value as one editable line of text (a list joins with commas). */
+/** A stored value as one editable line of text (a list joins with commas; a choice is its option values). */
 export function fieldText(field: ProfileField, value: unknown): string {
   if (Array.isArray(value)) return value.map((x) => String(x ?? '').trim()).filter(Boolean).join(', ');
   return value == null ? '' : String(value);
 }
 
-/** What the person typed → the value the profile keeps (a list splits on commas). */
-export function fieldValue(field: ProfileField, text: string): string | string[] {
-  const s = String(text ?? '').trim();
-  return field.type === 'list'
-    ? s
-        .split(',')
-        .map((x) => x.trim())
-        .filter(Boolean)
-    : s;
+/** The option a typed or picked word names: by value, else by label (case and accents aside). */
+export function optionFor(field: ProfileField, word: string): ProfileOption | undefined {
+  const w = String(word ?? '').trim();
+  if (!w) return undefined;
+  const options = field.options ?? [];
+  const v = optionValue(w);
+  const fold = (x: string) => x.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  return options.find((o) => o.value === w) ?? options.find((o) => o.value === v) ?? options.find((o) => fold(o.label) === fold(w));
+}
+
+/** The labels a stored choice value reads as, in the field's order. */
+export function optionLabels(field: ProfileField, value: unknown): string[] {
+  const chosen = new Set(picked(field, value));
+  return (field.options ?? []).filter((o) => chosen.has(o.value)).map((o) => o.label);
+}
+
+const parts = (input: string | readonly string[]): string[] =>
+  (Array.isArray(input) ? input : String(input ?? '').split(','))
+    .map((x) => String(x ?? '').trim())
+    .filter(Boolean);
+
+/**
+ * What the person typed or picked → the value the profile keeps: a list
+ * splits on commas; a `choice` keeps the option value it names, a `multi`
+ * the values of every option named (picked values, or typed values or
+ * labels separated by commas), in the field's order. Words that name no
+ * option are dropped.
+ */
+export function fieldValue(field: ProfileField, input: string | readonly string[]): string | string[] {
+  if (field.type === 'list') return parts(input);
+  if (field.type === 'multi') {
+    const named = new Set(parts(input).map((w) => optionFor(field, w)?.value).filter((v): v is string => !!v));
+    return (field.options ?? []).map((o) => o.value).filter((v) => named.has(v));
+  }
+  const s = Array.isArray(input) ? String(input[0] ?? '').trim() : String(input ?? '').trim();
+  if (field.type === 'choice') return optionFor(field, s)?.value ?? '';
+  return s;
 }
 
 /**
- * Is this typed text an answer the field can keep? A date is a calendar
- * day (`YYYY-MM-DD`), a link an http(s) address; anything else, any text.
- * Blank never is.
+ * Is this typed text (or these picks) an answer the field can keep? A date
+ * is a calendar day (`YYYY-MM-DD`), a link an http(s) address, a choice
+ * names exactly one of its options, a multi only options (at least one);
+ * anything else, any text. Blank never is.
  */
-export function fieldAccepts(field: ProfileField, text: string): boolean {
-  const s = String(text ?? '').trim();
+export function fieldAccepts(field: ProfileField, text: string | readonly string[]): boolean {
+  if (isChoiceField(field)) {
+    const words = field.type === 'choice' ? (Array.isArray(text) ? parts(text) : [String(text ?? '').trim()].filter(Boolean)) : parts(text);
+    if (!words.length || (field.type === 'choice' && words.length !== 1)) return false;
+    return words.every((w) => !!optionFor(field, w));
+  }
+  const s = String(Array.isArray(text) ? text.join(', ') : (text ?? '')).trim();
   if (!s) return false;
   if (field.type === 'date') {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);

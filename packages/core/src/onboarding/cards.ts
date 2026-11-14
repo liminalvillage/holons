@@ -10,6 +10,7 @@
 // completion the person made is never overwritten.
 
 import type { HoloSphere } from 'holosphere';
+import { applyTaskCompletion } from '../tasks/completion.js';
 import { createTask } from '../tasks/creation.js';
 import type { Quest, QuestParticipant } from '../tasks/types.js';
 import type { OnboardingConfig, OnboardingStep } from './config.js';
@@ -97,4 +98,33 @@ export async function completedCards(hs: HoloSphere, holon: string, home: string
     }
   }
   return done;
+}
+
+/**
+ * The person ticks one of their own cards (a `self` card) in their holon.
+ * True when this call completed it; false when it already was. Throws when
+ * the card was not dealt yet or the person may not complete it. Written
+ * with this instance's key — it counts only where that key does (the
+ * person's own holon: see `writeAcceptance`).
+ */
+export async function completeOwnCard(
+  hs: HoloSphere,
+  view: { home: string },
+  card: { questId: string },
+  opts: { now?: string } = {},
+): Promise<boolean> {
+  let cur: unknown = null;
+  try {
+    cur = await hs.get(view.home, CARDS_LENS, card.questId);
+  } catch {
+    cur = null;
+  }
+  if (!live(cur)) throw new Error('card not dealt yet');
+  const done = applyTaskCompletion(cur, personOf(view.home).id ?? view.home, { now: opts.now });
+  if (!done.ok) {
+    if (done.reason === 'already-completed') return false;
+    throw new Error(done.reason);
+  }
+  await hs.put(view.home, CARDS_LENS, done.task);
+  return true;
 }

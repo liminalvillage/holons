@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createTrustCache, parseDuration } from '../src/createHoloSphere.js';
 
 describe('parseDuration', () => {
@@ -54,6 +54,64 @@ describe('createTrustCache', () => {
     expect(trust.userIdFor(deriveTelegramNostrKey(2, 'secret').publicKey)).toBe(
       2
     );
+    setProjectionHostForTests(null);
+  });
+
+  it('takes the 39000 about from the purpose gene and republishes on genes writes', async () => {
+    const { deriveTelegramNostrKey } = await import('@holons/core/auth');
+    const { setProjectionHostForTests } =
+      await import('../src/createHoloSphere.js');
+    let genes = [];
+    const published = [];
+    const fake = {
+      getAll: async (_h, lens) =>
+        lens === 'genes' ? genes : [{ id: 1, first_name: 'Alice' }],
+      get: async () => ({
+        id: '-1',
+        name: 'Test holon',
+        description: 'A test',
+        purpose: 'never read',
+      }),
+      put: async () => true,
+      delete: async () => true,
+      publishNostrEvents: () => {},
+    };
+    const holonPk = 'a'.repeat(64);
+    const trust = createTrustCache(holonPk, 'secret', 0, {
+      ctx: {
+        appName: 'T',
+        holonPubkey: holonPk,
+        pubkeyFor: id => deriveTelegramNostrKey(id, 'secret').publicKey,
+      },
+      publish: t => published.push(...t),
+    });
+    setProjectionHostForTests(fake, trust);
+    const about = t => t.tags.find(x => x[0] === 'about')?.[1];
+    await trust.trustedAuthors('-1');
+    expect(about(published.find(t => t.kind === 39000))).toBe('A test');
+
+    genes = [
+      {
+        id: 'purpose',
+        kind: 'purpose',
+        title: 'Purpose',
+        blurb: 'Grow together',
+        order: 0,
+        ack: 'read',
+        alleles: [],
+        lang: 'en',
+        updated: '',
+      },
+    ];
+    published.length = 0;
+    await fake.put('-1', 'genes', genes[0]);
+    await vi.waitFor(() => expect(published).toHaveLength(1));
+    expect(published[0].kind).toBe(39000);
+    expect(about(published[0])).toBe('Grow together');
+    // A write elsewhere republishes nothing.
+    await fake.put('-1', 'quests', { id: 'q' });
+    await trust.genesChanged('-1');
+    expect(published).toHaveLength(1);
     setProjectionHostForTests(null);
   });
 

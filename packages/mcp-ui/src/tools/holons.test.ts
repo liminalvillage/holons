@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ZodTypeAny } from 'zod';
 import { createHoloSphere, signerFromSecretKey } from '@holons/core/holosphere';
-import { parseJoinRequest, requestToJoin } from '@holons/core/holons';
+import { applyToHolon, parseJoinRequest } from '@holons/core/holons';
 import { acceptTelegramLink } from '@holons/core/linking';
 import { startOnboarding } from '@holons/core/onboarding';
 import { registerHolonsTools } from './holons.js';
@@ -107,7 +107,7 @@ describe('holon tools', () => {
     expect(payload(await tools.get('onboarding_config_save')!({ holon: H, enabled: false })).config.steps).toHaveLength(1);
     await tools.get('onboarding_config_save')!({ holon: H, enabled: true });
 
-    const req = parseJoinRequest(requestToJoin(hs, H, signerFromSecretKey(ada.sk), { appName: 'mcp-onboarding-test', reason: 'Ada' }))!;
+    const req = parseJoinRequest(await applyToHolon(hs, H, signerFromSecretKey(ada.sk), { appName: 'mcp-onboarding-test', reason: 'Ada', acknowledged: null }))!;
     await startOnboarding(hs, H, req, { home: '4242', appName: 'mcp-onboarding-test' });
     expect(payload(await tools.get('onboarding_get')!({ holon: H })).onboarding).toEqual([{ pubkey: ada.pk, name: 'Ada', step: 'call', home: '4242' }]);
 

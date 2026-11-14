@@ -17,6 +17,8 @@ import {
   readProfile,
   saveOnboarding,
   saveProfile,
+  readAnswers,
+  readOnboardingAnswers,
 } from '@holons/core/onboarding';
 import JoinRequests from '../src/JoinRequests.js';
 import { setProjectionHostForTests } from '../src/createHoloSphere.js';
@@ -235,7 +237,13 @@ describe('a holon with an onboarding', () => {
     expect(prompt().text).toMatch(/Anything you do not eat/);
     await service.onboarding.answer(reply('nuts', id()), next);
 
+    // The catalog field on the profile; the holon's own question sealed.
     expect(await readProfile(hs, ADA)).toMatchObject({
+      arrival: '2026-11-03',
+    });
+    expect(await readProfile(hs, ADA)).not.toHaveProperty('diet');
+    expect((await readAnswers(hs, ADA, T))?.answers).toEqual({ diet: 'nuts' });
+    expect(await readOnboardingAnswers(hs, ADA, T)).toMatchObject({
       arrival: '2026-11-03',
       diet: 'nuts',
     });

@@ -4,11 +4,13 @@
 // Join requests reach the Telegram group.
 //
 // A person on the kiosk or the dashboard asks to link their key to a holon
-// (a NIP-29 kind-9021, `@holons/core/holons` requestToJoin). For a holon that
-// IS a Telegram group, this service answers on the group's behalf:
+// (a NIP-29 kind-9021, `@holons/core/holons` applyToHolon, carrying the DNA
+// hash they agreed to). For a holon that IS a Telegram group, this service
+// answers on the group's behalf:
 //
-//   • They signed in with Telegram and are in the group → linked at once.
-//     The request claims a Telegram id; the claim is proven because the key
+//   • They signed in with Telegram, are in the group, and agreed to the
+//     holon's DNA as it is now (core `mayLink`) → linked at once. The
+//     request claims a Telegram id; the claim is proven because the key
 //     that signed it is the one that id derives (describeApplicant), and
 //     Telegram itself says whether that user is in the chat. No admin step.
 //   • Anyone else (their own Nostr key, or a Telegram user outside the
@@ -21,6 +23,9 @@
 // announced and decided lives in the holon's `joinrequests` lens, so a
 // restart or a replayed event never posts twice, and an approved key stays
 // seated through the roster sync (createHoloSphere.js reads the same lens).
+// A newer request on a pending record (the person walked a changed DNA and
+// asked again) updates that record (core `recordJoinRequest`): the
+// onboarding re-checks it, and a proven group member is linked then.
 //
 // JOIN_NOTICES=off silences the service — set it on one of two bots that
 // share a namespace, or both would post.
@@ -28,12 +33,16 @@
 import { Markup } from 'telegraf';
 import i18next from 'i18next';
 import {
+  DnaChanged,
+  DnaNotAcknowledged,
+  applyToHolon,
   approveJoin,
   describeApplicant,
+  holonDnaHash,
   joinRequestRecords,
+  mayLink,
   parseJoinRequest,
   recordJoinRequest,
-  requestToJoin,
   settleJoinRequest,
   watchAllJoinRequests,
 } from '@holons/core/holons';
@@ -183,18 +192,18 @@ export default class JoinRequests {
    */
   async handle(request) {
     const holon = String(request.holon);
-    const telegram = this.bot?.telegram;
     if ((await holonMembers(this.db, holon)).has(request.pubkey))
       return 'seated';
     const cur = (await joinRequestRecords(this.db, holon)).get(request.pubkey);
     if (cur) {
       // One post stands per asking key; a settled key may ask again a day on.
-      if (cur.eventId === request.eventId || cur.status === 'pending') {
+      if (cur.eventId === request.eventId) {
         // An onboarding under way survives a restart: keep re-reading it.
         if (cur.home && cur.status === 'pending')
           this.onboarding.track(holon, cur.id);
         return 'known';
       }
+      if (cur.status === 'pending') return this.reask(holon, cur, request);
       if (this.now() - cur.at < DAY) return 'limited';
     }
 
@@ -203,20 +212,13 @@ export default class JoinRequests {
     });
     // An unproven claim is no identity at all: the person is their key.
     const tgId = who.telegram?.verified ? who.telegram.id : null;
-    let tgUser = null;
-    if (tgId && telegram) {
-      try {
-        const member = await telegram.getChatMember(holon, Number(tgId));
-        tgUser = member?.user ?? null;
-        const inChat =
-          IN_CHAT.has(member?.status) &&
-          (member.status !== 'restricted' || member.is_member !== false);
-        if (inChat && (await this.autoLink(holon, request, tgId, tgUser)))
-          return 'linked';
-      } catch {
-        /* Telegram does not know them here: ask the admins */
-      }
-    }
+    const { linked, tgUser, inChat } = await this.tryAutoLink(
+      holon,
+      request,
+      tgId,
+      who.dna
+    );
+    if (linked) return 'linked';
 
     const fullName =
       [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') ||
@@ -226,6 +228,7 @@ export default class JoinRequests {
       return 'onboarding';
     }
 
+    const telegram = this.bot?.telegram;
     const language = await this.language(holon);
     const name = esc(fullName);
     const handle = tgUser?.username ? ` (@${esc(tgUser.username)})` : '';
@@ -236,21 +239,48 @@ export default class JoinRequests {
         '🔑 <b>{{name}}</b>{{handle}} asks to link their key to this holon.',
         { name, handle, interpolation: { escapeValue: false } }
       ),
-      tgId
-        ? translated(
-            language,
-            'joinFromTelegram',
-            'They signed in with Telegram, but are not in this group.'
-          )
-        : translated(
-            language,
-            'joinFromKey',
-            'They signed in with their own Nostr key: {{key}}',
-            {
-              key: `<code>${shortNpub(request.pubkey)}</code>`,
-              interpolation: { escapeValue: false },
-            }
-          ),
+      tgId && inChat
+        ? who.dna === 'unknown'
+          ? translated(
+              language,
+              'joinInChatDnaUnknown',
+              "They are in this group, but the holon's DNA could not be read to check their request."
+            )
+          : translated(
+              language,
+              'joinInChatDna',
+              'They are in this group, but their request does not carry the current DNA.'
+            )
+        : tgId
+          ? translated(
+              language,
+              'joinFromTelegram',
+              'They signed in with Telegram, but are not in this group.'
+            )
+          : translated(
+              language,
+              'joinFromKey',
+              'They signed in with their own Nostr key: {{key}}',
+              {
+                key: `<code>${shortNpub(request.pubkey)}</code>`,
+                interpolation: { escapeValue: false },
+              }
+            ),
+      ...(who.dna === 'none-required'
+        ? []
+        : [
+            who.dna === 'acknowledged'
+              ? translated(language, 'readyAcknowledged', 'DNA acknowledged')
+              : who.dna === 'outdated'
+                ? translated(language, 'readyOutdated', 'DNA outdated')
+                : who.dna === 'unknown'
+                  ? translated(language, 'readyUnknown', 'DNA not readable')
+                  : translated(
+                      language,
+                      'readyMissing',
+                      'DNA not acknowledged'
+                    ),
+          ]),
       translated(
         language,
         'joinAdminsDecide',
@@ -281,13 +311,82 @@ export default class JoinRequests {
   }
 
   /**
+   * A newer request on a pending record: the record takes its DNA hash
+   * (core `recordJoinRequest`), an onboarding re-checks it at once, and a
+   * proven group member who now agreed to the current DNA is linked.
+   */
+  async reask(holon, cur, request) {
+    const record = await recordJoinRequest(this.db, holon, request, {
+      now: this.now,
+    });
+    if (cur.home) {
+      this.onboarding.track(holon, cur.id);
+      await this.onboarding.nudge(holon, cur.id).catch(() => null);
+      return 'known';
+    }
+    const who = await describeApplicant(this.db, request, {
+      secret: this.secret,
+    });
+    const tgId = who.telegram?.verified ? who.telegram.id : null;
+    const { linked } = await this.tryAutoLink(holon, request, tgId, who.dna);
+    if (!linked) return 'known';
+    await settleJoinRequest(this.db, holon, record.id, 'approved', {
+      by: 'proof',
+      now: this.now,
+    });
+    return 'linked';
+  }
+
+  /**
+   * Link a proven Telegram member of the group whose request agreed to the
+   * holon's DNA as it is now. Returns whether it linked, and who Telegram
+   * says they are.
+   */
+  async tryAutoLink(holon, request, tgId, readiness) {
+    const telegram = this.bot?.telegram;
+    let tgUser = null;
+    let inChat = false;
+    if (!tgId || !telegram) return { linked: false, tgUser, inChat };
+    try {
+      const member = await telegram.getChatMember(holon, Number(tgId));
+      tgUser = member?.user ?? null;
+      inChat =
+        IN_CHAT.has(member?.status) &&
+        (member.status !== 'restricted' || member.is_member !== false);
+      if (
+        inChat &&
+        (await this.autoLink(holon, request, tgId, tgUser, readiness))
+      )
+        return { linked: true, tgUser, inChat };
+    } catch {
+      /* Telegram does not know them here: ask the admins */
+    }
+    return { linked: false, tgUser, inChat };
+  }
+
+  /**
    * A proven Telegram member of the group: write their `users` record when
    * the holon has none (the roster sync derives their key from it, so the
-   * seat holds) and seat the key now.
+   * seat holds) and seat the key now — only when their request agreed to
+   * the holon's DNA as it is now (core `mayLink`); otherwise an admin
+   * decides, with the readiness shown. `readiness` comes from
+   * `describeApplicant`: only 'acknowledged' and 'none-required' (both from
+   * a successful read of the genes) link; 'unknown' (unreadable genes) and
+   * anything else never do.
    */
-  async autoLink(holon, request, tgId, user) {
+  async autoLink(holon, request, tgId, user, readiness) {
     const signer = this._signer();
     if (!signer) return false;
+    if (readiness === undefined) {
+      let current = null;
+      try {
+        current = await holonDnaHash(this.db, holon);
+      } catch {
+        return false;
+      }
+      if (!mayLink(request, current)) return false;
+    } else if (readiness !== 'acknowledged' && readiness !== 'none-required')
+      return false;
     let existing = null;
     try {
       existing = await this.db.get(holon, 'users', String(tgId));
@@ -313,8 +412,11 @@ export default class JoinRequests {
    * `/start onboard_<holon>` in a private chat: the person asks from
    * Telegram itself. Their request is signed with the key their Telegram id
    * derives, so it is proven like a kiosk login's, and answered at once.
+   * `acknowledged` is the DNA hash they agreed to (the walk's); a holon
+   * with a DNA they have not agreed to (or that changed since) gets no
+   * request — they are pointed at its DNA first.
    */
-  async askFromTelegram(ctx, holon) {
+  async askFromTelegram(ctx, holon, acknowledged = null) {
     const language = await this.language(holon);
     const from = ctx.from;
     if (!from?.id || !this.secret || !isTelegramGroup(holon)) {
@@ -328,16 +430,32 @@ export default class JoinRequests {
       return 'refused';
     }
     const key = deriveTelegramNostrKey(String(from.id), this.secret);
-    const event = requestToJoin(
-      this.db,
-      holon,
-      signerFromSecretKey(key.privateKey),
-      {
-        appName: this.db.appname,
-        reason: [from.first_name, from.last_name].filter(Boolean).join(' '),
-        telegramId: from.id,
-      }
-    );
+    let event;
+    try {
+      event = await applyToHolon(
+        this.db,
+        holon,
+        signerFromSecretKey(key.privateKey),
+        {
+          appName: this.db.appname,
+          acknowledged,
+          reason: [from.first_name, from.last_name].filter(Boolean).join(' '),
+          telegramId: from.id,
+        }
+      );
+    } catch (e) {
+      if (!(e instanceof DnaNotAcknowledged || e instanceof DnaChanged))
+        throw e;
+      await ctx.reply(
+        translated(
+          language,
+          'onbDnaFirst',
+          'Before asking to join, read and agree to the DNA of this holon: {{url}}',
+          { url: `https://hubs.network/${encodeURIComponent(holon)}/apply` }
+        )
+      );
+      return 'dna';
+    }
     const request = parseJoinRequest(event, holon);
     if (!request) return 'refused';
     this.seen.add(request.eventId);

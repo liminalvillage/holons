@@ -17,12 +17,15 @@
  *      discoverability; a registry hiccup must not block holon creation.
  *
  * No surface calls it: `attachRegistry` (below, wired by `createHoloSphere`)
- * writes the entry whenever a holon's settings are written.
+ * writes the entry whenever a holon's settings or genes are written. The
+ * purpose it lists is the holon's purpose gene (`@holons/core/dna`
+ * `purposeAbout`), never a settings field.
  */
 
 import type { HoloSphere } from 'holosphere';
 import { isPubkeyHolon } from 'holosphere/authority.js';
 import { isValidCell } from 'h3-js';
+import { GENES_LENS, purposeAbout, readGenes } from '../dna/genes.js';
 import { isPlaceholderName } from '../identity/ids.js';
 import { normalizePubkey } from '../users/keys.js';
 
@@ -188,15 +191,17 @@ export function isRegistrableHolon(id: unknown): id is string {
 }
 
 /**
- * The registry record a holon's settings describe. An entry already in the
- * registry keeps its creation time and, when the settings carry no real name
- * (none, or a stand-in like "unknown"), its name — such a write never blanks
- * a holon someone can find.
+ * The registry record a holon's settings and purpose describe. An entry
+ * already in the registry keeps its creation time and, when the settings
+ * carry no real name (none, or a stand-in like "unknown"), its name — such
+ * a write never blanks a holon someone can find. `purpose` is the purpose
+ * gene's blurb; undefined (genes not readable) keeps the listed one.
  */
 export function registryEntryFromSettings(
   holon: string,
   settings: Record<string, unknown> | null | undefined,
   existing?: Partial<HolonRegistryEntry> | null,
+  purpose?: string,
 ): HolonRegistryEntry | null {
   if (!isRegistrableHolon(holon)) return null;
   const s = settings ?? {};
@@ -210,7 +215,7 @@ export function registryEntryFromSettings(
   return buildRegistryEntry({
     id: holon,
     name,
-    purpose: str(s.purpose) || str(existing?.purpose),
+    purpose: purpose !== undefined ? purpose : str(existing?.purpose),
     created,
     type: holonTypeOf(holon),
   });
@@ -219,6 +224,9 @@ export function registryEntryFromSettings(
 /** The slice of a HoloSphere instance the registry hook touches. */
 export interface RegistryHost {
   put(holon: string | null, lens: string, data: any, passwordOrOptions?: any, options?: any): Promise<any>;
+  delete?(holon: string | null, lens: string, key: string, password?: any, options?: any): Promise<any>;
+  get?(holon: string | null, lens: string, key: string, password?: any, options?: any): Promise<any>;
+  getAll?(holon: string | null, lens: string, password?: any, options?: any): Promise<any>;
   writeGlobal(table: string, data: any, options?: any): Promise<any>;
   isHologram?(data: unknown): boolean;
   store?: { get(holon: string | null, lens: string, id: string): { item?: unknown } | undefined };
@@ -241,61 +249,100 @@ const sameEntry = (a: Partial<HolonRegistryEntry> | null | undefined, b: HolonRe
 
 /**
  * Every holon whose settings are written is findable. `attachRegistry` wraps
- * `put`: after a write to a holon's `settings` lens it refreshes that holon's
- * `holons_registry` entry (name, purpose, type), writing only when the entry
- * would change. Founding a holon on the kiosk, a bot dropped into a group,
- * a rename on the web, an MCP settings save — all are settings writes, so
- * no surface registers anything itself.
+ * `put` (and `delete`, for genes): after a write to a holon's `settings` or
+ * `genes` lens it refreshes that holon's `holons_registry` entry (name,
+ * purpose from the purpose gene, type), writing only when the entry would
+ * change. Founding a holon on the kiosk, a bot dropped into a group, a
+ * rename on the web, an MCP settings save, a DNA edit — all are such
+ * writes, so no surface registers anything itself.
  *
- * Skipped: global writes, private (password) writes, tombstones, hologram
- * pointers, federated copies, and ids that are not holons (addresses, map
- * cells, system tables). The settings write is never blocked: a registry
- * failure is logged and swallowed.
+ * Skipped: global writes, private (password) writes, settings tombstones,
+ * hologram pointers, federated copies, and ids that are not holons
+ * (addresses, map cells, system tables). The write is never blocked: a
+ * registry failure is logged and swallowed.
  */
 export function attachRegistry<T extends RegistryHost>(host: T, opts: AttachRegistryOptions = {}): T {
   if (hasRegistry(host)) return host;
   const log = opts.log ?? ((message: string, error?: unknown) => console.warn(message, error ?? ''));
   const rawPut = host.put;
+  const rawDelete = host.delete;
   // What this instance last wrote per holon — a cold store holds no registry
   // rows, and a settings save must not rewrite the same entry every time.
   const written = new Map<string, string>();
+
+  const existingOf = (h: string): Partial<HolonRegistryEntry> | null => {
+    try {
+      const item = host.store?.get(null, HOLONS_REGISTRY_TABLE, h)?.item;
+      return item && typeof item === 'object' && (item as any)._deleted !== true ? (item as Partial<HolonRegistryEntry>) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  /** The purpose gene's blurb, or undefined when the genes cannot be read. */
+  const purposeOf = async (h: string): Promise<string | undefined> => {
+    if (typeof host.getAll !== 'function') return undefined;
+    try {
+      return purposeAbout(await readGenes(host as unknown as HoloSphere, h));
+    } catch {
+      return undefined;
+    }
+  };
+
+  async function refresh(h: string, settings: Record<string, unknown> | null): Promise<void> {
+    try {
+      const existing = existingOf(h);
+      const entry = registryEntryFromSettings(h, settings, existing, await purposeOf(h));
+      if (!entry) return;
+      const sig = JSON.stringify([entry.name, entry.purpose, entry.type]);
+      if (sameEntry(existing, entry) || written.get(h) === sig) return;
+      await host.writeGlobal(HOLONS_REGISTRY_TABLE, entry);
+      written.set(h, sig);
+    } catch (err) {
+      log(`[registry] could not register holon ${h}`, err);
+    }
+  }
+
+  /** The holon's settings as stored, for a genes write (none: the entry keeps its name). */
+  async function settingsOf(h: string): Promise<Record<string, unknown> | null> {
+    try {
+      const s = await host.get?.(h, 'settings', h);
+      return s && typeof s === 'object' && !Array.isArray(s) && (s as any)._deleted !== true ? (s as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  }
 
   host.put = async function registryPut(this: T, holon: any, lens: any, data: any, passwordOrOptions: any = null, options: any = {}) {
     const result = await rawPut.call(this, holon, lens, data, passwordOrOptions, options);
     const password = typeof passwordOrOptions === 'string' ? passwordOrOptions : passwordOrOptions?.password;
     const opts2 = (passwordOrOptions && typeof passwordOrOptions === 'object' ? passwordOrOptions : options) ?? {};
     const eligible =
-      lens === 'settings' &&
+      (lens === 'settings' || lens === GENES_LENS) &&
       holon != null &&
       isRegistrableHolon(holon) &&
       !password &&
       !opts2.preserveFederationMeta &&
       data &&
       typeof data === 'object' &&
-      data._deleted !== true &&
+      (lens === GENES_LENS || data._deleted !== true) &&
       !(data as any)._federation &&
       !(host.isHologram?.(data) ?? false);
     if (!eligible) return result;
     const h = String(holon).trim();
-    try {
-      let existing: Partial<HolonRegistryEntry> | null = null;
-      try {
-        const item = host.store?.get(null, HOLONS_REGISTRY_TABLE, h)?.item;
-        if (item && typeof item === 'object' && (item as any)._deleted !== true) existing = item as Partial<HolonRegistryEntry>;
-      } catch {
-        existing = null;
-      }
-      const entry = registryEntryFromSettings(h, data, existing);
-      if (!entry) return result;
-      const sig = JSON.stringify([entry.name, entry.purpose, entry.type]);
-      if (sameEntry(existing, entry) || written.get(h) === sig) return result;
-      await host.writeGlobal(HOLONS_REGISTRY_TABLE, entry);
-      written.set(h, sig);
-    } catch (err) {
-      log(`[registry] could not register holon ${h}`, err);
-    }
+    await refresh(h, lens === 'settings' ? data : await settingsOf(h));
     return result;
   };
+  if (typeof rawDelete === 'function') {
+    host.delete = async function registryDelete(this: T, holon: any, lens: any, key: any, ...rest: any[]) {
+      const result = await rawDelete.call(this, holon, lens, key, ...rest);
+      if (lens === GENES_LENS && holon != null && isRegistrableHolon(holon) && !rest[0]) {
+        const h = String(holon).trim();
+        await refresh(h, await settingsOf(h));
+      }
+      return result;
+    };
+  }
   Object.defineProperty(host, REGISTRY_ATTACHED, { value: true, enumerable: false });
   return host;
 }
