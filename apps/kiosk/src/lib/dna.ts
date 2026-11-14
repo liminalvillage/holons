@@ -2,18 +2,30 @@
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 //
 // The kiosk's side of a holon's DNA (@holons/core/dna owns the meaning):
-// how the semantic icon keys a gene or allele carries are drawn here, and
-// what each thing core says is wrong with a draft reads like in the screen's
-// language. Nothing here decides what is valid.
+// how the semantic icon keys a gene or allele carries are drawn here, what
+// each thing core says reads like in the screen's language, the front page
+// as this screen holds it (a thin store over core's readHolonFront, kept
+// fresh by subscribeGenes), and where this device keeps a person's walk.
+// Nothing here decides what is valid, what the front says, or where a walk
+// stands — core does.
 
+import { get, writable } from "svelte/store";
 import {
   ALLELE_ICONS,
   GENE_LIMITS,
   STARTER_LANGS,
+  normalizeWalkState,
+  readHolonFront,
+  subscribeGenes,
   type AlleleIcon,
+  type Gene,
   type GeneIssueCode,
   type GeneKind,
+  type HolonFront,
+  type WalkState,
 } from "@holons/core/dna";
+import type { JoinReadiness } from "@holons/core/holons";
+import { getHolosphere } from "./holosphere";
 import type { MessageKey } from "./i18n";
 import type { IconName } from "./icons";
 
@@ -144,3 +156,183 @@ export function meterLevel(bytes: number): MeterLevel {
 }
 
 export { ALLELE_ICONS };
+
+// ── The front page on this screen ──────────────────────────────────────────
+
+export type FrontState =
+  | { status: "loading"; holon: string | null }
+  | { status: "ready"; holon: string; front: HolonFront }
+  | { status: "error"; holon: string };
+
+/**
+ * The front page of the holon on screen, as last read (`watchFront` keeps
+ * it). Writable like the board's other stores, so a screen that already
+ * holds a front can show it.
+ */
+export const frontState = writable<FrontState>({
+  status: "loading",
+  holon: null,
+});
+const state = frontState;
+
+/** What a list of genes looks like, to tell a change from a replay. */
+export const genesSignature = (
+  genes: ReadonlyArray<Pick<Gene, "id" | "updated">>,
+): string =>
+  genes
+    .map((g) => `${g.id}@${g.updated}`)
+    .sort()
+    .join("|");
+
+let generation = 0;
+
+/**
+ * Read `holon`'s front page for `viewer` (the session key, or nobody) into
+ * `frontState`, and read it again whenever its genes change. A failed
+ * re-read keeps what shows; a failed first read says so (`error`). Returns
+ * the stop. The same holon read again keeps showing its last front meanwhile.
+ */
+export function watchFront(holon: string, viewer: string | null): () => void {
+  const mine = ++generation;
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let stopGenes: (() => void) | null = null;
+  const live = () => !stopped && mine === generation;
+  const cur = get(state);
+  if (cur.holon !== holon || cur.status === "error")
+    state.set({ status: "loading", holon });
+
+  const read = async () => {
+    try {
+      const hs = await getHolosphere();
+      const front = await readHolonFront(hs, holon, { viewer });
+      if (live()) state.set({ status: "ready", holon, front });
+    } catch (err) {
+      if (!live()) return;
+      const now = get(state);
+      if (now.status === "ready" && now.holon === holon) return;
+      console.warn("[kiosk] front page read failed", err);
+      state.set({ status: "error", holon });
+    }
+  };
+  readNow = async () => {
+    if (!live()) return;
+    if (get(state).status === "error") state.set({ status: "loading", holon });
+    await read();
+  };
+  void read();
+  void getHolosphere()
+    .then((hs) => {
+      if (!live()) return;
+      stopGenes = subscribeGenes(hs, holon, (genes) => {
+        const now = get(state);
+        if (
+          now.status === "ready" &&
+          now.holon === holon &&
+          genesSignature(now.front.genes) === genesSignature(genes)
+        )
+          return;
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => void read(), 600);
+      });
+    })
+    .catch(() => {});
+  return () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+    stopGenes?.();
+  };
+}
+
+/** Read the front page of the watched holon again now (Retry, or after a refused request). */
+export function reloadFront(): Promise<void> {
+  return readNow?.() ?? Promise.resolve();
+}
+
+let readNow: (() => Promise<void>) | null = null;
+
+// ── The walk on this device ────────────────────────────────────────────────
+
+/** Where this device keeps a person's walk through a holon's DNA. */
+export function walkKey(holon: string, person: string | null): string {
+  return `dna-walk:${holon}:${person || "anon"}`;
+}
+
+type KeyValue = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+function storage(): KeyValue | null {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function readRaw(key: string, store: KeyValue | null): WalkState {
+  try {
+    const raw = store?.getItem(key);
+    return normalizeWalkState(raw ? JSON.parse(raw) : null);
+  } catch {
+    return normalizeWalkState(null);
+  }
+}
+
+/**
+ * The walk this device kept for `person` (a session key; null before a
+ * login) in `holon`. A person who walked before logging in keeps what they
+ * acknowledged: the anonymous walk is folded in under their key and
+ * forgotten. Whatever was kept, core's `walkProgress` says what is stale.
+ */
+export function loadWalk(
+  holon: string,
+  person: string | null,
+  store: KeyValue | null = storage(),
+): WalkState {
+  const own = readRaw(walkKey(holon, person), store);
+  if (!person) return own;
+  const anon = readRaw(walkKey(holon, null), store);
+  if (!Object.keys(anon.acks).length) return own;
+  const merged = { acks: { ...anon.acks, ...own.acks } };
+  saveWalk(holon, person, merged, store);
+  try {
+    store?.removeItem(walkKey(holon, null));
+  } catch {
+    /* kept: harmless */
+  }
+  return merged;
+}
+
+/** Keep the walk on this device (best-effort: a private window forgets it). */
+export function saveWalk(
+  holon: string,
+  person: string | null,
+  walk: WalkState,
+  store: KeyValue | null = storage(),
+): void {
+  try {
+    store?.setItem(walkKey(holon, person), JSON.stringify(walk));
+  } catch {
+    /* not kept: the walk still works on this screen */
+  }
+}
+
+/** The DNA hash a handoff link carries (`?dna=<64 hex>`), or null. */
+export function handoffHash(search: string): string | null {
+  const v = new URLSearchParams(search).get("dna")?.trim().toLowerCase();
+  return v && /^[0-9a-f]{64}$/.test(v) ? v : null;
+}
+
+// ── Readiness, as admins read it ───────────────────────────────────────────
+
+/** The badge an admin sees on a request; none when there is nothing to say. */
+export const READINESS_LABEL: Record<JoinReadiness, MessageKey | null> = {
+  acknowledged: "ready.acknowledged",
+  outdated: "ready.outdated",
+  missing: "ready.missing",
+  "none-required": null,
+  unknown: null,
+};
+
+/** Whether a readiness asks an admin to look twice before linking by hand. */
+export const readinessWarns = (r: JoinReadiness): boolean =>
+  r === "outdated" || r === "missing";

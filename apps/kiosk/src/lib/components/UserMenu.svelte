@@ -19,10 +19,12 @@
   import { clearHubClaim } from "$lib/hubclaim";
   import { showHomePage } from "$lib/home";
   import { goto } from "$app/navigation";
+  import { page } from "$app/stores";
+  import { hrefForPage } from "$lib/tabroute";
   import { sessionKeyPub, dropSessionKey } from "$lib/sessionKey";
   import { forgetRememberedKey } from "$lib/rememberKey";
   import { installMode, promptInstall } from "$lib/install";
-  import { applyPath, leave } from "$lib/hubmembers";
+  import { leave } from "$lib/hubmembers";
   import { isHolonId, isTelegramChatId } from "@holons/core/protocol";
   import { t, tr } from "$lib/i18n";
   import { fedRequests } from "$lib/fedrequests";
@@ -74,7 +76,7 @@
   function joinHub() {
     if (!$holonId) return;
     close();
-    void goto(applyPath($holonId));
+    void goto(hrefForPage($page.url, "apply"));
   }
   async function leaveHub() {
     if (!$holonId || joinBusy) return;

@@ -11,6 +11,7 @@ import {
   parseHolonAdd,
   parseHolonPaste,
   parseHolonRef,
+  RESERVED_LABELS,
   subdomainOf,
   SUBDOMAIN_HOLONS,
 } from "./holons";
@@ -248,5 +249,24 @@ describe("parseHolonAdd", () => {
     expect(parseHolonAdd("")).toBeNull();
     expect(parseHolonAdd("our garden group")).toBeNull(); // spaces → a sentence
     expect(parseHolonAdd("-notanid")).toBeNull(); // leading '-' is ids only
+  });
+});
+
+describe("reserved labels", () => {
+  spec("are the page segments and the API, never a holon", () => {
+    for (const w of ["dna", "apply", "onboarding", "api"])
+      expect(RESERVED_LABELS.has(w), w).toBe(true);
+    for (const label of Object.keys(SUBDOMAIN_HOLONS))
+      expect(RESERVED_LABELS.has(label), label).toBe(false);
+  });
+
+  spec("a page segment alone names this holon's page, not a holon", () => {
+    expect(holonForPath("/dna")).toBeNull();
+    expect(holonForPath("/Apply")).toBeNull();
+    expect(holonForPath("/onboarding")).toBeNull();
+    expect(holonForPath("/liminal/dna")).toBe("-1003864542239");
+    expect(holonForHost("dna.hubs.network")).toBeNull();
+    expect(parseHolonRef("apply")).toBeNull();
+    expect(parseHolonAdd("dna")).toBeNull();
   });
 });

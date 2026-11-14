@@ -18,7 +18,9 @@ import { testKey } from '../protocol/testing.js';
 import {
   CARDS_LENS,
   completeOwnCard,
+  JOIN_PAGES,
   joinGate,
+  joinPageOf,
   onboardingCardId,
   onboardingView,
   refreshOnboarding,
@@ -135,6 +137,18 @@ describe('completeOwnCard', () => {
     expect(await hs.get(home, CARDS_LENS, video.questId)).toMatchObject({ status: 'completed', completed_at: '2026-11-14T10:00:00.000Z' });
     expect(await completeOwnCard(hs, start.view, video)).toBe(false);
     await hs.close();
+  });
+});
+
+describe('join pages', () => {
+  it('are the three page segments, read in any case', () => {
+    expect([...JOIN_PAGES]).toEqual(['dna', 'apply', 'onboarding']);
+    expect(joinPageOf('DNA')).toBe('dna');
+    expect(joinPageOf(' apply ')).toBe('apply');
+    expect(joinPageOf('onboarding')).toBe('onboarding');
+    expect(joinPageOf('tasks')).toBeNull();
+    expect(joinPageOf('')).toBeNull();
+    expect(joinPageOf(undefined)).toBeNull();
   });
 });
 

@@ -27,8 +27,11 @@
     hiddenTabs,
     setTabShown,
     appService,
-    onboardingGate,
+    boardGated,
+    joinPage,
   } from "$lib/stores";
+  import { page } from "$app/stores";
+  import { hrefForPage } from "$lib/tabroute";
   import type { TabId } from "$lib/stores";
   import { moveId } from "$lib/taborder";
   import { noteColor } from "$lib/palette";
@@ -426,18 +429,36 @@
   class="bar"
   class:merged
   class:solo={$appService != null}
-  class:gated={$onboardingGate}
+  class:gated={$boardGated}
   class:suggest-open={suggestOpen || addOpen || addTip}
 >
   <div class="top">
-    <div class="brand">
-      {#if $brandLogo}
-        <img class="logo" src={$brandLogo} alt={$holonName || "Kiosk"} />
-      {:else}
-        {#if $holonId}<Identicon class="mark" seed={$holonId} />{/if}
-        <span class="wordmark">{$holonName || "kiosk"}</span>
-      {/if}
-    </div>
+    <!-- The holon's name opens its front page (its DNA): who it is, before
+         what it does. Not on a Mini App for one service. -->
+    {#if $holonId && $appService == null}
+      <a
+        class="brand brand--link"
+        href={hrefForPage($page.url, "dna")}
+        aria-current={$joinPage === "front" ? "page" : undefined}
+        title={$t("front.open", { holon: $holonName || $holonId })}
+      >
+        {#if $brandLogo}
+          <img class="logo" src={$brandLogo} alt={$holonName || "Kiosk"} />
+        {:else}
+          <Identicon class="mark" seed={$holonId} />
+          <span class="wordmark">{$holonName || "kiosk"}</span>
+        {/if}
+      </a>
+    {:else}
+      <div class="brand">
+        {#if $brandLogo}
+          <img class="logo" src={$brandLogo} alt={$holonName || "Kiosk"} />
+        {:else}
+          {#if $holonId}<Identicon class="mark" seed={$holonId} />{/if}
+          <span class="wordmark">{$holonName || "kiosk"}</span>
+        {/if}
+      </div>
+    {/if}
 
     <div class="search">
       <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
@@ -812,8 +833,8 @@
 {/if}
 
 <style>
-  /* The board is the onboarding (onboardingGate): the holon's name and you,
-     nothing to search, switch to or set up yet. */
+  /* A page stands in for the board (boardGated: front, walk, onboarding):
+     the holon's name and you, nothing to search, switch to or set up. */
   .bar.gated .strip,
   .bar.gated .search,
   .bar.gated .holonset {
@@ -849,6 +870,22 @@
     display: flex;
     align-items: center;
     min-height: 2.6rem; /* matches the account chip so the row is balanced */
+  }
+  .brand--link {
+    min-height: 44px;
+    border-radius: 12px;
+    text-decoration: none;
+    color: inherit;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .brand--link:focus-visible {
+    outline: 2px solid var(--teal-ink);
+    outline-offset: 3px;
+  }
+  .brand--link:hover .wordmark {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.2em;
   }
   .right {
     display: flex;

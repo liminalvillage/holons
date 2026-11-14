@@ -3,7 +3,7 @@
   import { onDestroy } from "svelte";
   import { scale } from "svelte/transition";
   import { backOut } from "svelte/easing";
-  import { activeTab, boardReady, holonId, onboardingGate } from "$lib/stores";
+  import { activeTab, boardReady, holonId, joinPage } from "$lib/stores";
   import {
     boardFullscreen,
     fullscreenMotion,
@@ -23,6 +23,8 @@
   import StockView from "$lib/views/StockView.svelte";
   import OffersView from "$lib/views/OffersView.svelte";
   import OnboardingView from "$lib/views/OnboardingView.svelte";
+  import FrontPage from "$lib/views/FrontPage.svelte";
+  import ApplyWalk from "$lib/views/ApplyWalk.svelte";
 
   // Full screen belongs to the board on screen: another holon (or leaving
   // the board) starts with the chrome back.
@@ -49,9 +51,14 @@
        boardReady): a fresh mount on the full set plays the entrance animation
        cleanly, the same way switching tabs does. Keyed on the tab so each
        switch remounts and re-animates. -->
-  {#if $onboardingGate}
-    <!-- A key the holon has not seated sees its onboarding and nothing
-         else until it is seated (the layout decides, see onboardingGate). -->
+  {#if $joinPage === "front"}
+    <!-- A page instead of the board (core's joinGate, see joinPage): the
+         holon's front page, the walk before asking to join, or the key's
+         onboarding until it is linked. -->
+    <div class="view"><FrontPage /></div>
+  {:else if $joinPage === "apply"}
+    <div class="view"><ApplyWalk /></div>
+  {:else if $joinPage === "onboarding"}
     <div class="view"><OnboardingView /></div>
   {:else if $boardReady}
     <!-- The pills band sits OUTSIDE the tab key: switching tabs swaps its

@@ -10,7 +10,7 @@
 // the person's own holon, when the session key counts there) and then
 // nudges the bot, which re-reads before acting: a nudge is never trusted.
 
-import { get } from "svelte/store";
+import { get, writable } from "svelte/store";
 import { writeAcceptance } from "@holons/core/holosphere";
 import { holonMembers } from "@holons/core/protocol";
 import {
@@ -77,6 +77,12 @@ export type MyOnboarding =
       canTick: boolean;
       profile: OnboardingProfile | null;
     };
+
+/** The session key's onboarding as last read, with the holon it is for. */
+export const myOnboarding = writable<{
+  holon: string;
+  mine: MyOnboarding;
+} | null>(null);
 
 /**
  * The session key's onboarding in `holon`. Deals the current step's cards
