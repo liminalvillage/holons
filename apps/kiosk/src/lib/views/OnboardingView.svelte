@@ -132,6 +132,7 @@
       const fields = cardFields(card);
       await saveMyProfile(
         mine.view,
+        fields,
         Object.fromEntries(
           fields
             .filter((f) => (answers[f.key] ?? "").trim())
@@ -161,7 +162,30 @@
   function typed(key: string, e: Event) {
     answers = {
       ...answers,
-      [key]: (e.currentTarget as HTMLInputElement | HTMLTextAreaElement).value,
+      [key]: (
+        e.currentTarget as
+          | HTMLInputElement
+          | HTMLTextAreaElement
+          | HTMLSelectElement
+      ).value,
+    };
+    touched.add(key);
+  }
+
+  /** A multi field's picks, as the form holds them (values, comma-joined). */
+  const picks = (key: string): string[] =>
+    (answers[key] ?? "")
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+  function togglePick(key: string, value: string) {
+    const now = picks(key);
+    answers = {
+      ...answers,
+      [key]: (now.includes(value)
+        ? now.filter((v) => v !== value)
+        : [...now, value]
+      ).join(", "),
     };
     touched.add(key);
   }
@@ -234,6 +258,29 @@
                       value={answers[f.key] ?? ""}
                       on:input={(e) => typed(f.key, e)}
                     ></textarea>
+                  {:else if f.type === "choice"}
+                    <select
+                      value={answers[f.key] ?? ""}
+                      on:change={(e) => typed(f.key, e)}
+                    >
+                      <option value=""></option>
+                      {#each f.options ?? [] as o (o.value)}
+                        <option value={o.value}>{o.label}</option>
+                      {/each}
+                    </select>
+                  {:else if f.type === "multi"}
+                    <span class="picks" role="group">
+                      {#each f.options ?? [] as o (o.value)}
+                        <label class="pick">
+                          <input
+                            type="checkbox"
+                            checked={picks(f.key).includes(o.value)}
+                            on:change={() => togglePick(f.key, o.value)}
+                          />
+                          <span>{o.label}</span>
+                        </label>
+                      {/each}
+                    </span>
                   {:else}
                     <input
                       type={INPUT[f.type]}
@@ -338,13 +385,38 @@
     color: var(--ink-soft);
   }
   .profile input,
-  .profile textarea {
+  .profile textarea,
+  .profile select {
     font: inherit;
     padding: 0.55rem 0.7rem;
     border-radius: 10px;
     border: 1px solid var(--ghost);
     background: var(--paper);
     color: var(--ink);
+  }
+  .profile select {
+    min-height: 44px;
+  }
+  .picks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .profile label.pick {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 44px;
+    padding: 0 0.75rem;
+    border-radius: 999px;
+    border: 1px solid var(--ghost);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .profile label.pick input {
+    padding: 0;
+    width: 1.1rem;
+    height: 1.1rem;
   }
   .cta {
     align-self: flex-start;

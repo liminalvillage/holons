@@ -33,7 +33,17 @@ import {
   unlinkTelegram,
 } from '@holons/core/linking';
 import { readHolonClaim, telegramDeepLinks } from '@holons/core/claims';
-import { confirmCard, listOnboarding, onboardingView, readOnboarding, refreshOnboarding, saveOnboarding } from '@holons/core/onboarding';
+import {
+  PROFILE_FIELDS,
+  PROFILE_FIELD_TYPES,
+  confirmCard,
+  listOnboarding,
+  onboardingView,
+  readOnboarding,
+  refreshOnboarding,
+  saveOnboarding,
+  type ProfileFieldType,
+} from '@holons/core/onboarding';
 import { addHolonMember, holonMembers, myHolonRole, removeHolonMember, syncFoundingAuthority } from '@holons/core/protocol';
 import type { ToolDeps } from './index.js';
 import { namesFor } from './names.js';
@@ -225,10 +235,18 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
                   fields: z
                     .array(
                       z.object({
-                        key: z.string().describe('Profile record key. Known: first_name, last_name, ikigai, summary, values, category, linkedin, arrival, departure; any other is a question of the holon\'s own.'),
+                        key: z.string().describe(`Profile record key. Known: ${PROFILE_FIELDS.map((f) => f.key).join(', ')}; any other is a question of the holon's own.`),
                         label: z.string().optional().describe('The question; a known key has a default.'),
-                        type: z.enum(['text', 'longtext', 'date', 'url', 'list']).optional(),
+                        type: z.enum(PROFILE_FIELD_TYPES as [ProfileFieldType, ...ProfileFieldType[]]).optional().describe('`choice`: one of `options`; `multi`: any of them.'),
                         required: z.boolean().optional().describe('Default true.'),
+                        options: z
+                          .array(z.object({ value: z.string().optional(), label: z.string(), hint: z.string().optional() }))
+                          .optional()
+                          .describe('A `choice` / `multi` field: what may be picked.'),
+                        sealed: z
+                          .boolean()
+                          .optional()
+                          .describe("Keep the answer sealed for the person and the holon's admins. Default: true for the holon's own questions, false for the known keys."),
                       }),
                     )
                     .optional()

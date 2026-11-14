@@ -22,9 +22,9 @@ import {
   onboardingView,
   previewSteps,
   readOnboarding,
-  readProfile,
+  readOnboardingAnswers,
   saveOnboarding,
-  saveProfile,
+  saveOnboardingAnswers,
   type OnboardingCardView,
   type OnboardingConfig,
   type OnboardingProfile,
@@ -102,7 +102,8 @@ export async function loadMyOnboarding(holon: string): Promise<MyOnboarding> {
     config,
     view,
     canTick,
-    profile: await readProfile(hs, view.home),
+    // The profile, with the sealed answers to this holon's own questions.
+    profile: await readOnboardingAnswers(hs, view.home, holon),
   };
 }
 
@@ -131,13 +132,18 @@ export async function tickCard(
   await nudge(view.holon);
 }
 
-/** Fill in the person's profile (their own holon), then nudge. */
+/**
+ * Keep what the person answered on a profile card (their own holon): the
+ * shared fields on their profile, the holon's own questions sealed for the
+ * holon's admins. Then nudge.
+ */
 export async function saveMyProfile(
   view: OnboardingView,
-  fields: Partial<OnboardingProfile>,
+  fields: readonly ProfileField[],
+  values: Record<string, string | string[]>,
 ): Promise<void> {
   const hs = await getHolosphere();
-  await saveProfile(hs, view.home, fields);
+  await saveOnboardingAnswers(hs, view.home, view.holon, fields, values);
   await nudge(view.holon);
 }
 

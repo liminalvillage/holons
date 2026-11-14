@@ -30,6 +30,7 @@
     updateStep,
     type CardConfirm,
     type OnboardingCard,
+    type ProfileField,
     type ProfileFieldType,
   } from "@holons/core/onboarding";
   import { createAutosave } from "$lib/autosave";
@@ -194,6 +195,21 @@
       i.kind === "unnamed-field" ? [`${i.card}/${i.field}`] : [],
     ),
   );
+  $: optionless = new Set(
+    issues.flatMap((i) =>
+      i.kind === "no-options" ? [`${i.card}/${i.field}`] : [],
+    ),
+  );
+  /** A choice's options as the editor shows them: one label per line. */
+  const optionLines = (f: ProfileField) =>
+    (f.options ?? []).map((o) => o.label).join("\n");
+  /** Typed lines → options (the value is made from the label on save). */
+  const linesToOptions = (text: string) =>
+    text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((label) => ({ value: label, label }));
   const fieldsOf = (card: OnboardingCard) =>
     card.fields ?? [...DEFAULT_PROFILE_FIELDS];
   /** The known fields a profile card does not ask yet. */
@@ -510,8 +526,30 @@
                                   )}><Icon name="close" /></button
                               >
                             </div>
+                            {#if f.type === "choice" || f.type === "multi"}
+                              <textarea
+                                class="poptions"
+                                rows="3"
+                                aria-label={$t("onb.options")}
+                                placeholder={$t("onb.options")}
+                                value={optionLines(f)}
+                                on:change={(e) =>
+                                  edit(
+                                    updateProfileField(
+                                      draft,
+                                      step.id,
+                                      card.id,
+                                      f.key,
+                                      { options: linesToOptions(value(e)) },
+                                    ),
+                                  )}
+                              ></textarea>
+                            {/if}
                             {#if unnamed.has(`${card.id}/${f.key}`)}
                               <p class="issue">{$t("onb.unnamedField")}</p>
+                            {/if}
+                            {#if optionless.has(`${card.id}/${f.key}`)}
+                              <p class="issue">{$t("onb.noOptions")}</p>
                             {/if}
                           {/each}
                           <select
@@ -830,6 +868,18 @@
     margin: 0 0 0.3rem;
     font-size: 0.78rem;
     color: var(--caution);
+  }
+  .poptions {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0 0 0.4rem;
+    padding: 0.5rem 0.65rem;
+    font: inherit;
+    font-size: 0.9rem;
+    border-radius: 10px;
+    border: 1px solid var(--ghost);
+    background: var(--paper);
+    color: var(--ink);
   }
 
   /* Who ticks it: three pills, the chosen one filled. */
