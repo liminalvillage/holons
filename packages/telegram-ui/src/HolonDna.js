@@ -159,16 +159,15 @@ function alleleBlocks(a, longform) {
   if (a.link) tail.push(anchor(a.link));
   const d = a.detail;
   const detail = d?.body ? splitText(d.body).map(esc) : [];
-  const steps = (d?.steps ?? []).map((s, i) => `${i + 1}. ${esc(s)}`);
+  // One block per step, each cut like the body: a step list can run to
+  // 24 × 600 characters, which no single message holds.
+  const steps = (d?.steps ?? []).flatMap((s, i) => {
+    const parts = splitText(s, CHUNK - 8);
+    return parts.map((part, j) => `${j === 0 ? `${i + 1}. ` : ''}${esc(part)}`);
+  });
   for (const l of d?.links ?? []) tail.push(anchor(l));
   const first = [head, body[0]].filter(Boolean).join('\n');
-  return [
-    first,
-    ...body.slice(1),
-    ...detail,
-    steps.join('\n'),
-    tail.join('\n'),
-  ];
+  return [first, ...body.slice(1), ...detail, ...steps, tail.join('\n')];
 }
 
 /**

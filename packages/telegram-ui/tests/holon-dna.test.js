@@ -237,6 +237,33 @@ describe('text layout', () => {
     expect((all.match(/word/g) ?? []).length).toBe(1600);
     expect((all.match(/x &amp; y/g) ?? []).length).toBe(1300);
   });
+
+  it('spreads a maximal steps list over messages, none over 4096', () => {
+    const gene = {
+      kind: 'practices',
+      title: 'Practices',
+      alleles: [
+        {
+          id: 'a',
+          title: 'Cooking',
+          detail: {
+            steps: Array.from({ length: 24 }, (_, i) =>
+              `s${i} ${'a & b '.repeat(99)}`.slice(0, 600)
+            ),
+          },
+        },
+        { id: 'b', title: 'Odd', detail: { steps: ['<'.repeat(600)] } },
+      ],
+      expressedIn: [],
+    };
+    const labels = { kind: (k, d) => d, termsBadge: '', expressedIn: 'In' };
+    const chunks = renderGene(gene, labels);
+    expect(chunks.length).toBeGreaterThan(3);
+    for (const c of chunks) expect(c.length).toBeLessThanOrEqual(4096);
+    const all = chunks.join('\n');
+    expect(all).toContain('1. s0');
+    expect(all).toContain('24. s23');
+  });
 });
 
 describe('the deep link', () => {
