@@ -7,7 +7,6 @@ import { announcementsFeature } from './announcements.js';
 import { calendarFeature } from './calendar.js';
 import { checklistsFeature } from './checklists.js';
 import { dashboardFeature } from './dashboard.js';
-import { dnaFeature } from './dna.js';
 import { expensesFeature } from './expenses.js';
 import { federationFeature } from './federation.js';
 import { holonFeature } from './holon.js';
@@ -34,7 +33,6 @@ export const features: Feature[] = [
   scoringFeature,
   federationFeature,
   settingsFeature,
-  dnaFeature,
   rolesFeature,
   announcementsFeature,
   tagsFeature,
