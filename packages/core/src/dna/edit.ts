@@ -63,6 +63,12 @@ export interface DraftGene {
   links?: Array<Partial<GeneLink>>;
   lang: string;
   alleles: DraftAllele[];
+  /**
+   * An untouched starter row (`withStarter`): shown, and its id reserved, but
+   * never written until the admin changes it. Any edit of the gene clears it;
+   * a stored gene of the same id replaces it (`mergeRemote`).
+   */
+  starter?: true;
 }
 
 export type GeneFields = Partial<Pick<DraftGene, 'title' | 'blurb' | 'color' | 'ack' | 'kind' | 'lang' | 'links'>>;
@@ -96,7 +102,13 @@ function moved<T>(list: T[], index: number, by: number): T[] {
   return out;
 }
 
-const mapGene = (drafts: DraftGene[], key: string, f: (g: DraftGene) => DraftGene): DraftGene[] => drafts.map((g) => (g.key === key ? f(g) : g));
+/** Apply an edit to one gene: a starter row that is edited is the admin's own from then on. */
+const mapGene = (drafts: DraftGene[], key: string, f: (g: DraftGene) => DraftGene): DraftGene[] =>
+  drafts.map((g) => {
+    if (g.key !== key) return g;
+    const { starter: _starter, ...next } = f(g);
+    return next;
+  });
 
 /** The kinds a new gene may take: every kind, except a single kind (purpose, terms) the draft already has. */
 export function availableKinds(drafts: readonly DraftGene[]): GeneKind[] {
@@ -122,13 +134,14 @@ export function addGene(drafts: DraftGene[], kind: GeneKind, fields: { title?: s
  * Add the starter genes (`STARTER_GENES(lang)`) the draft does not have yet:
  * one whose id is already used, or whose single kind is already there, is
  * skipped. Starter genes are given their ids, so they are saved under the
- * names every holon's DNA shares.
+ * names every holon's DNA shares, and are marked `starter`: untouched, they
+ * are not written, but their ids stay reserved against the admin's own genes.
  */
 export function withStarter(drafts: DraftGene[], lang = 'en'): DraftGene[] {
   const have = draftGenes(
     STARTER_GENES(lang).filter((s) => !drafts.some((d) => d.id === s.id || (SINGLE_KINDS.includes(s.kind) && d.kind === s.kind))),
   );
-  return [...drafts, ...have];
+  return [...drafts, ...have.map((g): DraftGene => ({ ...g, starter: true }))];
 }
 
 /** Change a gene. A new kind brings that kind's default acknowledgement, unless the change names one. */
@@ -142,8 +155,9 @@ export function updateGene(drafts: DraftGene[], key: string, fields: GeneFields)
 
 /** Move a gene up (-1) or down (+1); at either end nothing moves. */
 export function moveGene(drafts: DraftGene[], key: string, by: -1 | 1): DraftGene[] {
-  const out = moved(drafts, drafts.findIndex((g) => g.key === key), by);
-  return out;
+  const from = drafts.findIndex((g) => g.key === key);
+  const out = moved(drafts, from, by);
+  return out === drafts ? out : mapGene(out, key, (g) => g);
 }
 
 export function removeDraftGene(drafts: DraftGene[], key: string): DraftGene[] {
@@ -177,6 +191,8 @@ export interface SettledGene {
   gene: Gene;
   /** `alleleKeys[i]` is the draft row of `gene.alleles[i]` (blank rows are not stored, so they are not here). */
   alleleKeys: string[];
+  /** The draft row is an untouched starter: reserved and shown, not written. */
+  starter?: true;
 }
 
 function unique(id: string, taken: Set<string>): string {
@@ -199,11 +215,11 @@ export function settleDrafts(drafts: readonly DraftGene[]): SettledGene[] {
   drafts.forEach((d, order) => {
     const id = d.id || unique(SINGLE_KINDS.includes(d.kind) ? d.kind : geneSlug(d.title) || d.kind, taken);
     taken.add(id);
-    const { key: _key, alleles, ...rest } = d;
+    const { key: _key, alleles, starter, ...rest } = d;
     // A blank allele is not stored; ask core which rows it keeps, one by one.
     const kept = alleles.filter((a) => (normalizeGene({ id: 'x', title: 'x', alleles: [a] })?.alleles.length ?? 0) > 0);
     const gene = normalizeGene({ ...rest, id, order, updated: stamp, alleles: kept.map(({ key: _k, ...a }) => a) });
-    if (gene) out.push({ key: d.key, gene, alleleKeys: kept.map((a) => a.key) });
+    if (gene) out.push({ key: d.key, gene, alleleKeys: kept.map((a) => a.key), ...(starter ? { starter } : {}) });
   });
   return out;
 }
@@ -252,11 +268,12 @@ export function checkDrafts(drafts: readonly DraftGene[]): DraftCheck {
 
 // ── Saving ─────────────────────────────────────────────────────────────────
 
-/** What makes a gene different to a reader or an editor: everything but where it stands and when it was stamped. */
-const content = (g: Gene): string => JSON.stringify({ ...g, order: 0, updated: '' });
+/** What makes a gene different to a reader or an editor: everything but where it stands, when it was stamped and the lens's own `_` bookkeeping (`_clock`). */
+const content = (g: Gene): string =>
+  JSON.stringify({ ...Object.fromEntries(Object.entries(g).filter(([k]) => !k.startsWith('_'))), order: 0, updated: '' });
 
 export interface WritePlan {
-  /** Genes to put: new or changed, with no issue standing in the way. */
+  /** Genes to put: new or changed, with no issue standing in the way. Untouched starter rows are never put. */
   put: SettledGene[];
   /** Genes with changes held back by an issue. */
   held: DraftIssue[];
@@ -268,14 +285,14 @@ export interface WritePlan {
  * What saving the draft would write, against `baseline` (the genes as this
  * editor last saw them stored). A gene that did not change is not written;
  * a gene with an issue is held back (the others still go); a pure move is a
- * `reorder`, never a put.
+ * `reorder`, never a put; an untouched starter row is not the holon's yet.
  */
 export function planWrites(baseline: readonly Gene[], check: DraftCheck): WritePlan {
   const base = new Map(baseline.map((g) => [g.id, g]));
   const blocked = new Set(check.issues.map((i) => i.geneKey));
   const put: SettledGene[] = [];
   for (const s of check.settled) {
-    if (blocked.has(s.key)) continue;
+    if (blocked.has(s.key) || s.starter) continue;
     const was = base.get(s.gene.id);
     if (!was || content(was) !== content(s.gene)) put.push(s);
   }
@@ -360,9 +377,11 @@ export async function saveDrafts(
 /**
  * Fold what the lens now holds (`remote`) into a draft being edited. A gene
  * this draft has not changed since `baseline` follows the lens (another
- * admin's edit, or the first read arriving after the editor opened); a
+ * admin's edit, or the first read arriving after the editor opened), and so
+ * does an untouched starter row (a stored gene beats a placeholder); a
  * changed one is kept as it is; a gene new to the lens is added; a row never
- * saved stays. `removed` ids are not brought back.
+ * saved stays, and so does a starter row the lens does not know. `removed`
+ * ids are not brought back.
  */
 export function mergeRemote(
   drafts: readonly DraftGene[],
@@ -375,7 +394,7 @@ export function mergeRemote(
   const changed = (d: DraftGene): boolean => {
     const was = base.get(d.id);
     const now = settled.get(d.key);
-    return !d.id ? true : !was ? true : !now || content(was) !== content(now);
+    return d.starter ? false : !d.id ? true : !was ? true : !now || content(was) !== content(now);
   };
   const mine = new Map(drafts.map((d) => [d.id, d]));
   const out: DraftGene[] = [];
@@ -387,6 +406,6 @@ export function mergeRemote(
   }
   const seen = new Set(out.map((d) => d.id));
   // Rows the lens does not know: never saved, or changed here though gone from there.
-  for (const d of drafts) if (!d.id || (!seen.has(d.id) && changed(d))) out.push(d);
+  for (const d of drafts) if (!d.id || (!seen.has(d.id) && (d.starter || changed(d)))) out.push(d);
   return out;
 }

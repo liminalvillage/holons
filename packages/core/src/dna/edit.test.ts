@@ -312,4 +312,71 @@ describe('following the lens', () => {
     const merged = mergeRemote(fresh, [], [stored()]);
     expect(merged.map((g) => g.title)).toEqual(['Values', 'Circles']);
   });
+
+});
+
+describe('untouched starter rows', () => {
+  const starterOf = (id: string, rows: DraftGene[]) => rows.find((g) => g.id === id)!;
+
+  it('are marked, shown in the settled draft with their position, and never written', () => {
+    const rows = withStarter([], 'en');
+    expect(rows.every((g) => g.starter)).toBe(true);
+    const check = checkDrafts(rows);
+    expect(check.settled.map((s) => s.gene.order)).toEqual(rows.map((_, i) => i));
+    expect(planWrites([], check).put).toEqual([]);
+    expect(planWrites([], check).reorder).toBeNull();
+  });
+
+  it('any edit of a row makes it the admin\'s own, and only that row', () => {
+    const rows = withStarter([], 'en');
+    const key = starterOf('values', rows).key;
+    const edited = updateGene(rows, key, { blurb: 'Ours.' });
+    expect(starterOf('values', edited).starter).toBeUndefined();
+    expect(starterOf('purpose', edited).starter).toBe(true);
+    const plan = planWrites([], checkDrafts(edited));
+    expect(plan.put.map((s) => s.gene.id)).toEqual(['values']);
+    const withItem = addAllele(rows, key).drafts;
+    expect(starterOf('values', withItem).starter).toBeUndefined();
+    const down = moveGene(rows, rows[0].key, 1);
+    expect(down[1].starter).toBeUndefined();
+    expect(down[0].starter).toBe(true);
+  });
+
+  it('keep their ids reserved: an own gene titled like a starter id is not overwritten', async () => {
+    const hs = instance();
+    // Starter rows are there; the admin adds their own gene titled "Values" ...
+    let drafts = withStarter([], 'en');
+    const own = addGene(drafts, 'custom', { title: 'Values' });
+    drafts = updateGene(own.drafts, own.gene.key, { blurb: 'MY OWN values text' });
+    const first = await saveDrafts(hs, HOLON, { drafts, baseline: [] });
+    expect(first.saved.map((s) => s.gene.id)).toEqual(['values-2']);
+    drafts = adoptIds(drafts, first.saved);
+    // ... then edits the untouched starter Values row.
+    const key = starterOf('values', drafts).key;
+    drafts = updateGene(drafts, key, { blurb: 'Edited starter.' });
+    const check = checkDrafts(drafts);
+    expect(check.issues).toEqual([]);
+    const second = await saveDrafts(hs, HOLON, { drafts, baseline: first.baseline });
+    expect(second.saved.map((s) => s.gene.id)).toEqual(['values']);
+    const all = await readGenes(hs, HOLON);
+    const mine = all.find((g) => g.id === 'values-2')!;
+    expect(mine.kind).toBe('custom');
+    expect(mine.blurb).toBe('MY OWN values text');
+    expect(all.find((g) => g.id === 'values')!.blurb).toBe('Edited starter.');
+  });
+
+  it('a stored gene arriving late replaces an untouched starter row, but not one being edited', () => {
+    const rows = withStarter([], 'en');
+    const purpose = rows.find((g) => g.id === 'purpose')!;
+    const storedPurpose = stored({ id: 'purpose', kind: 'purpose', title: 'Purpose', blurb: 'Published about text.', alleles: [] });
+    const merged = mergeRemote(rows, [], [storedPurpose]);
+    const got = merged.find((g) => g.id === 'purpose')!;
+    expect(got.blurb).toBe('Published about text.');
+    expect(got.starter).toBeUndefined();
+    expect(got.key).toBe(purpose.key);
+    // The other starter rows the lens does not know stay, still untouched.
+    expect(merged.filter((g) => g.starter)).toHaveLength(rows.length - 1);
+    const edited = updateGene(rows, purpose.key, { blurb: 'Typing.' });
+    expect(mergeRemote(edited, [], [storedPurpose]).find((g) => g.id === 'purpose')!.blurb).toBe('Typing.');
+  });
 });

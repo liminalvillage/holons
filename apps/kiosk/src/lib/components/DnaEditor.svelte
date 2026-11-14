@@ -73,8 +73,6 @@
   let baseline: Gene[] = [];
   /** Genes the admin removed, waiting for the write. */
   let removed: string[] = [];
-  /** Starter rows nobody has touched yet: not written. */
-  let fresh = new Set<string>();
   let loaded = false;
   let tab: "genes" | "preview" = "genes";
   let openGene: string | null = null;
@@ -107,12 +105,11 @@
   const autosave = createAutosave<Job>(
     () => {
       if (!admin) return null;
-      // Starter text nobody has touched is not yet the holon's.
-      const saveable = drafts.filter((d) => !fresh.has(d.key));
-      const plan = planWrites(baseline, checkDrafts(saveable));
+      // Untouched starter rows are reserved by core, never written by it.
+      const plan = planWrites(baseline, checkDrafts(drafts));
       if (!plan.put.length && !plan.reorder && !removed.length) return null;
       return {
-        drafts: structuredClone(saveable),
+        drafts: structuredClone(drafts),
         baseline,
         removed: [...removed],
       };
@@ -143,11 +140,8 @@
     },
   );
 
-  function edit(next: DraftGene[], touched?: string) {
+  function edit(next: DraftGene[]) {
     drafts = next;
-    if (touched && fresh.has(touched)) {
-      fresh = new Set([...fresh].filter((k) => k !== touched));
-    }
     notice = "";
     autosave.touch();
   }
@@ -181,7 +175,9 @@
           : i.alleleKey === alleleKey),
     );
   $: held = new Set(
-    check.issues.filter((i) => !fresh.has(i.geneKey)).map((i) => i.geneKey),
+    check.issues
+      .filter((i) => !drafts.find((d) => d.key === i.geneKey)?.starter)
+      .map((i) => i.geneKey),
   ).size;
 
   function say(
@@ -227,10 +223,6 @@
   function useStarter() {
     const before = new Set(drafts.map((d) => d.key));
     const next = withStarter(drafts, lang());
-    fresh = new Set([
-      ...fresh,
-      ...next.filter((d) => !before.has(d.key)).map((d) => d.key),
-    ]);
     drafts = next;
     openGene = next.find((d) => !before.has(d.key))?.key ?? openGene;
   }
@@ -247,7 +239,7 @@
   async function newAllele(g: DraftGene) {
     const made = addAllele(drafts, g.key);
     if (!made.allele) return;
-    edit(made.drafts, g.key);
+    edit(made.drafts);
     openAllele = made.allele.key;
     await focus(`allele-title-${made.allele.key}`);
   }
@@ -263,7 +255,6 @@
       what === "gene"
         ? moveGene(drafts, g.key, by)
         : moveAllele(drafts, g.key, a!.key, by),
-      g.key,
     );
     const id = what === "gene" ? g.key : a!.key;
     const here = `${what}-${by < 0 ? "up" : "down"}-${id}`;
@@ -291,7 +282,6 @@
   function dropGene(g: DraftGene) {
     if (g.id && baseline.some((b) => b.id === g.id))
       removed = [...removed, g.id];
-    fresh = new Set([...fresh].filter((k) => k !== g.key));
     edit(removeDraftGene(drafts, g.key));
     if (openGene === g.key) openGene = null;
   }
@@ -480,7 +470,7 @@
               aria-hidden="true"
               style:--fill="{Math.min(100, (bytes / GENE_LIMITS.bytes) * 100)}%"
             ></div>
-            {#if fresh.has(g.key)}
+            {#if g.starter}
               <p class="fresh">{$t("dnaEdit.fresh")}</p>
             {/if}
             {#each issuesOf(check, g.key) as i}
@@ -496,10 +486,7 @@
                     data-dna="gene-title-{g.key}"
                     value={g.title}
                     on:input={(e) =>
-                      edit(
-                        updateGene(drafts, g.key, { title: value(e) }),
-                        g.key,
-                      )}
+                      edit(updateGene(drafts, g.key, { title: value(e) }))}
                     on:keydown={oneLine}
                   />
                 </label>
@@ -511,10 +498,7 @@
                     value={g.blurb}
                     use:grow={g.blurb}
                     on:input={(e) =>
-                      edit(
-                        updateGene(drafts, g.key, { blurb: value(e) }),
-                        g.key,
-                      )}
+                      edit(updateGene(drafts, g.key, { blurb: value(e) }))}
                   ></textarea>
                 </label>
 
@@ -527,7 +511,6 @@
                         updateGene(drafts, g.key, {
                           kind: value(e) as GeneKind,
                         }),
-                        g.key,
                       )}
                   >
                     {#each kinds.includes(g.kind) ? kinds : [g.kind, ...kinds] as k (k)}
@@ -552,7 +535,7 @@
                         class:on={g.ack === a.id}
                         aria-checked={g.ack === a.id}
                         on:click={() =>
-                          edit(updateGene(drafts, g.key, { ack: a.id }), g.key)}
+                          edit(updateGene(drafts, g.key, { ack: a.id }))}
                         >{$t(a.label)}</button
                       >
                     {/each}
@@ -570,20 +553,15 @@
                         aria-labelledby="color-{g.key}"
                         value={g.color ?? "#0e6b66"}
                         on:input={(e) =>
-                          edit(
-                            updateGene(drafts, g.key, { color: value(e) }),
-                            g.key,
-                          )}
+                          edit(updateGene(drafts, g.key, { color: value(e) }))}
                       />
                       {#if g.color}
                         <button
                           type="button"
                           class="ghostbtn"
                           on:click={() =>
-                            edit(
-                              updateGene(drafts, g.key, { color: "" }),
-                              g.key,
-                            )}>{$t("dnaEdit.noColor")}</button
+                            edit(updateGene(drafts, g.key, { color: "" }))}
+                          >{$t("dnaEdit.noColor")}</button
                         >
                       {/if}
                     </div>
@@ -593,10 +571,7 @@
                     <select
                       value={g.lang}
                       on:change={(e) =>
-                        edit(
-                          updateGene(drafts, g.key, { lang: value(e) }),
-                          g.key,
-                        )}
+                        edit(updateGene(drafts, g.key, { lang: value(e) }))}
                     >
                       {#each LANGS.includes(g.lang) ? LANGS : [g.lang, ...LANGS] as l (l)}
                         <option value={l}>{l}</option>
@@ -663,7 +638,6 @@
                                 n === li ? { ...x, label: value(e) } : x,
                               ),
                             }),
-                            g.key,
                           )}
                       />
                       <input
@@ -679,7 +653,6 @@
                                 n === li ? { ...x, href: value(e) } : x,
                               ),
                             }),
-                            g.key,
                           )}
                       />
                       <button
@@ -692,7 +665,6 @@
                             updateGene(drafts, g.key, {
                               links: (g.links ?? []).filter((_, n) => n !== li),
                             }),
-                            g.key,
                           )}><Icon name="close" /></button
                       >
                     </div>
@@ -705,7 +677,6 @@
                         updateGene(drafts, g.key, {
                           links: [...(g.links ?? []), { label: "", href: "" }],
                         }),
-                        g.key,
                       )}><Icon name="plus" /> {$t("dnaEdit.addLink")}</button
                   >
                 </fieldset>
@@ -771,7 +742,7 @@
                             title={$t("dnaEdit.removeAllele")}
                             on:click={() =>
                               remove(`allele:${a.key}`, () =>
-                                edit(removeAllele(drafts, g.key, a.key), g.key),
+                                edit(removeAllele(drafts, g.key, a.key)),
                               )}
                             ><Icon
                               name="trash"
@@ -808,7 +779,6 @@
                                     updateAllele(drafts, g.key, a.key, {
                                       ref: "",
                                     }),
-                                    g.key,
                                   );
                               }}>{$t("dnaEdit.own")}</button
                             >
@@ -837,7 +807,6 @@
                                     updateAllele(drafts, g.key, a.key, {
                                       ref: value(e),
                                     }),
-                                    g.key,
                                   )}
                               >
                                 <option value="">{$t("dnaEdit.refNone")}</option
@@ -865,7 +834,6 @@
                                     updateAllele(drafts, g.key, a.key, {
                                       title: value(e),
                                     }),
-                                    g.key,
                                   )}
                                 on:keydown={oneLine}
                               />
@@ -880,7 +848,6 @@
                                     updateAllele(drafts, g.key, a.key, {
                                       kicker: value(e),
                                     }),
-                                    g.key,
                                   )}
                                 on:keydown={oneLine}
                               />
@@ -896,7 +863,6 @@
                                     updateAllele(drafts, g.key, a.key, {
                                       body: value(e),
                                     }),
-                                    g.key,
                                   )}
                               ></textarea>
                             </label>
@@ -943,7 +909,6 @@
                                       updateAllele(drafts, g.key, a.key, {
                                         icon: null,
                                       }),
-                                      g.key,
                                     );
                                     openIcons = null;
                                   }}><Icon name="close" /></button
@@ -962,7 +927,6 @@
                                         updateAllele(drafts, g.key, a.key, {
                                           icon: key,
                                         }),
-                                        g.key,
                                       );
                                       openIcons = null;
                                     }}
@@ -987,7 +951,6 @@
                                       updateAllele(drafts, g.key, a.key, {
                                         link: { ...a.link, label: value(e) },
                                       }),
-                                      g.key,
                                     )}
                                 />
                                 <input
@@ -1001,7 +964,6 @@
                                       updateAllele(drafts, g.key, a.key, {
                                         link: { ...a.link, href: value(e) },
                                       }),
-                                      g.key,
                                     )}
                                 />
                               </div>
@@ -1019,7 +981,6 @@
                                       updateAllele(drafts, g.key, a.key, {
                                         detail: { ...a.detail, body: value(e) },
                                       }),
-                                      g.key,
                                     )}
                                 ></textarea>
                               </label>
@@ -1037,7 +998,6 @@
                                           steps: value(e).split("\n"),
                                         },
                                       }),
-                                      g.key,
                                     )}
                                 ></textarea>
                               </label>
@@ -1120,7 +1080,7 @@
               )}
             </p>
           {/if}
-          {#if fresh.has(s.key)}<p class="fresh">{$t("dnaEdit.fresh")}</p>{/if}
+          {#if s.starter}<p class="fresh">{$t("dnaEdit.fresh")}</p>{/if}
           {#if g.blurb}<p class="pblurb">{g.blurb}</p>{/if}
           {#if g.links?.length}
             <p class="plinks">
