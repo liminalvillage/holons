@@ -1,6 +1,7 @@
 import { writable, derived } from "svelte/store";
 import { readHolonSettings } from "@holons/core/settings";
 import { browser } from "$app/environment";
+import { readPurpose } from "$lib/dna/purpose";
 
 // Settings interface matching the Settings component
 export interface Settings {
@@ -14,7 +15,10 @@ export interface Settings {
   level: number;
   admin: string;
   roles: string[];
-  values: string[];
+  /**
+   * The holon's purpose — the DNA's purpose gene (`purposeAbout`), read when
+   * the settings load. Read-only here: never written back to the settings.
+   */
   purpose: string;
   domains: string[];
   currencies: string[];
@@ -34,7 +38,6 @@ export const defaultSettings: Settings = {
   level: 1,
   admin: "",
   roles: [],
-  values: [],
   purpose: "",
   domains: [],
   currencies: [],
@@ -102,16 +105,24 @@ export const settingsHelpers = {
       // Not `getAll(...)[0]`: the lens can hold several records (imported
       // calendars, legacy id-less writes) and the lens has no defined order.
       const data = await readHolonSettings(holosphere, holonId);
+      // The purpose is the DNA's, not a settings field (an old stored
+      // `settings.purpose` is ignored, whatever it says).
+      const purpose = await readPurpose(holosphere, holonId);
 
       if (data) {
-        const loadedSettings = { ...defaultSettings, ...data, id: holonId };
+        const loadedSettings = {
+          ...defaultSettings,
+          ...data,
+          id: holonId,
+          purpose,
+        };
         settingsStore.set(loadedSettings);
         console.log("Settings loaded from holosphere:", loadedSettings);
 
         // Trigger language change notification
         languageChanged.set(loadedSettings.language);
       } else {
-        const newSettings = { ...defaultSettings, id: holonId };
+        const newSettings = { ...defaultSettings, id: holonId, purpose };
         settingsStore.set(newSettings);
         console.log("Using default settings for holon:", holonId);
       }
@@ -131,7 +142,9 @@ export const settingsHelpers = {
         })();
       });
 
-      const settingsToSave = { ...settings, id: holonId };
+      // `purpose` is derived from the DNA: it never goes back into the settings.
+      const { purpose: _derived, ...stored } = settings;
+      const settingsToSave = { ...stored, id: holonId };
       await holosphere.put(holonId, "settings", settingsToSave);
       console.log("Settings saved to holosphere:", settingsToSave);
     } catch (err) {

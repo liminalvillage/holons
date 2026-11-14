@@ -17,6 +17,7 @@ import MyHolonsIcon from "./icons/MyHolonsIcon.svelte";
 import FlowIcon from "./icons/FlowIcon.svelte";
 import LibraryIcon from "./icons/LibraryIcon.svelte";
 import StockIcon from "./icons/StockIcon.svelte";
+import DnaIcon from "./icons/DnaIcon.svelte";
 
 export const data = [
   {
@@ -91,6 +92,12 @@ export const data = [
     title: "Value Flows",
     icon: FlowIcon,
     link: "/flows",
+  },
+  {
+    // The holon's front page: its purpose, values and agreements, and how to join.
+    title: "DNA",
+    icon: DnaIcon,
+    link: "/dna",
   },
   {
     title: "Settings",

@@ -21,6 +21,7 @@
     } from "../lib/scoring/ContributionScoring";
     import {
         getCachedEquation,
+        getCachedPurpose,
         getCachedSettings,
         getCachedUsersObject,
         preloadHolon,
@@ -1061,13 +1062,14 @@
         ];
     }
 
-    /** Holon name/purpose from the settings cache, to ground the decomposition. */
+    /** Holon name (settings cache) and purpose (the DNA's purpose gene), to ground the decomposition. */
     function breakdownHolonContext(): string | undefined {
         const settings = getCachedSettings(holonId);
-        if (!settings) return undefined;
+        const purpose = getCachedPurpose(holonId);
+        if (!settings && !purpose) return undefined;
         const parts: string[] = [];
-        if (settings.name) parts.push(`Holon: ${settings.name}.`);
-        if (settings.purpose) parts.push(`Purpose: ${settings.purpose}`);
+        if (settings?.name) parts.push(`Holon: ${settings.name}.`);
+        if (purpose) parts.push(`Purpose: ${purpose}`);
         return parts.length > 0 ? parts.join(' ') : undefined;
     }
 

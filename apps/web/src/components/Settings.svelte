@@ -2,7 +2,8 @@
   import { readHolonSettings } from '@holons/core/settings';
   import { onMount, onDestroy, getContext } from 'svelte';
   import { get } from 'svelte/store';
-  import { approveJoin, removeSeat, watchJoinRequests, type JoinRequest } from '@holons/core/holons';
+  import { approveJoin, holonDnaHash, joinReadiness, removeSeat, watchJoinRequests, type JoinRequest } from '@holons/core/holons';
+  import { subscribeGenes } from '@holons/core/dna';
   import {
     completeTelegramLink,
     federateLinkedChat,
@@ -25,6 +26,10 @@
   $: accentValue = $accentOverride ?? DEFAULT_ACCENT[$skin];
   import { nameMap, resolvedName, resolveName, forceRefresh, setName } from '$lib/stores/nameResolver';
   import { shortId } from '@holons/core/identity';
+  import { pickLang, t as dnaT } from '$lib/dna/copy';
+  import { readPurpose } from '$lib/dna/purpose';
+  import { dnaHref, editDnaHref } from '$lib/dna/links';
+  import { readinessBadge } from '$lib/dna/readiness';
   import { registerName as hnsRegister } from '$lib/hns';
   import { nostrStore } from '$lib/stores/nostr';
   import {
@@ -68,8 +73,6 @@
     level: number;
     admin: string;
     roles: string[];
-    values: string[];
-    purpose: string;
     domains: string[];
     currencies: string[];
     maxTasks: number;
@@ -97,8 +100,6 @@
       level: 1,
       admin: '',
       roles: [],
-      values: [],
-      purpose: '',
       domains: [],
       currencies: [],
       maxTasks: 13,
@@ -177,7 +178,7 @@
       }
 
       // Update the global settings store
-      settingsStore.set(settings);
+      settingsStore.set({ ...settings, purpose: await readPurpose(holosphere, holonId) });
 
       // Fetch real user count from holosphere
       await fetchRealUserCount();
@@ -309,9 +310,35 @@
   onDestroy(() => {
     stopJoins?.();
     stopLink?.();
+    stopGenes?.();
   });
 
+  // Where each request stands with the holon's DNA as it is now: core's
+  // `joinReadiness`, against the DNA hash read here. `undefined` = not read
+  // (yet): the badge then says so instead of passing for "nothing to agree to".
+  const uiLang = pickLang(typeof navigator !== 'undefined' ? navigator.languages : undefined);
+  let currentDna: string | null | undefined = undefined;
+  let stopGenes: (() => void) | null = null;
+
+  async function refreshDna(id: string) {
+    try {
+      const hash = await holonDnaHash(holosphere, id);
+      if (id === holonId) currentDna = hash;
+    } catch {
+      if (id === holonId) currentDna = undefined;
+    }
+  }
+
+  function watchDna(id: string) {
+    stopGenes?.();
+    stopGenes = null;
+    currentDna = undefined;
+    if (!holosphere || hubRole !== 'admin' || !keyed(id)) return;
+    stopGenes = subscribeGenes(holosphere, id, () => void refreshDna(id));
+  }
+
   function watchJoins(id: string) {
+    watchDna(id);
     stopJoins?.();
     stopJoins = null;
     joinRequests = [];
@@ -558,11 +585,6 @@
         </div>
         <div class="stats-bar__divider"></div>
         <div class="stats-bar__item">
-          <span class="stats-bar__value">{settings.values.length}</span>
-          <span class="stats-bar__label">Values</span>
-        </div>
-        <div class="stats-bar__divider"></div>
-        <div class="stats-bar__item">
           <span class="stats-bar__value">{settings.domains.length}</span>
           <span class="stats-bar__label">Domains</span>
         </div>
@@ -770,20 +792,17 @@
           </section>
 
         {:else if activeTab === 'community'}
-          <!-- Purpose -->
+          <!-- Purpose and values live in the DNA (one editor: the kiosk's). -->
           <section class="settings-section">
-            <h3 class="settings-section__title">Purpose</h3>
-            <textarea
-              class="input"
-              rows="3"
-              placeholder="Define your holon's purpose…"
-              bind:value={settings.purpose}
-              on:blur={() => updateSetting('purpose', settings.purpose)}
-            ></textarea>
+            <h3 class="settings-section__title">DNA</h3>
+            <p class="hub-key__note">{dnaT(uiLang, 'dna.settingsNote')}</p>
+            <div class="hub-key__actions">
+              <a class="btn btn--primary btn--sm" href={editDnaHref(holonId)} target="_blank" rel="noopener noreferrer">{dnaT(uiLang, 'dna.settingsEdit')}</a>
+              <a class="btn btn--ghost btn--sm" href={dnaHref(holonId)}>{dnaT(uiLang, 'dna.settingsView')}</a>
+            </div>
           </section>
 
           {#each [
-            { key: 'values' as const, label: 'Values', placeholder: 'Add values (comma-separated)' },
             { key: 'domains' as const, label: 'Domains', placeholder: 'Add domains (comma-separated)' },
             { key: 'roles' as const, label: 'Roles', placeholder: 'Add roles (comma-separated)' },
             { key: 'currencies' as const, label: 'Currencies', placeholder: 'Add currencies (singular form)' }
@@ -934,11 +953,13 @@
                 <span class="settings-field__label">Asking to be linked</span>
                 <ul class="member-list">
                   {#each joinRequests as req (req.pubkey)}
+                    {@const badge = readinessBadge(joinReadiness(req, currentDna))}
                     <li class="member">
                       <div class="member__main">
                         <span class="member__avatar">🙋</span>
                         <span class="member__name">{req.reason.trim() || resolvedName(req.pubkey, $nameMap)}</span>
                         <code class="member__badge" title={req.pubkey}>{shortId(req.pubkey)}</code>
+                        {#if badge}<span class="member__badge member__badge--{badge.tone}">{dnaT(uiLang, badge.key)}</span>{/if}
                       </div>
                       <div class="hub-key__actions">
                         <button type="button" class="btn btn--primary btn--sm" disabled={keyBusy} on:click={() => approve(req)}>Link</button>
@@ -1462,6 +1483,27 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+  }
+
+  .member__badge--ok {
+    background: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.4);
+    color: #6ee7b7;
+  }
+  .member__badge--warn {
+    background: rgba(245, 158, 11, 0.15);
+    border-color: rgba(245, 158, 11, 0.45);
+    color: #fcd34d;
+  }
+  .member__badge--bad {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.45);
+    color: #fca5a5;
+  }
+  .member__badge--muted {
+    background: rgba(148, 163, 184, 0.15);
+    border-color: rgba(148, 163, 184, 0.35);
+    color: #cbd5e1;
   }
 
   .hub-key__note {
