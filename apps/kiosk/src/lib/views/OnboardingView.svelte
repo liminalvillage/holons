@@ -164,9 +164,7 @@
       ...answers,
       [key]: (
         e.currentTarget as
-          | HTMLInputElement
-          | HTMLTextAreaElement
-          | HTMLSelectElement
+          HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
       ).value,
     };
     touched.add(key);

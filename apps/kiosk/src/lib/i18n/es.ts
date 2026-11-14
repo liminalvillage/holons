@@ -2225,7 +2225,8 @@ export const es: Record<MessageKey, Msg> = {
   "onb.customField": "Una pregunta propia",
   "onb.removeField": "Quitar {field}",
   "onb.unnamedField": "No se guarda hasta que tenga una pregunta.",
-  "onb.noOptions": "Se guarda como pregunta de texto hasta que tenga una opción.",
+  "onb.noOptions":
+    "Se guarda como pregunta de texto hasta que tenga una opción.",
   "onb.optional": "(opcional)",
   "onb.listHint": "Separa con comas",
   "onb.field.first_name": "Tu nombre",

@@ -197,7 +197,9 @@ describe('a join request for a Telegram group', () => {
     });
     expect(await service.handle(first)).toBe('posted');
     const text = telegram.sendMessage.mock.calls[0][1];
-    expect(text).toMatch(/in this group, but their request does not carry the current DNA/);
+    expect(text).toMatch(
+      /in this group, but their request does not carry the current DNA/
+    );
     expect(text).toMatch(/DNA not acknowledged/);
     expect((await holonMembers(hs, T)).has(ada.publicKey)).toBe(false);
     // She walks the DNA and asks again: the record takes the hash, she is linked.

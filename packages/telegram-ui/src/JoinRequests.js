@@ -246,20 +246,20 @@ export default class JoinRequests {
             'They are in this group, but their request does not carry the current DNA.'
           )
         : tgId
-        ? translated(
-            language,
-            'joinFromTelegram',
-            'They signed in with Telegram, but are not in this group.'
-          )
-        : translated(
-            language,
-            'joinFromKey',
-            'They signed in with their own Nostr key: {{key}}',
-            {
-              key: `<code>${shortNpub(request.pubkey)}</code>`,
-              interpolation: { escapeValue: false },
-            }
-          ),
+          ? translated(
+              language,
+              'joinFromTelegram',
+              'They signed in with Telegram, but are not in this group.'
+            )
+          : translated(
+              language,
+              'joinFromKey',
+              'They signed in with their own Nostr key: {{key}}',
+              {
+                key: `<code>${shortNpub(request.pubkey)}</code>`,
+                interpolation: { escapeValue: false },
+              }
+            ),
       ...(who.dna === 'none-required'
         ? []
         : [
@@ -267,11 +267,7 @@ export default class JoinRequests {
               ? translated(language, 'readyAcknowledged', 'DNA acknowledged')
               : who.dna === 'outdated'
                 ? translated(language, 'readyOutdated', 'DNA outdated')
-                : translated(
-                    language,
-                    'readyMissing',
-                    'DNA not acknowledged'
-                  ),
+                : translated(language, 'readyMissing', 'DNA not acknowledged'),
           ]),
       translated(
         language,
