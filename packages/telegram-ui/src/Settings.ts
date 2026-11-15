@@ -42,6 +42,7 @@ import {
 } from '@holons/core/linking';
 import { federationLinkState, laneState } from '@holons/core/federation';
 import { linkContext, outcomeText } from './federationLinks.js';
+import { initiatorAdmin } from './initiatorAdmin.js';
 import { ONBOARDING_DEEPLINK, startFromDeeplink } from '../scenes/flow.js';
 
 // Re-export so other modules (web, ai-ui) can import the canonical settings
@@ -416,10 +417,36 @@ export default class Settings {
           // named after the chat when it has no name yet.
           const settings = await this.getSettings(holonId);
           const title = (update.chat as { title?: string }).title?.trim();
+          // Whoever brought the bot in (the chat's creator or a Telegram
+          // admin) becomes the holon's admin when it has none, so their key
+          // is seated as admin and can federate etc. from a screen.
+          let initiatorStatus: string | undefined;
+          if (
+            update.from &&
+            !update.from.is_bot &&
+            !String(settings.admin ?? '').trim()
+          ) {
+            try {
+              initiatorStatus = (
+                await ctx.telegram.getChatMember(holonId, update.from.id)
+              ).status;
+            } catch (e) {
+              console.warn(
+                `[settings] ${holonId}: could not read the initiator's chat status:`,
+                (e as Error)?.message
+              );
+            }
+          }
+          const admin = initiatorAdmin(settings, update.from, initiatorStatus);
           await this.db.put(holonId.toString(), 'settings', {
             ...settings,
             ...(!settings.name && title ? { name: title } : {}),
+            ...(admin ? { admin } : {}),
           });
+          if (admin)
+            console.log(
+              `[settings] ${holonId}: ${admin} added the bot — holon admin`
+            );
           this._settingsCache.delete(holonId);
           const language = settings.language;
 
