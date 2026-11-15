@@ -15,7 +15,7 @@
     import { Package, Plus, Calendar, List } from 'svelte-feathers';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
     import { telegramStore, telegramUser } from '$lib/stores/telegram';
-    import { nostrPublicKey } from '$lib/stores/nostr';
+    import { nostrPublicKey, nostrPrivateKey } from '$lib/stores/nostr';
     import CalendarComponent from './Calendar.svelte';
     import {
         type Booking,
@@ -28,6 +28,7 @@
     import {
         LIBRARY_TYPES,
         bookItem,
+        bookingStatus,
         cancelBooking as coreCancelBooking,
         recordBorrowAccounting,
         recordReturnAccounting,
@@ -37,7 +38,7 @@
         withBookings,
         type BorrowActor
     } from '@holons/core/library';
-    import { sourceRef } from '@holons/core/holosphere';
+    import { may, sourceRef, writeAcceptance, type WriteStanding } from '@holons/core/holosphere';
 
     // A `type` (not `interface`) so it picks up an implicit index signature
     // and stays assignable to core's `BookableItem`.
@@ -239,6 +240,47 @@
     function writeTarget(item: LibraryItem): { holon: string; key: string } {
         const ref = sourceRef(item, item.id);
         return { holon: ref?.holon ?? holonID, key: ref?.key ?? item.id };
+    }
+
+    // Where the signed-in key stands with each holon an item is WRITTEN to
+    // (this holon, or a federated item's owner): an admin there may return,
+    // reschedule or cancel someone else's booking (`library.manage`, the one
+    // capability table). Re-read on login change; one lookup per holon.
+    let standings: Record<string, WriteStanding | null> = {};
+    let standingsKey: string | null | undefined = undefined;
+    const standingsLoading = new Set<string>();
+    async function loadStanding(holon: string) {
+        if (!holosphere || !holon || standingsLoading.has(holon)) return;
+        standingsLoading.add(holon);
+        const forKey = standingsKey;
+        let standing: WriteStanding | null = null;
+        try { standing = await writeAcceptance(holosphere, holon); } catch { standing = null; }
+        standingsLoading.delete(holon);
+        if (forKey !== standingsKey) return; // login changed meanwhile
+        standings = { ...standings, [holon]: standing };
+    }
+    $: if ($nostrPrivateKey !== standingsKey) {
+        standingsKey = $nostrPrivateKey;
+        standings = {};
+        standingsLoading.clear();
+    }
+    $: if (holosphere && holonID) {
+        const holons = new Set<string>([holonID]);
+        for (const [, it] of libraryItems) if (!it._deleted) holons.add(writeTarget(it).holon);
+        for (const h of holons) if (!(h in standings)) void loadStanding(h);
+    }
+
+    // May the signed-in key act on OTHER people's bookings of this item?
+    // `held` is passed so the template re-evaluates when standings load.
+    function canManageItem(item: LibraryItem | null, held: Record<string, WriteStanding | null>): boolean {
+        if (!item || !holosphere?.loggedIn) return false;
+        return may(held[writeTarget(item).holon] ?? null, 'library.manage');
+    }
+
+    // The booking holding the item right now — out, or overdue (its time is
+    // up and nobody pressed Return). Core's rule, the one Return ends.
+    function holdingBooking(item: LibraryItem): Booking | null {
+        return bookingStatus(item).booking ?? null;
     }
 
     // Merge a written source-item back onto the local record (a federated
@@ -550,7 +592,9 @@
             // two and stamps the booking's origin when they differ, so the owner
             // can see the borrow came in over a federated link.
             const res = editingBookingId
-                ? await updateBookingDates(holosphere, holon, key, editingBookingId, range, actor)
+                ? await updateBookingDates(holosphere, holon, key, editingBookingId, range, actor, {
+                      manage: canManageItem(item, standings),
+                  })
                 : await bookItem(holosphere, holon, key, actor, range, {
                       actingHolon: holonID,
                       actingHolonName: holonName || null,
@@ -563,7 +607,7 @@
                         `(${formatReturnDate(res.conflict.start)} → ${formatReturnDate(res.conflict.end)}).`
                     );
                 } else if (res.reason === 'forbidden') {
-                    alert('Only the booking\'s borrower can change its dates.');
+                    alert('Only the booking\'s borrower or an admin can change its dates.');
                 } else {
                     alert('Could not save the booking.');
                 }
@@ -593,14 +637,20 @@
     async function handleReturn(item: LibraryItem) {
         if (!holonID) return;
 
+        const manage = canManageItem(item, standings);
+        const holding = holdingBooking(item);
+        if (manage && holding && !isMyBooking(holding, myBorrowerIds, myBorrowerNames)) {
+            if (!confirm(`Return ${item.id} on behalf of ${holding.borrower || 'its borrower'}?`)) return;
+        }
+
         const actor = await resolveBorrowerActor();
         const { holon, key } = writeTarget(item);
 
         try {
-            const res = await coreReturnItem(holosphere, holon, key, actor);
+            const res = await coreReturnItem(holosphere, holon, key, actor, { manage });
             if (!res.ok) {
                 if (res.reason === 'forbidden') {
-                    alert(`Only ${getActiveBooking(item)?.borrower || 'the borrower'} can return this item.`);
+                    alert(`Only ${holding?.borrower || 'the borrower'} or an admin can return this item.`);
                 } else if (res.reason === 'not_borrowed') {
                     alert('This item is not currently borrowed.');
                 } else {
@@ -609,9 +659,10 @@
                 return;
             }
 
-            // Refund the borrow charge (skipped by core for owners/valueless items).
-            if (res.item) {
-                await recordReturnAccounting({ db: holosphere }, holon, actor, res.item);
+            // Refund the borrow charge (skipped by core for owners/valueless
+            // items) — to the BORROWER, also when an admin returned for them.
+            if (res.item && !res.isOwner) {
+                await recordReturnAccounting({ db: holosphere }, holon, res.borrower ?? actor, res.item);
             }
 
             const updatedItem = mergeWrittenItem(item, res.item ?? {});
@@ -629,12 +680,14 @@
     async function cancelBooking(item: LibraryItem, booking: Booking) {
         if (!holonID) return;
 
-        if (!isMyBooking(booking, myBorrowerIds, myBorrowerNames)) {
-            alert(`Only ${booking.borrower || 'the borrower'} can cancel this booking.`);
+        const mine = isMyBooking(booking, myBorrowerIds, myBorrowerNames);
+        const manage = canManageItem(item, standings);
+        if (!mine && !manage) {
+            alert(`Only ${booking.borrower || 'the borrower'} or an admin can cancel this booking.`);
             return;
         }
         if (!confirm(
-            `Cancel the booking of ${item.id} ` +
+            `Cancel ${mine ? 'the' : `${booking.borrower || 'someone'}'s`} booking of ${item.id} ` +
             `(${formatReturnDate(booking.start)} → ${formatReturnDate(booking.end)})?`
         )) return;
 
@@ -642,17 +695,18 @@
         const { holon, key } = writeTarget(item);
 
         try {
-            const res = await coreCancelBooking(holosphere, holon, key, booking.id, actor);
+            const res = await coreCancelBooking(holosphere, holon, key, booking.id, actor, { manage });
             if (!res.ok) {
                 alert(res.reason === 'forbidden'
-                    ? `Only ${booking.borrower || 'the borrower'} can cancel this booking.`
+                    ? `Only ${booking.borrower || 'the borrower'} or an admin can cancel this booking.`
                     : 'Could not cancel the booking.');
                 return;
             }
 
-            // Refund the charge taken when the booking was created.
+            // Refund the charge taken when the booking was created — to the
+            // borrower, also when an admin cancelled it for them.
             if (res.item) {
-                await recordReturnAccounting({ db: holosphere }, holon, actor, res.item);
+                await recordReturnAccounting({ db: holosphere }, holon, res.borrower ?? actor, res.item);
             }
 
             const updatedItem = mergeWrittenItem(item, res.item ?? {});
@@ -1013,6 +1067,9 @@
                     {@const itemBookings = getDisplayBookings(item)}
                     {@const activeBooking = getActiveBooking(item)}
                     {@const booked = activeBooking !== null}
+                    {@const holding = holdingBooking(item)}
+                    {@const holdingMine = isMyBooking(holding, myBorrowerIds, myBorrowerNames)}
+                    {@const manageable = canManageItem(item, standings)}
                     <div id={key} class="w-full">
                         <!-- The shared list-row shape (see components.css): a neutral
                              surface with the item's colour on the leading dot, the
@@ -1104,7 +1161,17 @@
                                         >
                                             Book
                                         </button>
-                                    {:else if isMyBooking(activeBooking, myBorrowerIds, myBorrowerNames)}
+                                    {/if}
+                                    {#if holding && !holdingMine && manageable}
+                                        <!-- Admin: end a booking someone else holds (e.g. late, never returned). -->
+                                        <button
+                                            on:click|stopPropagation={() => handleReturn(item)}
+                                            class="px-4 py-2 rounded-lg bg-emerald-700/60 hover:bg-emerald-700 text-white text-sm font-medium transition-colors border border-emerald-500/40"
+                                            aria-label="Return {item.id} for {holding.borrower || 'its borrower'}"
+                                        >
+                                            Return for {holding.borrower || 'borrower'}
+                                        </button>
+                                    {:else if holding && holdingMine}
                                         <button
                                             on:click|stopPropagation={() => handleReturn(item)}
                                             class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors"
@@ -1490,6 +1557,9 @@
     {@const detailBookings = getDisplayBookings(selectedItem)}
     {@const detailActive = getActiveBooking(selectedItem)}
     {@const detailBooked = detailActive !== null}
+    {@const detailHolding = holdingBooking(selectedItem)}
+    {@const detailHoldingMine = isMyBooking(detailHolding, myBorrowerIds, myBorrowerNames)}
+    {@const detailManage = canManageItem(selectedItem, standings)}
     <div
         class="fixed inset-0 z-50 overflow-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
         on:click|self={() => { showItemDetail = false; selectedItem = null; }}
@@ -1563,13 +1633,14 @@
                                         <span class="whitespace-nowrap">
                                             {formatReturnDate(booking.start)} → {formatReturnDate(booking.end)}
                                         </span>
-                                        {#if mine}
+                                        {#if mine || detailManage}
                                             <span class="flex gap-2 flex-shrink-0 ml-auto">
                                                 <button
                                                     type="button"
                                                     on:click={() => openEditBooking(selectedItem!, booking)}
                                                     class="px-2 py-0.5 rounded bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 text-xs font-medium transition-colors border border-indigo-600/30"
-                                                    aria-label="Change this booking"
+                                                    aria-label={mine ? 'Change this booking' : `Change ${booking.borrower || 'this'}'s booking`}
+                                                    title={mine ? undefined : 'As an admin of this holon'}
                                                 >
                                                     Change
                                                 </button>
@@ -1577,7 +1648,8 @@
                                                     type="button"
                                                     on:click={() => cancelBooking(selectedItem!, booking)}
                                                     class="px-2 py-0.5 rounded bg-red-600/20 hover:bg-red-600/40 text-red-300 text-xs font-medium transition-colors border border-red-600/30"
-                                                    aria-label="Cancel this booking"
+                                                    aria-label={mine ? 'Cancel this booking' : `Cancel ${booking.borrower || 'this'}'s booking`}
+                                                    title={mine ? undefined : 'As an admin of this holon'}
                                                 >
                                                     Cancel
                                                 </button>
@@ -1647,13 +1719,13 @@
                         >
                             Book
                         </button>
-                        {#if selectedItem && isMyBooking(detailActive, myBorrowerIds, myBorrowerNames)}
+                        {#if selectedItem && detailHolding && (detailHoldingMine || detailManage)}
                             <button
                                 type="button"
                                 on:click={() => handleReturn(selectedItem!)}
                                 class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors"
                             >
-                                Return
+                                {detailHoldingMine ? 'Return' : `Return for ${detailHolding.borrower || 'borrower'}`}
                             </button>
                         {/if}
                     </div>
