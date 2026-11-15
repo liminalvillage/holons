@@ -13,7 +13,7 @@
  *   member  content, ordinary settings fields, making a scope private
  *   admin   seating keys, the guarded settings fields (money, trust, the
  *           value equation), the rules of a log, the federation record,
- *           overriding a member's vault
+ *           overriding a member's vault, another member's library booking
  *
  * Nothing is refused at write time. A write whose signer lacks the role is
  * recorded on the relays and ignored by every reader — so surfaces grey the

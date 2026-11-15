@@ -77,4 +77,13 @@ describe('recordReturnAccounting', () => {
     expect(dbPut).not.toHaveBeenCalled();
     expect(eventStorePut).not.toHaveBeenCalled();
   });
+
+  it('knows the owner when the borrower id comes back from a booking as text', async () => {
+    // An admin returning for someone hands over the booking's borrower,
+    // whose id is stored as text while `createdBy` may be a number.
+    const { deps, dbPut } = harness();
+    const item = createLibraryItem('drill', LIBRARY_TYPES.TOOL, { createdBy: 1, value: 5 });
+    await recordReturnAccounting(deps, 'h', { id: '1' }, item);
+    expect(dbPut).not.toHaveBeenCalled();
+  });
 });

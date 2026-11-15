@@ -358,6 +358,21 @@ describe('cancelBooking / updateBookingDates', () => {
     expect(again.reason).toBe('no_such_booking');
   });
 
+  it('an admin may cancel or move someone else\'s booking', async () => {
+    const { db, bookingId } = await seed();
+    const moved = await updateBookingDates(
+      db, 'h', 'drill', bookingId, { start: '2099-02-01', end: '2099-02-09' }, { id: 1 }, { manage: true }
+    );
+    expect(moved.ok).toBe(true);
+    expect(moved.booking).toMatchObject({ end: '2099-02-09', borrowerId: '30' });
+    const member = await updateBookingDates(
+      db, 'h', 'drill', bookingId, { start: '2099-02-01', end: '2099-02-10' }, { id: 1 }
+    );
+    expect(member.reason).toBe('forbidden');
+    const gone = await cancelBooking(db, 'h', 'drill', bookingId, { id: 1 }, { manage: true });
+    expect(gone).toMatchObject({ ok: true, onBehalf: true, borrower: { id: '30' } });
+  });
+
   it('reschedules with overlap checking against other bookings only', async () => {
     const { db, bookingId } = await seed();
     await bookItem(db, 'h', 'drill', { id: 20, username: 'bob' }, {
@@ -512,6 +527,52 @@ describe('late returns', () => {
     const back = await returnItem(db, 'h', 'saw', bob);
     expect(back.ok).toBe(true);
     expect(back.item?.bookings).toEqual([]);
+  });
+
+  it('lets an admin return a late booking for the borrower, refunding the borrower', async () => {
+    const item: LibraryItem = {
+      ...createLibraryItem('drill', LIBRARY_TYPES.TOOL, { createdBy: 10, value: 2 }),
+      bookings: [
+        { id: 'b-old', start: '2001-01-01', end: '2001-01-05', borrowerId: '20', borrower: 'bob', created: '2001-01-01T00:00:00.000Z' },
+        { id: 'b-next', start: '2099-01-01', end: '2099-01-02', borrowerId: '30', borrower: 'eve', created: '2001-01-01T00:00:00.000Z' }
+      ]
+    };
+    const { db } = mockDb({ drill: item });
+    const admin = { id: 1, username: 'ada' };
+
+    expect(await returnItem(db, 'h', 'drill', admin)).toMatchObject({ ok: false, reason: 'forbidden' });
+
+    const back = await returnItem(db, 'h', 'drill', admin, { manage: true });
+    expect(back).toMatchObject({ ok: true, onBehalf: true, isOwner: false, borrower: { id: '20', username: 'bob' } });
+    expect(back.booking?.id).toBe('b-old');
+    expect(bookingStatus(back.item!).state).toBe('available');
+    // Eve's later reservation survives.
+    expect(getDisplayBookings(back.item!).map((b) => b.id)).toEqual(['b-next']);
+  });
+
+  it('an admin may name the booking to return; a member may not return someone else\'s by id', async () => {
+    const item: LibraryItem = {
+      ...createLibraryItem('saw', LIBRARY_TYPES.TOOL, { createdBy: 10 }),
+      bookings: [
+        { id: 'b1', start: '2001-01-01', end: '2001-01-05', borrowerId: '20', borrower: 'bob', created: '2001-01-01T00:00:00.000Z' }
+      ]
+    };
+    const { db } = mockDb({ saw: item });
+    expect(await returnItem(db, 'h', 'saw', { id: 99 }, { bookingId: 'b1' })).toMatchObject({ ok: false, reason: 'forbidden' });
+    const back = await returnItem(db, 'h', 'saw', { id: 1 }, { bookingId: 'b1', manage: true });
+    expect(back).toMatchObject({ ok: true, onBehalf: true });
+  });
+
+  it('the borrower returning their own booking is not on behalf', async () => {
+    const item: LibraryItem = {
+      ...createLibraryItem('saw', LIBRARY_TYPES.TOOL, { createdBy: 20 }),
+      bookings: [
+        { id: 'b1', start: '2001-01-01', end: '2001-01-05', borrowerId: '20', borrower: 'bob', created: '2001-01-01T00:00:00.000Z' }
+      ]
+    };
+    const { db } = mockDb({ saw: item });
+    const back = await returnItem(db, 'h', 'saw', bob, { manage: true });
+    expect(back).toMatchObject({ ok: true, onBehalf: false, isOwner: true, borrower: bob });
   });
 
   it('counts a booked-for-later item as available', () => {

@@ -323,7 +323,7 @@ export async function bookItem(
   const updated = withBookings(item, [...getDisplayBookings(item), booking], now);
   await db.put(holon, LENS, updated);
 
-  return { ok: true, item: updated, booking, isOwner: updated.createdBy === borrower.id };
+  return { ok: true, item: updated, booking, isOwner: String(updated.createdBy) === String(borrower.id) };
 }
 
 export interface BorrowItemResult {
@@ -373,14 +373,42 @@ export async function borrowItem(
 export interface ReturnItemResult {
   ok: boolean;
   item?: LibraryItem;
+  /** True when the borrower is the item's owner (no refund applies). */
   isOwner?: boolean;
+  /** The booking that was ended (on success). */
+  booking?: Booking;
+  /**
+   * Whose booking it was — hand THIS to `recordReturnAccounting`, so an
+   * admin returning for someone refunds the borrower, not themselves.
+   */
+  borrower?: BorrowActor;
+  /** True when an admin returned someone else's booking. */
+  onBehalf?: boolean;
   reason?: 'not_found' | 'not_borrowed' | 'forbidden';
+}
+
+/**
+ * Acting on a booking that is not your own. `manage` is true only for an
+ * admin of the item's holon — surfaces resolve it with
+ * `may(standing, 'library.manage')` (@holons/core/holosphere) — so a
+ * borrower who forgot to press Return, or whose dates need moving, can be
+ * helped by the holon's admins.
+ */
+export interface BookingAuthority {
+  manage?: boolean;
+}
+
+/** The borrower of `booking`, as an actor (for accounting). */
+function bookingBorrower(booking: Booking): BorrowActor {
+  return { id: booking.borrowerId, username: booking.borrower || undefined };
 }
 
 /**
  * Bring an item back: end the returner's booking that covers now, or — a late
  * return — their most recent one whose time is already up. Only the borrower
- * (matched by id, falling back to '@'-tolerant name comparison) may return.
+ * (matched by id, falling back to '@'-tolerant name comparison) may return,
+ * or an admin (`opts.manage`): with nothing of their own to return they end
+ * the booking holding the item (out or overdue), or `opts.bookingId`.
  * Other bookings on the item survive. The current item snapshot is always
  * returned (on success and on `not_borrowed`/`forbidden`) so callers can
  * render meaningful error messages without re-fetching.
@@ -390,7 +418,7 @@ export async function returnItem(
   holonId: string | number,
   itemId: string,
   returner: BorrowActor,
-  opts: { now?: Date } = {}
+  opts: { now?: Date; bookingId?: string } & BookingAuthority = {}
 ): Promise<ReturnItemResult> {
   const holon = String(holonId);
   const item = (await db.get(holon, LENS, itemId)) as LibraryItem | null;
@@ -398,38 +426,49 @@ export async function returnItem(
 
   const bookings = getDisplayBookings(item);
   const now = opts.now ?? new Date();
-  const mine = returnableBooking(item, returner, now);
-  if (!mine) {
-    // Nothing of theirs to return: either someone else has it, or nobody does.
-    const held = bookingStatus(item, now).state !== 'available';
+  const status = bookingStatus(item, now);
+  let target = opts.bookingId
+    ? (bookings.find((b) => b.id === opts.bookingId) ?? null)
+    : returnableBooking(item, returner, now);
+  if (!opts.bookingId && !target && opts.manage) target = status.booking;
+  if (!target) {
+    // Nothing to return: either someone else has it, or nobody does.
+    const held = status.state !== 'available';
     return { ok: false, reason: held ? 'forbidden' : 'not_borrowed', item };
   }
+  const onBehalf = !actorMatchesBooking(target, returner);
+  if (onBehalf && !opts.manage) return { ok: false, reason: 'forbidden', item };
 
-  const isOwner = item.createdBy === returner.id;
+  const borrower = onBehalf ? bookingBorrower(target) : returner;
+  const isOwner = String(item.createdBy) === String(borrower.id);
 
   // Snapshot values (value, createdBy) survive untouched, so the caller can
   // hand the returned item straight to accounting helpers.
   const updated = withBookings(
     item,
-    bookings.filter((b) => b.id !== mine.id),
+    bookings.filter((b) => b.id !== target.id),
     now
   );
   updated.returnedAt = new Date().toISOString();
   await db.put(holon, LENS, updated);
 
-  return { ok: true, item: updated, isOwner };
+  return { ok: true, item: updated, isOwner, booking: target, borrower, onBehalf };
 }
 
 export interface CancelBookingResult {
   ok: boolean;
   item?: LibraryItem;
   booking?: Booking;
+  /** Whose booking it was — the one to refund (`recordReturnAccounting`). */
+  borrower?: BorrowActor;
+  /** True when an admin cancelled someone else's booking. */
+  onBehalf?: boolean;
   reason?: 'not_found' | 'no_such_booking' | 'forbidden';
 }
 
 /**
  * Remove a booking (typically a future reservation) by id. Only its borrower
- * may cancel. Cancelling the booking that covers today is equivalent to a
+ * may cancel, or an admin (`opts.manage`). Cancelling the booking that covers today is equivalent to a
  * return — callers wanting refund bookkeeping use `recordReturnAccounting`
  * either way.
  */
@@ -438,7 +477,8 @@ export async function cancelBooking(
   holonId: string | number,
   itemId: string,
   bookingId: string,
-  actor: BorrowActor
+  actor: BorrowActor,
+  opts: BookingAuthority = {}
 ): Promise<CancelBookingResult> {
   const holon = String(holonId);
   const item = (await db.get(holon, LENS, itemId)) as LibraryItem | null;
@@ -447,7 +487,8 @@ export async function cancelBooking(
   const bookings = getDisplayBookings(item);
   const booking = bookings.find((b) => b.id === bookingId) ?? null;
   if (!booking) return { ok: false, item, reason: 'no_such_booking' };
-  if (!actorMatchesBooking(booking, actor)) return { ok: false, item, reason: 'forbidden' };
+  const onBehalf = !actorMatchesBooking(booking, actor);
+  if (onBehalf && !opts.manage) return { ok: false, item, reason: 'forbidden' };
 
   const updated = withBookings(
     item,
@@ -455,7 +496,7 @@ export async function cancelBooking(
   );
   await db.put(holon, LENS, updated);
 
-  return { ok: true, item: updated, booking };
+  return { ok: true, item: updated, booking, borrower: onBehalf ? bookingBorrower(booking) : actor, onBehalf };
 }
 
 export interface UpdateBookingResult {
@@ -469,7 +510,8 @@ export interface UpdateBookingResult {
 /**
  * Reschedule an existing booking to a new [start, end] range (days or timed,
  * as in `bookItem`). Only
- * its borrower may edit; the new range is checked against every *other*
+ * its borrower may edit, or an admin (`opts.manage`) — e.g. to extend a late
+ * one; the new range is checked against every *other*
  * booking on the item.
  */
 export async function updateBookingDates(
@@ -478,7 +520,8 @@ export async function updateBookingDates(
   itemId: string,
   bookingId: string,
   range: { start: Date | string; end: Date | string },
-  actor: BorrowActor
+  actor: BorrowActor,
+  opts: BookingAuthority = {}
 ): Promise<UpdateBookingResult> {
   const holon = String(holonId);
   const item = (await db.get(holon, LENS, itemId)) as LibraryItem | null;
@@ -487,7 +530,7 @@ export async function updateBookingDates(
   const bookings = getDisplayBookings(item);
   const existing = bookings.find((b) => b.id === bookingId) ?? null;
   if (!existing) return { ok: false, item, reason: 'no_such_booking' };
-  if (!actorMatchesBooking(existing, actor)) return { ok: false, item, reason: 'forbidden' };
+  if (!actorMatchesBooking(existing, actor) && !opts.manage) return { ok: false, item, reason: 'forbidden' };
 
   const start = toBound(range.start);
   const end = toBound(range.end);

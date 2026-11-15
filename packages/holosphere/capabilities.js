@@ -12,7 +12,8 @@
 //           private (the locker owns its vault)
 //   admin   the trust decisions: who is seated, the money and trust fields
 //           of settings, the rules of a log, the federation record (which
-//           partners, which lenses flow), and overriding a member's vault
+//           partners, which lenses flow), overriding a member's vault, and
+//           returning or moving another member's library booking
 //
 // A holon nobody speaks for (no log, no anchored records, an H3 cell) is
 // open: every claim shows and nothing here applies. The signer reads this
@@ -39,6 +40,12 @@ export const CAPABILITIES = Object.freeze({
   'privacy.lock': 'member',
   /** Unlocking or taking over a scope another key locked. */
   'privacy.override': 'admin',
+  /**
+   * Returning, rescheduling or cancelling SOMEONE ELSE'S library booking —
+   * the borrower who forgot to press Return. Their own booking needs only
+   * `content`.
+   */
+  'library.manage': 'admin',
 });
 
 /**
