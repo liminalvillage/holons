@@ -21,7 +21,7 @@ import { attestationIdentityMap, attestationNameMap, parseIdentifier, type Ident
 import { SHIFT_IDENTITY_LENS, attestationsFrom } from '../shifts/wire.js';
 import type { NostrEventLike } from '../nostr/types.js';
 import { cleanName, idKind, isKeyId, isPlaceholderName, normalizeId, shortId } from './ids.js';
-import { userName, type NameOptions, type NameRecord } from './index.js';
+import { userName, type NameOptions, type NameRecord } from './names.js';
 import { fetchProfiles, profileDisplayName, type ProfileMeta } from './profiles.js';
 
 /** What the resolver needs of holosphere (every method optional but `get`). */

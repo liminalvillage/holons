@@ -23,7 +23,7 @@
 
 import * as nip19 from 'nostr-tools/nip19';
 import { getUserProfile, saveUserProfile } from './profile.js';
-import type { TelegramUserLike, UserDB, UserProfile } from './index.js';
+import type { TelegramUserLike, UserDB, UserProfile } from './types.js';
 
 const HEX64 = /^[0-9a-f]{64}$/;
 

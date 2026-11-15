@@ -4,7 +4,7 @@
  * Both lists are stored as deduplicated string arrays on the user profile.
  */
 import { getUserProfile, saveUserProfile } from './profile.js';
-import type { TelegramUserLike, UserDB, UserProfile } from './index.js';
+import type { TelegramUserLike, UserDB, UserProfile } from './types.js';
 
 type ListField = 'values' | 'needs';
 
