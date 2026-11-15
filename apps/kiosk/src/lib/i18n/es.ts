@@ -1040,6 +1040,11 @@ export const es: Record<MessageKey, Msg> = {
   "detail.confirmBooking": "Confirmar la reserva",
   "detail.borrow": "Tomar prestado",
   "detail.return": "Devolver",
+  "detail.returnFor": "Devolver por {who}",
+  "detail.changeDates": "Cambiar fechas",
+  "detail.saveDates": "Guardar fechas",
+  "detail.onlyBorrowerChange":
+    "Solo quien lo tiene prestado o un admin puede cambiar estas fechas.",
   "detail.onLoanTo": "Prestado a {who}",
   "detail.bookAhead": "Reservar con antelación",
   "detail.edit": "Editar",
