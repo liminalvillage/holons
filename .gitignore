@@ -53,7 +53,7 @@ holosphere/
 # Legacy temp files written to CWD (e.g. holosphere-!-xyz.tmp) + the file store
 holosphere-!-*
 holosphere-*
-holosphere-store/
+holosphere-store*/
 # ── Generated API docs ────────────────────────────────────────────────────
 docs/api/*
 .codex/
