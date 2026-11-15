@@ -9,6 +9,7 @@ import { REAAggregator } from '@holons/core/scoring';
 import { extractItemsFromImage } from './AI.js';
 import { Calendar } from './Calendar.js';
 import { miniApps, miniAppButton } from './MiniApps.js';
+import { isAdmin } from './utilities.js';
 import {
     LIBRARY_TYPES as LIBRARY_TYPES_CORE,
     bookItem as coreBookItem,
@@ -737,6 +738,9 @@ class Library {
         }
 
         const now = await this.holonNow(holonId);
+        // A chat admin may end a booking that isn't theirs — a late item whose
+        // borrower never pressed Return. Core refuses it for anyone else.
+        const manage = await isAdmin(ctx);
         const returnResult = await coreReturnItem(
             this.db as any,
             holonId.toString(),
@@ -747,7 +751,7 @@ class Library {
                 first_name: ctx.from.first_name,
                 last_name: ctx.from.last_name,
             },
-            { now }
+            { now, manage }
         );
 
         if (!returnResult.ok) {
@@ -755,7 +759,7 @@ class Library {
             const errorMessages: Record<string, string> = {
                 not_found: `${item} is not in the library.`,
                 not_borrowed: `${item} is not borrowed.`,
-                forbidden: `Only ${holder || 'the borrower'} can return this item.`,
+                forbidden: `Only ${holder || 'the borrower'} or an admin can return this item.`,
             };
             const msg = errorMessages[returnResult.reason ?? 'not_found'];
             if (fromKeyboard) await ctx.answerCbQuery(msg).catch(() => {});
@@ -765,20 +769,35 @@ class Library {
 
         const currentItem = returnResult.item!;
         const isOwner = !!returnResult.isOwner;
+        const onBehalf = !!returnResult.onBehalf;
+        const borrowerName = returnResult.booking?.borrower || 'the borrower';
 
         // Core helper internally skips owners + zero-value items and
         // swallows persistence errors (matches the original inline path).
+        // The refund goes to whose booking it was — not the admin returning it.
         const accountingDeps: AccountingDeps = { db: this.db as any };
-        await coreRecordReturnAccounting(accountingDeps, holonId, ctx.from, currentItem);
+        // (Core's `isOwner` compares ids as text, so an owner's own booking —
+        // its borrower id stored as text — is never "refunded".)
+        if (!isOwner) {
+            await coreRecordReturnAccounting(accountingDeps, holonId, returnResult.borrower ?? ctx.from, currentItem);
+        }
 
         if (fromKeyboard) {
-            const refundMsg = (!isOwner && currentItem.value > 0) ? ` (${currentItem.value}● refunded)` : '';
-            await ctx.answerCbQuery(`Returned${refundMsg}`).catch(() => {});
+            const refundMsg = (!isOwner && currentItem.value > 0)
+                ? ` (${currentItem.value}● refunded${onBehalf ? ` to ${borrowerName}` : ''})`
+                : '';
+            const doneMsg = onBehalf ? `Returned for ${borrowerName}` : 'Returned';
+            await ctx.answerCbQuery(`${doneMsg}${refundMsg}`).catch(() => {});
             await this.showLibrary(ctx);
         } else {
             const icon = this.getItemIcon(currentItem);
-            const refundMsg = (!isOwner && currentItem.value > 0) ? `\n💳 ${currentItem.value}● refunded` : '';
-            ctx.reply(`${icon} You returned ${item}.${refundMsg}`);
+            const refundMsg = (!isOwner && currentItem.value > 0)
+                ? `\n💳 ${currentItem.value}● refunded${onBehalf ? ` to ${borrowerName}` : ''}`
+                : '';
+            const doneMsg = onBehalf
+                ? `You returned ${item} on behalf of ${borrowerName}.`
+                : `You returned ${item}.`;
+            ctx.reply(`${icon} ${doneMsg}${refundMsg}`);
         }
     }
 
@@ -833,6 +852,10 @@ class Library {
         const buttons = [];
         if (isBorrower) {
             buttons.push([Markup.button.callback('🔄 Return Item', `lib_ret_${itemId}`)]);
+        } else if (await isAdmin(ctx)) {
+            // An admin may bring back what someone else holds (e.g. overdue).
+            const who = held.borrower || held.borrowerInitials || 'borrower';
+            buttons.push([Markup.button.callback(`🔄 Return for ${who}`, `lib_ret_${itemId}`)]);
         }
         buttons.push([Markup.button.callback('📅 Book for later', `library_borrow_${itemId}`)]);
         if (isOwner) {

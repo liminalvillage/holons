@@ -66,10 +66,16 @@ function make(items = []) {
   const library = new Library(bot, db);
 
   /** Tap an inline button as `from`, the way Telegraf routes a callback. */
-  async function tap(data, from = ROBERTO) {
+  async function tap(data, from = ROBERTO, { admin = false } = {}) {
     const ctx = {
-      chat: { id: CHAT },
+      chat: { id: CHAT, type: 'supergroup' },
       from,
+      // utilities.isAdmin asks Telegram for the tapper's chat-member status.
+      telegram: {
+        getChatMember: vi.fn(async () => ({
+          status: admin ? 'administrator' : 'member',
+        })),
+      },
       callbackQuery: { data, message: { chat: { id: CHAT } } },
       answerCbQuery: vi.fn(async () => {}),
       editMessageText: vi.fn(async () => {}),
@@ -91,7 +97,7 @@ function make(items = []) {
     throw new Error(`no handler for ${data}`);
   }
 
-  return { library, store, tap };
+  return { library, store, db, tap };
 }
 
 /** Every button of the last edited message, as [text, callback_data]. */
@@ -137,6 +143,44 @@ describe('Library (telegram)', () => {
     expect(ctx.answerCbQuery).toHaveBeenCalledWith('Returned');
     expect(store.get('drill').bookings).toEqual([]);
     expect(store.get('drill').borrowed).toBe(false);
+  });
+
+  it("lets an admin return someone else's overdue borrow, refunding the borrower", async () => {
+    const drill = thing('drill', {
+      value: 5,
+      borrowed: true,
+      bookings: [booking(ANA, day(-9), day(-2))],
+    });
+    const { store, db, tap } = make([drill]);
+
+    // Not Ana's and not an admin: no Return, and the return is refused.
+    const plain = await tap('libret_drill', ROBERTO);
+    expect(buttons(plain).map(([, data]) => data)).not.toContain(
+      'lib_ret_drill'
+    );
+    const refused = await tap('lib_ret_drill', ROBERTO);
+    expect(refused.answerCbQuery.mock.calls[0][0]).toMatch(/or an admin/);
+    expect(store.get('drill').bookings).toHaveLength(1);
+
+    // An admin sees "Return for Ana" on the details …
+    const details = await tap('libret_drill', ROBERTO, { admin: true });
+    expect(buttons(details)).toContainEqual([
+      '🔄 Return for Ana',
+      'lib_ret_drill',
+    ]);
+
+    // … and returning it ends Ana's booking and refunds Ana, not the admin.
+    const done = await tap('lib_ret_drill', ROBERTO, { admin: true });
+    expect(done.answerCbQuery.mock.calls[0][0]).toBe(
+      'Returned for Ana (5● refunded to Ana)'
+    );
+    expect(store.get('drill').bookings).toEqual([]);
+    const refund = db.put.mock.calls.find(([, lens]) => lens === 'expenses');
+    expect(refund[2]).toMatchObject({
+      type: 'return',
+      paidBy: String(ANA.id),
+      splitWith: [1],
+    });
   });
 
   it('lists a thing by the clock, not by the stored flag', () => {
