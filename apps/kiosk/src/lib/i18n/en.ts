@@ -651,6 +651,37 @@ export const en = {
   "menu.loginTelegram": "Log in with Telegram",
   "menu.login": "Sign in",
   "menu.install": "Add to Home Screen",
+  "menu.yourKey": "Your key",
+  "keyexport.title": "Your key",
+  "keyexport.publicLabel": "Public key (npub)",
+  "keyexport.publicNote": "Safe to share: other Nostr apps find you by it.",
+  "keyexport.stays":
+    "Your secret key never leaves this screen: nothing here is sent anywhere.",
+  "keyexport.backupTitle": "Download encrypted backup",
+  "keyexport.recommended": "Recommended",
+  "keyexport.backupNote":
+    "Your secret key, locked with a password you choose (NIP-49, ncryptsec). Nostr apps that read ncryptsec open it with that password.",
+  "keyexport.password": "Password",
+  "keyexport.passwordAgain": "Password again",
+  "keyexport.passwordShort": "At least {n} characters.",
+  "keyexport.passwordMismatch": "The two passwords are not the same.",
+  "keyexport.download": "Download backup",
+  "keyexport.sealing": "Locking…",
+  "keyexport.downloaded": "Saved as {file}.",
+  "keyexport.passwordLost":
+    "Keep the password apart from the file. Without it the backup cannot be opened, and nobody can recover it for you.",
+  "keyexport.secretTitle": "Secret key (nsec)",
+  "keyexport.showSecret": "Show secret key",
+  "keyexport.warn":
+    "Anyone with this key can act as you. Don't show it on a shared screen.",
+  "keyexport.reveal": "Show it",
+  "keyexport.tapToShow": "Tap to show",
+  "keyexport.hide": "Hide",
+  "keyexport.autoHide": "Hides itself in {s} s.",
+  "keyexport.walletNote":
+    "Your key comes from your wallet: signing in with the same wallet always gives the same key. There is no secret key to export here. Keep your wallet safe instead.",
+  "keyexport.noSecret":
+    "This screen holds no secret key for you, so there is nothing to export.",
   "install.hint": "Open {name} like an app — one tap, full screen.",
   "install.iosShare": "Tap the Share button in the browser’s toolbar",
   "install.iosAdd": "Scroll down and choose “Add to Home Screen”",

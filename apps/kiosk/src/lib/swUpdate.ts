@@ -21,6 +21,7 @@ import {
   selection,
   settingsOpen,
   userMenuOpen,
+  keySheetOpen,
   completionRequest,
 } from "./stores";
 import { loginOpen } from "./auth";
@@ -47,6 +48,7 @@ function safeToReload(): boolean {
     get(completionRequest) == null &&
     !get(settingsOpen) &&
     !get(userMenuOpen) &&
+    !get(keySheetOpen) &&
     !get(loginOpen) &&
     !get(bubbleOpen) &&
     !get(typeOpen) &&

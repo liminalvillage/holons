@@ -101,6 +101,7 @@
     questsPulled,
     settingsOpen,
     userMenuOpen,
+    keySheetOpen,
     connected,
     notice,
     startClock,
@@ -163,6 +164,7 @@
   import Modal from "$lib/components/Modal.svelte";
   import LoginCard from "$lib/components/LoginCard.svelte";
   import UserMenu from "$lib/components/UserMenu.svelte";
+  import KeyExportSheet from "$lib/components/KeyExportSheet.svelte";
   import Settings from "$lib/components/Settings.svelte";
   import CompleteConfirm from "$lib/components/CompleteConfirm.svelte";
   import SwitchConfirm from "$lib/components/SwitchConfirm.svelte";
@@ -1345,6 +1347,12 @@
   <Modal on:close={() => userMenuOpen.set(false)}>
     <UserMenu />
   </Modal>
+{/if}
+
+<!-- "Your key": the npub, the secret key behind a warning, an encrypted
+     backup. Opened from the user menu; closes itself on logout. -->
+{#if $keySheetOpen}
+  <KeyExportSheet on:close={() => keySheetOpen.set(false)} />
 {/if}
 
 <!-- Caretaker settings: holon, name, logo, accent. -->

@@ -13,6 +13,7 @@
     holonName,
     settingsOpen,
     userMenuOpen,
+    keySheetOpen,
     writeStanding,
   } from "$lib/stores";
   import { clearBotHandoff, dashboardUrl } from "$lib/config";
@@ -59,6 +60,12 @@
     clearHubClaim();
     await goto(`/${encodeURIComponent(myHolonId)}`);
     holonId.set(myHolonId);
+  }
+  // Your key: the npub, and for a key held in this session the secret
+  // behind a warning or an encrypted backup (KeyExportSheet).
+  function openKey() {
+    close();
+    keySheetOpen.set(true);
   }
   function login() {
     close();
@@ -209,6 +216,17 @@
   {/if}
 
   {#if $currentUser}
+    {#if $sessionKeyPub}
+      <button class="row" on:click={openKey}>
+        <span class="ico"><Icon name="key" /></span>
+        <span class="label"
+          >{$t("menu.yourKey")}<span class="hint"
+            >{shortId($sessionKeyPub)}</span
+          ></span
+        >
+        <span class="chev">›</span>
+      </button>
+    {/if}
     {#if $sessionKeyPub && $currentUser.provider === "telegram"}
       <!-- The key a Telegram login brings along: it goes with the login. -->
       <div class="row standing" role="status">

@@ -656,6 +656,38 @@ export const it: Record<MessageKey, Msg> = {
   "menu.loginTelegram": "Accedi con Telegram",
   "menu.login": "Accedi",
   "menu.install": "Aggiungi alla schermata Home",
+  "menu.yourKey": "La tua chiave",
+  "keyexport.title": "La tua chiave",
+  "keyexport.publicLabel": "Chiave pubblica (npub)",
+  "keyexport.publicNote":
+    "Puoi condividerla: le altre app Nostr ti trovano con questa.",
+  "keyexport.stays":
+    "La tua chiave segreta non lascia mai questo schermo: niente qui viene inviato.",
+  "keyexport.backupTitle": "Scarica il backup cifrato",
+  "keyexport.recommended": "Consigliato",
+  "keyexport.backupNote":
+    "La tua chiave segreta, chiusa con una password che scegli tu (NIP-49, ncryptsec). Le app Nostr che leggono ncryptsec la aprono con quella password.",
+  "keyexport.password": "Password",
+  "keyexport.passwordAgain": "Ripeti la password",
+  "keyexport.passwordShort": "Almeno {n} caratteri.",
+  "keyexport.passwordMismatch": "Le due password non coincidono.",
+  "keyexport.download": "Scarica il backup",
+  "keyexport.sealing": "Cifratura…",
+  "keyexport.downloaded": "Salvato come {file}.",
+  "keyexport.passwordLost":
+    "Tieni la password lontano dal file. Senza password il backup non si apre, e nessuno può recuperarla per te.",
+  "keyexport.secretTitle": "Chiave segreta (nsec)",
+  "keyexport.showSecret": "Mostra la chiave segreta",
+  "keyexport.warn":
+    "Chiunque abbia questa chiave può agire come te. Non mostrarla su uno schermo condiviso.",
+  "keyexport.reveal": "Mostrala",
+  "keyexport.tapToShow": "Tocca per vedere",
+  "keyexport.hide": "Nascondi",
+  "keyexport.autoHide": "Si nasconde tra {s} s.",
+  "keyexport.walletNote":
+    "La tua chiave nasce dal tuo wallet: accedendo con lo stesso wallet ottieni sempre la stessa chiave. Qui non c'è una chiave segreta da esportare. Custodisci il wallet.",
+  "keyexport.noSecret":
+    "Questo schermo non ha una tua chiave segreta, quindi non c'è niente da esportare.",
   "install.hint": "Apri {name} come un’app — un tocco, a schermo intero.",
   "install.iosShare": "Tocca il pulsante Condividi nella barra del browser",
   "install.iosAdd": "Scorri e scegli “Aggiungi alla schermata Home”",

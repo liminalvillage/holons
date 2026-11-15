@@ -338,6 +338,9 @@ export function showNotice(text: string, ms = 3500): void {
 /** Whether the user menu (account / dashboard / settings) is open. */
 export const userMenuOpen = writable<boolean>(false);
 
+/** Whether the "Your key" sheet (npub, secret key, encrypted backup) is open. */
+export const keySheetOpen = writable<boolean>(false);
+
 export const rawQuests = writable<Quest[]>([]);
 export const rawLibrary = writable<LibraryItem[]>([]);
 /**

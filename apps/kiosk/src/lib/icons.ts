@@ -283,6 +283,10 @@ export const ICONS = {
     ),
   },
   power: { paths: s("M18.4 6.6a9 9 0 1 1-12.8 0", "M12 2.5v9.5") },
+  copy: {
+    paths: s("M9 9h11v11H9z", "M5 15H4V4h11v1"),
+  },
+  download: { paths: s("M12 3.5v12", "M6.5 10.5L12 16l5.5-5.5", "M4 20.5h16") },
   trash: {
     paths: s(
       "M3.5 6h17",

@@ -56,3 +56,16 @@ export {
 } from './nip98.js';
 
 export { PIN_MAX_LENGTH, PIN_MIN_LENGTH, isPin, openSecretKey, sealSecretKey } from './pin.js';
+
+export {
+  BACKUP_PASSWORD_MIN,
+  backupPasswordProblem,
+  keyBackupFileName,
+  npubOf,
+  nsecOf,
+  openKeyBackup,
+  pubkeyOfSecret,
+  sealKeyBackup,
+  type BackupPasswordProblem,
+  type KeyBackup,
+} from './keyexport.js';

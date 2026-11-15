@@ -655,6 +655,38 @@ export const es: Record<MessageKey, Msg> = {
   "menu.loginTelegram": "Entrar con Telegram",
   "menu.login": "Iniciar sesión",
   "menu.install": "Añadir a la pantalla de inicio",
+  "menu.yourKey": "Tu clave",
+  "keyexport.title": "Tu clave",
+  "keyexport.publicLabel": "Clave pública (npub)",
+  "keyexport.publicNote":
+    "Puedes compartirla: otras apps de Nostr te encuentran con ella.",
+  "keyexport.stays":
+    "Tu clave secreta nunca sale de esta pantalla: nada de aquí se envía.",
+  "keyexport.backupTitle": "Descargar copia cifrada",
+  "keyexport.recommended": "Recomendado",
+  "keyexport.backupNote":
+    "Tu clave secreta, cerrada con una contraseña que eliges tú (NIP-49, ncryptsec). Las apps de Nostr que leen ncryptsec la abren con esa contraseña.",
+  "keyexport.password": "Contraseña",
+  "keyexport.passwordAgain": "Repite la contraseña",
+  "keyexport.passwordShort": "Al menos {n} caracteres.",
+  "keyexport.passwordMismatch": "Las dos contraseñas no coinciden.",
+  "keyexport.download": "Descargar copia",
+  "keyexport.sealing": "Cifrando…",
+  "keyexport.downloaded": "Guardada como {file}.",
+  "keyexport.passwordLost":
+    "Guarda la contraseña lejos del archivo. Sin ella la copia no se abre, y nadie puede recuperarla por ti.",
+  "keyexport.secretTitle": "Clave secreta (nsec)",
+  "keyexport.showSecret": "Mostrar la clave secreta",
+  "keyexport.warn":
+    "Cualquiera con esta clave puede actuar como tú. No la muestres en una pantalla compartida.",
+  "keyexport.reveal": "Mostrarla",
+  "keyexport.tapToShow": "Toca para ver",
+  "keyexport.hide": "Ocultar",
+  "keyexport.autoHide": "Se oculta en {s} s.",
+  "keyexport.walletNote":
+    "Tu clave nace de tu wallet: al entrar con la misma wallet obtienes siempre la misma clave. Aquí no hay clave secreta que exportar. Cuida tu wallet.",
+  "keyexport.noSecret":
+    "Esta pantalla no tiene una clave secreta tuya, así que no hay nada que exportar.",
   "install.hint": "Abre {name} como una app — un toque, a pantalla completa.",
   "install.iosShare": "Toca el botón Compartir en la barra del navegador",
   "install.iosAdd": "Desplázate y elige “Añadir a pantalla de inicio”",
