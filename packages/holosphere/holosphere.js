@@ -237,12 +237,15 @@ class HoloSphere {
         if (this._privacy && scoped && String(lens) !== VAULT_LENS) {
             p = Promise.all([p, t.ensureSync(holon, VAULT_LENS)]);
         }
-        // The holon's `_members` log decides who counts on an enforced read.
-        // A cold store that has not seen it yet would otherwise answer
-        // "nobody speaks for this holon" and show every claim, where a warm
-        // one shows only the accepted ones. One pull per holon per freshness
-        // window, like the vault.
-        if (this._signer?.enforce && scoped && String(lens) !== MEMBERS_LENS && String(lens) !== VAULT_LENS) {
+        // The holon's `_members` log decides who counts — on an enforced read,
+        // and for the vault itself (a vault stands only when a member signed
+        // it). A cold store that has not seen it yet would otherwise answer
+        // "nobody speaks for this holon": an enforced read would show every
+        // claim, and a stranger's stale vault would lock the lens so every
+        // write throws "no key" before it is stored. So the vault pull brings
+        // the roster along. One pull per holon per freshness window.
+        const judgesRoles = this._signer?.enforce || (this._privacy && String(lens) === VAULT_LENS);
+        if (judgesRoles && scoped && String(lens) !== MEMBERS_LENS) {
             p = Promise.all([p, t.ensureSync(holon, MEMBERS_LENS)]);
         }
         if (awaited) return p.catch(() => { /* relay unreachable — read local */ });
