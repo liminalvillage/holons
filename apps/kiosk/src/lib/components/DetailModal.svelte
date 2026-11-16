@@ -27,7 +27,9 @@
     partnerNames,
     showNotice,
     minute,
+    standing,
   } from "$lib/stores";
+  import { may } from "@holons/core/holosphere";
   import { holonColors } from "$lib/palette";
   import { selectionCardUrl } from "$lib/cardlink";
   import { requestSwitch, segmentFor } from "$lib/dock";
@@ -68,6 +70,8 @@
   import {
     bookItem,
     returnItem,
+    updateBookingDates,
+    actorMatchesBooking,
     recordBorrowAccounting,
     recordReturnAccounting,
     findOverlappingBooking,
@@ -1444,6 +1448,7 @@
     const actor = borrowActor();
     if (!actor) return requestLogin();
     message = "";
+    changingId = null;
     // Default to the first free day: today, or the day after the booking that
     // covers today (so "book ahead" on an item that's out starts sensibly).
     // A booking by the clock leaves the rest of its day free, so it does not
@@ -1481,7 +1486,12 @@
     saving = true;
     // Fast-path UX check on the on-screen copy; core re-validates against the
     // stored item on write.
-    const conflict = findOverlappingBooking(sel.item, bookFrom, bookUntil);
+    const conflict = findOverlappingBooking(
+      sel.item,
+      bookFrom,
+      bookUntil,
+      changingId ?? undefined,
+    );
     if (conflict) {
       saving = false;
       message = $t("detail.overlaps", {
@@ -1498,6 +1508,35 @@
     const ref = sourceRef(sel.item, String(sel.item.id));
     const holon = ref?.holon ?? $holonId;
     const key = ref?.key ?? String(sel.item.id);
+    if (changingId) {
+      const moved = await updateBookingDates(
+        db,
+        holon,
+        key,
+        changingId,
+        { start: bookFrom, end: bookUntil },
+        actor,
+        { manage: canManage },
+      );
+      saving = false;
+      if (moved.ok) {
+        changingId = null;
+        booking = false;
+      } else if (moved.reason === "overlaps" && moved.conflict) {
+        message = $t("detail.overlaps", {
+          who: moved.conflict.borrower || $t("detail.someone"),
+          start: fmtDay($locale, moved.conflict.start),
+          end: fmtDay($locale, moved.conflict.end),
+        });
+      } else if (moved.reason === "invalid_range") {
+        message = $t("detail.invalidRange");
+      } else if (moved.reason === "forbidden") {
+        message = $t("detail.onlyBorrowerChange");
+      } else {
+        message = $t("detail.bookFailed");
+      }
+      return;
+    }
     const res = await bookItem(
       db,
       holon,
@@ -1538,11 +1577,20 @@
     const ref = sourceRef(sel.item, String(sel.item.id));
     const holon = ref?.holon ?? $holonId;
     const key = ref?.key ?? String(sel.item.id);
-    const res = await returnItem(db, holon, key, actor);
+    const res = await returnItem(db, holon, key, actor, {
+      manage: canManage,
+    });
     saving = false;
     if (res.ok) {
+      // Refund whoever borrowed it — an admin returning for them is not
+      // the one who paid.
       if (res.item)
-        await recordReturnAccounting({ db }, holon, actor, res.item);
+        await recordReturnAccounting(
+          { db },
+          holon,
+          res.borrower ?? actor,
+          res.item,
+        );
       closeDetail();
     } else {
       message =
@@ -1560,6 +1608,40 @@
     $currentUser &&
     returnableBooking(item, borrowActor() ?? { id: "" }, clock)
   );
+
+  // An admin of the item's holon may return or move SOMEONE ELSE'S booking —
+  // the borrower who never pressed Return (core `library.manage`). Our
+  // standing is this holon's, so a federated item (owned elsewhere) is left
+  // to its own holon's admins.
+  $: ownHolonItem = !!(
+    sel &&
+    sel.kind === "thing" &&
+    (sourceRef(sel.item, String(sel.item.id))?.holon ?? $holonId) === $holonId
+  );
+  $: canManage = ownHolonItem && may($standing, "library.manage");
+  $: canReturnFor =
+    !canReturn && canManage && status.state !== "available" && !!activeBooking;
+  // The held booking's dates: its borrower, or an admin, may move them
+  // (e.g. give a late borrower more time).
+  $: canChangeDates = !!(
+    activeBooking &&
+    $currentUser &&
+    (canManage ||
+      actorMatchesBooking(activeBooking, borrowActor() ?? { id: "" }))
+  );
+
+  let changingId: string | null = null;
+
+  function startChange() {
+    if (!activeBooking) return;
+    message = "";
+    changingId = activeBooking.id;
+    bStart = dayKey(activeBooking.start);
+    bEnd = dayKey(activeBooking.end);
+    bStartTime = timeOf(activeBooking.start);
+    bEndTime = timeOf(activeBooking.end);
+    booking = true;
+  }
 </script>
 
 {#if sel}
@@ -1753,7 +1835,9 @@
                 disabled={saving || !bStart || !bEnd}
                 >{saving
                   ? $t("detail.booking")
-                  : $t("detail.confirmBooking")}</button
+                  : changingId
+                    ? $t("detail.saveDates")
+                    : $t("detail.confirmBooking")}</button
               >
               <button class="ghost" on:click={() => (booking = false)}
                 >{$t("common.cancel")}</button
@@ -1768,6 +1852,12 @@
                 <button class="primary" on:click={returnThing} disabled={saving}
                   >{$t("detail.return")}</button
                 >
+              {:else if canReturnFor}
+                <button class="primary" on:click={returnThing} disabled={saving}
+                  >{$t("detail.returnFor", {
+                    who: activeBooking?.borrower || $t("detail.someone"),
+                  })}</button
+                >
               {:else if status.state === "out"}
                 <span class="note-line"
                   >{$t("detail.onLoanTo", {
@@ -1781,9 +1871,14 @@
                 >
               {:else}
                 <button
-                  class={canReturn ? "ghost" : "primary"}
+                  class={canReturn || canReturnFor ? "ghost" : "primary"}
                   on:click={startBooking}
                   disabled={saving}>{$t("detail.borrow")}</button
+                >
+              {/if}
+              {#if canChangeDates}
+                <button class="ghost" on:click={startChange} disabled={saving}
+                  >{$t("detail.changeDates")}</button
                 >
               {/if}
               <button class="ghost" on:click={startEdit} disabled={saving}

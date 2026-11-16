@@ -44,6 +44,7 @@ export {
   type BorrowItemResult,
   type CancelBookingResult,
   type ReturnItemResult,
+  type BookingAuthority,
   type SetValueResult,
   type UpdateBookingResult
 } from './operations.js';

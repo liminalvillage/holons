@@ -63,7 +63,7 @@ export async function recordBorrowAccounting(
   borrower: BorrowActor,
   item: LibraryItem
 ): Promise<void> {
-  if (item.createdBy === borrower.id) return;
+  if (String(item.createdBy) === String(borrower.id)) return;
   if (!item.value || item.value <= 0) return;
 
   const holon = String(holonId);
@@ -97,7 +97,7 @@ export async function recordReturnAccounting(
   item: LibraryItem
 ): Promise<void> {
   const holon = String(holonId);
-  const isOwner = item.createdBy === returner.id;
+  const isOwner = String(item.createdBy) === String(returner.id);
   const value = item.value || 0;
 
   if (!isOwner && value > 0) {

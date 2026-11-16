@@ -1077,6 +1077,11 @@ export const it: Record<MessageKey, Msg> = {
   "detail.confirmBooking": "Conferma la prenotazione",
   "detail.borrow": "Prendi in prestito",
   "detail.return": "Restituisci",
+  "detail.returnFor": "Restituisci per {who}",
+  "detail.changeDates": "Cambia date",
+  "detail.saveDates": "Salva date",
+  "detail.onlyBorrowerChange":
+    "Solo chi l'ha in prestito o un admin può cambiare queste date.",
   "detail.onLoanTo": "In prestito a {who}",
   "detail.bookAhead": "Prenota in anticipo",
   "detail.edit": "Modifica",

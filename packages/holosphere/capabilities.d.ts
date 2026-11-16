@@ -11,6 +11,7 @@ export const CAPABILITIES: Readonly<{
   dna: 'admin';
   'privacy.lock': 'member';
   'privacy.override': 'admin';
+  'library.manage': 'admin';
 }>;
 export type Capability = keyof typeof CAPABILITIES;
 /** Settings fields that come from an admin's envelope under an authorized read. */

@@ -24,7 +24,7 @@ describe('the capability table', () => {
     expect(requiredRole('dna')).toBe('admin');
     expect(GUARDED_LENSES).toEqual(['genes']);
     expect(Object.keys(CAPABILITIES).sort()).toEqual(
-      ['content', 'dna', 'federation', 'members', 'policy', 'privacy.lock', 'privacy.override', 'settings.guarded'],
+      ['content', 'dna', 'federation', 'library.manage', 'members', 'policy', 'privacy.lock', 'privacy.override', 'settings.guarded'],
     );
   });
 
@@ -41,6 +41,8 @@ describe('the capability table', () => {
     expect(may({ status: 'held', role: null, anchor: 'x', source: 'log' }, 'content')).toBe(false);
     expect(may({ status: 'accepted', role: 'member', anchor: 'x', source: 'log' }, 'privacy.lock')).toBe(true);
     expect(may({ status: 'accepted', role: 'member', anchor: 'x', source: 'log' }, 'privacy.override')).toBe(false);
+    expect(may('member', 'library.manage')).toBe(false);
+    expect(may('admin', 'library.manage')).toBe(true);
     expect(whyNot({ status: 'accepted', role: 'member', anchor: 'x', source: 'log' }, 'federation')).toMatch(/admin/);
     expect(whyNot({ status: 'accepted', role: 'admin', anchor: 'x', source: 'log' }, 'federation')).toBeNull();
     expect(whyNot(null, 'content')).toMatch(/Sign in/);
