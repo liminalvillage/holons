@@ -224,6 +224,15 @@ export function shiftSchedule(
   };
 }
 
+/**
+ * The fields that take a quest off the calendar, back to waiting for a date.
+ * Only the schedule goes: a series keeps its cadence (it repeats again once
+ * it is given a start), and everything else about the quest stays.
+ */
+export function unscheduleFields(): QuestScheduleFields {
+  return { when: '', ends: '', until: '' };
+}
+
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }

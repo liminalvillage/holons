@@ -43,6 +43,18 @@ export function showsOnCalendar(quest: Quest): boolean {
   return questSchedule(quest).start !== null;
 }
 
+/**
+ * Waiting for a date: an open task or event with no start yet. These are the
+ * quests a calendar can't draw — the ones a person picks from a drawer and
+ * drops on a day to schedule. Settled (done, cancelled, deleted) ones never
+ * wait.
+ */
+export function isUnscheduled(quest: Quest): boolean {
+  if (!isAgendaQuest(quest)) return false;
+  if (isQuestSettled(quest)) return false;
+  return questSchedule(quest).start === null;
+}
+
 /** How a quest sits on the task wall. */
 export interface TaskWallPlacement {
   /** The date its card shows: the next open occurrence's for a series. */

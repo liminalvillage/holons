@@ -113,6 +113,14 @@ export interface LinkSideOptions {
 	 * holon whose people did not ask.
 	 */
 	askPartner?: boolean;
+	/**
+	 * Write `holonId`'s half and leave the partner alone: no request, no
+	 * withdrawal. A person following a holon from their own (pubkey) holon —
+	 * receiving its lenses for themselves — decides only for themselves, and
+	 * `subscribeFederated` reads their half alone. The outcome's partner is
+	 * `unchanged`.
+	 */
+	ownSideOnly?: boolean;
 	/** Name of `holonId` as the partner will see it in a request. */
 	holonName?: string;
 }
@@ -149,6 +157,7 @@ export async function setFederationPartner(
 
 	if (!(await speaksFor(holosphere, source))) return { self: 'held', partner: 'skipped' };
 	await writeOwnSide(holosphere, source, target, dirs, { partnerName: options.partnerName, hops });
+	if (options.ownSideOnly) return { self: 'linked', partner: 'unchanged' };
 
 	const asked = mirrorDirections(dirs);
 	if (!options.askPartner && (await speaksFor(holosphere, target))) {
@@ -181,6 +190,7 @@ export async function removeFederationPartner(
 	const target = normalizeId(targetId, 'targetId');
 	if (!(await speaksFor(holosphere, source))) return { self: 'held', partner: 'skipped' };
 	await removeOwnSide(holosphere, source, target);
+	if (options.ownSideOnly) return { self: 'removed', partner: 'unchanged' };
 
 	if (!options.askPartner && (await speaksFor(holosphere, target))) {
 		await removeOwnSide(holosphere, target, source);

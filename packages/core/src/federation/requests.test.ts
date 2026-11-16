@@ -132,6 +132,40 @@ describe('linking across two holons with different admins', () => {
   });
 });
 
+describe('following a holon from your own', () => {
+  it("writes only the follower's half, asks nothing, and the holon's quests flow in", async () => {
+    const { B, b, sync } = await world('15');
+    const carol = testKey();
+    const c = sphere(carol.sk);
+    await c.ready();
+    share(c, b);
+    await b.put(B, 'quests', { id: 'q1', title: 'Full moon walk', when: '2026-11-20' });
+    share(c, b);
+
+    const out = await setFederationPartner(c, carol.pk, B, { inbound: ['quests'], outbound: [], ownSideOnly: true });
+    expect(out).toEqual({ self: 'linked', partner: 'unchanged' });
+    share(c, b);
+    sync();
+    expect(await pendingFederationRequests(b, B)).toEqual([]);
+    expect((await getFederationSnapshot(c, carol.pk)).lensConfig[B]).toEqual({ inbound: ['quests'], outbound: [] });
+
+    const seen = await new Promise<any[]>((resolve) => {
+      const sub = c.subscribeFederated(carol.pk, 'quests', (items: any[]) => {
+        if (items.some((i) => i.id === 'q1')) {
+          sub.unsubscribe();
+          resolve(items);
+        }
+      }, { dedupeAcrossSpaces: false });
+    });
+    expect(seen.find((i) => i.id === 'q1')?._federation?.origin).toBe(B);
+
+    const gone = await removeFederationPartner(c, carol.pk, B, { ownSideOnly: true });
+    expect(gone).toEqual({ self: 'removed', partner: 'unchanged' });
+    share(c, b);
+    expect(await pendingFederationRequests(b, B)).toEqual([]);
+  });
+});
+
 describe('who may decide', () => {
   it('a key that speaks for both writes both halves — unless told to ask', async () => {
     const { A, B, o, sync } = await world('20');

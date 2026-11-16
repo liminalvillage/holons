@@ -10,8 +10,11 @@ import {
   localDayNumber,
   questSchedule,
   scheduleToFields,
+  unscheduleFields,
   shiftSchedule,
 } from './schedule.js';
+import { isUnscheduled } from './placement.js';
+import type { Quest } from './types.js';
 
 // Local wall-clock helper — every assertion here is about what the VIEWER
 // sees, so the tests build local dates the same way the UIs do.
@@ -293,5 +296,37 @@ describe('isTimedValue', () => {
     expect(isTimedValue('')).toBe(false);
     expect(isTimedValue(undefined)).toBe(false);
     expect(isTimedValue('2026-08-20T09:00:00.000Z')).toBe(true);
+  });
+});
+
+describe('unscheduleFields', () => {
+  it('takes a dated quest back to waiting for a date', () => {
+    const dated = {
+      id: 'q',
+      title: 'T',
+      status: 'ongoing',
+      participants: [],
+      when: '2026-11-16T09:00:00.000Z',
+      ends: '2026-11-16T10:00:00.000Z',
+    } as Quest;
+    expect(isUnscheduled(dated)).toBe(false);
+    const back = { ...dated, ...unscheduleFields() };
+    expect(isUnscheduled(back)).toBe(true);
+    expect(questSchedule(back).start).toBeNull();
+  });
+
+  it('lets a series wait too, its cadence kept for its next date', () => {
+    const series = {
+      id: 's',
+      title: 'Weekly',
+      type: 'recurring',
+      status: 'ongoing',
+      participants: [],
+      when: '2026-11-16',
+      frequency: 'weekly',
+    } as Quest;
+    const back = { ...series, ...unscheduleFields() };
+    expect(isUnscheduled(back)).toBe(true);
+    expect(back.frequency).toBe('weekly');
   });
 });

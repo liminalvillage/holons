@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 
 import { describe, expect, it } from 'vitest';
-import { isQuestCompleted, showsOnCalendar, taskWallPlacement } from './placement.js';
+import { isQuestCompleted, isUnscheduled, showsOnCalendar, taskWallPlacement } from './placement.js';
 import type { Quest } from './types.js';
 
 const local = (y: number, mo: number, d: number, h = 0, mi = 0): Date =>
@@ -123,5 +123,23 @@ describe('taskWallPlacement', () => {
   it('keeps marketplace items and unknown types off the wall', () => {
     expect(taskWallPlacement(q({ type: 'offer' }), now)).toBeNull();
     expect(taskWallPlacement(q({ type: 'shift', when: '2026-10-01' }), now)).toBeNull();
+  });
+});
+
+describe('isUnscheduled', () => {
+  it('is an open task or event with no start', () => {
+    expect(isUnscheduled({ id: 'a', title: 'A', type: 'task' } as Quest)).toBe(true);
+    expect(isUnscheduled({ id: 'b', title: 'B', type: 'event', when: '' } as Quest)).toBe(true);
+  });
+  it('is not once it has a date', () => {
+    expect(isUnscheduled({ id: 'c', title: 'C', type: 'task', when: '2026-11-20' } as Quest)).toBe(false);
+  });
+  it('is not when settled', () => {
+    for (const extra of [{ status: 'completed' }, { status: 'cancelled' }, { _deleted: true }, { completed: true }]) {
+      expect(isUnscheduled({ id: 'd', title: 'D', type: 'task', ...extra } as Quest)).toBe(false);
+    }
+  });
+  it('is not for what never goes on an agenda', () => {
+    expect(isUnscheduled({ id: 'e', title: 'E', type: 'offer' } as Quest)).toBe(false);
   });
 });

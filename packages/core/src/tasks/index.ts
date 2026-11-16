@@ -11,6 +11,7 @@ export * from './breakdown.js';
 export * from './marketplace.js';
 export * from './kind.js';
 export * from './placement.js';
+export * from './search.js';
 export * from './persistence.js';
 export * from './participants.js';
 export * from './hosts.js';
