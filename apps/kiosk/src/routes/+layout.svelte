@@ -331,6 +331,7 @@
         if (isShortName(name, id)) return;
         holonName.set(name);
         nameBoard(id, name);
+        void recordMyHub(id, name);
       });
       // Holon colour override (best-effort): re-read on every bind so a colour
       // chosen on another surface lands on the next open.
@@ -1102,8 +1103,12 @@
 
   $: if (mounted && $holonIdStore) {
     rememberBoard($holonIdStore, "");
-    // …and in the signed-in person's own holon, so it follows them.
-    void recordMyHub($holonIdStore, get(holonName));
+    // …and in the signed-in person's own holon, so it follows them. Without
+    // a name here: this runs the moment the id changes, while `holonName`
+    // still holds the board just left (it is cleared and resolved later, in
+    // the bind), so it filed every board under its predecessor's name. The
+    // bind records the name once it is this board's own.
+    void recordMyHub($holonIdStore);
   }
   // A key login brings the person's hubs onto this device's dock.
   $: if (mounted && $sessionKeyPub) void loadMyHubs();
