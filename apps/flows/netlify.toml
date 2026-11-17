@@ -21,7 +21,9 @@
 # login rather than to the page the login began on.
 #
 # Client env vars (public by design, still needed in the Netlify UI):
-#   VITE_FLOWS_POT   — the Pot holon whose flows this site shows (pinned below)
+#   VITE_FLOWS_POT   — the Pot holon whose flows this site shows (empty below:
+#                      the site starts from zero)
+#   VITE_FLOWS_ARTIZEN_POT — the Pot the header's "Artizen map" shows
 #   VITE_FLOWS_APP   — the Holosphere namespace (pinned below; "Holons" if unset)
 #   VITE_FLOWS_RELAYS — relay list, when not the production set
 #   VITE_FLOWS_LOGIN — which sign-ins to offer (telegram,nostr,ethereum)
@@ -55,12 +57,16 @@
   # These VITE_* values are public-by-design (inlined into the client bundle
   # by contract). Whitelist them so Netlify's secrets scanner doesn't flag
   # them. NEVER add a private key here.
-  SECRETS_SCAN_OMIT_KEYS = "VITE_FLOWS_POT,VITE_FLOWS_APP,VITE_FLOWS_RELAYS,VITE_FLOWS_LOGIN"
-  # The site opens on the Artizen Pot. It lives in the HolonsArtizenTest
-  # namespace (the 2026-10-11 import), not "Holons", so both are pinned here;
-  # values in this file override the same keys set in the Netlify UI.
-  VITE_FLOWS_POT = "holon_gys43bbqut5rr7ka"
+  SECRETS_SCAN_OMIT_KEYS = "VITE_FLOWS_POT,VITE_FLOWS_APP,VITE_FLOWS_RELAYS,VITE_FLOWS_LOGIN,VITE_FLOWS_ARTIZEN_POT"
+  # The site starts from zero: no Pot is pinned, so a visitor starts a pot or
+  # opens one by link, and the header's "Artizen map" shows the Artizen Pot.
+  # That Pot lives in the HolonsArtizenTest namespace (the 2026-10-11
+  # import), so the app runs there too: pots started here can join Artizen
+  # funds. Values in this file override the same keys set in the Netlify UI
+  # (the empty VITE_FLOWS_POT clears one set there).
+  VITE_FLOWS_POT = ""
   VITE_FLOWS_APP = "HolonsArtizenTest"
+  VITE_FLOWS_ARTIZEN_POT = "holon_gys43bbqut5rr7ka"
 
 # Long-cache the content-hashed build assets; never cache the HTML shell.
 [[headers]]

@@ -45,7 +45,11 @@ export default defineConfig({
     dedupe: ["svelte"],
   },
   ssr: {
-    external: ["ws"],
+    // h3-js is Emscripten output that reads `__dirname`: bundled into the ESM
+    // server it throws on load. Core's founding rules import it, and the
+    // server's OpenCollective route imports `@holons/core/flows`, so it is
+    // left to Node to load as the CommonJS it is.
+    external: ["ws", "h3-js"],
     noExternal: ["holosphere"],
   },
   // The network layout's worker imports core: ES modules, so it can split.
