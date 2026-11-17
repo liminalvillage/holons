@@ -50,6 +50,8 @@
 
 <style>
   .full {
+    /* Over the dark scene the page's light text would vanish on the card. */
+    color: var(--ink);
     display: grid;
     justify-items: center;
     gap: 12px;
