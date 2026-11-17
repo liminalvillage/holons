@@ -609,11 +609,12 @@ export function setResolvedLang(l: "en" | "it" | "es"): void {
 
 /**
  * How the Tasks view lays out the backlog: the post-it wall, a compact list,
- * a one-card-at-a-time swipe deck, or the auto-arranged dependency graph.
- * Anyone can switch it from the view's Layout pill; the choice sticks per
- * device. Whose tasks appear is the orthogonal `Scope` above.
+ * or the auto-arranged dependency graph. Anyone can switch it from the view's
+ * Layout pill; the choice sticks per device. Whose tasks appear is the
+ * orthogonal `Scope` above. The one-card-at-a-time deck is not a layout: it
+ * is the full-screen "Choose" deck, opened from its button or `/choose`.
  */
-export type TaskViewMode = "cards" | "list" | "swipe" | "graph";
+export type TaskViewMode = "cards" | "list" | "graph";
 
 /** Below this width the kiosk is a phone, not a wall display (matches TabBar). */
 const MOBILE_MAX_WIDTH_PX = 560;
@@ -631,18 +632,19 @@ export function isPhoneDisplay(): boolean {
 }
 
 /**
- * Resolve the Tasks view mode. A saved choice always wins; with none, phones
- * default to the one-hand swipe deck and larger displays to the post-it wall.
+ * Resolve the Tasks view mode. A saved choice always wins; with none — or
+ * the retired "swipe" layout, now the Choose deck — phones default to the
+ * compact list and larger displays to the post-it wall.
  */
 export function resolveTaskView(): TaskViewMode {
   const v = persisted(TASK_VIEW_KEY);
-  if (v === "cards" || v === "list" || v === "swipe" || v === "graph") return v;
+  if (v === "cards" || v === "list" || v === "graph") return v;
   // Legacy "personal" mode rendered the list (its me-filter is retired).
   if (v === "personal") return "list";
   const mobile =
     typeof window !== "undefined" &&
     window.matchMedia?.(`(max-width: ${MOBILE_MAX_WIDTH_PX}px)`).matches;
-  return mobile ? "swipe" : "cards";
+  return mobile ? "list" : "cards";
 }
 
 /** Persist the Tasks view mode. */
@@ -686,16 +688,14 @@ export function setShowHolograms(on: boolean): void {
 /**
  * How the Library view lays out the things: the icon card grid, a compact
  * list, or the booking calendar (when each thing is out). Same Layout pill as
- * the Tasks view; the choice sticks per device. `swipe` is the one-at-a-time
- * Card pager (id matches the Tasks deck's).
+ * the Tasks view; the choice sticks per device.
  */
-export type LibraryViewMode = "cards" | "list" | "swipe" | "calendar";
+export type LibraryViewMode = "cards" | "list" | "calendar";
 
 /** Resolve the Library view mode; the card grid (wall) is the default. */
 export function resolveLibraryView(): LibraryViewMode {
   const v = persisted(LIBRARY_VIEW_KEY);
-  if (v === "cards" || v === "list" || v === "swipe" || v === "calendar")
-    return v;
+  if (v === "cards" || v === "list" || v === "calendar") return v;
   // Legacy "personal" mode rendered the compact rows — closest is the list.
   if (v === "personal") return "list";
   return "cards";

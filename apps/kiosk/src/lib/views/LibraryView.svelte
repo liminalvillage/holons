@@ -53,11 +53,6 @@
   // Layout is chosen in the shell's global pills band (see GlobalPills);
   // this view only reads the store.
 
-  // The Card pager's position; clamped as live updates grow/shrink the set.
-  let cardIndex = 0;
-  $: if (cardIndex > $things.length - 1)
-    cardIndex = Math.max(0, $things.length - 1);
-
   /** Status chip text for a row (the translator comes in as an argument so
    *  the template expression re-runs on a language switch). */
   function statusLabel(thing: LibraryThing, tr: Translator): string {
@@ -171,73 +166,7 @@
     />
   {:else}
     <div class="lib scroll">
-      {#if $libraryViewMode === "swipe"}
-        <!-- One big card at a time — the library's Card layout. -->
-        {#if $things.length}
-          {@const thing = $things[Math.min(cardIndex, $things.length - 1)]}
-          <div class="pager">
-            <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-            <article
-              class="card big"
-              class:out={!thing.available}
-              class:is-foreign={!!thing.sourceColor}
-              class:holo={!!thing.hologram}
-              style:--holo-seed={holoSeed(thing.id)}
-              style="--glow: {thing.sourceColor ?? 'transparent'};"
-              role="button"
-              tabindex="0"
-              on:click={() => openThing(thing.id)}
-              on:keydown={(e) => onKey(e, thing.id)}
-            >
-              {#if thing.picture}
-                <img
-                  class="shot"
-                  src={pictureUrl(thing.picture)}
-                  alt=""
-                  loading="lazy"
-                  on:error={hideImg}
-                />
-              {:else}
-                <div class="icon">{getItemIcon({ type: thing.type })}</div>
-              {/if}
-              <h3>{thing.title}</h3>
-              <span class="type">{typeName($t, thing.type)}</span>
-              {#if thing.source}<button
-                  type="button"
-                  class="src"
-                  title={$t("source.open", { name: thing.source })}
-                  on:pointerdown|stopPropagation
-                  on:click|stopPropagation={() =>
-                    jumpToSource(thing.sourceId, thing.source)}
-                  ><Icon name="swap" /> {thing.source}</button
-                >{/if}
-              <span class="status" class:available={thing.available}>
-                {statusLabel(thing, $t)}
-              </span>
-            </article>
-            <div class="pagenav">
-              <button
-                class="arrow"
-                on:click={() => (cardIndex = Math.max(0, cardIndex - 1))}
-                disabled={cardIndex <= 0}
-                aria-label={$t("library.prevItem")}>‹</button
-              >
-              <span class="count"
-                >{Math.min(cardIndex, $things.length - 1) + 1} / {$things.length}</span
-              >
-              <button
-                class="arrow"
-                on:click={() =>
-                  (cardIndex = Math.min($things.length - 1, cardIndex + 1))}
-                disabled={cardIndex >= $things.length - 1}
-                aria-label={$t("library.nextItem")}>›</button
-              >
-            </div>
-          </div>
-        {:else}
-          <p class="empty">{$t("library.emptyShared")}</p>
-        {/if}
-      {:else if $libraryViewMode === "cards"}
+      {#if $libraryViewMode === "cards"}
         {#if $things.length}
           <div class="grid">
             {#each $things as thing (thing.id)}
@@ -545,9 +474,6 @@
     border-radius: 10px;
     background: rgba(0, 0, 0, 0.08);
   }
-  .card.big .shot {
-    height: 8rem;
-  }
   .card h3 {
     margin: 0.2rem 0 0;
     font-size: 1.02rem;
@@ -593,61 +519,6 @@
     text-align: center;
     padding: 3rem 1rem;
     font-size: 1.1rem;
-  }
-
-  /* The Card layout: one big card centered, ‹ n / m › underneath. */
-  .pager {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 1.2rem;
-  }
-  .card.big {
-    width: min(26rem, 92%);
-    padding: 2.2rem 1.6rem 1.8rem;
-    gap: 0.55rem;
-  }
-  .card.big .icon {
-    font-size: 3.4rem;
-  }
-  .card.big h3 {
-    font-size: 1.45rem;
-  }
-  .pagenav {
-    display: flex;
-    align-items: center;
-    gap: 0.9rem;
-  }
-  .pagenav .arrow {
-    width: 3rem;
-    height: 3rem;
-    border-radius: 50%;
-    font-size: 1.7rem;
-    line-height: 1;
-    color: var(--teal-ink);
-    background: var(--paper);
-    display: grid;
-    place-items: center;
-    transition:
-      background 0.2s ease,
-      transform 0.1s ease;
-  }
-  .pagenav .arrow:active {
-    transform: scale(0.92);
-    background: var(--paper-deep);
-  }
-  .pagenav .arrow:disabled {
-    opacity: 0.35;
-  }
-  .count {
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-    min-width: 3.5rem;
-    text-align: center;
   }
 
   /* Federated / hologram things — a coloured edge keyed by their source holon

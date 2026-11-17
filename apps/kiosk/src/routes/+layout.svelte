@@ -108,6 +108,7 @@
     startRotation,
     noteInteraction,
     activeTab,
+    chooseOpen,
     requestedTab,
     visibleTabs,
     pendingCard,
@@ -122,7 +123,13 @@
     standingRecheck,
     type TabId,
   } from "$lib/stores";
-  import { pageForPath, pathForTab, tabForPath } from "$lib/tabroute";
+  import {
+    opensChoose,
+    pageForPath,
+    pathForChoose,
+    pathForTab,
+    tabForPath,
+  } from "$lib/tabroute";
   import { onboardingView, readOnboarding } from "@holons/core/onboarding";
   import { readGenes } from "@holons/core/dna";
   import { miniAppLaunch, settleMiniApp } from "$lib/miniapp";
@@ -812,7 +819,10 @@
         requestedTab.set(startTab);
     }
     if (card) pendingCard.set(card);
+    // `/<holon>/choose`: straight into the Choose deck over the Tasks tab.
+    if (opensChoose(location.pathname)) chooseOpen.set(true);
     lastSyncedTab = get(activeTab);
+    lastSyncedChoose = get(chooseOpen);
     scope.set(resolveScope());
     libraryPref.set(resolveLibraryPref());
     rolesPref.set(resolveRolesPref());
@@ -947,7 +957,10 @@
   // can fire during the first flush (a deep-linked content-driven tab isn't
   // visible yet), and replaceState before router init THROWS — an uncaught
   // error there freezes the whole board's reactivity.
+  // The Choose deck rides the same path (`/<holon>/choose` while it is open
+  // over Tasks), so it is a direct link too.
   let lastSyncedTab: TabId | null = null;
+  let lastSyncedChoose = false;
   let routerReady = false;
   afterNavigate(() => (routerReady = true));
   $: if (
@@ -955,12 +968,18 @@
     mounted &&
     !isHome &&
     !$boardGated &&
-    $activeTab !== lastSyncedTab
+    ($activeTab !== lastSyncedTab || $chooseOpen !== lastSyncedChoose)
   ) {
     lastSyncedTab = $activeTab;
-    const path = pathForTab(location.pathname, $activeTab);
+    lastSyncedChoose = $chooseOpen;
+    const path = viewPath(location.pathname);
     if (path !== location.pathname)
       replaceState(path + location.search + location.hash, {});
+  }
+  function viewPath(pathname: string): string {
+    return get(chooseOpen) && get(activeTab) === "tasks"
+      ? pathForChoose(pathname)
+      : pathForTab(pathname, get(activeTab));
   }
 
   // A deep-linked card opens the moment its lens delivers the record — the
@@ -1150,10 +1169,7 @@
   // param would override the path on reload, so it is dropped.
   function syncHolonPath(id: string) {
     if (!routerReady) return;
-    const path = pathForTab(
-      "/" + encodeURIComponent(segmentFor(id)),
-      get(activeTab),
-    );
+    const path = viewPath("/" + encodeURIComponent(segmentFor(id)));
     const params = new URLSearchParams(location.search);
     params.delete("holon");
     const q = params.toString();

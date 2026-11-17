@@ -90,8 +90,6 @@ export const en = {
   "swipe.joinFailed": "Couldn't join — try again.",
   "swipe.alreadyAppreciated": "Already appreciated ♥",
   "swipe.appreciateFailed": "Couldn't save that ♥ — try again.",
-  "swipe.deckAria":
-    "Task cards — swipe right to join, up to like, left to skip",
   "swipe.join": "JOIN",
   "swipe.skip": "SKIP",
   "swipe.joined": "JOINED",
@@ -99,13 +97,34 @@ export const en = {
   "swipe.allCaughtUp": "All caught up",
   "swipe.roundSummary": "{joins} joined · {likes} liked this round",
   "swipe.startOver": "Start over",
-  "swipe.seeList": "See the list",
-  "swipe.backToWall": "Back to post-its",
   "swipe.skipAria": "Skip this task",
   "swipe.skipTitle": "Skip",
   "swipe.appreciateAria": "Appreciate this task",
   "swipe.joinAria": "Join this task",
   "swipe.joinTitle": "Join",
+
+  // Choose deck (the backlog one card at a time, full screen)
+  "choose.open": "Choose",
+  "choose.openAria": "Choose what to do — one card at a time",
+  "choose.waiting": "{n} waiting",
+  "choose.title": "Choose",
+  "choose.close": "Close",
+  "choose.grip": "Pull down to close",
+  "choose.count": "{n} of {total}",
+  "choose.circle": "Circle {n}",
+  "choose.position": "Card {n} of {total}: {title}",
+  "choose.openCard": "{title} — open the card",
+  "choose.hint": "Swipe right to join, up to like, left to skip",
+  "choose.answers": "Your answer",
+  "choose.like": "Like",
+  "choose.undo": "Undo",
+  "choose.saidJoin": "Joined “{title}”",
+  "choose.saidLike": "Liked “{title}”",
+  "choose.saidSkip": "Skipped “{title}”",
+  "choose.circleDone": "Circle complete",
+  "choose.next": "Next {n}",
+  "choose.back": "Back to the board",
+  "choose.empty": "Nothing to choose right now",
 
   // Checklists
   "lists.updateFailed": "Could not update the list.",
@@ -259,8 +278,6 @@ export const en = {
 
   // Library view
   "library.emptyShared": "No things shared yet.",
-  "library.prevItem": "Previous item",
-  "library.nextItem": "Next item",
   "library.shareItem": "Share an item",
   "library.shareLead": "Something the community can borrow.",
   "library.namePlaceholder": "What is it? (e.g. Cordless drill)",
@@ -382,7 +399,6 @@ export const en = {
   "shifts.saveAndPublish": "Publish",
 
   // Pill segments (shared layout/sort vocabulary)
-  "pills.card": "Card",
   "pills.list": "List",
   "pills.wall": "Wall",
   "pills.week": "Week",

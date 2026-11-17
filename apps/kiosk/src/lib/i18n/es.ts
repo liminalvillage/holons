@@ -89,8 +89,6 @@ export const es: Record<MessageKey, Msg> = {
   "swipe.joinFailed": "No se pudo unir — inténtalo de nuevo.",
   "swipe.alreadyAppreciated": "Ya apreciada ♥",
   "swipe.appreciateFailed": "No se pudo guardar el ♥ — inténtalo de nuevo.",
-  "swipe.deckAria":
-    "Fichas de tareas — desliza a la derecha para unirte, arriba para apreciar, a la izquierda para saltar",
   "swipe.join": "ÚNETE",
   "swipe.skip": "SALTAR",
   "swipe.joined": "UNIDO",
@@ -98,13 +96,35 @@ export const es: Record<MessageKey, Msg> = {
   "swipe.allCaughtUp": "Todo al día",
   "swipe.roundSummary": "{joins} uniones · {likes} me gusta en esta ronda",
   "swipe.startOver": "Empezar de nuevo",
-  "swipe.seeList": "Ver la lista",
-  "swipe.backToWall": "Volver a los pósits",
   "swipe.skipAria": "Saltar esta tarea",
   "swipe.skipTitle": "Saltar",
   "swipe.appreciateAria": "Apreciar esta tarea",
   "swipe.joinAria": "Únete a esta tarea",
   "swipe.joinTitle": "Únete",
+
+  // Choose deck (las tareas de una en una, a pantalla completa)
+  "choose.open": "Elegir",
+  "choose.openAria": "Elige qué hacer — una ficha a la vez",
+  "choose.waiting": "{n} esperando",
+  "choose.title": "Elegir",
+  "choose.close": "Cerrar",
+  "choose.grip": "Desliza hacia abajo para cerrar",
+  "choose.count": "{n} de {total}",
+  "choose.circle": "Círculo {n}",
+  "choose.position": "Ficha {n} de {total}: {title}",
+  "choose.openCard": "{title} — abrir la ficha",
+  "choose.hint":
+    "Desliza a la derecha para unirte, arriba para apreciar, a la izquierda para saltar",
+  "choose.answers": "Tu respuesta",
+  "choose.like": "Me gusta",
+  "choose.undo": "Deshacer",
+  "choose.saidJoin": "Te uniste a “{title}”",
+  "choose.saidLike": "Apreciaste “{title}”",
+  "choose.saidSkip": "Saltaste “{title}”",
+  "choose.circleDone": "Círculo completo",
+  "choose.next": "{n} más",
+  "choose.back": "Volver al tablero",
+  "choose.empty": "Nada que elegir por ahora",
 
   // Checklists
   "lists.updateFailed": "No se pudo actualizar la lista.",
@@ -263,8 +283,6 @@ export const es: Record<MessageKey, Msg> = {
 
   // Library view
   "library.emptyShared": "Aún no hay objetos compartidos.",
-  "library.prevItem": "Objeto anterior",
-  "library.nextItem": "Objeto siguiente",
   "library.shareItem": "Compartir un objeto",
   "library.shareLead": "Algo que la comunidad puede tomar prestado.",
   "library.namePlaceholder": "¿Qué es? (p. ej., Taladro inalámbrico)",
@@ -393,7 +411,6 @@ export const es: Record<MessageKey, Msg> = {
   "shifts.saveAndPublish": "Publicar",
 
   // Pill segments
-  "pills.card": "Ficha",
   "pills.list": "Lista",
   "pills.wall": "Muro",
   "pills.week": "Semana",

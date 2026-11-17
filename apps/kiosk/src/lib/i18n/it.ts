@@ -89,8 +89,6 @@ export const it: Record<MessageKey, Msg> = {
   "swipe.joinFailed": "Impossibile unirsi — riprova.",
   "swipe.alreadyAppreciated": "Già apprezzata ♥",
   "swipe.appreciateFailed": "Impossibile salvare il ♥ — riprova.",
-  "swipe.deckAria":
-    "Schede attività — scorri a destra per unirti, in alto per apprezzare, a sinistra per saltare",
   "swipe.join": "UNISCITI",
   "swipe.skip": "SALTA",
   "swipe.joined": "UNITO",
@@ -98,13 +96,35 @@ export const it: Record<MessageKey, Msg> = {
   "swipe.allCaughtUp": "Tutto fatto",
   "swipe.roundSummary": "{joins} adesioni · {likes} mi piace in questo giro",
   "swipe.startOver": "Ricomincia",
-  "swipe.seeList": "Vedi la lista",
-  "swipe.backToWall": "Torna ai post-it",
   "swipe.skipAria": "Salta questa attività",
   "swipe.skipTitle": "Salta",
   "swipe.appreciateAria": "Apprezza questa attività",
   "swipe.joinAria": "Unisciti a questa attività",
   "swipe.joinTitle": "Unisciti",
+
+  // Choose deck (le attività una scheda alla volta, a schermo intero)
+  "choose.open": "Scegli",
+  "choose.openAria": "Scegli cosa fare — una scheda alla volta",
+  "choose.waiting": "{n} in attesa",
+  "choose.title": "Scegli",
+  "choose.close": "Chiudi",
+  "choose.grip": "Trascina giù per chiudere",
+  "choose.count": "{n} di {total}",
+  "choose.circle": "Cerchio {n}",
+  "choose.position": "Scheda {n} di {total}: {title}",
+  "choose.openCard": "{title} — apri la scheda",
+  "choose.hint":
+    "Scorri a destra per unirti, in alto per apprezzare, a sinistra per saltare",
+  "choose.answers": "La tua risposta",
+  "choose.like": "Mi piace",
+  "choose.undo": "Annulla",
+  "choose.saidJoin": "Ti sei unito a “{title}”",
+  "choose.saidLike": "Apprezzato “{title}”",
+  "choose.saidSkip": "Saltato “{title}”",
+  "choose.circleDone": "Cerchio completato",
+  "choose.next": "Altre {n}",
+  "choose.back": "Torna alla bacheca",
+  "choose.empty": "Niente da scegliere per ora",
 
   // Checklists
   "lists.updateFailed": "Impossibile aggiornare la lista.",
@@ -269,8 +289,6 @@ export const it: Record<MessageKey, Msg> = {
 
   // Library view
   "library.emptyShared": "Ancora nessun oggetto condiviso.",
-  "library.prevItem": "Oggetto precedente",
-  "library.nextItem": "Oggetto successivo",
   "library.shareItem": "Condividi un oggetto",
   "library.shareLead": "Qualcosa che la comunità può prendere in prestito.",
   "library.namePlaceholder": "Cos'è? (es. Trapano a batteria)",
@@ -392,7 +410,6 @@ export const it: Record<MessageKey, Msg> = {
   "shifts.saveAndPublish": "Pubblica",
 
   // Pill segments
-  "pills.card": "Scheda",
   "pills.list": "Elenco",
   "pills.wall": "Bacheca",
   "pills.week": "Settimana",

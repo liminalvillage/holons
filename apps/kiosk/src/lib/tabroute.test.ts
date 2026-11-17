@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   PAGE_SEGMENTS,
   hrefForPage,
+  opensChoose,
   pageForPath,
+  pathForChoose,
   pathForPage,
   pathForTab,
   tabForPath,
@@ -110,5 +112,22 @@ describe("page segments", () => {
     expect(hrefForPage({ pathname: "/liminal", search: "" }, "dna")).toBe(
       "/liminal/dna",
     );
+  });
+});
+
+describe("the Choose deck link", () => {
+  it("opens the Tasks tab with the deck over it", () => {
+    expect(tabForPath("/liminal/choose")).toBe("tasks");
+    expect(tabForPath("/choose")).toBe("tasks");
+    expect(opensChoose("/liminal/choose")).toBe(true);
+    expect(opensChoose("/Choose/")).toBe(true);
+    expect(opensChoose("/liminal/tasks")).toBe(false);
+  });
+
+  it("swaps with the tab segment both ways, keeping the holon", () => {
+    expect(pathForChoose("/liminal/tasks")).toBe("/liminal/choose");
+    expect(pathForChoose("/liminal")).toBe("/liminal/choose");
+    expect(pathForChoose("/liminal/choose")).toBe("/liminal/choose");
+    expect(pathForTab("/liminal/choose", "tasks")).toBe("/liminal/tasks");
   });
 });

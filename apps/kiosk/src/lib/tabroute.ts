@@ -23,6 +23,14 @@ const TAB_IDS = new Set<string>(TABS.map((t) => t.id));
 export const PAGE_SEGMENTS: readonly JoinPage[] = JOIN_PAGES;
 export type PageSegment = JoinPage;
 
+/**
+ * The path segment that opens the Tasks "Choose" deck full screen
+ * (`/<holon>/choose`) — the direct link a phone, a home-screen icon or a
+ * Mini App button can open straight into. Not a tab: it shows the Tasks tab
+ * with the deck over it, and closing the deck returns the path to `/tasks`.
+ */
+export const CHOOSE = "choose";
+
 /** A pathname's segments, decoded, without empty entries. */
 function segmentsOf(pathname: string): string[] {
   return pathname
@@ -47,7 +55,13 @@ const lastOf = (segs: string[]): string =>
  */
 export function tabForPath(pathname: string): TabId | null {
   const last = lastOf(segmentsOf(pathname));
+  if (last === CHOOSE) return "tasks";
   return TAB_IDS.has(last) ? (last as TabId) : null;
+}
+
+/** Was this URL opened straight into the Tasks "Choose" deck? */
+export function opensChoose(pathname: string): boolean {
+  return lastOf(segmentsOf(pathname)) === CHOOSE;
 }
 
 /** The page a URL path opens (`/liminal/dna` → `dna`), or null for the board. */
@@ -59,7 +73,7 @@ export function pageForPath(pathname: string): PageSegment | null {
 function holonSegments(pathname: string): string[] {
   const segs = segmentsOf(pathname);
   const last = lastOf(segs);
-  if (TAB_IDS.has(last) || joinPageOf(last)) segs.pop();
+  if (TAB_IDS.has(last) || last === CHOOSE || joinPageOf(last)) segs.pop();
   return segs;
 }
 
@@ -72,6 +86,11 @@ const build = (segs: string[]): string =>
  */
 export function pathForTab(pathname: string, tab: TabId): string {
   return build([...holonSegments(pathname), tab]);
+}
+
+/** The pathname that opens the "Choose" deck, keeping the holon segment. */
+export function pathForChoose(pathname: string): string {
+  return build([...holonSegments(pathname), CHOOSE]);
 }
 
 /**

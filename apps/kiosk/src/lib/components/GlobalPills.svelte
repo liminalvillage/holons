@@ -84,20 +84,19 @@
 
   type Segment = { id: string; icon: IconName; labelKey: MessageKey };
 
-  // ── Tasks: swipe deck / compact list / post-it wall. Whether partners'
-  // tasks come along, done ones too, and their order are filters — see
-  // FilterSheet.
+  // ── Tasks: compact list / post-it wall / graph. Whether partners' tasks
+  // come along, done ones too, and their order are filters — see
+  // FilterSheet. One card at a time is the Choose deck, not a layout (its
+  // button sits by the board's ＋).
   const TASK_MODES: (Segment & { id: TaskViewMode })[] = [
-    { id: "swipe", ...LAYOUT_SEGMENTS.card },
     { id: "list", ...LAYOUT_SEGMENTS.list },
     { id: "cards", ...LAYOUT_SEGMENTS.wall },
     { id: "graph", ...LAYOUT_SEGMENTS.graph },
   ];
 
-  // ── Library: one card at a time / compact list / icon card grid (wall) /
-  // the booking calendar (when each thing is out).
+  // ── Library: compact list / icon card grid (wall) / the booking calendar
+  // (when each thing is out).
   const LIBRARY_MODES: (Segment & { id: LibraryViewMode })[] = [
-    { id: "swipe", ...LAYOUT_SEGMENTS.card },
     { id: "list", ...LAYOUT_SEGMENTS.list },
     { id: "cards", ...LAYOUT_SEGMENTS.wall },
     { id: "calendar", ...LAYOUT_SEGMENTS.calendar },
