@@ -289,8 +289,6 @@ export const it: Record<MessageKey, Msg> = {
 
   // Library view
   "library.emptyShared": "Ancora nessun oggetto condiviso.",
-  "library.prevItem": "Oggetto precedente",
-  "library.nextItem": "Oggetto successivo",
   "library.shareItem": "Condividi un oggetto",
   "library.shareLead": "Qualcosa che la comunità può prendere in prestito.",
   "library.namePlaceholder": "Cos'è? (es. Trapano a batteria)",
@@ -412,7 +410,6 @@ export const it: Record<MessageKey, Msg> = {
   "shifts.saveAndPublish": "Pubblica",
 
   // Pill segments
-  "pills.card": "Scheda",
   "pills.list": "Elenco",
   "pills.wall": "Bacheca",
   "pills.week": "Settimana",

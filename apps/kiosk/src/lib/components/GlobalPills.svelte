@@ -94,10 +94,9 @@
     { id: "graph", ...LAYOUT_SEGMENTS.graph },
   ];
 
-  // ── Library: one card at a time / compact list / icon card grid (wall) /
-  // the booking calendar (when each thing is out).
+  // ── Library: compact list / icon card grid (wall) / the booking calendar
+  // (when each thing is out).
   const LIBRARY_MODES: (Segment & { id: LibraryViewMode })[] = [
-    { id: "swipe", ...LAYOUT_SEGMENTS.card },
     { id: "list", ...LAYOUT_SEGMENTS.list },
     { id: "cards", ...LAYOUT_SEGMENTS.wall },
     { id: "calendar", ...LAYOUT_SEGMENTS.calendar },

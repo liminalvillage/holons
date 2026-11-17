@@ -278,8 +278,6 @@ export const en = {
 
   // Library view
   "library.emptyShared": "No things shared yet.",
-  "library.prevItem": "Previous item",
-  "library.nextItem": "Next item",
   "library.shareItem": "Share an item",
   "library.shareLead": "Something the community can borrow.",
   "library.namePlaceholder": "What is it? (e.g. Cordless drill)",
@@ -401,7 +399,6 @@ export const en = {
   "shifts.saveAndPublish": "Publish",
 
   // Pill segments (shared layout/sort vocabulary)
-  "pills.card": "Card",
   "pills.list": "List",
   "pills.wall": "Wall",
   "pills.week": "Week",

@@ -689,16 +689,14 @@ export function setShowHolograms(on: boolean): void {
 /**
  * How the Library view lays out the things: the icon card grid, a compact
  * list, or the booking calendar (when each thing is out). Same Layout pill as
- * the Tasks view; the choice sticks per device. `swipe` is the one-at-a-time
- * Card pager (id matches the Tasks deck's).
+ * the Tasks view; the choice sticks per device.
  */
-export type LibraryViewMode = "cards" | "list" | "swipe" | "calendar";
+export type LibraryViewMode = "cards" | "list" | "calendar";
 
 /** Resolve the Library view mode; the card grid (wall) is the default. */
 export function resolveLibraryView(): LibraryViewMode {
   const v = persisted(LIBRARY_VIEW_KEY);
-  if (v === "cards" || v === "list" || v === "swipe" || v === "calendar")
-    return v;
+  if (v === "cards" || v === "list" || v === "calendar") return v;
   // Legacy "personal" mode rendered the compact rows — closest is the list.
   if (v === "personal") return "list";
   return "cards";
