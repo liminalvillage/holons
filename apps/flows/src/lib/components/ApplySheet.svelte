@@ -5,6 +5,7 @@
   // few words on why. Asking moves nothing: the fund's stewards read it and
   // decide, and the answer shows on the account that asked.
   import type { Application, FlowGraphNode } from "@holons/core/flows";
+  import { failure } from "$lib/format";
   import { createEventDispatcher, onMount } from "svelte";
   import BottomSheet from "./BottomSheet.svelte";
   import { apply, fundApplications, withdraw } from "$lib/applications";
@@ -56,8 +57,8 @@
       showNotice($t("apply.sent"));
       dispatch("changed");
       dispatch("close");
-    } catch {
-      error = $t("apply.failed");
+    } catch (err) {
+      error = failure($t("apply.failed"), err);
     } finally {
       busy = false;
     }
@@ -71,8 +72,8 @@
       showNotice($t("apply.withdrawn"));
       await read();
       dispatch("changed");
-    } catch {
-      error = $t("apply.failed");
+    } catch (err) {
+      error = failure($t("apply.failed"), err);
     } finally {
       busy = false;
     }

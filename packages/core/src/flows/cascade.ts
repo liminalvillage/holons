@@ -57,6 +57,8 @@ export interface CascadeInputs {
   zoned: AllocationPartner[];
   /** The holon's display name, when the caller knows a better one. */
   name?: string;
+  /** What the holon says about itself, when it says anything. Carried to the graph; the cascade does not read it. */
+  description?: string;
 }
 
 /**

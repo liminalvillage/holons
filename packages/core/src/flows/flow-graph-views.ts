@@ -445,6 +445,7 @@ export function refineFlowGraph(
     }
   }
   if (live.root.name && nodes.has(holon)) nodes.get(holon)!.label = live.root.name;
+  if (live.root.description && nodes.has(holon)) nodes.get(holon)!.description = live.root.description;
 
   const drift: FlowGraphDrift[] = [];
   const after = new Map((freshOut.get(holon) ?? []).map((l) => [l.target, l.local] as const));
@@ -455,6 +456,32 @@ export function refineFlowGraph(
   }
 
   return { graph: { ...graph, nodes: [...nodes.values()], links }, refreshed, drift };
+}
+
+/**
+ * A snapshot that also knows `party`: a holon the published graph does not
+ * reach yet — one just started, or not seated by anyone on the map — drawn
+ * on its own with nothing reaching it, so its page and split can be shown
+ * and `refineFlowGraph` can fold its split in. A party already on the graph
+ * is left as it is.
+ */
+export function adoptFlowParty(
+  graph: FlowGraph,
+  party: { id: string; label?: string; description?: string },
+): FlowGraph {
+  const id = String(party?.id ?? '').trim();
+  if (!id || graph.nodes.some((n) => n.id === id)) return graph;
+  const label = String(party.label ?? '').trim() || id;
+  const description = String(party.description ?? '').trim();
+  const node: FlowGraphNode = {
+    id,
+    label,
+    kind: classifyParty({ id, rootId: graph.root, keep: new Set(), out: [] }),
+    share: 0,
+    rest: 0,
+    ...(description ? { description } : {}),
+  };
+  return { ...graph, nodes: [...graph.nodes, node] };
 }
 
 /**

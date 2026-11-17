@@ -3,7 +3,9 @@
   //
   // Why there is no map on screen, or why the one on screen is not fresher.
   // With a graph (from the cache, or the one before a torn publish) this is a
-  // quiet line above it; without one it is the whole screen.
+  // quiet line above it; without one it is the whole screen. With no Pot to
+  // show at all, it is the way to start one, or to open one by its link.
+  import FirstPot from "./FirstPot.svelte";
   import Icon from "./Icon.svelte";
   import { loadSnapshot, snapshot, type SnapshotStatus } from "$lib/graph";
   import { t, type MessageKey } from "$lib/i18n";
@@ -23,7 +25,12 @@
     status === "offline" || status === "incomplete" || status === "missing";
 </script>
 
-{#if status === "loading" && !has}
+{#if (status === "unconfigured" || status === "missing") && !has}
+  {#if status === "missing"}
+    <p class="notice warn line" role="status">{$t("status.missing")}</p>
+  {/if}
+  <FirstPot />
+{:else if status === "loading" && !has}
   <div class="skeleton" role="status" aria-label={$t("status.loading")}>
     <span></span><span></span><span></span><span></span>
   </div>

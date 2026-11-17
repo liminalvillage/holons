@@ -100,3 +100,42 @@ export function traceAmount(
   paths.sort((a, z) => z.amount - a.amount || z.hops.length - a.hops.length);
   return { from, to: target, amount: total, reached: paths.reduce((s, p) => s + p.amount, 0), paths, truncated };
 }
+
+/**
+ * Everyone `amount` put in at `from` reaches, and how much: the same rule as
+ * `traceAmount` (each split passes on `local` percent), spread to the whole
+ * map at once — what "fund this and watch it trickle down" draws. Each
+ * party's figure is what reaches it, before it passes any on.
+ *
+ * Walked a level at a time rather than path by path, so it stays cheap on a
+ * wide map; nothing flows back into `from`, and a loop elsewhere is cut by
+ * `maxDepth`. Amounts at or below `minAmount` stop there as dust.
+ */
+export function trickleAmount(
+  index: FlowGraphIndex,
+  amount: number,
+  opts: { from?: string; maxDepth?: number; minAmount?: number } = {},
+): Map<string, number> {
+  const from = String(opts.from ?? index.graph.root);
+  const total = Number.isFinite(amount) && amount > 0 ? amount : 0;
+  const maxDepth = Math.max(1, Math.floor(opts.maxDepth ?? TRACE_MAX_DEPTH));
+  const minAmount = Math.max(0, opts.minAmount ?? total * 1e-6);
+  const reached = new Map<string, number>();
+  if (!total || !index.byId.has(from)) return reached;
+  reached.set(from, total);
+  let frontier = new Map<string, number>([[from, total]]);
+  for (let depth = 0; depth < maxDepth && frontier.size; depth++) {
+    const next = new Map<string, number>();
+    for (const [id, value] of frontier) {
+      for (const link of index.out.get(id) ?? []) {
+        if (link.target === from || !(link.local > 0)) continue;
+        const v = (value * link.local) / 100;
+        if (v <= minAmount) continue;
+        next.set(link.target, (next.get(link.target) ?? 0) + v);
+      }
+    }
+    for (const [id, v] of next) reached.set(id, (reached.get(id) ?? 0) + v);
+    frontier = next;
+  }
+  return reached;
+}

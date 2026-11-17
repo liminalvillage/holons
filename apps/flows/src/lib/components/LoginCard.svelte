@@ -59,8 +59,17 @@
     walletOk = isWalletAvailable();
     remembered = keysOffered ? readRememberedKey() : null;
     // A remembered key with no live session: the PIN step is the front door.
+    // That holds after a reload too, when the cookie session came back but
+    // the key (memory only) did not — the card asks for the PIN again
+    // instead of greeting a person who can no longer sign anything.
     if (remembered && !get(sessionKeyPub)) sheet = "unlock";
   });
+  /** Signed in as the remembered key's owner, but the key itself is not held. */
+  $: unlockable =
+    !!remembered &&
+    !$sessionKeyPub &&
+    (!$currentUser ||
+      String($currentUser.id).toLowerCase() === remembered.pubkey);
 
   async function finish(fn: () => Promise<ProviderLogin> | ProviderLogin) {
     if (busy) return;
@@ -148,7 +157,7 @@
 </script>
 
 <div class="login">
-  {#if $currentUser}
+  {#if $currentUser && !(sheet === "unlock" && unlockable)}
     <div class="glyph" aria-hidden="true"><Icon name="check" /></div>
     <h3>{$t("login.loggedIn")}</h3>
     <p>

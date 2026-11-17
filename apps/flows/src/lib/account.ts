@@ -42,7 +42,7 @@ import {
   type OpenCollectiveSnapshot,
   type Payout,
 } from "@holons/core/flows";
-import { isHolonAdmin, writeAcceptance } from "@holons/core/holosphere";
+import { holonRole, writeAcceptance } from "@holons/core/holosphere";
 import { currentUser } from "./auth";
 import { index, potId } from "./graph";
 import { getHolosphere } from "./holosphere";
@@ -250,7 +250,9 @@ export async function canSteer(holonId: string): Promise<boolean> {
       quiet(() => hs.getAll(holonId, "users"), []),
     ]);
     hs._readAuthority?.invalidate(holonId);
-    return isHolonAdmin(hs, holonId);
+    // An open holon (nobody defined for it, or not heard yet) takes anyone's
+    // write, but nobody keeps it: only an admin steers.
+    return (await holonRole(hs, holonId)) === "admin";
   }, false);
 }
 

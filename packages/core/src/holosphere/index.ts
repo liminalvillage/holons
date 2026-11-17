@@ -18,6 +18,8 @@ export {
   resolveHolonAuthority,
   writeAcceptance,
   isHolonAdmin,
+  holonRole,
+  type HolonRole,
   type WriteAcceptance,
   type WriteStanding,
   type AuthorityPredicate,

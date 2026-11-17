@@ -28,8 +28,9 @@
 //     newest season that reports it) — the part already unlocked is in its
 //     projects' `match`, so nothing is counted twice; `none` leaves funds out;
 //   with no project → fund link in the leaderboard, a project names no fund:
-//     the importer seats it straight in the Pot, a holon of its own beside
-//     the funds, so a seat that retires is shared by the whole Pot.
+//     the importer seats it through the funds the catalog links it to (those
+//     that funded it, else those that curated it) or, with none, in one
+//     commons fund — see scripts/import-artisan-graph.mjs `--seat-via`.
 //
 // WHICH FUND STOOD BEHIND WHICH PROJECT is not in the leaderboard, but the
 // same site's matching catalog (artizen.fyi/match/index.json) lists it:
@@ -40,6 +41,12 @@
 // whom; it carries no amount (the catalog has none) and moves nobody's share.
 // A fund the catalog links but the leaderboard owes nothing is added without
 // a seat in the Pot, so its links have a holon to land on.
+//
+// The catalog also says what each one is: a project's `description`, and a
+// fund's `subtitle` (its one-line pitch; the long `description` when it has
+// none). With `--catalog` each project and fund carries that as its
+// `description`, which the importer writes into the holon's settings and the
+// map shows beside the name.
 //
 // Writes the graph and prints the mapping the importer needs. Nothing is
 // sent anywhere.
@@ -129,6 +136,18 @@ if (CATALOG) {
   const catalog = JSON.parse(readFileSync(CATALOG, "utf8"));
   const projectSlug = new Map((catalog.projects ?? []).map((p) => [p.id, String(p.slug ?? "")]));
   const fundOf = new Map((catalog.funds ?? []).map((f) => [f.id, f]));
+  const said = (...texts) => texts.map((t) => (t == null ? "" : String(t).trim())).find(Boolean) || "";
+  // What each one says about itself, by slug.
+  const projectSaid = new Map((catalog.projects ?? []).map((p) => [String(p.slug ?? ""), said(p.description)]));
+  const fundSaid = new Map((catalog.funds ?? []).map((f) => [String(f.slug ?? ""), said(f.subtitle, f.description)]));
+  for (const row of projectRows) {
+    const d = projectSaid.get(row.id);
+    if (d) row.description = d;
+  }
+  for (const f of funds) {
+    const d = fundSaid.get(f.id.replace(/^fund:/, ""));
+    if (d) f.description = d;
+  }
   const seated = new Set(projectRows.map((p) => p.id));
   const fundIds = new Set(funds.map((f) => f.id));
   const rank = (kind) => LINK_KINDS.indexOf(kind);
@@ -141,7 +160,8 @@ if (CATALOG) {
     const id = `fund:${fund.slug}`;
     if (!fundIds.has(id)) {
       fundIds.add(id);
-      funds.push({ id, name: String(fund.name ?? fund.slug).trim() || fund.slug, linked: true });
+      const description = said(fund.subtitle, fund.description);
+      funds.push({ id, name: String(fund.name ?? fund.slug).trim() || fund.slug, ...(description ? { description } : {}), linked: true });
       unseated++;
     }
     const key = `${project}\n${id}`;
@@ -170,9 +190,10 @@ if (CATALOG) {
   const linkedProjects = new Set(links.map((l) => l.project));
   const byKind = LINK_KINDS.map((k) => `${links.filter((l) => l.kind === k).length} ${k}`).join(", ");
   console.log(`${links.length} links (${byKind}) tie ${linkedProjects.size} projects to ${new Set(links.map((l) => l.fund)).size} funds; ${projectRows.length - linkedProjects.size} projects have none`);
-  console.log(`${unseated} funds are linked but owed nothing — founded without a seat in the Pot`);
+  console.log(`${unseated} funds are linked but owed nothing themselves — seated in the Pot only by what their projects were owed`);
+  console.log(`${projectRows.filter((p) => p.description).length} projects and ${graph.funds.filter((f) => f.description).length} funds carry a description from the catalog`);
 }
-console.log(`every project is seated straight in the Pot — the leaderboard has no project → fund link`);
+console.log(`no project names its fund (the leaderboard has no project → fund link): the importer seats each through its linked funds, or the commons fund`);
 console.log(`0 people — the export names none`);
 console.log(`\nGraph written to ${OUT}. Import it with this mapping:`);
 console.log(JSON.stringify({ funds: { path: "funds" }, projects: { path: "projects" }, people: { path: "people" }, ...(CATALOG ? { links: { path: "links" } } : {}) }));

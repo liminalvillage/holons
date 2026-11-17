@@ -147,6 +147,29 @@ export function setRing(draft: SplitDraft, id: string, ring: number): SplitDraft
   return { ...draft, recipients: recipients.sort(byName), candidates: candidates.sort(byName) };
 }
 
+/**
+ * The draft with a whole split laid over it — a proposal, read to see it:
+ * keep, rings, slope and who sits where all come from `save`; a party it
+ * places that the draft did not know joins with its id for a name. A locked
+ * keep stays as it is.
+ */
+export function draftWithSave(draft: SplitDraft, save: SplitSave): SplitDraft {
+  const c = save.config ?? {};
+  let next: SplitDraft = {
+    ...draft,
+    ...(draft.locked || c.interiorPercent == null ? {} : { keep: Math.round(clamp(c.interiorPercent, 0, 100)) }),
+    ...(c.steepness == null ? {} : { steepness: Math.round(clamp(c.steepness, 0, 100)) }),
+    ...(c.resourced == null ? {} : { resourced: Math.round(clamp(c.resourced, 0, 100)) }),
+  };
+  next = setRingCount(next, c.nzones ?? draft.nzones);
+  const placed = new Map<string, { ring: number; kind: SplitRecipient['kind'] }>();
+  for (const [id, ring] of Object.entries(save.zones ?? {})) placed.set(id, { ring: Number(ring), kind: 'holon' });
+  for (const [id, ring] of Object.entries(save.people ?? {})) placed.set(id, { ring: Number(ring), kind: 'person' });
+  for (const r of next.recipients) if (!placed.has(r.id)) next = setRing(next, r.id, 0);
+  for (const [id, p] of placed) next = addRecipient(next, { id, kind: p.kind }, Math.max(1, p.ring));
+  return next;
+}
+
 /** Take a party off its ring. */
 export const removeRecipient = (draft: SplitDraft, id: string): SplitDraft => setRing(draft, id, 0);
 
@@ -207,7 +230,8 @@ export function previewDraft(draft: SplitDraft): SplitPreview {
   for (const zone of result.exterior) {
     const members = zone.members ?? [];
     for (const m of members) share.set(m.id, (share.get(m.id) ?? 0) + m.percentage);
-    if (zone.zone != null) rings.push({ ring: zone.zone, percentage: zone.percentage, count: members.length });
+    // A ring nobody sits on passes nothing on: its share stays (`unplaced`).
+    if (zone.zone != null) rings.push({ ring: zone.zone, percentage: members.length ? zone.percentage : 0, count: members.length });
   }
   const rows = draft.recipients
     .map((r) => ({ ...r, percentage: share.get(r.id) ?? 0 }))
@@ -266,4 +290,39 @@ export function draftToSave(draft: SplitDraft): SplitSave {
     zones,
     people,
   };
+}
+
+/**
+ * Who may be placed on a holon's rings besides its federated partners: the
+ * people of its own `users` lens (Telegram ids), the keys seated in its
+ * members log (a key-founded holon's people), and whoever its fund
+ * approved — an approved application seats a Telegram id or a key. Names
+ * come along where they are known; ids are kept once, in order.
+ */
+export function placeablePeople(input: {
+  users?: ReadonlyArray<{ id?: unknown; name?: string }> | null;
+  /** Keys seated in the holon's members log (hex). */
+  members?: Iterable<string> | null;
+  applications?: ReadonlyArray<{ party: string; status: string; name?: string }> | null;
+}): { persons: string[]; names: Record<string, string> } {
+  const persons: string[] = [];
+  const names: Record<string, string> = {};
+  const add = (id: string) => {
+    if (!persons.includes(id)) persons.push(id);
+  };
+  for (const u of input.users ?? []) {
+    const id = String(u?.id ?? '');
+    if (!/^\d+$/.test(id)) continue;
+    add(id);
+    if (u.name) names[id] = u.name;
+  }
+  for (const key of input.members ?? []) {
+    const id = String(key ?? '').toLowerCase();
+    if (/^[0-9a-f]{64}$/.test(id)) add(id);
+  }
+  for (const a of input.applications ?? []) {
+    if (a.name && !names[a.party]) names[a.party] = a.name;
+    if (a.status === 'approved' && /^(\d+|[0-9a-f]{64})$/i.test(a.party)) add(a.party);
+  }
+  return { persons, names };
 }

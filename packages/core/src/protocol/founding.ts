@@ -122,6 +122,8 @@ export async function syncFoundingAuthority(hs: HoloSphere, holon: string): Prom
 export interface FoundHolonOptions {
   /** The holon's name, written into its settings. */
   name?: string;
+  /** What the holon says about itself, written into its settings beside the name. */
+  description?: string;
   /** Keys to seat beside the founder (hex or npub → role). */
   members?: Iterable<[string, Role]>;
 }
@@ -189,10 +191,17 @@ export async function foundHolon(hs: HoloSphere, holon: string, opts: FoundHolon
 
   const existing = (await readSettings(hs, h)) ?? {};
   const name = typeof opts.name === 'string' ? opts.name.trim() : '';
+  const description = typeof opts.description === 'string' ? opts.description.trim() : '';
   const declared = typeof existing.holonPubkey === 'string' ? existing.holonPubkey.toLowerCase() : '';
-  if (declared !== me || (name && existing.name !== name) || String(existing.id ?? '') !== h) {
+  if (
+    declared !== me ||
+    (name && existing.name !== name) ||
+    (description && existing.description !== description) ||
+    String(existing.id ?? '') !== h
+  ) {
     const next: Record<string, unknown> = { ...existing, id: h, holonPubkey: me };
     if (name) next.name = name;
+    if (description) next.description = description;
     await hs.put(h, 'settings', next);
   }
 

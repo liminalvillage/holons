@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { FLOW_GRAPH_LENS } from './flow-graph-doc.js';
-import { crawlFlowGraph, loadFlowGraph, publishFlowGraph } from './flow-graph-load.js';
+import { crawlFlowGraph, loadFlowGraph, loadPotGraph, publishFlowGraph } from './flow-graph-load.js';
 
 /** Settings by holon, federation records, and a lens store that takes writes. */
 function fakeHolosphere(settings: Record<string, any>, federation: Record<string, any> = {}, failing: string[] = []) {
@@ -50,7 +50,7 @@ const world = () => ({
       claimWindow: { until: 9_000_000_000_000, keep: ['holon_f1'] },
     },
   },
-  holon_f1: { name: 'Fund One', allocation: { interiorPercent: 0, steepness: 50, nzones: 2, zones: { holon_j: 1 } } },
+  holon_f1: { name: 'Fund One', description: 'Backs the first of everything.', allocation: { interiorPercent: 0, steepness: 50, nzones: 2, zones: { holon_j: 1 } } },
   holon_f2: { name: 'Fund Two', allocation: { interiorPercent: 0, steepness: 50, nzones: 2, zones: { holon_j: 1 } } },
   holon_j: { name: 'Project J', allocation: { interiorPercent: 100, interiorMode: 'custom', shares: { '111': 3, 'artisan:9': 1 } } },
   '-100': { name: 'Claimed', allocation: { interiorPercent: 100, interiorMode: 'custom', shares: { '111': 1 } } },
@@ -71,7 +71,8 @@ describe('crawlFlowGraph', () => {
 
     expect(g).toMatchObject({ root: POT, at: 1000, epoch: 7, complete: true, problems: [] });
     expect(node(POT)).toMatchObject({ kind: 'pot', label: 'The Pot', pot: { chainId: 100 } });
-    expect(node('holon_f1')).toMatchObject({ kind: 'fund', label: 'Fund One' });
+    expect(node('holon_f1')).toMatchObject({ kind: 'fund', label: 'Fund One', description: 'Backs the first of everything.' });
+    expect(node('holon_j')).not.toHaveProperty('description');
     expect(node('holon_f1')!.share).toBeCloseTo(25);
     // Its own seat and the fund's ring.
     expect(node('holon_j')!.share).toBeCloseTo(75);
@@ -146,5 +147,27 @@ describe('publishFlowGraph', () => {
   it('is missing where nothing was published', async () => {
     expect(await loadFlowGraph(fakeHolosphere({}), POT)).toEqual({ ok: false, reason: 'missing' });
     expect(await loadFlowGraph(null, POT)).toEqual({ ok: false, reason: 'missing' });
+  });
+});
+
+describe('loadPotGraph', () => {
+  it('reads a Pot nobody has published live', async () => {
+    const hs = fakeHolosphere(world(), federation);
+    const out = await loadPotGraph(hs, POT, { now: 1000 });
+    expect(out).toMatchObject({ ok: true, live: true, graph: { root: POT, at: 1000 } });
+    if (!out.ok) throw new Error('unreachable');
+    expect(out.graph.nodes.map((n) => n.id)).toContain('holon_f2');
+  });
+
+  it('prefers the published snapshot', async () => {
+    const hs = fakeHolosphere(world(), federation);
+    await publishFlowGraph(hs, POT, await crawlFlowGraph(hs, POT, { now: 500 }));
+    const out = await loadPotGraph(hs, POT, { now: 1000 });
+    expect(out).toMatchObject({ ok: true, graph: { at: 500 } });
+    expect(out).not.toHaveProperty('live', true);
+  });
+
+  it('is missing when the Pot has no split to walk', async () => {
+    expect(await loadPotGraph(fakeHolosphere({}), POT)).toEqual({ ok: false, reason: 'missing' });
   });
 });

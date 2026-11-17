@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { createHoloSphere } from '../holosphere/factory.js';
 import { isHolonAdmin } from '../holosphere/authority.js';
 import { readMembersLog } from '../protocol/membership.js';
+import { setFederationPartner } from '../federation/partners.js';
 import { signedEntry, testKey } from '../protocol/testing.js';
 import { lapsedSeats } from './buckets.js';
 import { FLOW_PROJECT_CLAIMS_LENS, buildProjectClaim } from './project-claims.js';
@@ -12,6 +13,7 @@ import {
   approveProjectClaim,
   declineProjectClaim,
   loadProjectClaims,
+  potFunds,
   projectSeats,
   requestProjectClaim,
   withdrawProjectClaim,
@@ -65,6 +67,22 @@ const mirrorMembers = async (from: any, to: any, holon: string) => {
   to._readAuthority?.invalidate();
 };
 
+describe('potFunds', () => {
+  it('reads every seat when the Pot seats only funds, heaviest first', () => {
+    const settings = { allocation: { buckets: [{ id: 'legacy', percent: 100, mode: 'custom', shares: { a: 1, b: 5, c: 3 } }] } };
+    expect(potFunds(settings)).toEqual([
+      { id: 'b', weight: 5 },
+      { id: 'c', weight: 3 },
+      { id: 'a', weight: 1 },
+    ]);
+  });
+  it('reads only the kept seats when projects sit in the Pot too', () => {
+    const settings = { allocation: { buckets: [{ id: 'legacy', percent: 100, mode: 'custom', shares: { f: 4, p1: 9, g: 2 } }], claimWindow: { until: 1, keep: ['f', 'g'] } } };
+    expect(potFunds(settings).map((x) => x.id)).toEqual(['f', 'g']);
+    expect(potFunds(null)).toEqual([]);
+  });
+});
+
 describe('projectSeats', () => {
   it('reads every seat but the kept ones: claimed by alias or in place, closed past the window, else open', () => {
     const settings = {
@@ -96,7 +114,7 @@ describe('project claims against the store', () => {
     const id = arrive(hs, ada.sk, 'ada', PROJECT, T0 + 10);
     expect(await isHolonAdmin(hs, PROJECT, ada.pk)).toBe(false);
 
-    expect(await approveProjectClaim(hs, POT, id)).toEqual({ project: PROJECT, key: ada.pk, seated: true, codes: 1 });
+    expect(await approveProjectClaim(hs, POT, id)).toEqual({ project: PROJECT, key: ada.pk, seated: true, codes: 1, alsoClaimedIn: [] });
     expect((await hs.getMembers(PROJECT)).get(ada.pk)).toBe('admin');
     expect(await isHolonAdmin(hs, PROJECT, ada.pk)).toBe(true);
     const settings = await hs.get(POT, 'settings', POT);
@@ -110,7 +128,28 @@ describe('project claims against the store', () => {
     expect(ctx.approved[PROJECT]?.id).toBe(id);
     expect(ctx.seats[PROJECT]).toBe('claimed');
 
-    expect(await approveProjectClaim(hs, POT, id)).toEqual({ project: PROJECT, key: ada.pk, seated: false, codes: 0 });
+    expect(await approveProjectClaim(hs, POT, id)).toEqual({ project: PROJECT, key: ada.pk, seated: false, codes: 0, alsoClaimedIn: [] });
+  });
+
+  it('a project seated in two funds is claimed in both by one approval', async () => {
+    const hs = await pot();
+    // A second fund seats the same project (its credit split over both funds) and is linked to it.
+    const SECOND = 'holon_second_fund';
+    await hs.foundHolon(SECOND, { at: T0 });
+    hs._readAuthority?.invalidate();
+    await hs.put(SECOND, 'settings', { id: SECOND, allocation: { interiorPercent: 100 } });
+    await saveAllocationConfig(hs, SECOND, {}, undefined, undefined, undefined, {
+      buckets: [{ id: 'legacy', percent: 100, mode: 'custom', shares: { [PROJECT]: 150, [OTHER]: 50 } }],
+      claimWindow: { until: UNTIL, keep: [] },
+    });
+    await setFederationPartner(hs, PROJECT, SECOND, { partnerName: 'Second', inbound: [], outbound: [] });
+    const id = arrive(hs, testKey().sk, 'ada', PROJECT, T0 + 10);
+
+    const out = await approveProjectClaim(hs, POT, id);
+    expect(out.alsoClaimedIn).toEqual([SECOND]);
+    const second = await hs.get(SECOND, 'settings', SECOND);
+    expect(readAllocationClaimed(second)).toEqual([PROJECT]);
+    expect(lapsedSeats({ window: readAllocationClaimWindow(second), now: UNTIL + 1, buckets: readAllocationBuckets(second), claimed: readAllocationClaimed(second) })).toEqual([OTHER]);
   });
 
   it('a claimed project takes no more requests; a closed window none either', async () => {

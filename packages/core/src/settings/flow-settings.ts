@@ -41,6 +41,8 @@ export interface FederationPartnerView {
 export interface HolonSettings {
   id: string;
   name: string;
+  /** What the holon says about itself — a sentence or two. Optional. */
+  description?: string;
   version: number;
   admin: string;
   timezone: string;

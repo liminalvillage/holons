@@ -76,6 +76,14 @@ export function resolvePot(): string {
   );
 }
 
+/** Make `holon` the Pot this device opens on — the one it started, or one
+ *  it was sent a link to. */
+export function rememberPot(holon: string): void {
+  const id = String(holon ?? "").trim();
+  if (id) persist(POT_KEY, id);
+  else forget(POT_KEY);
+}
+
 /** Relay URLs — the wire. `VITE_FLOWS_RELAYS`, else the shared
  *  `VITE_HOLOSPHERE_RELAYS`, else the production relay set. */
 export function resolveRelays(): string[] {
@@ -94,17 +102,43 @@ export function resolveEnforceReads(): boolean {
 }
 
 /**
- * Dev only: a flow graph to draw instead of the published snapshot
- * (`?graph=/some.json`, a `FlowGraph` as `--out` of the publish script saves
- * it). Never read in a production build.
+ * Dev only: a flow graph to draw instead of the published snapshot. The dev
+ * server always draws the fixture in `dev/graph.json` (the Artizen
+ * funds and projects with made-up people under them), so no relay and no
+ * publish is needed to work on the app. `?graph=/some.json` draws another
+ * file (a `FlowGraph`, as `--out` of the publish script saves it) and
+ * `?graph=live` — or `VITE_FLOWS_GRAPH=live`, for a whole dev run against
+ * a local relay — reads the relays as production does. Never read in a
+ * production build.
  */
+export const DEV_GRAPH_URL = "/__dev-graph.json";
+
 export function resolveDevGraphUrl(): string {
   if (!import.meta.env.DEV || typeof window === "undefined") return "";
+  if (import.meta.env.VITE_FLOWS_GRAPH === "live") return "";
   try {
-    return new URLSearchParams(window.location.search).get("graph") ?? "";
+    const asked = new URLSearchParams(window.location.search).get("graph");
+    if (asked === "live") return "";
+    return asked || DEV_GRAPH_URL;
   } catch {
-    return "";
+    return DEV_GRAPH_URL;
   }
+}
+
+/**
+ * The Artizen map, for a look at the whole network beside one's own pot:
+ * in dev the bundled fixture (it is the Artizen Pot), in a build the Pot
+ * `VITE_FLOWS_ARTIZEN_POT` names — read in the namespace this app runs in.
+ * Null when there is none to show.
+ */
+export type ArtizenView =
+  | { kind: "fixture"; url: string }
+  | { kind: "pot"; id: string };
+
+export function resolveArtizenView(): ArtizenView | null {
+  if (import.meta.env.DEV) return { kind: "fixture", url: DEV_GRAPH_URL };
+  const id = String(import.meta.env.VITE_FLOWS_ARTIZEN_POT ?? "").trim();
+  return id ? { kind: "pot", id } : null;
 }
 
 /** How the day/night palette is chosen. `auto` follows the device. */

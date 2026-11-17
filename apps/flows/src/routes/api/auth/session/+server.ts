@@ -91,7 +91,9 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
     return json({ user: dev, ...derivedKeyFor(dev, cfg.derivationSecret) });
   }
 
-  return json({ user: null }, { status: 401 });
+  // Nobody signed in is an answer, not an error: a 401 here would log a
+  // failed request on every page a visitor opens.
+  return json({ user: null });
 };
 
 export const DELETE: RequestHandler = async ({ url, cookies }) => {

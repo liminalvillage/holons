@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { F1, F2, J, POT, diamond } from './flow-graph.fixture.js';
 import { indexFlowGraph } from './flow-graph-index.js';
-import { traceAmount } from './flow-graph-trace.js';
+import { traceAmount, trickleAmount } from './flow-graph-trace.js';
 
 describe('traceAmount', () => {
   // Pot → F1 25, F2 25, J 50; F1, F2 → J; J → 111 ¾, artisan:9 ¼.
@@ -36,5 +36,29 @@ describe('traceAmount', () => {
     const t = traceAmount(index, '111', 1000, { maxPaths: 1 });
     expect(t.paths).toHaveLength(1);
     expect(t.truncated).toBe(true);
+  });
+});
+
+describe('trickleAmount', () => {
+  const index = indexFlowGraph(diamond());
+
+  it('spreads €1,000 from the Pot to everyone it reaches, as the map says', () => {
+    const r = trickleAmount(index, 1000);
+    expect(r.get(POT)).toBe(1000);
+    expect(r.get(F1)).toBeCloseTo(250, 6);
+    expect(r.get(J)).toBeCloseTo(1000, 6);
+    for (const id of ['111', J, F1, F2]) {
+      expect(r.get(id)).toBeCloseTo(traceAmount(index, id, 1000).reached, 6);
+      expect(r.get(id)).toBeCloseTo((1000 * index.byId.get(id)!.share) / 100, 6);
+    }
+  });
+
+  it('starts anywhere, and reaches nothing from off the map or for nothing', () => {
+    const r = trickleAmount(index, 100, { from: F1 });
+    expect(r.get(F1)).toBe(100);
+    expect(r.get('111')).toBeCloseTo(75, 6);
+    expect(r.has(POT)).toBe(false);
+    expect(trickleAmount(index, 100, { from: 'nobody' }).size).toBe(0);
+    expect(trickleAmount(index, 0).size).toBe(0);
   });
 });

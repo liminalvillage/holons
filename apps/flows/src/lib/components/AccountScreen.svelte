@@ -21,6 +21,7 @@
     ResourceOffer,
     ResourcesContext,
   } from "@holons/core/flows";
+  import { isClaimWindowOpen } from "@holons/core/flows";
   import ActionRow from "./ActionRow.svelte";
   import ActivityList from "./ActivityList.svelte";
   import ApplicationsInbox from "./ApplicationsInbox.svelte";
@@ -36,6 +37,9 @@
   import TraceCard from "./TraceCard.svelte";
   import Icon from "./Icon.svelte";
   import KindChip from "./KindChip.svelte";
+  import InviteCard from "./InviteCard.svelte";
+  import KeysSection from "./KeysSection.svelte";
+  import StartSheet from "./StartSheet.svelte";
   import PartyScreen from "./PartyScreen.svelte";
   import WalletCard from "./WalletCard.svelte";
   import {
@@ -50,14 +54,16 @@
   import { myApplications, type MyApplication } from "$lib/applications";
   import { seatingHolonOf } from "$lib/projectClaims";
   import { currentUser, displayName } from "$lib/auth";
-  import { pct } from "$lib/format";
-  import { labelOf, nameFor } from "$lib/graph";
-  import { locale, t, type MessageKey } from "$lib/i18n";
+  import { adopt, choosePot, labelOf, nameFor, potId } from "$lib/graph";
+  import { locale, t, type MessageKey, pctOf } from "$lib/i18n";
   import { potLive } from "$lib/live";
   import { loadPayout, rememberSteered, steeredHolons } from "$lib/me";
   import { EMPTY_RESOURCES, accountResources } from "$lib/resources";
   import { sessionKeyPub } from "$lib/sessionKey";
   import { logout } from "$lib/auth";
+  import { goto } from "$app/navigation";
+  import { readRememberedKey } from "$lib/rememberKey";
+  import LoginCard from "./LoginCard.svelte";
   import { hrefFor, searchHref } from "$lib/urls";
   import type { AccountAction } from "$lib/viewTypes";
 
@@ -69,6 +75,16 @@
   $: node = index.byId.get(id)!;
   $: isHolon = node.kind !== "person" && node.kind !== "placeholder";
   $: selfId = $currentUser ? String($currentUser.id) : null;
+  /** This person's key, still sealed on this device behind its PIN. */
+  $: remembered =
+    selfId && !$sessionKeyPub
+      ? readRememberedKey()?.pubkey === selfId.toLowerCase()
+      : false;
+  /** No key to unlock here: end the session and go where one can sign in. */
+  async function signInAgain() {
+    await logout();
+    await goto("/me");
+  }
 
   let statement: Statement = EMPTY_STATEMENT;
   let reading = true;
@@ -85,7 +101,8 @@
     | "apply"
     | "give"
     | "offer"
-    | "claimProject" = "none";
+    | "claimProject"
+    | "start" = "none";
   let resources: ResourcesContext = EMPTY_RESOURCES;
   let readingResources = true;
   /** The offer a give answers, or an offer being edited. */
@@ -97,12 +114,24 @@
     readingResources = false;
   }
 
+  /** A balance that has not come in by then is shown as unknown, not "…". */
+  const READ_MS = 12_000;
   async function read(force = false) {
     reading = true;
-    const [next, address] = await Promise.all([
-      loadStatement(id, force),
-      loadPayout(id, $potLive.record?.chainId ?? null),
+    const was = id;
+    const late = new Promise<null>((r) => setTimeout(() => r(null), READ_MS));
+    const got = await Promise.race([
+      Promise.all([
+        loadStatement(id, force),
+        loadPayout(id, $potLive.record?.chainId ?? null),
+      ]),
+      late,
     ]);
+    if (was !== id) return;
+    const [next, address] = got ?? [
+      { ...EMPTY_STATEMENT, partial: true },
+      null,
+    ];
     statement = next;
     payout = address ?? node.payout ?? null;
     reading = false;
@@ -120,7 +149,7 @@
       : [];
     applications = own || steer ? await myApplications(id) : [];
     if (selfId && steer) rememberSteered(selfId, id);
-    mine = await steeredHolons(index, selfId, canSteer);
+    mine = await steeredHolons(index, selfId, canSteer, adopt);
   }
 
   // Read when the account, the reader or the Pot's state changes.
@@ -171,8 +200,7 @@
   $: claimHolder = node.kind === "project" ? seatingHolonOf(index, id) : null;
   $: canClaimProject =
     !!claimHolder &&
-    !!node.unclaimedUntil &&
-    node.unclaimedUntil > Date.now() &&
+    isClaimWindowOpen(node) &&
     !!selfId &&
     !unsigned &&
     !own &&
@@ -182,8 +210,23 @@
     ...(canClaimProject
       ? [{ id: "claimProject", icon: "key", label: $t("action.claimProject") }]
       : []),
-    { id: "claim", icon: "download", label: $t("action.claim"), main: true },
-    { id: "fund", icon: "plus", label: $t("action.fund") },
+    // A seat nobody has claimed has nobody to take anything out yet.
+    ...(node.kind === "placeholder"
+      ? []
+      : [
+          {
+            id: "claim",
+            icon: "download",
+            label: $t("action.claim"),
+            main: true,
+          },
+        ]),
+    {
+      id: "fund",
+      icon: "plus",
+      label: $t("action.fund"),
+      main: node.kind === "placeholder",
+    },
     ...(canGive
       ? [{ id: "give", icon: "gift", label: $t("action.resource") }]
       : []),
@@ -199,13 +242,13 @@
       : []),
     ...(canApplyHere
       ? [{ id: "apply", icon: "send", label: $t("action.apply") }]
-      : own || steer
+      : (own || steer) && node.kind !== "pot"
         ? [
             {
               id: "find",
               icon: "search",
               label: $t("action.findFunds"),
-              href: searchHref("", "fund"),
+              href: searchHref("", "pots"),
             },
           ]
         : []),
@@ -221,6 +264,25 @@
     withdrawn: "apply.status.withdrawn",
   };
   $: steered = new Set(steer ? [id] : []);
+  /** A holon its steward has not seated anyone on yet: just started, or emptied. */
+  $: seatsNobody =
+    steer && isHolon && !(index.out.get(id) ?? []).some((l) => l.local > 0);
+  $: seatHref = `/h/${encodeURIComponent(id)}/split?add=1`;
+  /** The root the map opens on, when this is not it. */
+  $: root = index.byId.get(index.graph.root) ?? null;
+  /** A holon of mine nothing reaches yet: it needs a seat somewhere. */
+  $: unreached =
+    steer && isHolon && node.kind !== "pot" && !(node.share > 0) && !!root;
+  let rooting = false;
+  async function rootHere() {
+    rooting = true;
+    try {
+      await choosePot(id);
+      await goto("/");
+    } finally {
+      rooting = false;
+    }
+  }
 </script>
 
 <header class="head">
@@ -237,13 +299,28 @@
     {#if node.kind !== "pot"}
       <span>
         {node.share > 0
-          ? $t("party.ofPot", { pct: pct(node.share) })
+          ? $t("party.ofPot", { pct: $pctOf(node.share) })
           : $t("party.unseated")}
       </span>
     {/if}
     {#if steer}<span class="badge">{$t("account.steward")}</span>{/if}
   </p>
+  {#if node.description}
+    <p class="about">{node.description}</p>
+  {/if}
 </header>
+
+<!-- Said first, before anything is offered: whose this seat is not, yet. -->
+{#if node.kind === "placeholder"}
+  <p class="notice warn">{$t("party.placeholder")}</p>
+{/if}
+{#if node.unclaimedUntil}
+  <p class="notice warn">
+    {$t("party.unclaimed", {
+      date: new Date(node.unclaimedUntil).toLocaleDateString($locale),
+    })}
+  </p>
+{/if}
 
 {#if statement.balances.length}
   <div class="balances">
@@ -254,7 +331,8 @@
 {:else}
   <section class="card none">
     <p class="label">{$t("balance.available")}</p>
-    <p class="figure">{reading ? "…" : "—"}</p>
+    <p class="figure" aria-busy={reading}>{reading ? "…" : "—"}</p>
+    {#if reading}<p class="muted">{$t("fund.reading")}</p>{/if}
     {#if !reading}
       <p class="muted">
         {own ? $t("balance.noneOwn") : $t("balance.none")}
@@ -269,9 +347,14 @@
 {#if unsigned && (own || isHolon)}
   <div class="notice warn relogin">
     <p>{$t("account.unsigned")}</p>
-    <button class="btn quiet small" on:click={() => void logout()}
-      >{$t("account.signInAgain")}</button
-    >
+    {#if remembered}
+      <!-- The key is still sealed on this device: its PIN brings it back. -->
+      <LoginCard />
+    {:else}
+      <button class="btn quiet small" on:click={signInAgain}
+        >{$t("account.signInAgain")}</button
+      >
+    {/if}
   </div>
 {/if}
 
@@ -290,6 +373,37 @@
   }}
 />
 
+{#if seatsNobody}
+  <div class="notice seat">
+    <p>{$t("account.seatsNobody")}</p>
+    <a class="btn small" href={seatHref}
+      ><Icon name="plus" />{$t("account.seat")}</a
+    >
+  </div>
+{/if}
+
+{#if unreached && root}
+  <div class="notice seat">
+    <p>{$t("account.unreached", { pot: root.label })}</p>
+    <a class="btn small" href={hrefFor(root)}
+      ><Icon name="send" />{$t("account.askPot", { pot: root.label })}</a
+    >
+  </div>
+{/if}
+
+{#if steer && isHolon}
+  <InviteCard
+    holon={id}
+    name={nameFor(node.id, node.label)}
+    isPot={id === potId}
+  />
+  {#if id !== potId}
+    <button class="more" disabled={rooting} on:click={rootHere}
+      ><Icon name="flow" />{$t("account.rootHere")}</button
+    >
+  {/if}
+{/if}
+
 {#if own && mine.length}
   <h2 class="section-title">{$t("account.others")}</h2>
   <div class="chips">
@@ -302,6 +416,11 @@
       {/if}
     {/each}
   </div>
+{/if}
+{#if own}
+  <button class="more" on:click={() => (sheet = "start")}
+    ><Icon name="plus" />{$t("start.title")}</button
+  >
 {/if}
 
 {#if own || node.kind === "person" || node.payout}
@@ -316,6 +435,7 @@
 {/if}
 
 {#if steer}
+  <KeysSection holon={id} />
   <ProjectClaimsInbox holder={id} on:changed={refresh} />
   <ApplicationsInbox fund={id} on:changed={refresh} />
   {#if queue.length}
@@ -380,7 +500,7 @@
 {/if}
 
 <PartyScreen {index} {id} {own} bare>
-  <a slot="after-sources" class="more" href={searchHref("", "fund")}
+  <a slot="after-sources" class="more" href={searchHref("", "pots")}
     ><Icon name="search" />{own || steer
       ? $t("account.findMore")
       : $t("account.browseFunds")}</a
@@ -396,12 +516,24 @@
   </svelte:fragment>
 </PartyScreen>
 
+{#if sheet === "start"}
+  <StartSheet
+    on:close={() => (sheet = "none")}
+    on:started={(e) => {
+      sheet = "none";
+      const n = index.byId.get(e.detail);
+      void goto(n ? hrefFor(n) : `/h/${encodeURIComponent(e.detail)}`);
+    }}
+  />
+{/if}
+
 {#if sheet === "claim"}
   <ClaimSheet
     party={id}
     {statement}
     own={acting}
     {payout}
+    on:payout={(e) => (payout = e.detail)}
     on:changed={refresh}
     on:close={() => (sheet = "none")}
   />
@@ -515,6 +647,28 @@
     padding: 0 14px;
     font-size: 0.86rem;
   }
+  .seat {
+    display: grid;
+    gap: 8px;
+    justify-items: start;
+    margin-top: 12px;
+  }
+  .seat .small {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 40px;
+    padding: 0 14px;
+    font-size: 0.86rem;
+  }
+  button.more {
+    border: 0;
+    background: none;
+    padding: 0;
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
   .partial {
     font-size: 0.82rem;
     margin-top: 6px;
@@ -541,7 +695,9 @@
     overflow-wrap: anywhere;
   }
   .more {
-    display: inline-flex;
+    /* One link per line: two in a row read as one sentence. */
+    display: flex;
+    width: fit-content;
     align-items: center;
     gap: 8px;
     min-height: 44px;
@@ -606,5 +762,12 @@
   .status.declined {
     background: color-mix(in srgb, var(--danger, #b3261e) 14%, var(--card));
     color: var(--ink);
+  }
+  .about {
+    margin-top: 10px;
+    font-size: 0.95rem;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    overflow-wrap: anywhere;
   }
 </style>

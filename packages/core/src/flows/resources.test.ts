@@ -6,6 +6,7 @@ import { bootstrapActors } from '../protocol/membership.js';
 import { shuffled, signedEntry, testKey } from '../protocol/testing.js';
 import { lunationAt } from './lunation.js';
 import {
+  giftsShown,
   CAPITALS,
   RESOURCE_NOTE_MAX,
   bandwidthWeights,
@@ -178,5 +179,13 @@ describe('rankByResources', () => {
     ]);
     expect(ranked.map((r) => r.rank)).toEqual([1, 1, 1]);
     expect(ranked.every((r) => r.star)).toBe(true);
+  });
+});
+
+describe('giftsShown', () => {
+  it('shows stewards every gift and everyone else all but the disputed', () => {
+    const gifts = [{ status: 'received' as const }, { status: 'pending' as const }, { status: 'disputed' as const }];
+    expect(giftsShown(gifts, true)).toHaveLength(3);
+    expect(giftsShown(gifts, false).map((g) => g.status)).toEqual(['received', 'pending']);
   });
 });

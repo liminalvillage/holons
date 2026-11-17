@@ -7,7 +7,7 @@ project, a person). Each gift is one of the eight forms of capital the
 CapitalGame plays with; financial is one stream among eight. `/story` walks
 the whole idea, scene by scene, into the screens that do it.
 
-A mobile-first account for everyone under a Pot. It opens on **you**: your
+A mobile-first account for everyone under a Pot. `/me` opens on **you**: your
 name, what you can take out, and what you can do — claim it, see which funds
 it comes through, apply to others. A project, a fund and the Pot open as the
 same kind of account, and every row and every bar is a way on to the next.
@@ -27,7 +27,12 @@ and pays. See "The account" in
 [`docs/flows-artisan-fork.md`](../../docs/flows-artisan-fork.md).
 
 ```
-/              Me (signed in) — or the way in: sign in, paste an address, explore
+/              the navigator: the Pot in 3D, a tap goes in (?at=<id>); signed out,
+               a first-visit card offers sign in and the story. Without WebGL the
+               level is listed instead
+/me            Me (signed in) — or the way in: sign in, paste an address, explore
+/explore       the same descent with the level described in words below the scene
+/quests        the quest deck of the funds you follow
 /p/<party>     a person, or a seat nobody has claimed yet
 /h/<holon>     a fund, a project, the Pot
 /h/<holon>/split   how it divides what reaches it (editable by its stewards)
@@ -89,12 +94,15 @@ override per device and persist. Sign-in uses the same server variables as
 the kiosk (`TELEGRAM_OIDC_*`, `AUTH_JWT_SECRET`); `VITE_DEV_TELEGRAM_USER_ID`
 signs a dev session in.
 
-In dev only, `?graph=<url>` draws a graph file instead of the published
-snapshot — the `--out` of the publish script — which is how the app is looked
-at before a Pot has been published:
+In dev the app draws `dev/graph.json` — the Artizen funds and projects with
+made-up people under them — instead of the published snapshot, so no relay
+and no publish is needed to work on it. `?graph=<url>` draws another graph
+file (the `--out` of the publish script) and `?graph=live` reads the relays
+as production does:
 
 ```
-http://localhost:5473/eco?graph=/@fs/abs/path/to/flow-graph.json
+http://localhost:5473/?graph=/@fs/abs/path/to/flow-graph.json
+http://localhost:5473/?graph=live
 ```
 
 ## Wallets on a phone

@@ -170,7 +170,7 @@
       {/each}
     </ul>
     <p>{$t("story.s4.body")}</p>
-    <a class="go" href="/eco"
+    <a class="go" href="/eco?view=map"
       >{$t("story.s4.go")}<Icon name="chevron-right" /></a
     >
   </li>
@@ -185,7 +185,7 @@
       <span>{$t("rise.ruleBandwidth")}</span>
     </p>
     <p>{$t("story.s5.body")}</p>
-    <a class="go" href="/eco"
+    <a class="go" href="/eco?view=map"
       >{$t("story.s5.go")}<Icon name="chevron-right" /></a
     >
   </li>
@@ -221,9 +221,9 @@
     <p>{$t("story.s8.body")}</p>
     <ul class="clips">
       <li><a href="/eco"><Icon name="globe" />{$t("story.s8.network")}</a></li>
-      <li><a href="/"><Icon name="download" />{$t("story.s8.claim")}</a></li>
+      <li><a href="/me"><Icon name="download" />{$t("story.s8.claim")}</a></li>
       <li>
-        <a href="/"><Icon name="wallet" />{$t("story.s8.withdraw")}</a>
+        <a href="/me"><Icon name="wallet" />{$t("story.s8.withdraw")}</a>
       </li>
     </ul>
   </li>

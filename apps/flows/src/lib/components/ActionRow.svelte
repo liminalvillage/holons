@@ -70,6 +70,12 @@
     font-weight: 700;
     text-align: center;
     line-height: 1.15;
-    overflow-wrap: anywhere;
+    /* Break between words, and hyphenate a long one, never mid-syllable. */
+    overflow-wrap: normal;
+    hyphens: auto;
+    max-width: 100%;
+  }
+  .actions:has(> :nth-child(5)) .text {
+    font-size: 0.72rem;
   }
 </style>

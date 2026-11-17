@@ -13,14 +13,14 @@
   // received since the last publish moves the board without waiting for one.
   import { rankByResources, type FlowPartyKind } from "@holons/core/flows";
   import { page } from "$app/stores";
+  import { onDestroy } from "svelte";
   import CapitalBlocks from "$lib/components/CapitalBlocks.svelte";
   import Icon from "$lib/components/Icon.svelte";
   import SnapshotBadge from "$lib/components/SnapshotBadge.svelte";
   import SnapshotStatus from "$lib/components/SnapshotStatus.svelte";
-  import { pct } from "$lib/format";
   import { index } from "$lib/graph";
   import { accountResources } from "$lib/resources";
-  import { t, type MessageKey } from "$lib/i18n";
+  import { t, type MessageKey, pctOf } from "$lib/i18n";
   import { hrefFor, withParam } from "$lib/urls";
 
   const KINDS: { kind: FlowPartyKind | "all"; label: MessageKey }[] = [
@@ -45,16 +45,27 @@
   $: if ($index) readLive($index.graph.nodes.filter((n) => n.kind === kind));
 
   /** Each party's base, off its log; `accountResources` folds it into the map. */
+  // Leaving the page stops the queue: what was not read yet stays unread.
+  let gone = false;
+  onDestroy(() => (gone = true));
+  /** Logs still being read: the board is not "empty" until they are in. */
+  let pending = 0;
   async function readLive(nodes: { id: string }[]) {
     const queue = nodes.map((n) => n.id).filter((id) => !read.has(id));
-    for (const id of queue) read.add(id);
+    pending += queue.length;
     const next = async (): Promise<void> => {
       const id = queue.shift();
-      if (id == null) return;
-      await accountResources(id);
+      if (id == null || gone) return;
+      read.add(id);
+      try {
+        await accountResources(id);
+      } finally {
+        pending -= 1;
+      }
       return next();
     };
     await Promise.all(Array.from({ length: READING }, next));
+    if (!gone) pending = Math.max(0, pending - queue.length);
   }
 </script>
 
@@ -106,7 +117,7 @@
           </a>
           <span class="nums">
             <b>{r.count}</b>
-            <i>{n && n.share > 0 ? pct(n.share) : "—"}</i>
+            <i>{n && n.share > 0 ? $pctOf(n.share) : "—"}</i>
           </span>
         </li>
       {/each}
@@ -115,7 +126,9 @@
   {:else}
     <div class="card empty">
       <Icon name="sprout" />
-      <p class="muted">{$t("rise.empty")}</p>
+      <p class="muted">
+        {pending > 0 ? $t("fund.reading") : $t("rise.empty")}
+      </p>
     </div>
   {/if}
   <p class="foot"><SnapshotBadge /></p>

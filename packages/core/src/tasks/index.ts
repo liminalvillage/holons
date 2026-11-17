@@ -19,3 +19,6 @@ export * from './completion-plan.js';
 export * from './completion-execute.js';
 export * from './stop.js';
 export * from './deletion.js';
+export * from './board.js';
+export * from './board-feed.js';
+export * from './board-load.js';

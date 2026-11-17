@@ -13,4 +13,10 @@ describe('holon settings hex default', () => {
   it('keeps a persisted hex address', () => {
     expect(parseHolonSettings({ hex: '8928308280fffff' }).hex).toBe('8928308280fffff');
   });
+
+  it('keeps a description, trimmed, and drops a blank one', () => {
+    expect(parseHolonSettings({ description: '  A fund for tea.  ' }).description).toBe('A fund for tea.');
+    expect(parseHolonSettings({ description: '   ' })).not.toHaveProperty('description');
+    expect(parseHolonSettings({ description: 7 })).not.toHaveProperty('description');
+  });
 });

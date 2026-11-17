@@ -401,6 +401,7 @@ export { defaultUpstreams } from './inbound.js';
 export {
   buildFlowGraph,
   classifyParty,
+  isClaimWindowOpen,
   isPlaceholderParty,
   type FlowGraph,
   type FlowGraphLink,
@@ -424,6 +425,8 @@ export {
   DEFAULT_FLOW_GRAPH_HOLONS,
   crawlFlowGraph,
   loadFlowGraph,
+  loadPotGraph,
+  type PotGraph,
   publishFlowGraph,
   type CrawlFlowGraphOptions,
 } from './flow-graph-load.js';
@@ -444,6 +447,7 @@ export {
   ecosystemTrack,
   listParties,
   membershipsOf,
+  adoptFlowParty,
   refineFlowGraph,
   refineFlowGraphResources,
   upstreamShares,
@@ -465,6 +469,15 @@ export {
   type FlowSpaceNode,
 } from './flow-graph-space.js';
 export { FLOW_FORCE_KINDS, layoutFlowForce, type FlowForceOptions } from './flow-graph-force.js';
+export {
+  POT_TIERS_MORE_PREFIX,
+  layoutPotTiers,
+  potTierBandPath,
+  type PotTierBand,
+  type PotTiers,
+  type PotTiersOptions,
+  type PotTierVessel,
+} from './pot-tiers.js';
 export { potAccount, potAccountSegments, type PotAccount } from './pot-account.js';
 export {
   APPLICATION_NOTE_MAX,
@@ -488,7 +501,9 @@ export {
   declineApplication,
   loadApplications,
   setApplicationsOpen,
+  watchApplications,
   withdrawApplication,
+  APPLICATIONS_SETTLE_MS,
   type ApplicationsContext,
   type ApprovedApplication,
 } from './applications-load.js';
@@ -515,6 +530,7 @@ export {
   approveProjectClaim,
   declineProjectClaim,
   loadProjectClaims,
+  potFunds,
   projectSeats,
   requestProjectClaim,
   withdrawProjectClaim,
@@ -528,6 +544,8 @@ export {
   draftChanges,
   draftFromInputs,
   draftToSave,
+  draftWithSave,
+  placeablePeople,
   previewDraft,
   removeRecipient,
   setKeep,
@@ -543,6 +561,28 @@ export {
   type SplitRecipient,
   type SplitSave,
 } from './split-draft.js';
+export {
+  FLOW_SPLIT_PROPOSALS_LENS,
+  SPLIT_PROPOSAL_NOTE_MAX,
+  buildSplitMark,
+  buildSplitProposal,
+  buildSplitVerdict,
+  foldSplitProposals,
+  splitQuorum,
+  splitSaveHash,
+  storedSplit,
+  type FoldedSplitProposals,
+  type SplitProposal,
+  type SplitProposalStatus,
+} from './split-proposals.js';
+export {
+  applySplitProposal,
+  decideSplitProposal,
+  loadSplitProposals,
+  proposeSplit,
+  withdrawSplitProposal,
+  type SplitProposalsContext,
+} from './split-proposals-load.js';
 export {
   accountBalances,
   claimRails,
@@ -648,6 +688,7 @@ export {
   foldResources,
   isCapital,
   isGift,
+  giftsShown,
   normalizeCapital,
   rankByResources,
   resourceBaseOf,
@@ -684,4 +725,44 @@ export {
   saveResourceOffer,
   type ResourcesContext,
 } from './resources-load.js';
-export { TRACE_MAX_DEPTH, TRACE_MAX_PATHS, traceAmount, type Trace, type TraceHop, type TracePath } from './flow-graph-trace.js';
+export { TRACE_MAX_DEPTH, TRACE_MAX_PATHS, traceAmount, trickleAmount, type Trace, type TraceHop, type TracePath } from './flow-graph-trace.js';
+
+export {
+  alsoIn,
+  buildFractal,
+  fractalPath,
+  fractalWay,
+  ventureBandwidth,
+  type Fractal,
+  type FractalKind,
+  type FractalNode,
+  type FractalRole,
+  type FractalStanding,
+  type VentureNeed,
+  type VentureOrigin,
+  type VentureYield,
+} from './ventures.js';
+
+export { linkSeatedHolons, seatableParty, type SeatableParty } from './seating.js';
+export {
+  HOLON_DESCRIPTION_MAX,
+  HOLON_NAME_MAX,
+  STARTER_SPLIT,
+  startHolon,
+  type StartHolonInput,
+  type StartedHolon,
+} from './start.js';
+export {
+  DEFAULT_SAFE_CHAIN,
+  NO_PAY_IN,
+  PAY_IN_KEY,
+  describeSafe,
+  lightningUri,
+  parseLightning,
+  parseSafe,
+  readPayIn,
+  safeChains,
+  savePayIn,
+  type PayIn,
+  type PayInSafe,
+} from './pay-in.js';

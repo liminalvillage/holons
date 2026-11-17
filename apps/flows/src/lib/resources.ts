@@ -54,9 +54,13 @@ export function accountResources(
   return read;
 }
 
-export async function give(to: string, input: BuildGiftInput): Promise<void> {
-  await giveResource(await getHolosphere(), to, input);
+export async function give(
+  to: string,
+  input: BuildGiftInput,
+): Promise<{ id: string }> {
+  const made = await giveResource(await getHolosphere(), to, input);
   cache.delete(to);
+  return made;
 }
 
 export async function receive(holon: string, giftId: string): Promise<void> {

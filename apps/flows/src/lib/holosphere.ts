@@ -8,6 +8,7 @@
 // they signed in with (`sessionKey.ts`) or, failing that, this device's.
 
 import { createHoloSphere } from "@holons/core/holosphere";
+import { pubkeyOf } from "@holons/core/nostr";
 import type { HoloSphere } from "holosphere";
 import { resolveAppName, resolveEnforceReads, resolveRelays } from "./config";
 
@@ -32,6 +33,11 @@ function deviceKeyHex(): string {
     }
   }
   return k;
+}
+
+/** The public key (hex) this device signs with when no session key is adopted. */
+export function devicePubkey(): string {
+  return pubkeyOf(deviceKeyHex());
 }
 
 let instance: Promise<HoloSphere> | null = null;

@@ -2,7 +2,13 @@
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
   // The whole map on one screen: the Pot, the funds it seats, and who they
-  // and the Pot pay. Two thousand parties do not fit a phone, so core names
+  // and the Pot pay.
+  //
+  // It opens on the Flow (`PotFalls`): the Pot across the top, pouring down
+  // into the pots it seats and on into theirs, each band as wide as its
+  // share. A tap on a pot gives its numbers and tools; `?from=<id>` pours
+  // the view from that pot instead of the root.
+  // Two thousand parties do not fit a phone, so core names
   // the largest few of each column and gathers the rest ("other funds",
   // "other projects") — and every gathered bar opens to the list behind it.
   //
@@ -11,7 +17,7 @@
   // the share of the Pot it carries. `?view=network` pulls the funds and the
   // projects together by their links instead (`layoutFlowForce`, laid out
   // off the main thread), so a project several funds back sits between them.
-  // `?view=diagram` is the Sankey.
+  // `?view=diagram` is the Sankey; `?view=map` the space above.
   //
   // Over the map and the network sits a search: what it finds stays lit and
   // named while the rest fades, and choosing one flies there.
@@ -35,15 +41,15 @@
   import FlowList from "$lib/components/FlowList.svelte";
   import FlowSpace from "$lib/components/FlowSpace.svelte";
   import Icon from "$lib/components/Icon.svelte";
+  import PotFalls from "$lib/components/PotFalls.svelte";
   import { capitalColour, capitalName } from "$lib/capitals";
   import KindChip from "$lib/components/KindChip.svelte";
   import SnapshotBadge from "$lib/components/SnapshotBadge.svelte";
   import SnapshotStatus from "$lib/components/SnapshotStatus.svelte";
   import { NARROW_PX } from "$lib/config";
-  import { pct } from "$lib/format";
   import { index } from "$lib/graph";
   import { networkOf } from "$lib/network";
-  import { t, type MessageKey } from "$lib/i18n";
+  import { t, type MessageKey, pctOf } from "$lib/i18n";
   import { hrefFor, searchHref, withParam } from "$lib/urls";
   import type { FlowListRow } from "$lib/viewTypes";
 
@@ -63,11 +69,18 @@
   $: root = $index?.byId.get($index.graph.root) ?? null;
 
   $: view = (
-    ["diagram", "network"].includes($page.url.searchParams.get("view") ?? "")
+    ["map", "diagram", "network"].includes(
+      $page.url.searchParams.get("view") ?? "",
+    )
       ? $page.url.searchParams.get("view")
-      : "map"
-  ) as "map" | "network" | "diagram";
-  $: diagram = view === "diagram";
+      : "flow"
+  ) as "flow" | "map" | "network" | "diagram";
+  $: spatial = view === "map" || view === "network";
+  // The pot the Flow pours from: one on the map, else the root.
+  $: asked = $page.url.searchParams.get("from") ?? "";
+  $: fromId = $index && asked && $index.byId.has(asked) ? asked : null;
+  $: fromHref = (id: string) =>
+    withParam($page.url, "from", id === $index?.graph.root ? null : id);
   $: streams = (
     $page.url.searchParams.get("streams") === "money" ? "money" : "eight"
   ) as "money" | "eight";
@@ -99,6 +112,32 @@
     ? (space?.nodes.find((n) => n.id === picked!.id) ?? null)
     : null;
 
+  /** What the chosen party says about itself, off the snapshot. */
+  $: about = chosen ? ($index?.byId.get(chosen.id)?.description ?? "") : "";
+
+  /** Everyone the chosen party links to, either way, the widest line first; tappable below the map. */
+  const LINKED_CHIPS = 24;
+  $: linked = (() => {
+    if (!chosen || !space) return [] as FlowSpaceNode[];
+    const byId = new Map(space.nodes.map((n) => [n.id, n]));
+    const seen = new Set<string>();
+    const out: { node: FlowSpaceNode; w: number }[] = [];
+    for (const l of space.links) {
+      const other =
+        l.source === chosen.id
+          ? l.target
+          : l.target === chosen.id
+            ? l.source
+            : null;
+      if (!other || other === chosen.id || seen.has(other)) continue;
+      const node = byId.get(other);
+      if (!node) continue;
+      seen.add(other);
+      out.push({ node, w: l.width });
+    }
+    return out.sort((p, q) => q.w - p.w).map((e) => e.node);
+  })();
+
   const KINDS: { kind: FlowPartyKind; label: MessageKey }[] = [
     { kind: "fund", label: "eco.funds" },
     { kind: "project", label: "eco.projects" },
@@ -118,7 +157,7 @@
             id: r.id,
             label: r.label,
             kind: r.kind,
-            value: pct(r.share),
+            value: $pctOf(r.share),
           }))
       : [];
   $: funds = $index ? top("fund") : [];
@@ -187,9 +226,9 @@
   </ul>
 
   <div class="switch" role="group" aria-label={$t("eco.viewLabel")}>
-    {#each [{ v: "map", label: $t("eco.viewSpace") }, { v: "network", label: $t("eco.viewNetwork") }, { v: "diagram", label: $t("eco.viewDiagram") }] as o (o.v)}
+    {#each [{ v: "flow", label: $t("eco.viewFlow") }, { v: "map", label: $t("eco.viewSpace") }, { v: "network", label: $t("eco.viewNetwork") }, { v: "diagram", label: $t("eco.viewDiagram") }] as o (o.v)}
       <a
-        href={withParam($page.url, "view", o.v === "map" ? null : o.v)}
+        href={withParam($page.url, "view", o.v === "flow" ? null : o.v)}
         class:on={view === o.v}
         aria-current={view === o.v ? "true" : undefined}
         data-sveltekit-replacestate
@@ -198,7 +237,7 @@
     {/each}
   </div>
 
-  {#if !diagram && (arranging || (space && space.links.length))}
+  {#if spatial && (arranging || (space && space.links.length))}
     <div class="find">
       <label class="field">
         <Icon name="search" />
@@ -254,7 +293,7 @@
               >
                 <KindChip kind={r.kind} />
                 <span class="name">{r.label}</span>
-                <span class="share">{pct(r.share)}</span>
+                <span class="share">{$pctOf(r.share)}</span>
               </button>
             </li>
           {/each}
@@ -263,11 +302,31 @@
     </div>
   {/if}
 
-  {#if !diagram && arranging && !space}
+  {#if view === "flow"}
+    {#if fromId}
+      <a class="back" href={fromHref(root.id)} data-sveltekit-noscroll
+        ><Icon name="arrow-left" />{$t("falls.backToPot")}</a
+      >
+    {/if}
+    <section class="card chart falls">
+      <PotFalls
+        index={$index}
+        focusId={fromId ?? root.id}
+        {fromHref}
+        {narrow}
+        label={$t("falls.summary", {
+          name: $index.byId.get(fromId ?? root.id)?.label ?? root.label,
+        })}
+      >
+        <p slot="empty" class="muted empty">{$t("eco.empty")}</p>
+      </PotFalls>
+    </section>
+    <p class="muted hint">{$t("falls.hint")}</p>
+  {:else if spatial && arranging && !space}
     <section class="card chart arranging" aria-busy="true">
       <p class="muted">{$t("eco.arranging")}</p>
     </section>
-  {:else if space && space.links.length}
+  {:else if spatial && space && space.links.length}
     <section class="card chart">
       {#key view}
         <FlowSpace
@@ -275,7 +334,7 @@
           {capitals}
           {streams}
           {highlight}
-          format={pct}
+          format={$pctOf}
           selectedId={chosen?.id ?? null}
           onSelect={(node) => (picked = node)}
           label={view === "network"
@@ -289,9 +348,12 @@
         <div class="who">
           <KindChip kind={chosen.kind} />
           <h2>{chosen.label}</h2>
+          {#if about}
+            <p class="about">{about}</p>
+          {/if}
           <p class="muted">
             {#if chosen.reached}
-              <b>{pct(chosen.share)}</b> · {$t("sheet.ofPot")}
+              <b>{$pctOf(chosen.share)}</b> · {$t("sheet.ofPot")}
             {:else}
               {$t("space.notReached")}
             {/if}
@@ -309,6 +371,32 @@
         </div>
         <a class="open" href={hrefFor(chosen)}>{$t("sheet.open")}</a>
       </section>
+      {#if linked.length}
+        <section class="card linked">
+          <h3 class="muted">{$t("space.linked")}</h3>
+          <ul>
+            {#each linked.slice(0, LINKED_CHIPS) as n (n.id)}
+              <li>
+                <button
+                  type="button"
+                  aria-label={$t("sheet.openNamed", { name: n.label })}
+                  on:click={() => (picked = n)}
+                >
+                  <KindChip kind={n.kind} />
+                  <span class="name">{n.label}</span>
+                  {#if n.reached}<span class="share">{$pctOf(n.share)}</span
+                    >{/if}
+                </button>
+              </li>
+            {/each}
+          </ul>
+          {#if linked.length > LINKED_CHIPS}
+            <p class="muted more">
+              {$t("space.linkedMore", { n: linked.length - LINKED_CHIPS })}
+            </p>
+          {/if}
+        </section>
+      {/if}
     {/if}
     <div
       class="switch streams"
@@ -367,7 +455,7 @@
   {#if funds.length}
     <h2 class="section-title">{$t("eco.topFunds")}</h2>
     <FlowList rows={funds} {hrefOf} />
-    <a class="all" href={searchHref("", "fund")}>{$t("common.seeAll")}</a>
+    <a class="all" href={searchHref("", "pots")}>{$t("common.seeAll")}</a>
   {/if}
   {#if projects.length}
     <h2 class="section-title">{$t("eco.topProjects")}</h2>
@@ -412,13 +500,22 @@
   }
   .switch {
     display: inline-flex;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
     gap: 2px;
     padding: 3px;
     margin-bottom: 10px;
     border-radius: 999px;
     background: var(--paper-deep);
   }
+  @media (max-width: 360px) {
+    .switch a {
+      padding: 0 10px;
+    }
+  }
   .switch a {
+    flex-shrink: 0;
     min-height: 40px;
     padding: 0 16px;
     display: inline-flex;
@@ -470,6 +567,17 @@
   .chart {
     padding: 10px 6px;
     overflow: hidden;
+  }
+  .falls {
+    padding: 14px 8px 6px;
+  }
+  .back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: var(--tap);
+    font-weight: 700;
+    text-decoration: none;
   }
   .arranging {
     min-height: 320px;
@@ -591,6 +699,71 @@
   .who b {
     color: var(--ink);
     font-variant-numeric: tabular-nums;
+  }
+  .who .about {
+    margin: 4px 0 6px;
+    color: var(--ink-soft);
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .linked {
+    margin-top: 10px;
+  }
+  .linked h3 {
+    margin: 0 0 8px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .linked ul {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+  }
+  .linked button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    min-height: 40px;
+    padding: 0 12px 0 8px;
+    border-radius: 999px;
+    background: var(--paper-deep);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: start;
+  }
+  .linked button:hover,
+  .linked button:focus-visible {
+    border-color: var(--teal);
+    background: var(--teal-wash);
+  }
+  .linked .name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .linked .share {
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .linked .more {
+    margin: 8px 2px 0;
+    font-size: 0.82rem;
   }
   .open {
     flex: 0 0 auto;

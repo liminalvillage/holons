@@ -24,9 +24,9 @@
   import KindChip from "./KindChip.svelte";
   import UnitSwitch from "./UnitSwitch.svelte";
   import { NARROW_PX } from "$lib/config";
-  import { pct, valueText } from "$lib/format";
-  import { refine, refined } from "$lib/graph";
-  import { locale, t } from "$lib/i18n";
+  import { valueText } from "$lib/format";
+  import { refine, refined, snapshot } from "$lib/graph";
+  import { locale, t, pctOf } from "$lib/i18n";
   import { potLive } from "$lib/live";
   import { hrefFor, withParam } from "$lib/urls";
   import type { FlowListRow } from "$lib/viewTypes";
@@ -71,7 +71,7 @@
   $: text = (value: number) => valueText(value, track.unit, $locale);
   /** A percent of what reaches the party, as the unit on screen. */
   $: ofReaching = (percent: number) =>
-    reaching > 0 ? text((percent / 100) * reaching) : pct(percent);
+    reaching > 0 ? text((percent / 100) * reaching) : $pctOf(percent);
 
   $: seaters = membershipsOf(index, id);
   $: direct = new Set(seaters.map((r) => r.id));
@@ -82,7 +82,9 @@
       kind: r.kind,
       value: ofReaching(r.share),
       note:
-        r.local != null ? $t("party.seat", { pct: pct(r.local) }) : undefined,
+        r.local != null
+          ? $t("party.seat", { pct: $pctOf(r.local) })
+          : undefined,
     }),
   );
   $: through = upstreamShares(index, id)
@@ -117,7 +119,8 @@
   // A holon's split is read afresh once it is on screen.
   $: if (node && node.kind !== "person" && node.kind !== "placeholder")
     void refine(id);
-  $: drift = $refined[id]?.drift ?? [];
+  // A map read live has no earlier publish to have drifted from.
+  $: drift = $snapshot.live ? [] : ($refined[id]?.drift ?? []);
 
   $: summary = $t("view.summary", {
     name: node.label,
@@ -136,18 +139,21 @@
       {#if node.kind !== "pot"}
         <span class="share">
           {node.share > 0
-            ? $t("party.ofPot", { pct: pct(node.share) })
+            ? $t("party.ofPot", { pct: $pctOf(node.share) })
             : $t("party.unseated")}
         </span>
       {/if}
     </p>
+    {#if node.description}
+      <p class="about">{node.description}</p>
+    {/if}
   </header>
 {/if}
 
-{#if node.kind === "placeholder"}
+{#if node.kind === "placeholder" && !bare}
   <p class="notice warn">{$t("party.placeholder")}</p>
 {/if}
-{#if node.unclaimedUntil}
+{#if node.unclaimedUntil && !bare}
   <p class="notice warn">
     {$t("party.unclaimed", {
       date: new Date(node.unclaimedUntil).toLocaleDateString($locale),
@@ -184,8 +190,8 @@
     {#if keeps > 0.005}
       <p class="muted keeps">
         {own
-          ? $t("party.keepsOwn", { pct: pct(keeps) })
-          : $t("party.keeps", { pct: pct(keeps) })}
+          ? $t("party.keepsOwn", { pct: $pctOf(keeps) })
+          : $t("party.keeps", { pct: $pctOf(keeps) })}
       </p>
     {/if}
   {/if}
@@ -274,8 +280,8 @@
     {#if keeps > 0.005}
       <p class="muted keeps">
         {own
-          ? $t("party.keepsOwn", { pct: pct(keeps) })
-          : $t("party.keeps", { pct: pct(keeps) })}
+          ? $t("party.keepsOwn", { pct: $pctOf(keeps) })
+          : $t("party.keeps", { pct: $pctOf(keeps) })}
       </p>
     {/if}
   {/if}
@@ -298,6 +304,14 @@
     font-size: 0.9rem;
     color: var(--ink-soft);
     font-weight: 600;
+  }
+  .about {
+    margin-top: 10px;
+    font-size: 0.95rem;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    overflow-wrap: anywhere;
+    white-space: pre-line;
   }
   .notice {
     margin-top: 12px;

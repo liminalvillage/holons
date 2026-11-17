@@ -56,6 +56,7 @@ const cascadeInputs = (read: AllocationInputs): CascadeInputs => ({
   members: read.members,
   zoned: read.zoned,
   ...(read.name ? { name: read.name } : {}),
+  ...(read.description ? { description: read.description } : {}),
 });
 
 /** What one read says about the party, beyond its split. */
@@ -66,6 +67,7 @@ function metaOf(read: AllocationInputs, chainId: number | null): FlowPartyMeta {
     : Object.keys(read.shares);
   return {
     ...(read.name ? { name: read.name } : {}),
+    ...(read.description ? { description: read.description } : {}),
     payout: chainId != null ? payoutAddressOf(read.settings, chainId) : readPayoutAddress(read.settings),
     pot: pot ? { chainId: pot.chainId, address: pot.address } : null,
     aliases: read.aliases,
@@ -197,4 +199,22 @@ export async function loadFlowGraph(holosphere: any, potId: string): Promise<Dec
   const holon = String(potId ?? '');
   if (!holosphere || !holon) return { ok: false, reason: 'missing' };
   return decodeFlowGraph(await quiet<any[]>(holosphere.getAll(holon, FLOW_GRAPH_LENS), []));
+}
+
+export type PotGraph =
+  | (DecodedFlowGraph & { ok: true; live?: false })
+  | { ok: true; graph: FlowGraph; live: true }
+  | Extract<DecodedFlowGraph, { ok: false }>;
+
+/**
+ * The Pot's map as a reader gets it: its published snapshot, or — when
+ * nobody has published one yet, as for a Pot just started — the walk itself,
+ * read live (`live: true`). A Pot with no split to walk is still missing.
+ */
+export async function loadPotGraph(holosphere: any, potId: string, opts: CrawlFlowGraphOptions = {}): Promise<PotGraph> {
+  const published = await loadFlowGraph(holosphere, potId);
+  if (published.ok || published.reason !== 'missing') return published;
+  const graph = await crawlFlowGraph(holosphere, potId, opts);
+  if (graph.problems.includes('the holon has no allocation')) return published;
+  return { ok: true, graph, live: true };
 }

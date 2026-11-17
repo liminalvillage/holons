@@ -6,6 +6,7 @@ import {
   ageOf,
   amount,
   clip,
+  failure,
   isStale,
   pct,
   shortAddress,
@@ -78,5 +79,27 @@ describe("short forms", () => {
     expect(clip("Traditional Dream Factory", 12)).toBe("Traditional…");
     expect(clip("Short", 12)).toBe("Short");
     expect(clip("Anything", 1)).toBe("…");
+  });
+});
+
+describe("failure", () => {
+  it("adds the reason core gave", () => {
+    expect(
+      failure(
+        "That did not go through.",
+        new Error("A claim is already waiting"),
+      ),
+    ).toBe("That did not go through. A claim is already waiting.");
+    expect(failure("Failed.", null)).toBe("Failed.");
+    expect(failure("Failed.", new Error("Failed."))).toBe("Failed.");
+  });
+});
+
+describe("pct in the reader's locale", () => {
+  it("writes the decimal mark the locale uses", () => {
+    expect(pct(0.13, "it")).toBe("0,13%");
+    expect(pct(12.5, "es")).toBe("12,5%");
+    expect(pct(0.13)).toBe("0.13%");
+    expect(pct(0.001, "it")).toBe("<0,01%");
   });
 });

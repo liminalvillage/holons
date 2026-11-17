@@ -14,6 +14,7 @@
 //     [--project-split legacy=100] \
 //     [--fund-zones funded=1,curated=1] [--fund-keep 0] [--fund-slope 50] \
 //     [--claim-months 6] [--claim-until 2027-04-11] \
+//     [--seat-via funds|pot] [--commons-fund "Artizen Commons Fund"] \
 //     [--write] [--zones-only]
 //
 // DRY RUN BY DEFAULT: parses, maps, prints the graph, writes nothing. Pass
@@ -23,13 +24,24 @@
 //
 // THE DECLARED SCHEMA (what --map turns the export into):
 //   {
-//     funds:    [{ id, name, owed? }],
-//     projects: [{ id, name, fund?, owed }],
+//     funds:    [{ id, name, owed?, description? }],
+//     projects: [{ id, name, fund?, owed, description? }],
 //     people:   [{ id, name, project, owed, telegram?, npub?, wallet? }],
 //     links?:   [{ project, fund, kind? }]
 //   }
-// A `link` federates a project with a fund besides the one it is seated in —
-// a fund that matched or curated it. It carries no amount and moves no share.
+// A `link` federates a project with a fund — one that matched or curated it.
+//
+// EVERYTHING PASSES THROUGH FUNDS (`--seat-via funds`, the default): the Pot
+// seats only funds. A project is seated in the fund its row names; failing
+// that, in every fund a `funded` link ties it to; failing that, in every
+// `curated` one; failing that, in one commons fund (`--commons-fund`) made
+// for the projects no fund stood behind. What it was owed is split equally
+// over its seats, and each fund's seat in the Pot is what the fund itself was
+// owed plus what its projects were. The fund passes its projects' part on by
+// exactly those amounts (its interior: `interiorPercent` = their share of the
+// seat, legacy weights = owed) and its own part down its zones (curation).
+// Nobody's total changes; only the path does. `--seat-via pot` keeps the
+// earlier shape: a project naming no fund seated straight in the Pot.
 //
 // THE STARTING CURATION: a fund splits equally across the projects it is
 // linked to — one zone holding them all (`--fund-zones funded=1,curated=1`,
@@ -44,13 +56,13 @@
 //
 // THE CLAIM WINDOW: project seats may be claimed for `--claim-months` (default
 // 6; 0 for no window) from the first run, or until `--claim-until <date>`. It
-// is written on every holon that seats projects — the Pot, where its funds are
-// kept without a claim — and a seat still unclaimed when it closes is retired
-// at the next cut: its share spreads over everyone left. A re-run keeps the
-// date in the output file.
+// is written on every holon that seats projects — every fund, and with
+// `--seat-via pot` the Pot, where its funds are kept without a claim — and a
+// seat still unclaimed when it closes is retired at the next cut: its share
+// spreads over everyone left in that holon. A re-run keeps the date in the
+// output file.
 // `owed` is in one unit (the Pot's token); `fund` and `project` name the
-// parent's id. A project that names no fund is seated straight in the Pot, a
-// holon of its own beside the funds. --map is a JSON object naming, for each of the three lists,
+// parent's id. --map is a JSON object naming, for each of the three lists,
 // where it is in the export and which column holds each field:
 //   {
 //     "funds":    { "path": "funds",    "fields": { "id": "slug", "name": "title", "owed": "allocated" } },
@@ -70,13 +82,14 @@
 //
 // WHAT IS WRITTEN per node (idempotent):
 //   found the holon (importer key = genesis; --admins and --bot seated as admins)
-//   settings.name
+//   settings.name, and settings.description when the export has one
 //   fund ↔ project federation link (so the fund's picker can see its seats),
 //     and one more per `links` row
 //   allocation: interior 100 %, buckets per --*-split, legacy weights = owed
-//     pot:     buckets over the FUNDS — and the projects no fund seats — by
-//              what each was owed, locked at genesis with the claim window
-//     fund:    buckets over its PROJECTS
+//     pot:     buckets over the FUNDS by what each holds (its own + its
+//              projects'), locked at genesis
+//     fund:    buckets over its PROJECTS by their exact share; its own part
+//              down its zones
 //     project: buckets over its PEOPLE, plus credit codes (one per placeholder)
 //              and its own claim code (a seat claim naming the holon that seats it)
 //   the Pot's walk bound (settings.pot.walk) is NOT set here: set it with
@@ -148,6 +161,15 @@ const FUND_ZONES = Object.fromEntries(
 const FUND_KEEP = Math.min(100, Math.max(0, Number(opt("fund-keep", 0)) || 0));
 const FUND_SLOPE = Math.min(100, Math.max(0, Number(opt("fund-slope", 50))));
 const FUND_NZONES = Math.max(0, ...Object.values(FUND_ZONES));
+const SEAT_VIA = opt("seat-via", "funds");
+if (SEAT_VIA !== "funds" && SEAT_VIA !== "pot") {
+  console.error(`--seat-via "${SEAT_VIA}": use funds or pot`);
+  process.exit(2);
+}
+const VIA_FUNDS = SEAT_VIA === "funds";
+const COMMONS_NAME = opt("commons-fund", "Artizen Commons Fund");
+const COMMONS_ID = "fund:artizen-commons";
+if (VIA_FUNDS && FUND_KEEP > 0) console.warn(`--fund-keep ${FUND_KEEP} is ignored with --seat-via funds: a fund's interior carries its projects' exact shares.`);
 
 // ── reading the export through the map ──────────────────────────────────────
 const dig = (obj, path) => String(path ?? "").split(".").filter(Boolean).reduce((o, k) => (o == null ? undefined : o[k]), obj);
@@ -228,8 +250,8 @@ function shape(kind, required, optional = []) {
   return { list: out, dropped };
 }
 
-const funds = shape("funds", ["id", "name"], ["owed"]);
-const projects = shape("projects", ["id", "name", "owed"], ["fund"]);
+const funds = shape("funds", ["id", "name"], ["owed", "description"]);
+const projects = shape("projects", ["id", "name", "owed"], ["fund", "description"]);
 const people = shape("people", ["id", "name", "project", "owed"], ["telegram", "npub", "wallet"]);
 const linkRows = (() => {
   const { rows, fields } = listOf("links");
@@ -322,21 +344,61 @@ const plan = {
   ...(claimUntil ? { claimUntil: new Date(claimUntil).toISOString() } : {}),
   at: new Date().toISOString(),
 };
+/** Where each project sits: the fund its row names, else the funds that funded it, else those that curated it, else the commons. */
+const linksOf = new Map();
+for (const l of links) {
+  if (!linksOf.has(l.project)) linksOf.set(l.project, []);
+  linksOf.get(l.project).push(l);
+}
+const seatsOf = (p) => {
+  if (p.fund) return [p.fund];
+  if (!VIA_FUNDS) return [];
+  const mine = linksOf.get(p.id) ?? [];
+  const funded = [...new Set(mine.filter((l) => l.kind === "funded").map((l) => l.fund))];
+  if (funded.length) return funded;
+  const curated = [...new Set(mine.filter((l) => l.kind !== "funded").map((l) => l.fund))];
+  return curated.length ? curated : [COMMONS_ID];
+};
+const projectSeats = new Map(projects.list.map((p) => [p.id, seatsOf(p)]));
+if ([...projectSeats.values()].some((seats) => seats.includes(COMMONS_ID)))
+  funds.list.push({ id: COMMONS_ID, name: COMMONS_NAME, owed: 0, description: "The projects no fund stood behind, held together until a fund — or anyone — curates them." });
+
+const cents = (n) => Math.round(n * 100) / 100;
+/** `owed` over `n` seats in cents, the remainder on the first so the parts add up. */
+const splitOwed = (owed, n) => {
+  const part = Math.floor((owed * 100) / n) / 100;
+  return Array.from({ length: n }, (_, i) => (i === 0 ? cents(owed - part * (n - 1)) : part));
+};
+
 for (const f of funds.list) {
   const holon = holonIdFor("fund", f.id);
-  plan.funds[f.id] = { holon, name: f.name, split: FUND_SPLIT, shares: {}, codes: {} };
-  const owed = f.owed > 0 ? f.owed : projects.list.filter((p) => p.fund === f.id).reduce((s, p) => s + p.owed, 0);
-  if (owed > 0) plan.pot.shares[holon] = owed;
+  plan.funds[f.id] = { holon, name: f.name, ...(f.description ? { description: f.description } : {}), split: FUND_SPLIT, shares: {}, codes: {}, own: f.owed > 0 ? f.owed : 0 };
 }
 for (const p of projects.list) {
   const holon = holonIdFor("project", p.id);
   const code = previous?.projects?.[p.id]?.code || newCode();
-  // Seated in its fund, or — naming none — straight in the Pot. Either way the
-  // claim code rides on the project's own holon and names where its seat is.
-  const seat = p.fund ? plan.funds[p.fund] : plan.pot;
   const token = claimToken(holon, code);
-  plan.projects[p.id] = { holon, name: p.name, fund: seat.holon, fundSrc: p.fund || null, owed: p.owed, code, token, link: deepLink(token), split: PROJECT_SPLIT, shares: {}, codes: { [codeHash(code)]: seatClaim(seat.holon) } };
-  seat.shares[holon] = (seat.shares[holon] ?? 0) + p.owed;
+  const seatIds = projectSeats.get(p.id);
+  const parts = seatIds.length ? splitOwed(p.owed, seatIds.length) : [];
+  // Seated in its funds — or, with `--seat-via pot` and naming none, straight
+  // in the Pot. The claim code rides on the project's own holon and names its
+  // first seat; claiming it there is carried to every fund that seats it.
+  const seats = seatIds.length ? seatIds.map((id, i) => ({ holon: plan.funds[id].holon, src: id, owed: parts[i] })) : [{ holon: plan.pot.holon, src: null, owed: p.owed }];
+  plan.projects[p.id] = { holon, name: p.name, ...(p.description ? { description: p.description } : {}), fund: seats[0].holon, fundSrc: seats[0].src, seats, owed: p.owed, code, token, link: deepLink(token), split: PROJECT_SPLIT, shares: {}, codes: { [codeHash(code)]: seatClaim(seats[0].holon) } };
+  for (const seat of seats) {
+    const node = seat.src ? plan.funds[seat.src] : plan.pot;
+    node.shares[holon] = cents((node.shares[holon] ?? 0) + seat.owed);
+  }
+}
+for (const f of Object.values(plan.funds)) {
+  const seated = cents(Object.values(f.shares).reduce((s, v) => s + v, 0));
+  // Through funds, a fund's seat is its own part and its projects'; the
+  // earlier shape seated a fund by its own part (or its projects', with none).
+  const total = VIA_FUNDS ? cents(f.own + seated) : f.own > 0 ? f.own : seated;
+  f.seated = seated;
+  // The interior passes the projects' part on exactly; the rest goes down the zones.
+  f.interior = VIA_FUNDS && total > 0 ? Math.round((seated / total) * 1e6) / 1e4 : null;
+  if (total > 0) plan.pot.shares[f.holon] = total;
 }
 for (const person of people.list) {
   const { party, placeholder } = partyFor(person);
@@ -350,8 +412,10 @@ for (const person of people.list) {
 for (const l of links) {
   const project = plan.projects[l.project];
   const fund = plan.funds[l.fund];
-  if (project.fund === fund.holon) continue; // already linked as its seat
-  plan.links.push({ project: project.holon, fund: fund.holon, projectSrc: l.project, fundSrc: l.fund, ...(l.kind ? { kind: l.kind } : {}) });
+  const seated = project.seats.some((s) => s.holon === fund.holon);
+  if (!seated) plan.links.push({ project: project.holon, fund: fund.holon, projectSrc: l.project, fundSrc: l.fund, ...(l.kind ? { kind: l.kind } : {}) });
+  // A fund's own part goes down its zones over every project it is tied to,
+  // seated in it or not.
   const zone = FUND_ZONES[l.kind];
   if (zone) {
     fund.zones ??= {};
@@ -371,11 +435,18 @@ const line = (pid, p) => {
   return `project ${p.name} [${pid}] → ${p.holon}  owed ${fmt(p.owed)}  people ${seats} (${placeholders} to claim)  claim: /claimproject ${p.token}`;
 };
 for (const [id, f] of Object.entries(plan.funds)) {
-  const total = Object.values(f.shares).reduce((s, v) => s + v, 0);
-  console.log(`  fund ${f.name} [${id}] → ${f.holon}  owed ${fmt(plan.pot.shares[f.holon] ?? 0)}  projects ${Object.keys(f.shares).length} (${fmt(total)})`);
-  for (const [pid, p] of Object.entries(plan.projects).filter(([, p]) => p.fundSrc === id)) console.log(`    ${line(pid, p)}`);
+  console.log(`  fund ${f.name} [${id}] → ${f.holon}  seat ${fmt(plan.pot.shares[f.holon] ?? 0)} = own ${fmt(f.own)} + projects ${fmt(f.seated)} (${Object.keys(f.shares).length})${f.interior != null ? `  interior ${f.interior} %` : ""}`);
+  for (const [pid, p] of Object.entries(plan.projects).filter(([, p]) => p.seats.some((s) => s.src === id))) {
+    const part = p.seats.find((s) => s.src === id).owed;
+    console.log(`    ${line(pid, p)}${p.seats.length > 1 ? `  (${fmt(part)} here, 1 of ${p.seats.length} funds)` : ""}`);
+  }
 }
 for (const [pid, p] of Object.entries(plan.projects).filter(([, p]) => !p.fundSrc)) console.log(`  ${line(pid, p)}`);
+if (VIA_FUNDS) {
+  const many = Object.values(plan.projects).filter((p) => p.seats.length > 1).length;
+  const commons = plan.funds[COMMONS_ID];
+  console.log(`\nThrough funds: the Pot seats ${Object.keys(plan.pot.shares).length} funds and no project. ${many} projects are split over several funds${commons ? `; ${Object.keys(commons.shares).length} with no fund sit in ${COMMONS_NAME}` : ""}.`);
+}
 const problems = [
   ...funds.dropped.map((d) => `funds row ${d.row} (${d.id}): ${d.why}`),
   ...projects.dropped.map((d) => `projects row ${d.row} (${d.id}): ${d.why}`),
@@ -422,8 +493,9 @@ const link = async (holon, partner, partnerName) => {
 /** Buckets for a node: the legacy bucket carries its owed weights. */
 const bucketsFor = (split, shares) => split.map((b) => (b.mode === "custom" ? { ...b, shares } : b));
 
-const seat = async (holon, name, split, shares, extra) => {
-  const r = await foundHolon(hs, holon, { name, members });
+/** Found (or top up) a holon and save its split; `description` is what it says about itself, kept in its settings. */
+const seat = async (holon, name, split, shares, extra, description) => {
+  const r = await foundHolon(hs, holon, { name, members, ...(description ? { description } : {}) });
   await saveAllocationConfig(hs, holon, { interiorPercent: 100, interiorMode: "custom", nzones: 0, steepness: 50 }, undefined, undefined, undefined, {
     buckets: bucketsFor(split, shares),
     ...extra,
@@ -442,7 +514,7 @@ const windowFor = (node) => {
 
 /** A fund's starting curation: its linked projects on their zones, the rest of the split as it stands. */
 const curate = async (f) => {
-  await saveAllocationConfig(hs, f.holon, { interiorPercent: FUND_KEEP, nzones: FUND_NZONES, steepness: FUND_SLOPE }, f.zones);
+  await saveAllocationConfig(hs, f.holon, { interiorPercent: f.interior ?? FUND_KEEP, nzones: FUND_NZONES, steepness: FUND_SLOPE }, f.zones);
   console.log(`curated ${f.name} (${f.holon}): ${Object.keys(f.zones).length} projects placed`);
 };
 
@@ -453,19 +525,25 @@ try {
   } else {
   await seat(POT, POT_NAME, POT_SPLIT, plan.pot.shares, { ...windowFor(plan.pot), genesis: true, force: true });
   for (const f of Object.values(plan.funds)) {
-    await seat(f.holon, f.name, f.split, f.shares, windowFor(f));
+    await seat(f.holon, f.name, f.split, f.shares, windowFor(f), f.description);
     await link(POT, f.holon, f.name);
   }
   for (const p of Object.values(plan.projects)) {
-    await seat(p.holon, p.name, p.split, p.shares, { codes: p.codes });
-    // A project its fund seats is linked to it. One seated straight in the Pot
-    // is not: the Pot's federation record would have to name every project.
-    if (p.fundSrc) await link(p.fund, p.holon, p.name);
+    await seat(p.holon, p.name, p.split, p.shares, { codes: p.codes }, p.description);
+    // Every fund that seats a project is linked to it (so a claim reaches
+    // each seat). One seated straight in the Pot is not: the Pot's federation
+    // record would have to name every project.
+    for (const s of p.seats) if (s.src) await link(s.holon, p.holon, p.name);
   }
   for (const l of plan.links) await link(l.fund, l.project, plan.projects[l.projectSrc].name);
   if (plan.links.length) console.log(`federated ${plan.links.length} fund ↔ project links`);
   // Zones count only for federated partners, so they are placed after the links.
   for (const f of zonedFunds) await curate(f);
+  // A fund nobody zoned still passes its projects' part on exactly.
+  for (const f of Object.values(plan.funds)) {
+    if (f.zones || f.interior == null || f.interior >= 100) continue;
+    await saveAllocationConfig(hs, f.holon, { interiorPercent: f.interior });
+  }
   // A person with a wallet in the export is paid there from the first table.
   for (const person of Object.values(plan.people)) {
     if (!person.wallet || person.code) continue; // a placeholder's wallet is set by whoever claims it

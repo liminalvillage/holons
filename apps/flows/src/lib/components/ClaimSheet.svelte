@@ -23,6 +23,7 @@
   import { createEventDispatcher } from "svelte";
   import BottomSheet from "./BottomSheet.svelte";
   import Icon from "./Icon.svelte";
+  import WalletCard from "./WalletCard.svelte";
   import { requestClaim, type Statement } from "$lib/account";
   import { ChainError } from "$lib/chain";
   import { amount as money, shortAddress } from "$lib/format";
@@ -39,7 +40,11 @@
   export let own = false;
   export let payout: string | null = null;
 
-  const dispatch = createEventDispatcher<{ close: void; changed: void }>();
+  const dispatch = createEventDispatcher<{
+    close: void;
+    changed: void;
+    payout: string;
+  }>();
 
   const RAILS: Record<
     ClaimRail,
@@ -239,6 +244,10 @@
     </div>
   {:else if !lines.length}
     <p class="muted">{$t("claim.nothing")}</p>
+    <p class="muted">{$t("claim.nothingNext")}</p>
+    <button class="btn quiet wide" on:click={() => dispatch("close")}
+      >{$t("common.close")}</button
+    >
   {:else if !line}
     <p class="step">{$t("claim.fromWhere")}</p>
     <ul class="choices">
@@ -282,6 +291,20 @@
         </li>
       {/each}
     </ul>
+    {#if own && options.some((o) => o.reason === "no-wallet")}
+      <!-- The wallet way waits on a payout address: set it right here,
+           pasted or from a wallet, instead of sending them elsewhere. -->
+      <WalletCard
+        {party}
+        rest={0}
+        editable
+        figures={false}
+        on:saved={(e) => {
+          payout = e.detail;
+          dispatch("payout", e.detail);
+        }}
+      />
+    {/if}
     {#if lines.length > 1}
       <button class="back" on:click={() => (line = null)}
         ><Icon name="arrow-left" />{$t("claim.otherSource")}</button

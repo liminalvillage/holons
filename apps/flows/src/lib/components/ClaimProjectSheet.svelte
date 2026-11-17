@@ -19,6 +19,7 @@
     withdrawClaim,
   } from "$lib/projectClaims";
   import { t, type MessageKey } from "$lib/i18n";
+  import { failure } from "$lib/format";
   import { showNotice } from "$lib/notice";
 
   /** The project being claimed. */
@@ -80,8 +81,8 @@
       showNotice($t("projectClaim.sent"));
       dispatch("changed");
       dispatch("close");
-    } catch {
-      error = $t("projectClaim.failed");
+    } catch (err) {
+      error = failure($t("projectClaim.failed"), err);
     } finally {
       busy = false;
     }
@@ -96,8 +97,8 @@
       showNotice($t("projectClaim.withdrawn"));
       await read();
       dispatch("changed");
-    } catch {
-      error = $t("projectClaim.failed");
+    } catch (err) {
+      error = failure($t("projectClaim.failed"), err);
     } finally {
       busy = false;
     }

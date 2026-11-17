@@ -8,25 +8,110 @@ each fund curates and each project reports. Built on what Flows already does
 holon, zones, the cascade, the signed logs, the Pot and its rights table.
 This page says what the fork adds and where each rule lives.
 
+## Background: the Artizen shutdown
+
+The graph being forked is Artizen's: a platform where projects sold
+Artifacts, funds (each with a fund director) matched and curated them, and
+weekly drives paid prizes. On 6 October 2026 its founder announced that
+operations were stopping: Artifact sales would be paid out, match funding and
+cash prizes would not. The fork takes what the platform recorded as owed and
+uses it as the shares of an empty Pot. It pays none of those debts and
+settles none of them.
+
+What follows is summarized from the community-maintained
+[Artizen Shutdown — Creator Resource Center](https://artizen-creator-resources.pages.dev/)
+(evidence repo on Radicle: `rad:zyD8vyCs6vAQbwAzknGfBHjcPa7n`), as read on
+5 November 2026. Its "documented" figures are as of 10 October 2026. It is
+the affected community's reading of the preserved record, not legal advice,
+and no court or regulator has ruled on any of it.
+
+- **What was recorded.** The platform's backend and its public leaderboard
+  held per-project sales, match and prize figures: about $13 million raised
+  over the platform's history, a corrected Season 6 total of $8,331,351. The
+  community-built artizen.fyi mirror kept the economics of 1,112 projects
+  before the detail pages went offline (play, grow and
+  payouts.artizen.fund were down by 11 October). That mirror is what the
+  importer reads ([below](#from-the-artizenfyi-leaderboard)).
+- **What the claims portal pays.** `payouts.artizen.fund` takes claims until
+  **30 November 2026** and covers Artifact sales only, less everything
+  already paid to the claimant in any role. Artizen wrote (8 October) that
+  confirming the total is "a full satisfaction and release" covering match,
+  prizes, bonuses and fund-director amounts, and that a claim not confirmed
+  does not move forward. The same date is the last day to withdraw ART from
+  an Artizen wallet to one's own Base wallet.
+- **What has been paid.** The on-chain payout wallet sent $2.19M to 238
+  addresses and stopped on 2 October, before the announcement.
+- **What is withheld**, re-derived by the resource center from the
+  platform-published season data:
+
+  | Category                                                           | Amount      |
+  | ------------------------------------------------------------------ | ----------- |
+  | Season 6 match netted against Season 7 sales (466 projects)        | $4,150,317  |
+  | Season 7 Artifact sales, due even under the new terms              | ~$2,159,432 |
+  | Season 6 + 7 prizes and bonuses                                    | ~$835,246   |
+  | Season 7 match withheld under Early Exit                           | ~$8,794,193 |
+
+  Fund amounts (pool balances, the director's 20% of sponsor sales,
+  rolled-over balances, personal contributions) are mostly outside the
+  portal's offer, and ART balances are not compensated.
+- **The terms.** "Early Exit", "Platform Continuity" and the release clause
+  were written into the playbook on 18 and 22 September 2026 with no entry
+  in the version changelog (which stops at v34, 4 September); Artizen's
+  support confirmed the September date in writing. The contracting party is
+  Artizen Works, Inc., a Delaware C-corporation, and the Terms of Use carry
+  neither an arbitration clause nor a class-action waiver.
+- **The endowment.** The homepage showed about $29.4M. The on-chain
+  Endowment wallet holds about $100 USDC and a position in the platform's
+  own ART token, which redeems through its Revnet pool at about $0.00012
+  per ART. Artizen wrote that the figure "has never been a live bank
+  balance".
+- **The claimants.** 51 are documented in the organizers' ledger (35 with
+  figures), about $2.3M reported owed; they coordinate in the "Artizen
+  COMMUNITY" Telegram group.
+
+Three things follow for the fork:
+
+- **Same numbers, different use.** The legacy weights come from the same
+  published figures the resource center re-derives. Its
+  [per-project withheld-amount lookup](https://artizen-creator-resources.pages.dev/shortfall.html)
+  is a second reading of them to check an import against.
+- **Sales.** `--project-owed raised-sales` leaves community sales out as
+  already paid. The resource center counts Season 7 sales as still due when
+  payouts stopped, so whether a fork should weigh them is a choice to make
+  per import, not a settled fact.
+- **Two deadlines, unrelated.** 30 November 2026 is Artizen's portal. The
+  fork's own [claim window](#the-claim-window) is set by the importer (six
+  months by default) and is a claim on a seat here, not on Artizen.
+
 ## The shape
 
 ```
-Pot (split locked at genesis: every fund and every project by what it was owed)
-├─▶ Fund ── curates: zones ──▶ zone 1: project, project
-│                              zone 2: project            (each zone a step down the slope)
-├─▶ Project ── reports its actions ──▶ people  (legacy · needs · impact)
-│        └── its own zones ──▶ partners it wants to pass value on to
-└─▶ Project …
-        ▲
-        └─ federated to the funds that funded or curated it
+Pot (split locked at genesis: every FUND, by its own part + its projects' parts)
+├─▶ Fund ── interior: its projects' legacy, exactly ──▶ project, project
+│      └── its own part down its zones ──▶ zone 1: project, project
+│                                           zone 2: project   (each zone a step down the slope)
+├─▶ Fund …
+└─▶ Artizen Commons Fund ──▶ the projects no fund stood behind
+
+Project (seated in every fund that funded it) ── reports its actions ──▶ people
+        └── its own zones ──▶ partners it wants to pass value on to
 ```
+
+Everything passes through funds: the Pot seats no project.
 
 Three kinds of holon, each independent:
 
-- **The Pot** seats every fund and every project directly, by what it was
-  owed. That split is the fork itself and is fixed at genesis. A seat that
-  exits, or that nobody claimed when the claim window closed, is shared by
-  everyone left, in proportion to what they hold.
+- **The Pot** seats every fund, by what the fund itself was owed plus what
+  the projects it seats were. That split is the fork itself and is fixed at
+  genesis. A fund that exits is shared by every fund left, in proportion to
+  what they hold.
+- **A project's legacy passes through its funds.** It is seated in every fund
+  that funded it (failing that, every fund that curated it; failing that, the
+  Artizen Commons Fund), what it was owed split equally among them. Each fund
+  passes that part on exactly: its interior carries its projects' legacy
+  weights, `interiorPercent` being their share of the fund's seat. A project
+  seat that exits, or that nobody claimed when the window closed, is shared
+  by the other projects in that fund.
 - **A fund is zoned.** Curation is a fund's whole job here, and it is three
   choices on the fund's own split: how many zones there are (`nzones`), the
   slope between them (`steepness`: each zone out weighs `steepness / 100` of
@@ -46,9 +131,10 @@ Three kinds of holon, each independent:
   members in need. A project may also set zones of its own and pass part of
   what reaches it on to partners, exactly as a fund does.
 
-A project is therefore paid along two paths: its own seat in the Pot (what it
-was owed), and the zones of every fund that curates it (what the funds decide
-now). The cascade adds them up; the rights table pays the sum.
+A project is therefore paid along two paths, both through funds: its seat in
+each fund that funded it (what it was owed), and the zones of every fund that
+curates it (what the funds decide now, out of their own part). The cascade
+adds them up; the rights table pays the sum.
 
 Every holon has the same three rules:
 
@@ -68,10 +154,14 @@ Every holon has the same three rules:
 ### As imported, before anyone curates
 
 The importer writes the fork and the simplest curation. A fund arrives with
-its seat in the Pot, its federation links to the projects the catalog ties
-it to, and one zone holding all of them: it keeps nothing and splits what
-reaches it equally across the projects it is linked to. A fund with no link
-keeps its whole share. A project arrives with one bucket, legacy 100 (what
+its seat in the Pot (its own part + its projects'), an interior that passes
+each seated project's legacy on exactly, its federation links to every
+project the catalog ties it to, and one zone holding all of them: its own
+part splits equally across the projects it is linked to. A fund with no
+link keeps its own part. `--seat-via pot` restores the earlier shape, with
+projects that name no fund seated straight in the Pot. The data comes from
+`scripts/artizen-fyi-fetch.mjs` (the live artizen.fyi tables and match
+catalog) through `scripts/artizen-fyi-to-graph.mjs`. A project arrives with one bucket, legacy 100 (what
 each of its people was owed), and nobody seated, so it keeps what reaches it
 until its group claims it. Changing a fund's zones today is the web or kiosk
 allocation editor (the zone picker lists the fund's federated projects) or
@@ -197,6 +287,32 @@ an admin of the project — the importer's `--admins`. Approving
 Declining carries a reason the claimant reads. The new steward then receives
 the project's resource gifts, edits its offers and its split from Flows.
 
+## Changing a split: by proposal
+
+A holon's way out (keep, rings, slope, who sits where) changes by
+**proposal**, not by one key: `flow_split_proposals`, an append-only log on
+the holon itself (`@holons/core/flows` `split-proposals.ts`, loader
+`split-proposals-load.ts`).
+
+- An admin **proposes** a whole split (`SplitSave`) with `base`, the
+  `splitSaveHash` of the split as stored when it was drafted. Proposing is
+  the proposer's yes.
+- Each admin says **yes** (attest) or **no** (dispute, with a public reason);
+  each admin's latest word counts. It **passes** with more than half the
+  holon's admins (`splitQuorum`: 1 of 1, 2 of 2 or 3, 3 of 4 or 5), and is
+  rejected once it no longer can.
+- The yes that makes it pass **applies** it at once (`saveAllocationConfig`,
+  then an `applied` mark) — only onto the split it was drafted against; if the
+  split moved meanwhile it is stale and must be proposed again. With one
+  admin, proposing applies: the same as saving, recorded.
+
+In Flows the split editor (the Out side of an orb's dialog) proposes, lists
+the open proposals, and "See it" lays one over the draft so the scene draws
+what it would do. Settings stay last-writer-wins underneath, so a key using
+MCP or the bot can still write a split directly: this is the rule every
+Flows surface follows and a record anyone can read, not yet a check where
+money moves (as the genesis lock is).
+
 ## Fixed at genesis
 
 `allocation.genesis = { hash, at }` pins the rule: `splitHash` over the
@@ -230,7 +346,9 @@ node --env-file=.env scripts/import-artisan-graph.mjs \
 ```
 
 Dry run by default. It reads the export through a mapping file onto the
-declared schema (`funds`, `projects`, `people`, each with `owed`), mints
+declared schema (`funds`, `projects`, `people`, each with `owed`; a fund or
+project may also carry a `description`, written into the holon's settings
+and shown on the map beside its name), mints
 deterministic holon ids (`sha256(namespace, kind, source id)` — a re-run
 tops up, never forks), founds every holon with the importer key (seating
 `--admins` and `--bot` as admins), links fund ↔ project, and saves each
@@ -269,9 +387,12 @@ catalog (`artizen.fyi/match/index.json`), as `funded`, `curated` and
 those pairs into `links`, and the importer federates each one, fund ↔
 project. A link is a relationship, not a seat: the catalog has no amounts,
 so no share moves: the project's seat stays in the Pot. A fund that is
-linked but owed nothing is founded without a seat in the Pot. The exact
-per-fund amounts were served by Artizen's own data API, which is no longer
-public.
+linked but owed nothing is founded without a seat in the Pot. The catalog
+also says what each one is: with `--catalog`, every project carries its
+`description` and every fund its `subtitle` (its one-line pitch; the long
+`description` when it has none), and the importer writes that into the
+holon's settings so the map can show it. The exact per-fund amounts were
+served by Artizen's own data API, which is no longer public.
 
 ## The map
 
@@ -377,19 +498,19 @@ asks first (`isHolonAdmin`) and is read-only for everyone else.
 
 ## Where each rule lives
 
-| rule                             | where                                                                                                                                                                                                                                                                     |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| buckets, aliases, the split hash | `@holons/core/flows` `buckets.ts` (`composeInterior`, `applyStanding`, `splitHash`), `settings.ts` (`readAllocationBuckets`, `…Aliases`, `…Codes`, `…Genesis`, `saveAllocationAliases`, `saveAllocationCodes`)                                                            |
-| the claim window                 | `buckets.ts` (`lapsedSeats`), `settings.ts` (`readAllocationClaimWindow`, `claimWindow` on `saveAllocationConfig`); applied in `cascade-load.ts`, `inbound.ts`; reported by `cutRights` (`lapsed`) |
-| standing applied to a split      | `cascade-load.ts` (`standingOf`), `inbound.ts`, `rights-cut.ts` (`exited`, the genesis check)                                                                                                                                                                             |
-| exits, needs flags               | `standing.ts` (logs `flow_exits`, `flow_needs`; `buildExit`, `buildNeeds`, `foldExits`, `foldNeeds`), `standing-load.ts`; defaults in `protocol/policy.ts`                                                                                                                |
-| the Pot's owner and walk bounds  | `pot-record.ts` (`owner`, `walk`, `savePotWalk`); deploy in `apps/web/src/lib/holons/pot.ts`, `apps/kiosk/src/lib/pot.ts`                                                                                                                                                 |
-| MCP                              | `allocation_save` (buckets, aliases, codes, genesis, force), `allocation_get` / `allocation_cascade` (byBucket, standing), `allocation_alias_set`, `standing_state`, `standing_exit_record`, `standing_needs_record`, `standing_verdict`, `pot_rights_cut` (exited, lapsed, walk); `allocation_save` / `allocation_get` (claimWindow, lapsed) |
-| bot                              | `packages/telegram-ui/src/ArtisanFork.js`: `/claimproject`, `/claimcredit`, `/wallet`, `/split`, `/needs`, `/needsattest`, `/needsdispute`, `/exit`, `/pot`; the new-moon cut in `FundClaims.js` reads standing and the walk bounds; with `FLOWS_ADDRESS` set, `/pot`, `/split`, `/wallet`, the two claims and the new-moon notice end with a link into Flows (`flowsLink.js`)                                       |
-| the importer                     | `scripts/import-artisan-graph.mjs`                                                                                                                                                                                                                                        |
-| project claims (Flows) | `@holons/core/flows` `project-claims.ts` (lens `flow_project_claims`, `foldProjectClaims`), `project-claims-load.ts` (`requestProjectClaim`, `approveProjectClaim`, `declineProjectClaim`, `projectSeats`), `settings.ts` (`readAllocationClaimed`, `saveAllocationClaimed`); drawn by `apps/flows` (`ClaimProjectSheet`, `ProjectClaimsInbox`) |
+| rule                                                        | where                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| buckets, aliases, the split hash                            | `@holons/core/flows` `buckets.ts` (`composeInterior`, `applyStanding`, `splitHash`), `settings.ts` (`readAllocationBuckets`, `…Aliases`, `…Codes`, `…Genesis`, `saveAllocationAliases`, `saveAllocationCodes`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| the claim window                                            | `buckets.ts` (`lapsedSeats`), `settings.ts` (`readAllocationClaimWindow`, `claimWindow` on `saveAllocationConfig`); applied in `cascade-load.ts`, `inbound.ts`; reported by `cutRights` (`lapsed`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| standing applied to a split                                 | `cascade-load.ts` (`standingOf`), `inbound.ts`, `rights-cut.ts` (`exited`, the genesis check)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| exits, needs flags                                          | `standing.ts` (logs `flow_exits`, `flow_needs`; `buildExit`, `buildNeeds`, `foldExits`, `foldNeeds`), `standing-load.ts`; defaults in `protocol/policy.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| the Pot's owner and walk bounds                             | `pot-record.ts` (`owner`, `walk`, `savePotWalk`); deploy in `apps/web/src/lib/holons/pot.ts`, `apps/kiosk/src/lib/pot.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| MCP                                                         | `allocation_save` (buckets, aliases, codes, genesis, force), `allocation_get` / `allocation_cascade` (byBucket, standing), `allocation_alias_set`, `standing_state`, `standing_exit_record`, `standing_needs_record`, `standing_verdict`, `pot_rights_cut` (exited, lapsed, walk); `allocation_save` / `allocation_get` (claimWindow, lapsed)                                                                                                                                                                                                                                                                                                                                       |
+| bot                                                         | `packages/telegram-ui/src/ArtisanFork.js`: `/claimproject`, `/claimcredit`, `/wallet`, `/split`, `/needs`, `/needsattest`, `/needsdispute`, `/exit`, `/pot`; the new-moon cut in `FundClaims.js` reads standing and the walk bounds; with `FLOWS_ADDRESS` set, `/pot`, `/split`, `/wallet`, the two claims and the new-moon notice end with a link into Flows (`flowsLink.js`)                                                                                                                                                                                                                                                                                                      |
+| the importer                                                | `scripts/import-artisan-graph.mjs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| project claims (Flows)                                      | `@holons/core/flows` `project-claims.ts` (lens `flow_project_claims`, `foldProjectClaims`), `project-claims-load.ts` (`requestProjectClaim`, `approveProjectClaim`, `declineProjectClaim`, `projectSeats`), `settings.ts` (`readAllocationClaimed`, `saveAllocationClaimed`); drawn by `apps/flows` (`ClaimProjectSheet`, `ProjectClaimsInbox`)                                                                                                                                                                                                                                                                                                                                     |
 | the account, claims by rail, applications, the split editor | `@holons/core/flows` `account.ts` (`accountBalances`, `claimRails`), `claims.ts` (`ClaimRail`, `rail` / `ref`, `selfKeyedPartyOf`), `claims-load.ts` (`loadJudgedClaims`, `partyStandings`), `ceiling-load.ts` (`shares`, `ownOnly`), `flow-graph-views.ts` (`graphRights`), `opencollective.ts` (`collectiveDonateUrl`, `collectiveExpenseUrl`), `applications.ts` / `applications-load.ts` (lens `flow_applications`), `split-draft.ts`, `settings.ts` (`readApplicationsOpen`); `@holons/core/holosphere` `isHolonAdmin`; MCP `fund_apply`, `fund_applications`, `fund_application_verdict`, `rail` / `ref` on `flow_claim_record` / `flow_payout_record`; drawn by `apps/flows` |
-| the flow graph (the map)         | `@holons/core/flows` `flow-graph.ts` (`buildFlowGraph`, `classifyParty`), `flow-graph-doc.ts` (lens `flow_graph`, parts), `flow-graph-load.ts` (`crawlFlowGraph`, `publishFlowGraph`, `loadFlowGraph`), `flow-graph-index.ts` (`seatersOf`, `partiesByAddress`, `resolveParty`), `flow-graph-views.ts` (`centredTrack`, `ecosystemTrack`, `refineFlowGraph`), `flow-graph-space.ts` (`layoutFlowSpace` — every party placed in 3D, a link's width linear in its share of the Pot), `pot-account.ts`; `scripts/publish-flow-graph.mjs`; MCP `flow_graph_publish`, `flow_graph_get`; drawn by `apps/flows` |
+| the flow graph (the map)                                    | `@holons/core/flows` `flow-graph.ts` (`buildFlowGraph`, `classifyParty`), `flow-graph-doc.ts` (lens `flow_graph`, parts), `flow-graph-load.ts` (`crawlFlowGraph`, `publishFlowGraph`, `loadFlowGraph`), `flow-graph-index.ts` (`seatersOf`, `partiesByAddress`, `resolveParty`), `flow-graph-views.ts` (`centredTrack`, `ecosystemTrack`, `refineFlowGraph`), `flow-graph-space.ts` (`layoutFlowSpace` — every party placed in 3D, a link's width linear in its share of the Pot), `pot-account.ts`; `scripts/publish-flow-graph.mjs`; MCP `flow_graph_publish`, `flow_graph_get`; drawn by `apps/flows`                                                                            |
 
 ## Not yet
 
@@ -454,4 +575,3 @@ capital (node row index 9), which is what the map's halos, the leaderboard
 MCP: `resource_give`, `resources_get`, `resource_verdict`,
 `resource_offer_save`, `resource_ranking`, `flow_trace`; `allocation_save`
 takes `resourced`.
-

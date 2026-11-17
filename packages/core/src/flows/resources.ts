@@ -276,6 +276,15 @@ export function foldResources(input: FoldResourcesInput): FoldedResources {
   };
 }
 
+/**
+ * The gifts an account's page lists: its stewards see every one, disputed
+ * included, so they can answer it; everyone else sees what was received and
+ * what still waits — a disputed gift is the stewards' word that it did not.
+ */
+export function giftsShown<G extends { status: GiftStatus }>(gifts: readonly G[], steward: boolean): G[] {
+  return steward ? [...gifts] : gifts.filter((g) => g.status !== 'disputed');
+}
+
 /** Count received gifts into a resource base. Gifts not received are ignored. */
 export function resourceBaseOf(gifts: Iterable<Pick<ResourceGift, 'from' | 'capital' | 'amount' | 'unit'> & { status?: GiftStatus }>): ResourceBase {
   const base: ResourceBase = { count: 0, byCapital: {}, amounts: {}, givers: 0 };

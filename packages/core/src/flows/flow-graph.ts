@@ -33,6 +33,8 @@ export interface FlowGraphNode {
   id: string;
   label: string;
   kind: FlowPartyKind;
+  /** What the party says about itself, when its settings say anything. */
+  description?: string;
   /** Share of the root pot that reaches this party, 0..100, all paths summed. */
   share: number;
   /** Share of the root pot that rests here — what it holds after passing on. */
@@ -79,6 +81,7 @@ export interface FlowGraph {
 /** What a walk learned about a party it read, beyond its split. */
 export interface FlowPartyMeta {
   name?: string;
+  description?: string;
   payout?: string | null;
   pot?: { chainId: number; address: string } | null;
   aliases?: Aliases | null;
@@ -92,6 +95,14 @@ export interface FlowPartyMeta {
 }
 
 /** A seat the importer could not key: `artisan:<id>`, not a person or a holon yet. */
+/**
+ * Is a hand-set seat still waiting to be claimed — its window set and not yet
+ * closed at `now` (ms)? A claimed seat carries no window, so this is false.
+ */
+export function isClaimWindowOpen(node: Pick<FlowGraphNode, 'unclaimedUntil'> | null | undefined, now: number = Date.now()): boolean {
+  return !!node?.unclaimedUntil && node.unclaimedUntil > now;
+}
+
 export function isPlaceholderParty(id: string): boolean {
   const s = String(id ?? '').trim();
   return /^[a-z][a-z0-9_-]*:/i.test(s) && !/^nostr:/i.test(s);
@@ -238,10 +249,12 @@ export function buildFlowGraph(input: {
     const payout = typeof m?.payout === 'string' && m.payout ? m.payout.toLowerCase() : undefined;
     const until = unclaimed.get(id);
     const resources = capitalsFromCounts(capitalCounts(m?.resources));
+    const description = typeof m?.description === 'string' ? m.description.trim() : '';
     return {
       id,
       label: m?.name || seen.label || id,
       kind: classifyParty({ id, rootId, keep, out: out.get(id) ?? [] }),
+      ...(description ? { description } : {}),
       share: seen.share,
       rest: cascade.leaves[id]?.percentage ?? 0,
       ...(payout ? { payout } : {}),

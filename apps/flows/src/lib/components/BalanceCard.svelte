@@ -64,6 +64,8 @@
 <style>
   .balance {
     display: grid;
+    /* A long fund name is cut short, not allowed to widen the card. */
+    grid-template-columns: minmax(0, 1fr);
     gap: 4px;
     padding: 16px;
   }

@@ -67,7 +67,7 @@ describe('loadCascadeChildren', () => {
 
   it('reads people on rings and follows them down', async () => {
     const hs = fakeHolosphere({
-      u1: { name: 'Una', ...passesOn(60, { u3: 1 }) },
+      u1: { name: 'Una', description: ' Seeds for the valley. ', ...passesOn(60, { u3: 1 }) },
       u3: passesOn(0, { u4: 2 }),
     });
     const { children, visited } = await loadCascadeChildren(hs, ['u1', 'u2'], {
@@ -75,6 +75,8 @@ describe('loadCascadeChildren', () => {
     });
     expect(Object.keys(children).sort()).toEqual(['u1', 'u3']);
     expect(children.u1.name).toBe('Una');
+    expect(children.u1.description).toBe('Seeds for the valley.');
+    expect(children.u3).not.toHaveProperty('description');
     expect(children.u1.members).toEqual([]);
     expect(children.u1.zoned).toEqual([{ id: 'u3', name: 'Tre', zone: 1, kind: 'person' }]);
     expect(visited).toBe(4); // u1, u2, u3, u4

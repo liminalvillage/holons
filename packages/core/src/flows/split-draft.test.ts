@@ -3,10 +3,12 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  placeablePeople,
   addRecipient,
   draftChanges,
   draftFromInputs,
   draftToSave,
+  draftWithSave,
   previewDraft,
   removeRecipient,
   setKeep,
@@ -100,6 +102,7 @@ describe('previewDraft', () => {
     expect(p.unplaced).toBeCloseTo(0, 6);
     expect(p.rows.reduce((s, r) => s + r.percentage, 0)).toBeCloseTo(80, 6);
     expect(p.rings.map((r) => [r.ring, r.count])).toEqual([[1, 2], [2, 2], [3, 0]]);
+    expect(p.rings.reduce((s, r) => s + r.percentage, 0)).toBeCloseTo(p.passed, 6);
     // Ring 1 outweighs ring 2 at this slope, and seats on one ring are equal.
     const of = (id: string) => p.rows.find((r) => r.id === id)!.percentage;
     expect(of('projA')).toBeCloseTo(of('ghost'), 6);
@@ -109,6 +112,8 @@ describe('previewDraft', () => {
   it('with nobody placed, the rest has nowhere to go', () => {
     const p = previewDraft(draftFromInputs({ config: { interiorPercent: 30, nzones: 2 }, federated: ['a'] }));
     expect(p).toMatchObject({ keep: 30, passed: 0, unplaced: 70, rows: [] });
+    // An empty ring passes nothing on, so the rings never count the rest twice.
+    expect(p.rings.every((r) => r.percentage === 0)).toBe(true);
   });
 });
 
@@ -164,5 +169,46 @@ describe('setResourced', () => {
     ]);
     expect(draftChanges(before, after)).toEqual([{ kind: 'resourced', from: 0, to: 100 }]);
     expect(draftToSave(after).config.resourced).toBe(100);
+  });
+});
+
+describe('draftWithSave', () => {
+  it('lays a whole split over a draft: the same split comes back out', () => {
+    const edited = setSteepness(setKeep(addRecipient(removeRecipient(setRing(base(), 'projA', 3), 'projB'), { id: 'projC' }, 1), 35), 80);
+    const seen = draftWithSave(base(), draftToSave(edited));
+    expect(draftToSave(seen)).toEqual(draftToSave(edited));
+    expect(seen.candidates.some((r) => r.id === 'projB')).toBe(true);
+  });
+
+  it('places a party the draft never knew, and leaves a locked keep alone', () => {
+    const locked = { ...base(), locked: true };
+    const seen = draftWithSave(locked, { config: { interiorPercent: 90, nzones: 2 }, zones: { newcomer: 1 }, people: {} });
+    expect(seen.keep).toBe(20);
+    expect(seen.nzones).toBe(2);
+    expect(seen.recipients.map((r) => r.id)).toEqual(['newcomer']);
+  });
+});
+
+describe('placeablePeople', () => {
+  it('takes Telegram users and approved applicants, once each, with names', () => {
+    const key = 'a'.repeat(64);
+    expect(
+      placeablePeople({
+        users: [{ id: 12, name: 'Ana' }, { id: 'holon_x' }, { id: '12' }],
+        applications: [
+          { party: key, status: 'approved', name: 'Kai' },
+          { party: '99', status: 'pending', name: 'Mo' },
+          { party: 'fund:x', status: 'approved' },
+        ],
+      }),
+    ).toEqual({ persons: ['12', key], names: { '12': 'Ana', [key]: 'Kai', '99': 'Mo' } });
+  });
+});
+
+describe('placeablePeople with members', () => {
+  it('offers the keys of the members log, once, and nothing that is not a key', () => {
+    const key = 'b'.repeat(64);
+    const out = placeablePeople({ users: [{ id: 42, name: 'Ada' }], members: [key.toUpperCase(), key, 'holon_x'] });
+    expect(out.persons).toEqual(['42', key]);
   });
 });

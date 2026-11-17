@@ -169,6 +169,9 @@ export const ICONS = {
       "M5 8v3a3 3 0 0 0 3 3h8a3 3 0 0 1 3 3",
     ),
   },
+  flag: {
+    paths: s("M5 21V4", "M5 4h12l-2.5 4L17 12H5"),
+  },
   sprout: {
     paths: s(
       "M12 21v-9",

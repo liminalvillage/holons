@@ -30,7 +30,9 @@ import { FLOW_EXITS_LENS, FLOW_NEEDS_LENS } from '../flows/standing.js';
 import { FLOW_APPLICATIONS_LENS } from '../flows/applications.js';
 import { FLOW_RESOURCES_LENS } from '../flows/resources.js';
 import { FLOW_PROJECT_CLAIMS_LENS } from '../flows/project-claims.js';
+import { FLOW_SPLIT_PROPOSALS_LENS } from '../flows/split-proposals.js';
 import { GOVERNANCE_VOTES_LENS } from '../governance/votes.js';
+import { QUEST_BOARD_LENS } from '../tasks/board.js';
 import type { ProjectionHook } from '../nostr/types.js';
 import { createReadAuthority, type VouchContext } from './authority.js';
 
@@ -50,7 +52,9 @@ export const APPEND_LENSES: readonly string[] = [
   FLOW_APPLICATIONS_LENS,
   FLOW_RESOURCES_LENS,
   FLOW_PROJECT_CLAIMS_LENS,
+  FLOW_SPLIT_PROPOSALS_LENS,
   GOVERNANCE_VOTES_LENS,
+  QUEST_BOARD_LENS,
 ];
 
 /** Where the local store persists (see holosphere/STORE.md). */

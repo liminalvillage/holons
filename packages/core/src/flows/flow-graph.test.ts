@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyStanding } from './buckets.js';
 import { resolveCascade, type CascadeInputs } from './cascade.js';
-import { buildFlowGraph, classifyParty, isPlaceholderParty, type FlowGraph, type FlowGraphLink } from './flow-graph.js';
+import { buildFlowGraph, classifyParty, isClaimWindowOpen, isPlaceholderParty, type FlowGraph, type FlowGraphLink } from './flow-graph.js';
 import { cfg, F1, F2, fund, J, POT, seats } from './flow-graph.fixture.js';
 
 /** Two funds curate one project, which also has its own seat in the Pot. */
@@ -68,6 +68,13 @@ describe('buildFlowGraph', () => {
     expect(node(g, F1).label).toBe('Fund One');
     expect(node(g, J).label).toBe('Project J');
     expect(node(g, POT).label).toBe('The Pot');
+  });
+
+  it('carries what a party says about itself, and nothing when it says nothing', () => {
+    const g = build(diamond(), { meta: { [F1]: { name: 'Fund One', description: ' Backs the first of everything. ' }, [J]: { description: '  ' } } });
+    expect(node(g, F1).description).toBe('Backs the first of everything.');
+    expect(node(g, J)).not.toHaveProperty('description');
+    expect(node(g, POT)).not.toHaveProperty('description');
   });
 
   it('carries a claimed seat under its claimant and lists the alias', () => {
@@ -180,5 +187,14 @@ describe('classifyParty', () => {
     expect(isPlaceholderParty('nostr:npub1abc')).toBe(false);
     expect(isPlaceholderParty('holon_abc')).toBe(false);
     expect(isPlaceholderParty('111')).toBe(false);
+  });
+});
+
+describe('isClaimWindowOpen', () => {
+  it('is open only while a window is set and has not closed', () => {
+    expect(isClaimWindowOpen({ unclaimedUntil: 2000 }, 1000)).toBe(true);
+    expect(isClaimWindowOpen({ unclaimedUntil: 1000 }, 1000)).toBe(false);
+    expect(isClaimWindowOpen({}, 1000)).toBe(false);
+    expect(isClaimWindowOpen(null, 1000)).toBe(false);
   });
 });

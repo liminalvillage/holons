@@ -12,6 +12,7 @@
 import { writable, derived, get, type Readable } from "svelte/store";
 import { resolveLangMode, setResolvedLang, type LangMode } from "../config";
 import type { Msg } from "./types";
+import { pct } from "../format";
 import { en, type MessageKey } from "./en";
 import { it } from "./it";
 import { es } from "./es";
@@ -45,6 +46,12 @@ export const lang: Readable<Lang> = derived(langMode, ($m) =>
 
 /** BCP-47 tag for `Intl` / `toLocale*` call sites ("en" | "it" | "es"). */
 export const locale: Readable<string> = lang;
+
+/** `pct` in the language on screen: `{$pctOf(share)}`. */
+export const pctOf: Readable<(value: number) => string> = derived(
+  lang,
+  ($l) => (value: number) => pct(value, $l),
+);
 
 /** Render one message: plural pick by `params.n`, then `{slot}` fill-in. */
 export function formatMsg(msg: Msg, params?: Params): string {

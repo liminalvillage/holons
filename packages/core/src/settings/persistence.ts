@@ -49,6 +49,7 @@ export function parseHolonSettings(data: any): HolonSettings {
   return {
     id: data.id || '',
     name: data.name || '',
+    ...(typeof data.description === 'string' && data.description.trim() ? { description: data.description.trim() } : {}),
     version: data.version || 1,
     admin: data.admin || '',
     timezone: data.timezone || 'UTC',

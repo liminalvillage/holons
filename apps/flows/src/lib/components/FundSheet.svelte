@@ -10,9 +10,22 @@
   // A steward links the collective here. The slug is checked against
   // OpenCollective before it is saved, so a typo cannot quietly point an
   // account's balance at someone else's collective.
+  //
+  // Two more doors a steward can open, each a real account they already
+  // hold: a Safe on an EVM chain, and a Lightning address (core
+  // `pay-in.ts`). Paying through any of them is a real transaction; nothing
+  // here records an amount someone typed.
   import {
     collectiveDonateUrl,
     collectiveUrl,
+    DEFAULT_SAFE_CHAIN,
+    NO_PAY_IN,
+    describeSafe,
+    lightningUri,
+    parseLightning,
+    parseSafe,
+    safeChains,
+    type PayIn,
     explorerAddressUrl,
     isValidCollectiveSlug,
     normalizeCollectiveSlug,
@@ -33,6 +46,7 @@
   import { potLive } from "$lib/live";
   import { showNotice } from "$lib/notice";
   import { hrefFor } from "$lib/urls";
+  import { linkPayIn, loadPayIn } from "$lib/payIn";
 
   export let node: FlowGraphNode;
   /** The signed-in person stewards this account. */
@@ -55,10 +69,49 @@
   $: root = $index?.byId.get(potId) ?? null;
   $: isHolon = node.kind !== "person" && node.kind !== "placeholder";
 
+  // ── Safe and Lightning ──
+  let payIn: PayIn = NO_PAY_IN;
+  let editingSafe = false;
+  let editingLn = false;
+  let safeText = "";
+  let safeChain = DEFAULT_SAFE_CHAIN;
+  let lnText = "";
+  let payErr = "";
+  const CHAINS = safeChains();
+
   async function read(force = false) {
     loading = true;
-    fund = isHolon ? await loadFund(node.id, force) : null;
+    [fund, payIn] = isHolon
+      ? await Promise.all([loadFund(node.id, force), loadPayIn(node.id)])
+      : [null, NO_PAY_IN];
     loading = false;
+  }
+
+  async function saveDoor(patch: Parameters<typeof linkPayIn>[1]) {
+    payErr = "";
+    busy = true;
+    try {
+      payIn = await linkPayIn(node.id, patch);
+      editingSafe = editingLn = false;
+      showNotice($t("fund.linked"));
+      dispatch("changed");
+    } catch {
+      payErr = $t("claim.failed");
+    } finally {
+      busy = false;
+    }
+  }
+  function saveSafe() {
+    if (!safeText.trim()) return void saveDoor({ safe: null });
+    const safe = parseSafe(safeText, safeChain);
+    if (!safe) return void (payErr = $t("fund.badSafe"));
+    void saveDoor({ safe });
+  }
+  function saveLn() {
+    if (!lnText.trim()) return void saveDoor({ lightning: null });
+    const ln = parseLightning(lnText);
+    if (!ln) return void (payErr = $t("fund.badLightning"));
+    void saveDoor({ lightning: ln });
   }
   onMount(() => void read());
 
@@ -99,38 +152,39 @@
 </script>
 
 <BottomSheet
-  title={$t("fund.title", { name: node.label })}
+  title={$t("fund.payTitle", { name: node.label })}
   on:close={() => dispatch("close")}
 >
-  <section class="door">
-    <h3><Icon name="wallet" />{$t("fund.potTitle")}</h3>
-    {#if pot}
-      {@const url = explorerAddressUrl(pot.chainId, pot.address)}
-      <p class="muted">{$t("fund.potBody")}</p>
-      <div class="address">
-        <code>{pot.address}</code>
-        <button class="btn quiet small" on:click={() => copy(pot!.address)}
-          ><Icon name="copy" />{$t("share.copy")}</button
-        >
-      </div>
-      {#if url}
-        <a class="link" href={url} target="_blank" rel="noopener noreferrer"
-          >{shortAddress(pot.address)}<Icon name="external" /></a
+  <!-- The on-chain Pot contract, where there is one, or the Pot that funds this. -->
+  {#if pot || (root && root.id !== node.id)}
+    <section class="door">
+      <h3><Icon name="wallet" />{$t("fund.potTitle")}</h3>
+      {#if pot}
+        {@const url = explorerAddressUrl(pot.chainId, pot.address)}
+        <p class="muted">{$t("fund.potBody")}</p>
+        <div class="address">
+          <code>{pot.address}</code>
+          <button class="btn quiet small" on:click={() => copy(pot!.address)}
+            ><Icon name="copy" />{$t("share.copy")}</button
+          >
+        </div>
+        {#if url}
+          <a class="link" href={url} target="_blank" rel="noopener noreferrer"
+            >{shortAddress(pot.address)}<Icon name="external" /></a
+          >
+        {/if}
+      {:else if root && root.id !== node.id}
+        <p class="muted">
+          {$t("fund.noPot", { pot: root.label })}
+        </p>
+        <a class="link" href={hrefFor(root)}
+          >{$t("fund.openPot", { pot: root.label })}<Icon
+            name="chevron-right"
+          /></a
         >
       {/if}
-    {:else if root && root.id !== node.id}
-      <p class="muted">
-        {$t("fund.noPot", { pot: root.label })}
-      </p>
-      <a class="link" href={hrefFor(root)}
-        >{$t("fund.openPot", { pot: root.label })}<Icon
-          name="chevron-right"
-        /></a
-      >
-    {:else}
-      <p class="muted">{$t("wallet.noPot")}</p>
-    {/if}
-  </section>
+    </section>
+  {/if}
 
   {#if isHolon}
     <section class="door">
@@ -197,10 +251,14 @@
                 disabled={busy}>{$t("nav.back")}</button
               >
             {/if}
-            <button class="btn grow" type="submit" disabled={busy}
+            <!-- "Remove the link" only when there is a link to remove. -->
+            <button
+              class="btn grow"
+              type="submit"
+              disabled={busy || (!slug.trim() && !fund?.slug)}
               >{busy
                 ? $t("fund.checking")
-                : slug.trim()
+                : slug.trim() || !fund?.slug
                   ? $t("fund.link")
                   : $t("fund.unlink")}</button
             >
@@ -209,6 +267,119 @@
       {:else}
         <p class="muted">{$t("fund.noCollective")}</p>
       {/if}
+    </section>
+  {/if}
+
+  {#if isHolon}
+    <section class="door">
+      <h3><Icon name="wallet" />{$t("fund.safeTitle")}</h3>
+      {#if payIn.safe && !editingSafe}
+        {@const d = describeSafe(payIn.safe)}
+        <p class="muted">{$t("fund.safeBody", { chain: d.chain })}</p>
+        <div class="address">
+          <code>{payIn.safe.address}</code>
+          <button
+            class="btn quiet small"
+            on:click={() => copy(payIn.safe?.address ?? "")}
+            ><Icon name="copy" />{$t("share.copy")}</button
+          >
+        </div>
+        {#if d.app}
+          <a class="link" href={d.app} target="_blank" rel="noopener noreferrer"
+            >{$t("fund.openSafe", { chain: d.chain })}<Icon
+              name="external"
+            /></a
+          >
+        {/if}
+        {#if steer}
+          <button
+            class="link"
+            on:click={() => {
+              editingSafe = true;
+              safeText = payIn.safe?.address ?? "";
+              safeChain = payIn.safe?.chainId ?? DEFAULT_SAFE_CHAIN;
+            }}>{$t("fund.changeDoor")}</button
+          >
+        {/if}
+      {:else if steer && (editingSafe || !payIn.safe)}
+        <p class="muted">{$t("fund.safeLink")}</p>
+        <form on:submit|preventDefault={saveSafe}>
+          <label class="sr-only" for="safe-address"
+            >{$t("fund.safeTitle")}</label
+          >
+          <input
+            id="safe-address"
+            bind:value={safeText}
+            placeholder="gno:0x… or 0x…"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+          <label class="chain">
+            <span>{$t("fund.chain")}</span>
+            <select bind:value={safeChain}>
+              {#each CHAINS as c (c.chainId)}
+                <option value={c.chainId}>{c.name}</option>
+              {/each}
+            </select>
+          </label>
+          <button class="btn grow" type="submit" disabled={busy}
+            >{safeText.trim() || !payIn.safe
+              ? $t("fund.link")
+              : $t("fund.unlink")}</button
+          >
+        </form>
+      {:else}
+        <p class="muted">{$t("fund.noSafe")}</p>
+      {/if}
+    </section>
+
+    <section class="door">
+      <h3><Icon name="flow" />{$t("fund.lnTitle")}</h3>
+      {#if payIn.lightning && !editingLn}
+        <p class="muted">{$t("fund.lnBody")}</p>
+        <div class="address">
+          <code>{payIn.lightning}</code>
+          <button
+            class="btn quiet small"
+            on:click={() => copy(payIn.lightning ?? "")}
+            ><Icon name="copy" />{$t("share.copy")}</button
+          >
+        </div>
+        <a class="btn wide" href={lightningUri(payIn.lightning)}
+          >{$t("fund.lnPay")}</a
+        >
+        {#if steer}
+          <button
+            class="link"
+            on:click={() => {
+              editingLn = true;
+              lnText = payIn.lightning ?? "";
+            }}>{$t("fund.changeDoor")}</button
+          >
+        {/if}
+      {:else if steer && (editingLn || !payIn.lightning)}
+        <p class="muted">{$t("fund.lnLink")}</p>
+        <form on:submit|preventDefault={saveLn}>
+          <label class="sr-only" for="ln-address">{$t("fund.lnTitle")}</label>
+          <input
+            id="ln-address"
+            bind:value={lnText}
+            placeholder="name@getalby.com"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+          <button class="btn grow" type="submit" disabled={busy}
+            >{lnText.trim() || !payIn.lightning
+              ? $t("fund.link")
+              : $t("fund.unlink")}</button
+          >
+        </form>
+      {:else}
+        <p class="muted">{$t("fund.noLightning")}</p>
+      {/if}
+      {#if payErr}<p class="notice warn" role="alert">{payErr}</p>{/if}
     </section>
   {/if}
 </BottomSheet>
@@ -228,6 +399,23 @@
     align-items: center;
     gap: 8px;
     font-size: 1rem;
+  }
+  .chain {
+    display: grid;
+    gap: 4px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--ink-soft);
+  }
+  .chain select {
+    min-height: var(--tap);
+    padding: 0 10px;
+    border-radius: 12px;
+    border: 1.5px solid var(--line);
+    background: var(--paper);
+    color: var(--ink);
+    font: inherit;
+    font-size: 16px;
   }
   .figure {
     font-size: 1.6rem;

@@ -4,13 +4,40 @@
 // How numbers and ages are written. Pure: the translated words around them
 // are the caller's.
 
+/**
+ * A failure as the reader sees it: the translated line, then the reason core
+ * gave ("That project is already claimed"), so it is never just "it failed".
+ */
+export function failure(base: string, err: unknown): string {
+  const why = String((err as Error)?.message ?? "").trim();
+  return why && why !== base
+    ? `${base} ${why}${/[.!?]$/.test(why) ? "" : "."}`
+    : base;
+}
+
 /** A percent as text: never "0%" for something that is there. */
-export function pct(value: number): string {
+export function pct(value: number, locale = "en"): string {
   if (!Number.isFinite(value) || value <= 0) return "0%";
-  if (value < 0.01) return "<0.01%";
-  if (value < 10) return `${trim(value.toFixed(2))}%`;
-  if (value < 99.95) return `${trim(value.toFixed(1))}%`;
+  const mark = decimalMark(locale);
+  const local = (text: string) =>
+    mark === "." ? text : text.replace(".", mark);
+  if (value < 0.01) return local("<0.01%");
+  if (value < 10) return local(`${trim(value.toFixed(2))}%`);
+  if (value < 99.95) return local(`${trim(value.toFixed(1))}%`);
   return "100%";
+}
+
+/** The decimal mark the reader's locale writes ("," in it/es). */
+function decimalMark(locale: string): string {
+  try {
+    return (
+      new Intl.NumberFormat(locale)
+        .formatToParts(1.5)
+        .find((p) => p.type === "decimal")?.value ?? "."
+    );
+  } catch {
+    return ".";
+  }
 }
 
 const trim = (text: string) => text.replace(/\.?0+$/, "");

@@ -13,6 +13,10 @@
  * is skipped when it already holds, so approving twice — or after a failed
  * step — is safe.
  *
+ * A project may be seated in several funds (its legacy credit passes through
+ * every fund that funded it). Approving in one marks it claimed in each fund
+ * it is federated with that seats it, so no seat of it lapses.
+ *
  * The approver must be an admin of BOTH holons: of the seating one to
  * answer, of the project to seat anyone in it. The importer seats its
  * `--admins` as admins of everything it founds, which is what makes them
@@ -22,6 +26,7 @@
  */
 
 import { isHolonAdmin, resolveHolonAuthority } from '../holosphere/authority.js';
+import { getFederationSnapshot } from '../federation/snapshot.js';
 import { syncMembersLog } from '../protocol/index.js';
 import {
   FLOW_PROJECT_CLAIMS_LENS,
@@ -84,6 +89,23 @@ export function projectSeats(settings: unknown, now = Date.now()): Record<string
     out[id] = aliases[id] || claimed.has(id) ? 'claimed' : closed ? 'closed' : 'open';
   }
   return out;
+}
+
+/**
+ * The funds a Pot seats, heaviest first, from its own split. Everything
+ * passes through funds, so every seat is one; in the earlier shape (projects
+ * seated straight in the Pot) the funds are the seats the claim window keeps.
+ */
+export function potFunds(settings: unknown): { id: string; weight: number }[] {
+  const buckets = readAllocationBuckets(settings);
+  const weights: Record<string, number> = {};
+  if (buckets.length) for (const b of buckets) for (const [id, w] of Object.entries(b.shares ?? {})) weights[id] = (weights[id] ?? 0) + Number(w || 0);
+  else for (const [id, w] of Object.entries(readInteriorShares(settings))) weights[id] = Number(w || 0);
+  const keep = readAllocationClaimWindow(settings)?.keep;
+  return Object.entries(weights)
+    .filter(([id]) => !keep?.length || keep.includes(id))
+    .map(([id, weight]) => ({ id, weight }))
+    .sort((a, z) => z.weight - a.weight || (a.id < z.id ? -1 : 1));
 }
 
 /** A seating holon's project claims, folded, and how each of its seats stands. */
@@ -156,6 +178,8 @@ export interface ApprovedProjectClaim {
   seated: boolean;
   /** Claim codes this call consumed. */
   codes: number;
+  /** The other holons seating the project that this call marked claimed too. */
+  alsoClaimedIn: string[];
 }
 
 /**
@@ -179,6 +203,21 @@ export async function approveProjectClaim(holosphere: any, holderId: string, cla
   const holderSettings = await quiet<any>(holosphere.get(holder, 'settings', holder), null);
   if (!readAllocationClaimed(holderSettings).includes(project)) await saveAllocationClaimed(holosphere, holder, project);
 
+  // Every other fund the project is federated with that seats it: claimed there too.
+  const alsoClaimedIn: string[] = [];
+  const partners = await quiet<string[]>(getFederationSnapshot(holosphere, project).then((f) => f.federated), []);
+  for (const other of partners) {
+    if (other === holder || other === project) continue;
+    const doc = await quiet<any>(holosphere.get(other, 'settings', other), null);
+    if (!projectSeats(doc)[project] || readAllocationClaimed(doc).includes(project)) continue;
+    try {
+      await saveAllocationClaimed(holosphere, other, project);
+      alsoClaimedIn.push(other);
+    } catch {
+      /* not an admin there: that seat waits for its own claim */
+    }
+  }
+
   // A code is a second door into the same seat: close it.
   let codes = 0;
   const consume = async (holon: string, claims: (target: string) => boolean) => {
@@ -189,14 +228,14 @@ export async function approveProjectClaim(holosphere: any, holderId: string, cla
     await saveAllocationCodes(holosphere, holon, patch);
     codes += Object.keys(patch).length;
   };
-  await consume(project, (target) => parseSeatClaim(target) === holder);
+  await consume(project, (target) => parseSeatClaim(target) != null);
   await consume(holder, (target) => target === project);
 
   if (claim.status !== 'approved') {
     const v = buildProjectClaimVerdict(claim.id, 'attest');
     await holosphere.append(holder, FLOW_PROJECT_CLAIMS_LENS, v.item, { refs: v.refs });
   }
-  return { project, key, seated, codes };
+  return { project, key, seated, codes, alsoClaimedIn };
 }
 
 /** Decline, with the reason the claimant will read. Seats nobody. */

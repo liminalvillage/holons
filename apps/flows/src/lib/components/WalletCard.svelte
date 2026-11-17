@@ -15,7 +15,7 @@
   import BottomSheet from "./BottomSheet.svelte";
   import Icon from "./Icon.svelte";
   import { ChainError, connectedWallet } from "$lib/chain";
-  import { amount, shortAddress } from "$lib/format";
+  import { amount, failure, shortAddress } from "$lib/format";
   import { locale, t } from "$lib/i18n";
   import { collect, potLive, readAccounts, type PartyAccount } from "$lib/live";
   import { isWalletAvailable } from "$lib/login/ethereum";
@@ -99,8 +99,12 @@
       pasted = "";
       sheet = "none";
       showNotice($t("wallet.saved"));
-    } catch {
-      error = $t("wallet.badAddress");
+    } catch (err) {
+      // A well-formed address that did not save is a write that failed, not
+      // a bad address.
+      error = /^0x[0-9a-f]{40}$/i.test(pasted.trim())
+        ? failure($t("claim.failed"), err)
+        : $t("wallet.badAddress");
     } finally {
       busy = "";
     }

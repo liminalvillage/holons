@@ -23,8 +23,7 @@
   import FlowList from "./FlowList.svelte";
   import Icon from "./Icon.svelte";
   import KindChip from "./KindChip.svelte";
-  import { pct } from "$lib/format";
-  import { t } from "$lib/i18n";
+  import { t, pctOf } from "$lib/i18n";
   import { showNotice } from "$lib/notice";
   import { hrefFor, searchHref } from "$lib/urls";
   import type { FlowListRow, Selection } from "$lib/viewTypes";
@@ -94,7 +93,7 @@
           id: r.id,
           label: r.label,
           kind: r.kind,
-          value: pct(r.share),
+          value: $pctOf(r.share),
         })),
         more: rest.length > LIST ? searchHref("", kind) : null,
       };
@@ -109,7 +108,7 @@
           id: x.p!.id,
           label: x.p!.label,
           kind: x.p!.kind,
-          value: pct(x.l.share),
+          value: $pctOf(x.l.share),
         })),
         more: seats.length > LIST ? searchHref("", "project") : null,
       };
@@ -150,6 +149,9 @@
   </svelte:fragment>
 
   {#if node}
+    {#if party?.description}
+      <p class="about">{party.description}</p>
+    {/if}
     <dl class="facts">
       <div>
         <dt>{isFocus ? $t("sheet.reaches") : $t("sheet.inView")}</dt>
@@ -158,12 +160,12 @@
       {#if party && party.kind !== "pot"}
         <div>
           <dt>{$t("sheet.ofPot")}</dt>
-          <dd>{pct(party.share)}</dd>
+          <dd>{$pctOf(party.share)}</dd>
         </div>
         {#if party.rest > 0 && party.share - party.rest > 0.005}
           <div>
             <dt>{$t("sheet.keeps")}</dt>
-            <dd>{pct(party.rest)}</dd>
+            <dd>{$pctOf(party.rest)}</dd>
           </div>
         {/if}
       {/if}
@@ -223,12 +225,12 @@
       {#if edge}
         <div>
           <dt>{$t("sheet.ofSplit", { name: source?.label ?? "" })}</dt>
-          <dd>{pct(edge.local)}</dd>
+          <dd>{$pctOf(edge.local)}</dd>
         </div>
         {#if edge.share > 0}
           <div>
             <dt>{$t("sheet.ofPot")}</dt>
-            <dd>{pct(edge.share)}</dd>
+            <dd>{$pctOf(edge.share)}</dd>
           </div>
         {/if}
         <div>
@@ -257,6 +259,14 @@
 </BottomSheet>
 
 <style>
+  .about {
+    margin: 6px 0 4px;
+    font-size: 0.9rem;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    overflow-wrap: anywhere;
+    white-space: pre-line;
+  }
   .facts {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));

@@ -13,8 +13,9 @@
   // The camera turns on its own until someone takes it. A drag turns it, a
   // pinch or the wheel goes in TOWARD what is under the fingers or the
   // pointer, a tap on a party selects it and brings it to the middle, where
-  // the camera then turns about it. The pointer wears a small gimbal — three
-  // rings that turn with the space — on the party it is nearest to.
+  // the camera then turns about it. The selected party, and the one under
+  // the pointer, glow; everyone they link to is named, and a name is as
+  // good a target as the disc it stands beside.
   //
   // What travels the lines is drawn as drops. With `streams` at "money" they
   // are all water — the financial stream. At "eight" each drop takes one of
@@ -70,6 +71,8 @@
   const TAP_PX = 6;
   /** Names drawn at once, besides the one under the pointer and the selected. */
   const NAMES = 14;
+  /** Of what the lit party links to, how many are named at once, the widest lines first. */
+  const LINKED = 28;
   /** Lines wide enough to show what travels them. */
   const PULSES = 240;
   const KINDS = ["pot", "fund", "project", "person", "placeholder"] as const;
@@ -102,6 +105,11 @@
   /** Per party: 1 when `highlight` names it. */
   let hl = new Uint8Array(0);
   let hlOn = false;
+  /** Per party: who it links to, either way, the widest line first. */
+  let adj: number[][] = [];
+  /** Where each name was drawn this frame, so a name can be tapped like its disc. */
+  let labelAt: { i: number; x0: number; y0: number; x1: number; y1: number }[] =
+    [];
 
   // The camera: on a sphere of `dist` about `target`, looking at it.
   let yaw = 0.6;
@@ -111,7 +119,10 @@
   /** Where a selection is easing the camera to. */
   let goal: { target: [number, number, number]; dist: number } | null = null;
 
+  /** The party last under the pointer; it keeps its glow and its linked names until another is met. */
   let hoverIdx = -1;
+  /** Whether something is under the pointer right now. */
+  let over = false;
   let touchedAt = 0;
   let dirty = true;
   let still = false;
@@ -164,6 +175,18 @@
         .sort((a, b) => resCount[b] - resCount[a])
         .slice(0, BADGES),
     );
+    const near: { i: number; w: number }[][] = nodes.map(() => []);
+    s.links.forEach((l, k) => {
+      const a = linkA[k];
+      const b = linkB[k];
+      if (a < 0 || b < 0 || a === b) return;
+      near[a].push({ i: b, w: l.width });
+      near[b].push({ i: a, w: l.width });
+    });
+    adj = near.map((list) =>
+      Array.from(new Set(list.sort((p, q) => q.w - p.w).map((e) => e.i))),
+    );
+    labelAt = [];
     hoverIdx = -1;
     // A refined graph is the same place: the view someone chose stays.
     if (fresh) home();
@@ -435,10 +458,10 @@
 
     if (streams === "eight") halos(ctx, now, lit);
     if (hlOn) rings(ctx);
-    names(ctx);
-    if (selectedIdx >= 0) gimbal(ctx, selectedIdx, palette.accent, 1);
+    if (selectedIdx >= 0) glow(ctx, selectedIdx, palette.accent, 1, now);
     if (hoverIdx >= 0 && hoverIdx !== selectedIdx)
-      gimbal(ctx, hoverIdx, palette.ink, 0.8);
+      glow(ctx, hoverIdx, palette.ink, 0.7, now);
+    names(ctx);
     ctx.globalAlpha = 1;
   }
 
@@ -511,38 +534,44 @@
     }
   }
 
-  /** The 3D cursor: three rings about a party, turning with the space. */
-  function gimbal(
+  /** The highlight: a soft glow about a party, its disc brought forward, and a ring hugging it. */
+  function glow(
     ctx: CanvasRenderingContext2D,
     i: number,
     colour: string,
     alpha: number,
+    now: number,
   ) {
     if (!sk[i]) return;
-    const { r, u } = basis();
-    const rho = nodes[i].r * sk[i] + 7;
+    const px = Math.max(2.5, nodes[i].r * sk[i]);
+    const breath = still ? 0.5 : 0.5 + 0.5 * Math.sin(now * 0.004);
+    const reach = px + 10 + 6 * breath;
+    const halo = ctx.createRadialGradient(
+      sx[i],
+      sy[i],
+      px * 0.6,
+      sx[i],
+      sy[i],
+      reach,
+    );
+    halo.addColorStop(0, colour);
+    halo.addColorStop(1, "transparent");
+    ctx.globalAlpha = 0.5 * alpha;
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(sx[i], sy[i], reach, 0, Math.PI * 2);
+    ctx.fill();
+    // The disc again, undimmed, over the glow.
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = palette[nodes[i].kind];
+    ctx.beginPath();
+    ctx.arc(sx[i], sy[i], px, 0, Math.PI * 2);
+    ctx.fill();
     ctx.strokeStyle = colour;
-    ctx.lineWidth = 1.25;
-    // A world axis seen from the camera: where it points on the screen.
-    const seen = (x: number, y: number, z: number): [number, number] => [
-      x * r[0] + y * r[1] + z * r[2],
-      -(x * u[0] + y * u[1] + z * u[2]),
-    ];
-    const axes = [seen(1, 0, 0), seen(0, 1, 0), seen(0, 0, 1)];
-    for (let ring = 0; ring < 3; ring++) {
-      const p = axes[ring];
-      const q = axes[(ring + 1) % 3];
-      ctx.globalAlpha = alpha * (ring === 0 ? 0.95 : 0.55);
-      ctx.beginPath();
-      for (let s = 0; s <= 40; s++) {
-        const a = (s / 40) * Math.PI * 2;
-        const x = sx[i] + (p[0] * Math.cos(a) + q[0] * Math.sin(a)) * rho;
-        const y = sy[i] + (p[1] * Math.cos(a) + q[1] * Math.sin(a)) * rho;
-        if (s) ctx.lineTo(x, y);
-        else ctx.moveTo(x, y);
-      }
-      ctx.stroke();
-    }
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(sx[i], sy[i], px + 2.5, 0, Math.PI * 2);
+    ctx.stroke();
   }
 
   function names(ctx: CanvasRenderingContext2D) {
@@ -550,6 +579,15 @@
     if (selectedIdx >= 0) picked.push(selectedIdx);
     if (hoverIdx >= 0 && hoverIdx !== selectedIdx) picked.push(hoverIdx);
     const forced = picked.length;
+    // Everyone the lit party links to is named, so it can be tapped by name.
+    const lit = selectedIdx >= 0 ? selectedIdx : hoverIdx;
+    const linked =
+      lit >= 0
+        ? (adj[lit] ?? [])
+            .filter((i) => sk[i] && !picked.includes(i))
+            .slice(0, LINKED)
+        : [];
+    picked.push(...linked);
     const bySize = (p: number, q: number) =>
       nodes[q].r * sk[q] - nodes[p].r * sk[p];
     // What a search found is named before whatever is merely large.
@@ -571,15 +609,18 @@
       .slice(0, NAMES * 2);
     picked.push(...found, ...large.filter((i) => !found.includes(i)));
 
-    ctx.font = "600 12px system-ui, -apple-system, 'Segoe UI', sans-serif";
     ctx.textBaseline = "middle";
     ctx.lineJoin = "round";
     const taken: [number, number, number, number][] = [];
+    labelAt = [];
     let drawn = 0;
-    for (let k = 0; k < picked.length && drawn < NAMES + forced; k++) {
+    const room = NAMES + forced + linked.length;
+    for (let k = 0; k < picked.length && drawn < room; k++) {
       const i = picked[k];
       if (!sk[i]) continue;
       const must = k < forced;
+      const isLinked = !must && k < forced + linked.length;
+      ctx.font = `${must || isLinked ? 700 : 600} 12px system-ui, -apple-system, 'Segoe UI', sans-serif`;
       const text = must
         ? `${clip(nodes[i].label, 30)} · ${format(nodes[i].share)}`
         : clip(nodes[i].label, 22);
@@ -602,18 +643,34 @@
       )
         continue;
       taken.push(rect);
+      labelAt.push({
+        i,
+        x0: rect[0] - 4,
+        y0: rect[1] - 2,
+        x1: rect[2] + 4,
+        y1: rect[3] + 2,
+      });
       drawn++;
-      ctx.globalAlpha = must ? 1 : Math.max(0.55, fog(sz[i]));
+      ctx.globalAlpha = must || isLinked ? 1 : Math.max(0.55, fog(sz[i]));
       ctx.lineWidth = 3.5;
       ctx.strokeStyle = palette.card;
       ctx.strokeText(text, x, y);
-      ctx.fillStyle = palette.ink;
+      ctx.fillStyle = isLinked ? palette.accent : palette.ink;
       ctx.fillText(text, x, y);
     }
   }
 
-  /** The party nearest (px, py), within `room` pixels of its disc. */
+  /** The party whose drawn name is under (px, py), if any. */
+  function pickName(px: number, py: number): number {
+    for (const l of labelAt)
+      if (px >= l.x0 && px <= l.x1 && py >= l.y0 && py <= l.y1) return l.i;
+    return -1;
+  }
+
+  /** The party nearest (px, py): the one whose name is under it, else within `room` pixels of its disc. */
   function pick(px: number, py: number, room: number): number {
+    const named = pickName(px, py);
+    if (named >= 0) return named;
     let best = -1;
     let bestD = Infinity;
     for (let i = 0; i < nodes.length; i++) {
@@ -668,7 +725,9 @@
     if (!was) {
       if (e.pointerType !== "touch") {
         const next = pick(p.x, p.y, HOVER_PX);
-        if (next !== hoverIdx) {
+        over = next >= 0;
+        // Off everything the last one stays lit, so its names can be reached.
+        if (next >= 0 && next !== hoverIdx) {
           hoverIdx = next;
           dirty = true;
         }
@@ -709,6 +768,7 @@
         e.pointerType === "touch" ? TOUCH_PX : HOVER_PX,
       );
       const node = idx >= 0 ? nodes[idx] : null;
+      if (!node) hoverIdx = -1;
       // A second tap on the selected party lets it go.
       onSelect?.(node && node.id === selectedId ? null : node);
     }
@@ -716,6 +776,7 @@
   }
 
   function onPointerLeave() {
+    over = false;
     if (hoverIdx >= 0) {
       hoverIdx = -1;
       dirty = true;
@@ -855,7 +916,7 @@
   <canvas
     bind:this={canvas}
     class:dragging
-    class:over={hoverIdx >= 0}
+    class:over
     role="application"
     aria-label={label}
     tabindex="0"

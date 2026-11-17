@@ -11,9 +11,9 @@
   import { page } from "$app/stores";
   import FlowList from "$lib/components/FlowList.svelte";
   import SnapshotStatus from "$lib/components/SnapshotStatus.svelte";
-  import { pct, shortAddress } from "$lib/format";
+  import { shortAddress } from "$lib/format";
   import { index, snapshot } from "$lib/graph";
-  import { t } from "$lib/i18n";
+  import { t, pctOf } from "$lib/i18n";
   import { potLive } from "$lib/live";
   import { hrefFor } from "$lib/urls";
   import type { FlowListRow } from "$lib/viewTypes";
@@ -45,7 +45,7 @@
         id: n.id,
         label: n.label,
         kind: n.kind,
-        value: pct(n.share),
+        value: $pctOf(n.share),
       }),
     );
   $: settled = $snapshot.status !== "loading" && $potLive.status !== "loading";

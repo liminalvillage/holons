@@ -14,10 +14,11 @@
 import { shortId } from "@holons/core/identity";
 import { derived, get, writable, type Readable } from "svelte/store";
 import {
+  adoptFlowParty,
   indexFlowGraph,
   loadAllocationInputs,
   loadCascadeChildren,
-  loadFlowGraph,
+  loadPotGraph,
   refineFlowGraph,
   refineFlowGraphResources,
   resourcesOf,
@@ -28,7 +29,13 @@ import {
   type Capital,
   type FlowGraphIndex,
 } from "@holons/core/flows";
-import { resolveAppName, resolveDevGraphUrl, resolvePot } from "./config";
+import {
+  rememberPot,
+  resolveArtizenView,
+  resolveAppName,
+  resolveDevGraphUrl,
+  resolvePot,
+} from "./config";
 import { getHolosphere } from "./holosphere";
 
 export type SnapshotStatus =
@@ -52,16 +59,19 @@ export interface SnapshotState {
   graph: FlowGraph | null;
   /** The graph came from this device's cache, not from the relays this visit. */
   cached: boolean;
+  /** Nobody has published a snapshot for the Pot: this is the walk, read live. */
+  live?: boolean;
 }
 
 const CACHE_KEY = "flows_graph_cache";
 /** Past this the cache is skipped rather than risk the storage quota. */
 const CACHE_MAX_CHARS = 1_500_000;
 
-export const potId = resolvePot();
+/** The Pot on screen. A live binding: `choosePot` moves the whole app to another. */
+export let potId = resolvePot();
 
 export const snapshot = writable<SnapshotState>({
-  status: potId ? "loading" : "unconfigured",
+  status: potId || resolveDevGraphUrl() ? "loading" : "unconfigured",
   graph: null,
   cached: false,
 });
@@ -115,13 +125,46 @@ function writeCache(graph: FlowGraph): void {
 
 let loading: Promise<void> | null = null;
 
+/** The Artizen map is on screen instead of this device's own pot (`toggleArtizen`). */
+export const showingArtizen = writable(false);
+/** The pot to come back to from the Artizen map. */
+let ownPot = potId;
+
+/** The map file to draw instead of reading the relays, if any. */
+function graphUrl(): string {
+  const view = get(showingArtizen) ? resolveArtizenView() : null;
+  return view?.kind === "fixture" ? view.url : resolveDevGraphUrl();
+}
+
+/**
+ * Show the whole Artizen map, or go back to this device's own pot. Nothing
+ * is remembered: a reload opens on one's own pot again.
+ */
+export function toggleArtizen(): Promise<void> {
+  const view = resolveArtizenView();
+  if (!view) return Promise.resolve();
+  const on = !get(showingArtizen);
+  if (on) ownPot = potId;
+  showingArtizen.set(on);
+  if (view.kind === "pot") potId = on ? view.id : ownPot;
+  refined.set({});
+  snapshot.set({
+    status: potId || graphUrl() ? "loading" : "unconfigured",
+    graph: null,
+    cached: false,
+  });
+  loading = null;
+  return loadSnapshot(true);
+}
+
 /** Load (or reload) the Pot's snapshot. Safe to call from every screen. */
 export function loadSnapshot(force = false): Promise<void> {
-  if (!potId) return Promise.resolve();
+  if (!potId && !graphUrl()) return Promise.resolve();
   if (loading && !force) return loading;
   loading = (async () => {
+    const pot = potId;
     const before = get(snapshot);
-    if (!before.graph) {
+    if (!before.graph && !get(showingArtizen)) {
       const cached = readCache();
       if (cached)
         snapshot.set({
@@ -131,11 +174,15 @@ export function loadSnapshot(force = false): Promise<void> {
         });
     }
 
-    const devUrl = resolveDevGraphUrl();
+    const devUrl = graphUrl();
     if (devUrl) {
       try {
         const graph = (await (await fetch(devUrl)).json()) as FlowGraph;
-        snapshot.set({ status: "ready", graph, cached: false });
+        snapshot.set({
+          status: "ready",
+          graph: withAdopted(graph),
+          cached: false,
+        });
       } catch {
         snapshot.update((s) => ({ ...s, status: "offline" }));
       }
@@ -144,24 +191,48 @@ export function loadSnapshot(force = false): Promise<void> {
 
     try {
       const hs = await getHolosphere();
-      const loaded = await loadFlowGraph(hs, potId);
+      const loaded = await loadPotGraph(hs, potId, {
+        scoreOf: (id: string) => scoreAllocationMembers(hs, id),
+        standingOf: standingOf(hs),
+        resourcesOf: resourcesOf(hs),
+      });
+      // Moved to another Pot while this one was read: that read decides.
+      if (pot !== potId) return;
       if (loaded.ok) {
         writeCache(loaded.graph);
         refined.set({});
         snapshot.set({
           status: "ready",
-          graph: withLiveResources(loaded.graph),
+          graph: withLiveResources(withAdopted(loaded.graph)),
           cached: false,
+          live: loaded.live === true,
         });
       } else {
         // Whatever was on screen stays; the status says why it is not fresher.
         snapshot.update((s) => ({ ...s, status: loaded.reason }));
       }
     } catch {
-      snapshot.update((s) => ({ ...s, status: "offline" }));
+      if (pot === potId) snapshot.update((s) => ({ ...s, status: "offline" }));
     }
   })();
   return loading;
+}
+
+/**
+ * Open the app on another Pot — one this device just started, or one a link
+ * pointed at — and remember it. The session and everything signed stay; only
+ * the map is read again.
+ */
+export function choosePot(holon: string): Promise<void> {
+  const id = String(holon ?? "").trim();
+  if (!id || id === potId) return loadSnapshot(true);
+  rememberPot(id);
+  showingArtizen.set(false);
+  potId = id;
+  refined.set({});
+  snapshot.set({ status: "loading", graph: null, cached: false });
+  loading = null;
+  return loadSnapshot(true);
 }
 
 /** Party → display name, from the graph on screen. */
@@ -177,6 +248,47 @@ export function nameFor(id: string, label?: string | null): string {
 const refining = new Set<string>();
 
 /**
+ * Holons drawn this visit that the snapshot does not reach — one just
+ * started here, or opened by its link before anyone seated it — so a
+ * snapshot that lands later keeps them.
+ */
+const adopted = new Map<string, { label?: string; description?: string }>();
+
+function withAdopted(graph: FlowGraph): FlowGraph {
+  let out = graph;
+  for (const [id, meta] of adopted) out = adoptFlowParty(out, { id, ...meta });
+  return out;
+}
+
+/**
+ * Make sure the map knows `holonId`: a holon the snapshot does not reach is
+ * read off its own settings and drawn on its own, then its split folded in.
+ * Resolves false when there is no such holon to read.
+ */
+export async function adopt(holonId: string): Promise<boolean> {
+  const id = String(holonId ?? "").trim();
+  if (!id) return false;
+  if (get(index)?.byId.has(id)) return true;
+  try {
+    const hs = await getHolosphere();
+    const read = await loadAllocationInputs(hs, id);
+    const settings = read.settings as Record<string, unknown> | null;
+    if (!settings || (!read.configured && !settings.holonPubkey)) return false;
+    adopted.set(id, {
+      ...(read.name ? { label: read.name } : {}),
+      ...(read.description ? { description: read.description } : {}),
+    });
+    snapshot.update((s) =>
+      s.graph ? { ...s, graph: withAdopted(s.graph) } : s,
+    );
+    await refine(id, true);
+    return !!get(index)?.byId.has(id);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Read one holon's split afresh and fold it into the graph on screen. Quiet:
  * a holon that cannot be read just keeps what the snapshot said. Once per
  * visit, unless `force` — after the split was just changed from here.
@@ -187,7 +299,8 @@ export async function refine(holonId: string, force = false): Promise<void> {
     !holon ||
     refining.has(holon) ||
     (!force && get(refined)[holon]) ||
-    resolveDevGraphUrl()
+    // The dev fixture is the whole truth, except for holons drawn on top of it.
+    (graphUrl() && !adopted.has(holon))
   )
     return;
   if (!get(index)?.byId.has(holon)) return;
@@ -258,11 +371,26 @@ export function refineResources(
   partyId: string,
   byCapital: Partial<Record<Capital, number>>,
 ): void {
-  if (resolveDevGraphUrl()) return;
+  if (graphUrl()) return;
   liveResources.set(partyId, byCapital);
   snapshot.update((s) =>
     s.graph
       ? { ...s, graph: refineFlowGraphResources(s.graph, partyId, byCapital) }
       : s,
   );
+}
+
+/**
+ * A map read live is only as fresh as its last walk: read it again when the
+ * person comes back to the tab — someone may have been seated meanwhile.
+ */
+const LIVE_AGAIN_MS = 15_000;
+let walkedAt = 0;
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    if (!get(snapshot).live || Date.now() - walkedAt < LIVE_AGAIN_MS) return;
+    walkedAt = Date.now();
+    void loadSnapshot(true);
+  });
 }

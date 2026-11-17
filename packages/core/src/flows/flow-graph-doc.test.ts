@@ -13,7 +13,7 @@ const small: FlowGraph = {
   complete: true,
   problems: [],
   nodes: [
-    { id: 'holon_pot', label: 'The Pot', kind: 'pot', share: 100, rest: 0, pot: { chainId: 100, address: '0xpot' } },
+    { id: 'holon_pot', label: 'The Pot', kind: 'pot', share: 100, rest: 0, pot: { chainId: 100, address: '0xpot' }, description: 'Backs the first of everything — "quotes", ñ and 手作り included.' },
     { id: 'holon_f1', label: 'Fund One', kind: 'fund', share: 40, rest: 10 },
     { id: 'holon_j', label: 'Proyecto Ñandú — 手作り', kind: 'project', share: 90, rest: 0, unclaimedUntil: 1_800_000_000_000, resources: { material: 2, living: 1, financial: 1 } },
     { id: '111', label: 'Ada', kind: 'person', share: 67.5, rest: 67.5, payout: '0xabc', resources: { intellectual: 4 } },
@@ -139,5 +139,11 @@ describe('resources on the stored graph', () => {
     expect(rows.find((r) => r[0] === 'holon_f1')).toHaveLength(5);
     // Between: blanks keep their place so the counts stay at index 9.
     expect(rows.find((r) => r[0] === '111')).toEqual(['111', 'Ada', 'U', 67.5, 67.5, '0xabc', 0, '', 0, [0, 0, 0, 4, 0, 0, 0, 0]]);
+  });
+
+  it('a description rides after the counts, with a blank in their place when there are none', () => {
+    const { parts } = encodeFlowGraph(small);
+    const rows = parts.flatMap((p) => p.n ?? []);
+    expect(rows.find((r) => r[0] === 'holon_pot')).toEqual(['holon_pot', 'The Pot', 'P', 100, 0, '', 100, '0xpot', 0, 0, 'Backs the first of everything — "quotes", ñ and 手作り included.']);
   });
 });

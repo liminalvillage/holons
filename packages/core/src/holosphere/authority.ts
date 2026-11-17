@@ -175,16 +175,37 @@ export async function writeAcceptance(hs: HoloSphere, holon: string, pubkey?: st
  * readers simply never see it, so a surface asks this BEFORE offering to edit.
  */
 export async function isHolonAdmin(hs: HoloSphere, holon: string, pubkey?: string | null): Promise<boolean> {
+  const role = await holonRole(hs, holon, pubkey);
+  return role === 'admin' || role === 'open';
+}
+
+/**
+ * Where `pubkey` (default: the instance's signing key) stands on `holon`:
+ * `admin`, `member`, `none` (the holon has keepers and this key is not one),
+ * or `open` — nobody is defined for it (yet, as far as this reader has
+ * heard), so every write shows. `null` when there is no key or no holon.
+ *
+ * A surface that names someone a steward should ask this, not
+ * {@link isHolonAdmin}: an open holon lets anyone write, but nobody keeps it.
+ */
+export type HolonRole = 'admin' | 'member' | 'none' | 'open';
+export async function holonRole(hs: HoloSphere, holon: string, pubkey?: string | null): Promise<HolonRole | null> {
   const host = hs as AuthorityCarrier;
   const key = String(pubkey ?? host.currentPubkey ?? '').toLowerCase();
   const h = String(holon ?? '').trim();
-  if (!key || !h) return false;
+  if (!key || !h) return null;
   const summary = resolveHolonAuthority(hs, h);
   const predicate = host._readAuthority ? await host._readAuthority.authorityFor(hs, h) : null;
   const now = Math.floor(Date.now() / 1000);
-  if (predicate?.roleAt) return predicate.roleAt(key, now) === 'admin';
-  if (summary.actors) return summary.actors.roleAt(key, now) === 'admin';
-  return !predicate;
+  const role = predicate?.roleAt
+    ? predicate.roleAt(key, now)
+    : summary.actors
+      ? summary.actors.roleAt(key, now)
+      : predicate
+        ? null
+        : 'open';
+  if (role === 'open' || role === 'admin' || role === 'member') return role;
+  return 'none';
 }
 
 /** `app/holon/lens/key` → its holon, or null. */

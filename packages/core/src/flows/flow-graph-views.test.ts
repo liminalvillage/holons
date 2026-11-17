@@ -19,6 +19,7 @@ import {
   listParties,
   membershipsOf,
   refineFlowGraph,
+  adoptFlowParty,
   refineFlowGraphResources,
   upstreamShares,
   type FlowViewLabels,
@@ -226,7 +227,7 @@ describe('refineFlowGraph', () => {
 
   it('replaces a holon split by what it is now and says how far the snapshot was', () => {
     const g = diamond();
-    const out = refineFlowGraph(g, { holonId: F1, root: { ...fund(0, J, 'holon_new'), name: 'Fund One' }, children: {} });
+    const out = refineFlowGraph(g, { holonId: F1, root: { ...fund(0, J, 'holon_new'), name: 'Fund One', description: 'Backs the first of everything.' }, children: {} });
     expect(out.drift.sort((a, b) => (a.target < b.target ? -1 : 1))).toEqual([
       { source: F1, target: J, before: 100, after: 50 },
       { source: F1, target: 'holon_new', before: 0, after: 50 },
@@ -235,6 +236,7 @@ describe('refineFlowGraph', () => {
     expect(fresh.map((l) => [l.target, l.local, l.share])).toEqual([[J, 50, 12.5], ['holon_new', 50, 12.5]]);
     expect(out.graph.nodes.find((n) => n.id === 'holon_new')).toMatchObject({ kind: 'project', share: 12.5 });
     expect(out.graph.nodes.find((n) => n.id === F1)!.label).toBe('Fund One');
+    expect(out.graph.nodes.find((n) => n.id === F1)!.description).toBe('Backs the first of everything.');
     // Nothing upstream moved, and the snapshot is left as it was.
     expect(out.graph.links.find((l) => l.source === POT && l.target === F1)).toEqual(g.links.find((l) => l.source === POT && l.target === F1));
     expect(g.links.filter((l) => l.source === F1)).toHaveLength(1);
@@ -287,5 +289,38 @@ describe('graphRights', () => {
     expect(Object.values(r).reduce((s, v) => s + v, 0)).toBeLessThanOrEqual(100.001);
     expect(rights(loop, 'nobody')).toEqual({});
     expect(rights(indexFlowGraph(diamond()), '111')).toEqual({});
+  });
+});
+
+describe('adoptFlowParty', () => {
+  it('draws a holon the graph does not reach on its own, with nothing reaching it', () => {
+    const g = diamond();
+    const out = adoptFlowParty(g, { id: 'holon_new', label: ' Seed Fund ', description: 'Backs gardens' });
+    expect(out.nodes.find((n) => n.id === 'holon_new')).toEqual({
+      id: 'holon_new',
+      label: 'Seed Fund',
+      kind: 'project',
+      share: 0,
+      rest: 0,
+      description: 'Backs gardens',
+    });
+    expect(out.links).toBe(g.links);
+    expect(indexFlowGraph(out).byId.has('holon_new')).toBe(true);
+  });
+
+  it('leaves a party the graph already knows, and an empty id, alone', () => {
+    const g = diamond();
+    expect(adoptFlowParty(g, { id: J, label: 'Other' })).toBe(g);
+    expect(adoptFlowParty(g, { id: ' ' })).toBe(g);
+  });
+
+  it('then takes the new holon\'s split like any other', () => {
+    const g = adoptFlowParty(diamond(), { id: 'holon_new', label: 'Seed Fund' });
+    const out = refineFlowGraph(g, {
+      holonId: 'holon_new',
+      root: { config: cfg(0, { nzones: 1 }), members: [], zoned: [{ id: J, name: 'J', zone: 1 }] } as any,
+      children: {},
+    });
+    expect(out.graph.links.some((l) => l.source === 'holon_new' && l.target === J)).toBe(true);
   });
 });

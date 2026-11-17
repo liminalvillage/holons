@@ -12,9 +12,9 @@
     type ResourcesContext,
   } from "@holons/core/flows";
   import { capitalColour, capitalName } from "$lib/capitals";
-  import { amount as amountText, pct } from "$lib/format";
+  import { amount as amountText } from "$lib/format";
   import { nameFor } from "$lib/graph";
-  import { locale, t } from "$lib/i18n";
+  import { locale, t, pctOf } from "$lib/i18n";
   import { potLive } from "$lib/live";
   import { hrefFor } from "$lib/urls";
 
@@ -71,7 +71,7 @@
                   {#if n && h.id !== id}<a href={hrefFor(n)}
                       >{nameFor(h.id, h.label)}</a
                     >{:else}{nameFor(h.id, h.label)}{/if}
-                  {#if k}<small>{pct(h.local)}</small>{/if}
+                  {#if k}<small>{$pctOf(h.local)}</small>{/if}
                 </span>
               {/each}
             </span>
@@ -97,7 +97,12 @@
         ></span>
         <span class="what"
           ><b>{$t("capital.financial")}</b>
-          <i>{$t("trace.moneyLine", { pot: root.label })}</i></span
+          <i
+            >{$t("trace.moneyLine", {
+              pot: root.label,
+              amount: money(Number(put) || 0),
+            })}</i
+          ></span
         >
         <span class="val">{money(trace.reached)}</span>
       </li>

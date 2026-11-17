@@ -70,6 +70,7 @@ describe('foundHolon', () => {
     const H = newHolonId();
     const first = await foundHolon(hs, H, {
       name: 'Orto',
+      description: ' A garden by the river. ',
       members: [[nip19.npubEncode(alice.pk), 'member'], [bob.pk, 'admin']],
     });
     expect(first).toEqual({ holon: H, anchor: founder.pk, founded: true, added: [alice.pk, bob.pk] });
@@ -81,13 +82,16 @@ describe('foundHolon', () => {
     const settings = (await hs.get(H, 'settings', H)) as Record<string, unknown>;
     expect(settings.id).toBe(H);
     expect(settings.name).toBe('Orto');
+    expect(settings.description).toBe('A garden by the river.');
     expect(settings.holonPubkey).toBe(founder.pk);
 
     // Again: nothing re-founded, nobody unseated, the name kept.
     const again = await foundHolon(hs, H);
     expect(again).toEqual({ holon: H, anchor: founder.pk, founded: false, added: [] });
     expect((await holonMembers(hs, H)).size).toBe(3);
-    expect(((await hs.get(H, 'settings', H)) as Record<string, unknown>).name).toBe('Orto');
+    const kept = (await hs.get(H, 'settings', H)) as Record<string, unknown>;
+    expect(kept.name).toBe('Orto');
+    expect(kept.description).toBe('A garden by the river.');
     await hs.close();
   });
 

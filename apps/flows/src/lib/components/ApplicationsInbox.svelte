@@ -4,8 +4,9 @@
   // A fund's waiting applications, for its stewards. Approving seats the
   // applicant on the outermost ring — where it can then be moved from the
   // split editor; declining says why. Nothing here is shown to anyone else.
-  import type { Application } from "@holons/core/flows";
-  import { createEventDispatcher, onMount } from "svelte";
+  // It is watched: an ask sent while the page is open shows up at once.
+  import { watchApplications, type Application } from "@holons/core/flows";
+  import { createEventDispatcher, onDestroy, onMount } from "svelte";
   import {
     approve,
     decline,
@@ -13,6 +14,7 @@
     setOpen,
   } from "$lib/applications";
   import { labelOf } from "$lib/graph";
+  import { getHolosphere } from "$lib/holosphere";
   import { locale, t } from "$lib/i18n";
   import { showNotice } from "$lib/notice";
 
@@ -26,6 +28,8 @@
   let busy = "";
   let declining = "";
   let reason = "";
+  /** Approved, but on a ring the split passes nothing to: said until the split changes. */
+  let unpaid = "";
 
   async function read() {
     const ctx = await fundApplications(fund);
@@ -33,7 +37,19 @@
     open = ctx.open;
     loaded = true;
   }
-  onMount(() => void read());
+  // New asks, withdrawals and answers show as the relays deliver them.
+  let stop: (() => void) | null = null;
+  let gone = false;
+  onMount(() => {
+    void read();
+    void getHolosphere().then((hs) => {
+      if (!gone) stop = watchApplications(hs, fund, () => void read());
+    });
+  });
+  onDestroy(() => {
+    gone = true;
+    stop?.();
+  });
 
   const nameOf = (a: Application) => {
     const known = labelOf(a.party);
@@ -56,6 +72,15 @@
     }
   }
 </script>
+
+{#if unpaid}
+  <div class="notice warn unpaid" role="status">
+    <p>{$t("inbox.unpaid", { name: unpaid })}</p>
+    <a class="btn quiet small" href="/h/{encodeURIComponent(fund)}/split"
+      >{$t("inbox.changeSplit")}</a
+    >
+  </div>
+{/if}
 
 {#if loaded}
   <h2 class="section-title">
@@ -111,7 +136,11 @@
               on:click={() =>
                 run(
                   a.id,
-                  () => approve(fund, a.id),
+                  async () => {
+                    const name = nameOf(a);
+                    const out = await approve(fund, a.id);
+                    unpaid = out.pays ? "" : name;
+                  },
                   $t("inbox.approved", { name: nameOf(a) }),
                 )}>{$t("inbox.approve")}</button
             >
@@ -209,5 +238,16 @@
     width: 22px;
     height: 22px;
     accent-color: var(--teal);
+  }
+  .unpaid {
+    display: grid;
+    gap: 8px;
+    justify-items: start;
+    margin-top: 12px;
+  }
+  .unpaid .small {
+    min-height: 40px;
+    padding: 0 14px;
+    font-size: 0.86rem;
   }
 </style>

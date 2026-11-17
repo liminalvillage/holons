@@ -1,19 +1,22 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
-  // The shell: a bar on top (back, where you are, share, the menu), the page,
-  // and the tabs under the thumb. It also starts what every page needs
+  // The shell, kept minimal: a borderless bar on top (back, where you are,
+  // share, the menu) that floats over the navigator on the front page, the
+  // page, and a small dock under the thumb. It also starts what every page needs
   // and none owns — the snapshot, the Pot's live counters, who is signed in,
   // the language and the palette.
   import "../app.css";
   import { onMount } from "svelte";
   import { page } from "$app/stores";
+  import { afterNavigate, goto } from "$app/navigation";
   import BottomNav from "$lib/components/BottomNav.svelte";
   import FlowsLogo from "$lib/components/FlowsLogo.svelte";
   import Icon from "$lib/components/Icon.svelte";
   import MenuSheet from "$lib/components/MenuSheet.svelte";
   import { initAuth } from "$lib/auth";
-  import { loadSnapshot } from "$lib/graph";
+  import { loadSnapshot, showingArtizen, toggleArtizen } from "$lib/graph";
+  import { resolveArtizenView } from "$lib/config";
   import { startI18n, t } from "$lib/i18n";
   import { loadPotLive } from "$lib/live";
   import { notice, shareLink, showNotice } from "$lib/notice";
@@ -40,12 +43,38 @@
     };
   });
 
-  const TABS = new Set(["/", "/eco", "/rise", "/search"]);
+  const TABS = new Set(["/", "/me", "/search"]);
   $: deep = !TABS.has($page.url.pathname);
+  /** The flow fills the screen; the bar floats over it. */
+  $: stage = $page.url.pathname === "/";
 
+  // Back stays in the app: a shared link opened cold has nothing of ours
+  // behind it (the history may hold another site, or a blank tab).
+  // SvelteKit numbers its history entries; the one this visit landed on is
+  // the floor. Above it, Back is ours; at it, Back would leave the app.
+  const at = () => Number(history.state?.["sveltekit:history"]);
+  let floor = NaN;
+  afterNavigate(() => {
+    if (Number.isNaN(floor)) floor = at();
+  });
   function back() {
-    if (history.length > 1) history.back();
-    else location.assign("/");
+    const here = at();
+    if (Number.isFinite(here) && Number.isFinite(floor) && here > floor)
+      history.back();
+    else void goto("/");
+  }
+
+  /** A look at the whole Artizen map, and back to one's own pot. */
+  const artizenView = resolveArtizenView();
+  let switching = false;
+  async function artizen() {
+    switching = true;
+    try {
+      await goto("/", { noScroll: true });
+      await toggleArtizen();
+    } finally {
+      switching = false;
+    }
   }
 
   async function share() {
@@ -57,13 +86,23 @@
 
 <a class="skip" href="#main">{$t("nav.skip")}</a>
 
-<header class="bar">
+<header class="bar" class:over={stage}>
   {#if deep}
     <button class="tool" on:click={back} aria-label={$t("nav.back")}
       ><Icon name="arrow-left" /></button
     >
   {/if}
   <a class="brand" class:home={!deep} href="/"><FlowsLogo /><b>Flows</b></a>
+  {#if artizenView}
+    <button
+      class="view"
+      class:on={$showingArtizen}
+      aria-pressed={$showingArtizen}
+      disabled={switching}
+      on:click={artizen}
+      >{$showingArtizen ? $t("artizen.back") : $t("artizen.show")}</button
+    >
+  {/if}
   <button class="tool" on:click={share} aria-label={$t("share.action")}
     ><Icon name="share" /></button
   >
@@ -75,7 +114,7 @@
   >
 </header>
 
-<main id="main" tabindex="-1">
+<main id="main" tabindex="-1" class:stage>
   <slot />
 </main>
 
@@ -114,9 +153,22 @@
     padding: env(safe-area-inset-top) max(6px, env(safe-area-inset-right)) 0
       max(6px, env(safe-area-inset-left));
     background: color-mix(in srgb, var(--paper) 92%, transparent);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--line);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+  .bar.over {
+    position: fixed;
+    left: 0;
+    right: 0;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-bottom: 0;
+    color: #e6f3f1;
+  }
+  .bar.over .tool,
+  .bar.over .brand {
+    color: #e6f3f1;
   }
   .tool {
     width: var(--tap);
@@ -128,6 +180,26 @@
     color: var(--ink-soft);
     border-radius: 999px;
     flex: 0 0 auto;
+  }
+  .view {
+    flex: 0 0 auto;
+    min-height: 36px;
+    padding: 0 14px;
+    margin-right: 4px;
+    border-radius: 999px;
+    border: 1.5px solid currentColor;
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: var(--teal-ink);
+    white-space: nowrap;
+  }
+  .view.on {
+    background: var(--teal);
+    border-color: var(--teal);
+    color: var(--on-teal);
+  }
+  .bar.over .view:not(.on) {
+    color: #e6f3f1;
   }
   .brand {
     flex: 1 1 auto;
@@ -157,10 +229,14 @@
   main {
     width: min(46rem, 100%);
     margin: 0 auto;
-    padding: 16px max(var(--gutter), env(safe-area-inset-right))
+    padding: 20px max(var(--gutter), env(safe-area-inset-right))
       calc(var(--nav-h) + env(safe-area-inset-bottom) + 28px)
       max(var(--gutter), env(safe-area-inset-left));
     outline: none;
+  }
+  main.stage {
+    width: 100%;
+    padding: 0;
   }
   .toast {
     position: fixed;

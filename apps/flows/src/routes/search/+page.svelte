@@ -4,7 +4,8 @@
   // Find a party by name. The whole map is already on the device, so every
   // keystroke searches it there. What is typed may also be an address or an
   // id pasted from somewhere: those are answered first, as the one party
-  // they mean.
+  // they mean. Pots the map does not reach yet — just started, seated by
+  // nobody — are found on the network's registry, below the map's own.
   import {
     listParties,
     resolveParty,
@@ -15,19 +16,23 @@
   import FlowList from "$lib/components/FlowList.svelte";
   import Icon from "$lib/components/Icon.svelte";
   import SnapshotStatus from "$lib/components/SnapshotStatus.svelte";
-  import { pct } from "$lib/format";
   import { index } from "$lib/graph";
-  import { t, type MessageKey } from "$lib/i18n";
+  import { potFinder } from "$lib/discover";
+  import type { HolonSearchHit } from "@holons/core/holosphere";
+  import { t, type MessageKey, pctOf } from "$lib/i18n";
   import { addressHref, hrefFor, parseTarget, searchHref } from "$lib/urls";
   import type { FlowListRow } from "$lib/viewTypes";
 
   const PAGE = 50;
-  const KINDS: { kind: FlowPartyKind | ""; label: MessageKey }[] = [
+  // Every holon is a pot — one that passes money on to pots or to people —
+  // so the filter is pots or people; a link may still name `fund` or `project`.
+  type Filter = FlowPartyKind | "pots" | "";
+  const KINDS: { kind: Filter; label: MessageKey }[] = [
     { kind: "", label: "search.all" },
-    { kind: "fund", label: "eco.funds" },
-    { kind: "project", label: "eco.projects" },
+    { kind: "pots", label: "search.pots" },
     { kind: "person", label: "eco.people" },
   ];
+  const POTS = new Set<FlowPartyKind>(["pot", "fund", "project"]);
   const isKind = (v: string | null): v is FlowPartyKind =>
     v === "fund" ||
     v === "project" ||
@@ -36,9 +41,9 @@
     v === "pot";
 
   let query = $page.url.searchParams.get("q") ?? "";
-  let kind: FlowPartyKind | "" = isKind($page.url.searchParams.get("kind"))
-    ? ($page.url.searchParams.get("kind") as FlowPartyKind)
-    : "";
+  const asked = $page.url.searchParams.get("kind");
+  let kind: Filter =
+    asked === "pots" ? "pots" : isKind(asked) ? (asked as FlowPartyKind) : "";
   let limit = PAGE;
 
   // The address follows what is typed, without a history entry per letter.
@@ -63,16 +68,24 @@
       : null;
   $: exactNode = exact && $index ? ($index.byId.get(exact.id) ?? null) : null;
   $: matches = $index
-    ? listParties($index, { query, ...(kind ? { kind } : {}) })
+    ? kind === "pots"
+      ? listParties($index, { query }).filter((r) => POTS.has(r.kind))
+      : listParties($index, { query, ...(kind ? { kind } : {}) })
     : [];
   $: rows = matches.slice(0, limit).map(
     (r): FlowListRow => ({
       id: r.id,
       label: r.label,
       kind: r.kind,
-      value: pct(r.share),
+      value: $pctOf(r.share),
     }),
   );
+  // ── Pots on the network, not on this map ──
+  let network: HolonSearchHit[] = [];
+  const find = potFinder((hits) => (network = hits));
+  $: find(kind === "person" ? "" : query);
+  $: elsewhere = network.filter((h) => !$index?.byId.has(h.id));
+
   $: hrefOf = (row: FlowListRow) => {
     const n = $index?.byId.get(row.id);
     return n ? hrefFor(n) : null;
@@ -124,7 +137,7 @@
           id: exactNode.id,
           label: exactNode.label,
           kind: exactNode.kind,
-          value: pct(exactNode.share),
+          value: $pctOf(exactNode.share),
         },
       ]}
       {hrefOf}
@@ -148,12 +161,73 @@
         })}</button
       >
     {/if}
+  {:else if !exactNode && elsewhere.length}
+    <!-- Nothing on the map; the network's list follows. -->
+  {:else if !exactNode && target?.type === "address"}
+    <!-- An address may be paid by the Pot's table without being on the map. -->
+    <p class="muted count" role="status">
+      <a href={addressHref(target.value)}>{$t("search.noneAtAddress")}</a>
+    </p>
   {:else if !exactNode}
     <p class="muted count" role="status">{$t("search.none")}</p>
+  {/if}
+
+  {#if elsewhere.length}
+    <h2 class="section-title">{$t("search.network")}</h2>
+    <p class="muted count">{$t("search.networkLead")}</p>
+    <ul class="net">
+      {#each elsewhere as h (h.id)}
+        <li>
+          <a href="/h/{encodeURIComponent(h.id)}">
+            <span class="who">
+              <b>{h.name}</b>
+              <!-- Two pots may share a name: the id tells them apart. -->
+              <i>{h.id}</i>
+            </span>
+            <Icon name="chevron-right" />
+          </a>
+        </li>
+      {/each}
+    </ul>
   {/if}
 {/if}
 
 <style>
+  .net {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+  }
+  .net a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 52px;
+    padding: 0 14px;
+    border-radius: 14px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .net .who {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+  .net b {
+    font-weight: 700;
+    overflow-wrap: anywhere;
+  }
+  .net i {
+    font-style: normal;
+    font-size: 0.76rem;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
   .box {
     position: relative;
   }

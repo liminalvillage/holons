@@ -19,6 +19,7 @@
     ResourceOffer,
     ResourcesContext,
   } from "@holons/core/flows";
+  import { giftsShown } from "@holons/core/flows";
   import { createEventDispatcher } from "svelte";
   import CapitalBlocks from "./CapitalBlocks.svelte";
   import Icon from "./Icon.svelte";
@@ -60,9 +61,7 @@
   let reason = "";
 
   $: node = index.byId.get(id);
-  $: gifts = steer
-    ? ctx.gifts
-    : ctx.gifts.filter((g) => g.status !== "disputed");
+  $: gifts = giftsShown(ctx.gifts, steer);
   $: shown = showAll ? gifts : gifts.slice(0, LIST_LIMIT);
   $: giverOf = (g: ResourceGift) => {
     const n = index.byId.get(g.from);
@@ -177,7 +176,11 @@
 {/if}
 
 {#if gifts.length}
-  <h2 class="section-title">{$t("gifts.title")}</h2>
+  <h2 class="section-title">
+    {gifts.some((g) => g.status === "received")
+      ? $t("gifts.title")
+      : $t("gifts.titleWaiting")}
+  </h2>
   <ul class="gifts">
     {#each shown as g (g.id)}
       {@const giver = giverOf(g)}
@@ -340,7 +343,9 @@
     justify-self: start;
   }
   .more {
-    display: inline-flex;
+    /* One link per line: two in a row read as one sentence. */
+    display: flex;
+    width: fit-content;
     align-items: center;
     gap: 8px;
     min-height: 44px;

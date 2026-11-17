@@ -132,20 +132,28 @@ export function rememberSteered(selfId: string, holon: string): void {
 /**
  * The accounts a person stewards: asked of each holon near them on the map
  * and each one this device saw them steward before. A steward need not be
- * seated anywhere, so the map alone cannot say.
+ * seated anywhere, so the map alone cannot say — and a holon they started
+ * may be on no map yet: `adopt` draws it first, when given.
  */
 export async function steeredHolons(
   index: FlowGraphIndex | null,
   selfId: string | null,
   canSteer: (holon: string) => Promise<boolean>,
+  adopt?: (holon: string) => Promise<boolean>,
 ): Promise<string[]> {
   if (!index || !selfId) return [];
+  const remembered = stewardMemory()[selfId] ?? [];
+  const drawn = await Promise.all(
+    remembered.map(
+      async (id) => index.byId.has(id) || (!!adopt && (await adopt(id))),
+    ),
+  );
   const candidates = [
     ...new Set([
       ...holonsNear(index, selfId),
-      ...(stewardMemory()[selfId] ?? []),
+      ...remembered.filter((_, i) => drawn[i]),
     ]),
-  ].filter((id) => index.byId.has(id));
+  ];
   const flags = await Promise.all(candidates.map((h) => canSteer(h)));
   return candidates.filter((_, i) => flags[i]);
 }

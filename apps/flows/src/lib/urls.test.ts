@@ -51,6 +51,7 @@ describe("other addresses", () => {
     expect(searchHref("")).toBe("/search");
     expect(searchHref("dream factory")).toBe("/search?q=dream+factory");
     expect(searchHref("", "fund")).toBe("/search?kind=fund");
+    expect(searchHref("", "pots")).toBe("/search?kind=pots");
   });
 
   it("sets and drops one view parameter", () => {

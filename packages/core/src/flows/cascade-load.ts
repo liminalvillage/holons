@@ -270,6 +270,9 @@ export async function loadAllocationInputs(
     members,
     zoned,
     ...(typeof settings?.name === 'string' && settings.name ? { name: settings.name } : {}),
+    ...(typeof settings?.description === 'string' && settings.description.trim()
+      ? { description: settings.description.trim() }
+      : {}),
   };
 }
 

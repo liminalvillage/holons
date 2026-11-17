@@ -1,30 +1,33 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
-/* flows — global styling. The kiosk's palette (paper, ink, a little teal) on a
-   phone-first shell. No web fonts (offline-first); system stack only. */
+/* flows — global styling. Minimal: quiet surfaces, one teal, and the colour
+   left to the flow itself. The night skin matches the navigator's sky, so the
+   front page and every page after it read as one place. Phone-first; no web
+   fonts (offline-first); system stack only. */
 
 :root {
   /* Surfaces */
-  --paper: #f7f4ec;
-  --paper-deep: #efeadd;
-  --card: #fffdf8;
+  --paper: #f4f6f6;
+  --paper-deep: #e8eded;
+  --card: #ffffff;
 
   /* Three tiers of ink, and every one of them is TEXT: each clears WCAG AA
      (4.5:1) on the paper, the deep paper and the card. */
-  --ink: #20302f;
-  --ink-soft: #4d5e5c;
-  --muted: #5c6966;
+  --ink: #12201f;
+  --ink-soft: #3f4f4d;
+  --muted: #56645f;
   --teal: #0e6b66;
   --teal-deep: #0a4f4a;
   --teal-ink: var(--teal-deep);
   --on-teal: #fff;
-  --line: #e3ddcd;
+  --line: #e1e7e6;
   --warn: #b0461f;
   --danger: #9a3b2f;
   --caution: #8f4a0b;
   --teal-wash: color-mix(in srgb, var(--teal) 10%, var(--card));
   --ghost: rgba(255, 255, 255, 0.5);
-  --shadow-soft: 0 6px 18px rgba(28, 48, 46, 0.08);
-  --shadow-sheet: 0 -10px 30px rgba(28, 48, 46, 0.18);
+  --shadow-soft:
+    0 1px 2px rgba(16, 32, 31, 0.04), 0 8px 24px rgba(16, 32, 31, 0.06);
+  --shadow-sheet: 0 -10px 40px rgba(16, 32, 31, 0.16);
 
   /* What a party is, as a colour — always beside its name in words (KindChip),
      never the only cue. Each reads as a bar on the paper and on the card. */
@@ -46,7 +49,7 @@
   --cap-spiritual: #b8931c;
   --cap-financial: #1f88c9;
 
-  --radius: 16px;
+  --radius: 20px;
   /* The least a finger needs. */
   --tap: 48px;
   --gutter: 16px;
@@ -71,15 +74,15 @@
 /* Dark skin — `data-theme="dark"` on <html> (see lib/theme.ts). Only the
    palette changes, so the same components render unchanged. */
 :root[data-theme="dark"] {
-  --paper: #14181a;
-  --paper-deep: #0d1012;
-  --card: #1c2226;
+  --paper: #05090b;
+  --paper-deep: #020506;
+  --card: #0f171a;
 
-  --ink: #eef2f0;
-  --ink-soft: #b3c0bd;
-  --muted: #93a19e;
+  --ink: #e8f1ef;
+  --ink-soft: #b2c1be;
+  --muted: #8d9e9a;
   --teal-ink: color-mix(in srgb, var(--teal) 30%, #fff);
-  --line: #2c3539;
+  --line: #1c282c;
   --warn: #e8815c;
   --danger: #ffa598;
   --caution: #f0b060;
@@ -157,21 +160,25 @@ p {
 }
 
 /* Shared pieces every screen uses. */
+h1 {
+  letter-spacing: -0.015em;
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 14px;
+  padding: 16px;
   box-shadow: var(--shadow-soft);
 }
 
 .section-title {
-  font-size: 0.8rem;
+  font-size: 0.74rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
-  margin: 22px 0 8px;
+  margin: 28px 0 10px;
 }
 
 .btn {
@@ -188,9 +195,9 @@ p {
   text-decoration: none;
 }
 .btn.quiet {
-  background: transparent;
+  background: var(--card);
   color: var(--teal-ink);
-  border: 1.5px solid var(--line);
+  border: 1px solid var(--line);
 }
 .btn:disabled {
   opacity: 0.55;

@@ -12,7 +12,7 @@
   import SnapshotBadge from "./SnapshotBadge.svelte";
   import SnapshotStatus from "./SnapshotStatus.svelte";
   import { currentUser } from "$lib/auth";
-  import { index, snapshot } from "$lib/graph";
+  import { adopt, index, snapshot } from "$lib/graph";
   import { t } from "$lib/i18n";
   import { hrefFor, routeOf, searchHref } from "$lib/urls";
 
@@ -25,7 +25,19 @@
   $: canonical = node && (node.id !== raw || routeOf(node.kind) !== route);
   $: if (node && canonical)
     void goto(hrefFor(node, $page.url.searchParams), { replaceState: true });
-  $: settled = $snapshot.status !== "loading";
+  $: loaded = $snapshot.status !== "loading";
+  // A holon no map reaches yet — just started, or nobody seated it — is read
+  // off its own settings and drawn on its own before it is called unknown.
+  let adopting = "";
+  let tried = "";
+  $: if ($index && loaded && !found && raw && tried !== raw) {
+    tried = raw;
+    adopting = raw;
+    void adopt(raw).finally(() => {
+      if (adopting === raw) adopting = "";
+    });
+  }
+  $: settled = loaded && adopting !== raw;
   $: mine = !!node && !!$currentUser && String($currentUser.id) === node.id;
 </script>
 

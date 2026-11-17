@@ -14,10 +14,9 @@
  * Eventually consistent: a lens that has not arrived reads as empty.
  */
 
-import { getFederationSnapshot } from '../federation/snapshot.js';
-import { setFederationPartner } from '../federation/partners.js';
 import { isHolonAdmin, resolveHolonAuthority } from '../holosphere/authority.js';
 import { idKind } from '../identity/ids.js';
+import { syncFoundingAuthority } from '../protocol/founding.js';
 import {
   FLOW_APPLICATIONS_LENS,
   buildApplication,
@@ -27,6 +26,8 @@ import {
   type Application,
   type FoldedApplications,
 } from './applications.js';
+import { loadAllocationInputs, onwardParties } from './cascade-load.js';
+import { linkSeatedHolons } from './seating.js';
 import {
   readAllocationConfig,
   readApplicationsOpen,
@@ -43,6 +44,9 @@ export interface ApplicationsContext extends FoldedApplications {
 }
 
 /** Does this key speak for this party, as far as this instance can see? */
+/** How many applicant holons one read pulls to verify their senders. */
+const VERIFY_PULLS = 20;
+
 function speaksFor(holosphere: any) {
   const cache = new Map<string, ReturnType<typeof resolveHolonAuthority>['actors']>();
   return (pubkey: string, party: string, at: number): boolean => {
@@ -62,12 +66,61 @@ export async function loadApplications(holosphere: any, fundId: string): Promise
     quiet<any[]>(Promise.resolve().then(() => holosphere.getLog(fund, FLOW_APPLICATIONS_LENS)), []),
     quiet<any>(holosphere.get(fund, 'settings', fund), null),
   ]);
-  const folded = foldApplications({
-    entries,
-    actors: resolveHolonAuthority(holosphere, fund).actors,
-    actsFor: speaksFor(holosphere),
-  });
+  const fold = () =>
+    foldApplications({
+      entries,
+      actors: resolveHolonAuthority(holosphere, fund).actors,
+      actsFor: speaksFor(holosphere),
+    });
+  let folded = fold();
+  // Whether a key speaks for a holon is read off that holon's own log, which
+  // this instance may never have pulled: pull the ones still unverified, then
+  // judge again.
+  const unknown = [
+    ...new Set(folded.applications.filter((a) => !a.verified && a.status === 'pending').map((a) => a.party)),
+  ].filter((party) => idKind(party) === 'holon');
+  if (unknown.length) {
+    await Promise.all(unknown.slice(0, VERIFY_PULLS).map((party) => quiet(syncFoundingAuthority(holosphere, party), null)));
+    folded = fold();
+  }
   return { ...folded, open: readApplicationsOpen(settings) };
+}
+
+/** How long a burst of new entries is gathered before `onChange` is called once. */
+export const APPLICATIONS_SETTLE_MS = 300;
+
+/**
+ * Call `onChange` whenever a fund's applications log gets a new entry — an
+ * application, a withdrawal, an answer — from anyone, as the relays deliver
+ * it. Returns the function that stops watching. Quiet where the instance
+ * cannot watch: nothing is called, and stopping is a no-op.
+ */
+export function watchApplications(holosphere: any, fundId: string, onChange: () => void): () => void {
+  const fund = String(fundId ?? '');
+  if (!fund || typeof holosphere?.subscribeLog !== 'function') return () => {};
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let off: (() => void) | null = null;
+  try {
+    off = holosphere.subscribeLog(
+      fund,
+      FLOW_APPLICATIONS_LENS,
+      () => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+          timer = null;
+          onChange();
+        }, APPLICATIONS_SETTLE_MS);
+      },
+      { replay: false },
+    );
+  } catch {
+    off = null;
+  }
+  return () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    off?.();
+  };
 }
 
 /** Ask a fund to seat `party`. Refused when the fund is closed or the party already has an open ask. */
@@ -115,6 +168,12 @@ export interface ApprovedApplication {
   linked: boolean;
   /** The seat was placed by this call (false: the party already sat on a ring). */
   placed: boolean;
+  /**
+   * The fund's split, as stored now, passes the party something. False when
+   * the seat is on a ring that gets nothing — the fund keeps everything, or
+   * pays by fixed shares — and the split must change for the seat to pay.
+   */
+  pays: boolean;
 }
 
 /**
@@ -140,19 +199,10 @@ export async function approveApplication(
   const wanted = Math.floor(Number(opts.ring));
   const ring = Number.isFinite(wanted) && wanted >= 1 ? Math.min(wanted, nzones) : nzones;
 
-  let linked = false;
-  if (kind === 'holon') {
-    const snapshot = await quiet(getFederationSnapshot(holosphere, fund), { federated: [] as string[], lensConfig: {}, partnerNames: {} } as any);
-    if (!(snapshot.federated ?? []).includes(party)) {
-      // Value follows the split, not a lens: the link carries no data either way.
-      linked = !!(await setFederationPartner(holosphere, fund, party, {
-        inbound: [],
-        outbound: [],
-        ...(application.name ? { partnerName: application.name } : {}),
-      }));
-      if (!linked) throw new Error('The applicant could not be linked to the fund');
-    }
-  }
+  // Value follows the split, not a lens: the link carries no data either way.
+  const linked =
+    kind === 'holon' &&
+    (await linkSeatedHolons(holosphere, fund, [party], application.name ? { [party]: application.name } : {})).length > 0;
 
   const seated = kind === 'holon' ? zones[party] : people[party];
   const placed = !(Number(seated) >= 1);
@@ -165,7 +215,9 @@ export async function approveApplication(
     const a = buildApplicationVerdict(application.id, 'attest');
     await holosphere.append(fund, FLOW_APPLICATIONS_LENS, a.item, { refs: a.refs });
   }
-  return { party, kind, ring: placed ? ring : Number(seated), linked, placed };
+  const after = await quiet(loadAllocationInputs(holosphere, fund), null);
+  const pays = !!after && onwardParties(after, fund).includes(party);
+  return { party, kind, ring: placed ? ring : Number(seated), linked, placed, pays };
 }
 
 /** Decline, with the reason the applicant will read. Touches neither the link nor the split. */

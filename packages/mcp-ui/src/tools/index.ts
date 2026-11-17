@@ -11,6 +11,7 @@ export interface ToolDeps {
 const DOMAINS = [
   'holosphere',
   'tasks',
+  'quests',
   'expenses',
   'scoring',
   'calendar',

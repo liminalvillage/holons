@@ -35,9 +35,9 @@ const KIND_CODE: Record<FlowPartyKind, KindCode> = { pot: 'P', fund: 'F', projec
 const CODE_KIND: Record<string, FlowPartyKind> = { P: 'pot', F: 'fund', J: 'project', U: 'person', X: 'placeholder' };
 
 /**
- * `[id, label, kind, share, rest, payout, potChain, potAddress, unclaimedUntil, resources]`, trailing
- * blanks dropped; `resources` is eight counts in `CAPITALS` order. A reader that predates a trailing
- * field ignores it, so adding one keeps the version.
+ * `[id, label, kind, share, rest, payout, potChain, potAddress, unclaimedUntil, resources, description]`,
+ * trailing blanks dropped; `resources` is eight counts in `CAPITALS` order. A reader that predates a
+ * trailing field ignores it, so adding one keeps the version.
  */
 export type FlowGraphNodeRow = [string, string, KindCode, number, number, ...Array<string | number | number[]>];
 /** `[source index, target index, share, local, ring]`; ring 0 is the interior, -1 an exterior with no one ring. */
@@ -87,6 +87,7 @@ function nodeRow(node: FlowGraphNode): FlowGraphNodeRow {
     node.pot?.address ?? '',
     node.unclaimedUntil ?? 0,
     counts.some((n) => n > 0) ? counts : 0,
+    node.description ?? '',
   ];
   while (tail.length && !tail[tail.length - 1]) tail.pop();
   return [node.id, node.label, KIND_CODE[node.kind], round(node.share), round(node.rest), ...tail];
@@ -195,7 +196,7 @@ export function decodeFlowGraph(items: readonly unknown[]): DecodedFlowGraph {
 
   try {
     const nodes: FlowGraphNode[] = rows.n.map((row) => {
-      const [id, label, code, share, rest, payout, potChain, potAddress, unclaimedUntil, counts] = row as unknown[];
+      const [id, label, code, share, rest, payout, potChain, potAddress, unclaimedUntil, counts, description] = row as unknown[];
       const resources = capitalsFromCounts(counts as unknown[]);
       const kind = CODE_KIND[String(code)];
       if (typeof id !== 'string' || !kind) throw new Error('bad node row');
@@ -209,6 +210,7 @@ export function decodeFlowGraph(items: readonly unknown[]): DecodedFlowGraph {
         ...(potChain && potAddress ? { pot: { chainId: Number(potChain), address: String(potAddress) } } : {}),
         ...(unclaimedUntil ? { unclaimedUntil: Number(unclaimedUntil) } : {}),
         ...(Object.keys(resources).length ? { resources } : {}),
+        ...(typeof description === 'string' && description ? { description } : {}),
       };
     });
     const links: FlowGraphLink[] = rows.l.map(([s, t, share, local, ring]) => {

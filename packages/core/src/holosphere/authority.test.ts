@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildEvent } from 'holosphere/nostr-events.js';
 import { createHoloSphere } from './factory.js';
-import { createReadAuthority, isHolonAdmin, resolveHolonAuthority, writeAcceptance } from './authority.js';
+import { createReadAuthority, holonRole, isHolonAdmin, resolveHolonAuthority, writeAcceptance } from './authority.js';
 import { testKey } from '../protocol/testing.js';
 
 const APP = 'authority-core-test';
@@ -129,6 +129,21 @@ describe('createReadAuthority through the factory', () => {
     expect(await isHolonAdmin(hs, stranger.pk, stranger.pk)).toBe(true);
     expect(await isHolonAdmin(hs, stranger.pk, bot.pk)).toBe(false);
     expect(await isHolonAdmin(hs, '', bot.pk)).toBe(false);
+  });
+
+  it('holonRole: tells an open holon (anyone writes, nobody keeps it) from an admin', async () => {
+    const bot = testKey(), member = testKey(), stranger = testKey();
+    const hs = sphere(bot.sk);
+    await hs.ready();
+    expect(await holonRole(hs, '-820', stranger.pk)).toBe('open');
+    await hs.foundHolon('-820', { at: T0 });
+    await hs.addMember('-820', member.pk, 'member', { at: T0 + 1 });
+    (hs as unknown as { _readAuthority: { invalidate(): void } })._readAuthority.invalidate();
+    expect(await holonRole(hs, '-820')).toBe('admin');
+    expect(await holonRole(hs, '-820', member.pk)).toBe('member');
+    expect(await holonRole(hs, '-820', stranger.pk)).toBe('none');
+    expect(await holonRole(hs, stranger.pk, stranger.pk)).toBe('admin');
+    expect(await holonRole(hs, '', bot.pk)).toBeNull();
   });
 
   it('enforce: false reads the open graph', async () => {

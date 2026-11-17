@@ -45,7 +45,10 @@ export function addressHref(address: string): string {
   return `/a/${encodeURIComponent(address.trim().toLowerCase())}`;
 }
 
-export function searchHref(query: string, kind?: FlowPartyKind): string {
+export function searchHref(
+  query: string,
+  kind?: FlowPartyKind | "pots",
+): string {
   const params = new URLSearchParams();
   if (query.trim()) params.set("q", query.trim());
   if (kind) params.set("kind", kind);
