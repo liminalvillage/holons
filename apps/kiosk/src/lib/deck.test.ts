@@ -1,17 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it } from "vitest";
 import {
-  badgeOpacity,
-  cardTransform,
+  CIRCLE,
   dealOrder,
+  decide,
   deckKey,
   decksFor,
   deckTasks,
-  swipeDecision,
+  dragPose,
+  hydrate,
+  intentOf,
+  isTap,
+  nextCircle,
+  poseCss,
+  progress,
+  stackPose,
+  throwMs,
+  throwPath,
 } from "./deck";
 import type { BacklogTask } from "./data";
-
-const T = 100; // threshold used throughout
 
 function task(id: string, unmetDeps = 0): BacklogTask {
   return {
@@ -28,77 +35,139 @@ function task(id: string, unmetDeps = 0): BacklogTask {
   };
 }
 
-describe("swipeDecision", () => {
-  it("returns null under the threshold in every direction", () => {
-    expect(swipeDecision(0, 0, T)).toBeNull();
-    expect(swipeDecision(99, 0, T)).toBeNull();
-    expect(swipeDecision(-99, 0, T)).toBeNull();
-    expect(swipeDecision(0, -99, T)).toBeNull();
+describe("intentOf", () => {
+  it("points nowhere at rest or within the tap slop", () => {
+    expect(intentOf(0, 0)).toBeNull();
+    expect(intentOf(5, 0)).toBeNull();
+    expect(intentOf(0, -5)).toBeNull();
   });
 
-  it("commits right/left past the threshold", () => {
-    expect(swipeDecision(101, 0, T)).toBe("right");
-    expect(swipeDecision(-101, 0, T)).toBe("left");
+  it("reads left/right from the horizontal pull", () => {
+    expect(intentOf(40, 5)).toBe("right");
+    expect(intentOf(-40, 5)).toBe("left");
   });
 
-  it("commits up past the threshold", () => {
-    expect(swipeDecision(0, -101, T)).toBe("up");
+  it("reads up only while the lift dominates", () => {
+    expect(intentOf(10, -60)).toBe("up");
+    // A flick to the upper corner still reads as left/right.
+    expect(intentOf(60, -60)).toBe("right");
   });
 
-  it("never commits on a downward swipe", () => {
-    expect(swipeDecision(0, 500, T)).toBeNull();
-    expect(swipeDecision(50, 500, T)).toBeNull();
-  });
-
-  it("up wins a diagonal only when it dominates the horizontal pull", () => {
-    // Mostly-up diagonal → up.
-    expect(swipeDecision(80, -150, T)).toBe("up");
-    // Mostly-right diagonal → right, even with some lift.
-    expect(swipeDecision(150, -80, T)).toBe("right");
-    expect(swipeDecision(-150, -80, T)).toBe("left");
-  });
-
-  it("treats the exact threshold as not-yet-committed", () => {
-    expect(swipeDecision(T, 0, T)).toBeNull();
-    expect(swipeDecision(0, -T, T)).toBeNull();
+  it("never answers a downward drag", () => {
+    expect(intentOf(0, 80)).toBeNull();
+    expect(intentOf(10, 80)).toBeNull();
   });
 });
 
-describe("badgeOpacity", () => {
-  it("is all-zero at rest", () => {
-    expect(badgeOpacity(0, 0, T)).toEqual({ join: 0, skip: 0, like: 0 });
+describe("decide", () => {
+  const W = 300; // threshold = 90px
+  const still = { vx: 0, vy: 0, width: W };
+
+  it("springs back under the threshold", () => {
+    expect(decide({ dx: 80, dy: 0, ...still })).toBeNull();
+    expect(decide({ dx: 0, dy: -80, ...still })).toBeNull();
   });
 
-  it("ramps each badge with its own direction", () => {
-    expect(badgeOpacity(50, 0, T).join).toBeCloseTo(0.5);
-    expect(badgeOpacity(-50, 0, T).skip).toBeCloseTo(0.5);
-    expect(badgeOpacity(0, -50, T).like).toBeCloseTo(0.5);
+  it("commits past the threshold", () => {
+    expect(decide({ dx: 95, dy: 0, ...still })).toBe("right");
+    expect(decide({ dx: -95, dy: 0, ...still })).toBe("left");
+    expect(decide({ dx: 0, dy: -95, ...still })).toBe("up");
   });
 
-  it("clamps to 1 past the threshold and to 0 for opposing pulls", () => {
-    const far = badgeOpacity(300, 0, T);
-    expect(far.join).toBe(1);
-    expect(far.skip).toBe(0);
-    const down = badgeOpacity(0, 300, T);
-    expect(down.like).toBe(0);
+  it("commits a short, fast flick in its own direction", () => {
+    expect(decide({ dx: 30, dy: 0, vx: 1, vy: 0, width: W })).toBe("right");
+    expect(decide({ dx: -30, dy: 0, vx: -1, vy: 0, width: W })).toBe("left");
+    expect(decide({ dx: 0, dy: -30, vx: 0, vy: -1, width: W })).toBe("up");
   });
 
-  it("mirrors swipeDecision on diagonals: the dominant axis' badge leads", () => {
-    const o = badgeOpacity(80, -150, T);
-    expect(o.like).toBeGreaterThan(o.join);
+  it("ignores a flick against the drag or too short", () => {
+    expect(decide({ dx: 30, dy: 0, vx: -1, vy: 0, width: W })).toBeNull();
+    expect(decide({ dx: 12, dy: 0, vx: 2, vy: 0, width: W })).toBeNull();
   });
 });
 
-describe("cardTransform", () => {
-  it("translates with the drag and rotates with the horizontal offset", () => {
-    expect(cardTransform(100, -20)).toBe(
-      "translate(100px, -20px) rotate(8deg)",
+describe("progress", () => {
+  it("is 0 at rest and 1 at the threshold", () => {
+    expect(progress({ dx: 0, dy: 0, width: 300 })).toBe(0);
+    expect(progress({ dx: 45, dy: 0, width: 300 })).toBeCloseTo(0.5);
+    expect(progress({ dx: 400, dy: 0, width: 300 })).toBe(1);
+  });
+});
+
+describe("isTap", () => {
+  it("counts a press that barely moved", () => {
+    expect(isTap(3, 4)).toBe(true);
+    expect(isTap(8, 0)).toBe(false);
+  });
+});
+
+describe("poses", () => {
+  it("prints the top card at rest as the identity pose", () => {
+    expect(poseCss(stackPose(0))).toBe(
+      "translate3d(0px, 0px, 0px) rotateX(0deg) rotateY(0deg) rotateZ(0deg) scale(1)",
     );
-    expect(cardTransform(-50, 10)).toBe("translate(-50px, 10px) rotate(-4deg)");
   });
 
-  it("is identity at rest", () => {
-    expect(cardTransform(0, 0)).toBe("translate(0px, 0px) rotate(0deg)");
+  it("fans the cards behind back into depth, and lifts them as the top leaves", () => {
+    const behind = stackPose(1);
+    expect(behind.z).toBeLessThan(0);
+    expect(behind.s).toBeLessThan(1);
+    // Fully dragged, the second card has risen into the top's place.
+    expect(stackPose(1, 1)).toEqual(stackPose(0));
+  });
+
+  it("leans the dragged card toward the pull, within bounds", () => {
+    const p = dragPose(2000, 0, 300);
+    expect(p.ry).toBe(16);
+    expect(p.rz).toBe(14);
+    expect(dragPose(-60, 0, 300).ry).toBeLessThan(0);
+  });
+});
+
+describe("throws", () => {
+  const o = { dx: 0, dy: 0, vx: 0, vy: 0, width: 300, height: 450 };
+
+  it("start where the finger let go and end invisible", () => {
+    for (const dir of ["left", "right", "up"] as const) {
+      const kf = throwPath(dir, { ...o, dx: 40 });
+      expect(kf[0].x).toBe(40);
+      expect(kf[0].offset).toBe(0);
+      expect(kf[kf.length - 1].offset).toBe(1);
+      expect(kf[kf.length - 1].o).toBe(0);
+    }
+  });
+
+  it("send a join into its star", () => {
+    const kf = throwPath("right", { ...o, target: { x: 12, y: -300 } });
+    expect(kf[kf.length - 1]).toMatchObject({ x: 12, y: -300 });
+  });
+
+  it("send a skip out to the left and a like up", () => {
+    expect(throwPath("left", o).at(-1)!.x).toBeLessThan(0);
+    expect(throwPath("up", o).at(-1)!.y).toBeLessThan(0);
+  });
+
+  it("are quicker when flung harder", () => {
+    expect(throwMs("right", 2, 0)).toBeLessThan(throwMs("right"));
+  });
+});
+
+describe("circles", () => {
+  it("deals up to CIRCLE cards not seen this session", () => {
+    const deck = Array.from({ length: 10 }, (_, i) => task(String(i)));
+    expect(nextCircle(deck, new Set()).length).toBe(CIRCLE);
+    const seen = new Set(deck.slice(0, CIRCLE).map((t) => t.id));
+    expect(nextCircle(deck, seen).map((t) => t.id)).toEqual(["7", "8", "9"]);
+  });
+
+  it("hydrates a frozen circle with live data, keeping its order", () => {
+    const frozen = [task("a"), task("b")];
+    const live = [{ ...task("b"), appreciation: 3 }, task("a")];
+    const out = hydrate(frozen, live);
+    expect(out.map((t) => t.id)).toEqual(["a", "b"]);
+    expect(out[1].appreciation).toBe(3);
+    // A card gone from the backlog keeps its last known face.
+    expect(hydrate(frozen, [])).toEqual(frozen);
   });
 });
 

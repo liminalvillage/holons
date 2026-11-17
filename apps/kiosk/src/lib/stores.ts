@@ -255,7 +255,7 @@ export function clearSearch(): void {
 export const settingsOpen = writable<boolean>(false);
 
 /**
- * How the Tasks view lays out the backlog (wall / list / swipe deck). Persisted
+ * How the Tasks view lays out the backlog (wall / list / graph). Persisted
  * per device via config; initialized in `+layout.svelte`.
  */
 export const taskViewMode = writable<TaskViewMode>("cards");
@@ -301,7 +301,7 @@ export const yearShape = writable<YearShape>("linear");
 export const libraryCalendarMode = writable<CalendarMode>("month");
 
 /**
- * Everyone's progress through the swipe deck, keyed by `deckKey(hub, person)`
+ * Everyone's progress through the Choose deck, keyed by `deckKey(hub, person)`
  * ($lib/deck): which cards they dealt with — skipped, joined, or liked — and
  * the frozen order theirs were dealt in. One entry per hub and person, so a
  * shared screen never hands someone the previous visitor's deck and a hub
@@ -310,6 +310,22 @@ export const libraryCalendarMode = writable<CalendarMode>("month");
  * deliberately never persisted, so skipped cards return next session.
  */
 export const swipeDecks = writable<Map<string, DeckState>>(new Map());
+
+/**
+ * Whether the Tasks "Choose" deck is open full screen over the board. The
+ * layout mirrors it in the path (`/<holon>/choose`) so the deck is a direct
+ * link — and opens it on boot when the URL names it.
+ */
+export const chooseOpen = writable<boolean>(false);
+
+/** The button the deck last opened from: it irises open out of that spot. */
+export const chooseOrigin = writable<DOMRect | null>(null);
+
+/** Open the Choose deck, out of `from` when a button opened it. */
+export function openChoose(from?: Element | null): void {
+  chooseOrigin.set(from?.getBoundingClientRect() ?? null);
+  chooseOpen.set(true);
+}
 
 // ── Transient notice (toast) ───────────────────────────────────────────────
 //

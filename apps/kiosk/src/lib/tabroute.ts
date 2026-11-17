@@ -18,6 +18,17 @@ const TAB_IDS = new Set<string>(TABS.map((t) => t.id));
  */
 const ONBOARDING = "onboarding";
 
+/**
+ * The path segment that opens the Tasks "Choose" deck full screen
+ * (`/<holon>/choose`) — the direct link a phone, a home-screen icon or a
+ * Mini App button can open straight into. Not a tab: it shows the Tasks tab
+ * with the deck over it, and closing the deck returns the path to `/tasks`.
+ */
+export const CHOOSE = "choose";
+
+/** Segments a view replaces when another view is reflected in the path. */
+const VIEW_SEGMENTS = new Set<string>([...TAB_IDS, ONBOARDING, CHOOSE]);
+
 /** A pathname's segments, decoded, without empty entries. */
 function segmentsOf(pathname: string): string[] {
   return pathname
@@ -34,7 +45,14 @@ function segmentsOf(pathname: string): string[] {
 export function tabForPath(pathname: string): TabId | null {
   const segs = segmentsOf(pathname);
   const last = (segs[segs.length - 1] ?? "").toLowerCase();
+  if (last === CHOOSE) return "tasks";
   return TAB_IDS.has(last) ? (last as TabId) : null;
+}
+
+/** Was this URL opened straight into the Tasks "Choose" deck? */
+export function opensChoose(pathname: string): boolean {
+  const segs = segmentsOf(pathname);
+  return (segs[segs.length - 1] ?? "").toLowerCase() === CHOOSE;
 }
 
 /** Was this URL opened for the holon's onboarding? */
@@ -48,9 +66,18 @@ export function opensOnboarding(pathname: string): boolean {
  * holon segment) and replacing any tab segment already there.
  */
 export function pathForTab(pathname: string, tab: TabId): string {
+  return withView(pathname, tab);
+}
+
+/** The pathname that opens the "Choose" deck, keeping the holon segment. */
+export function pathForChoose(pathname: string): string {
+  return withView(pathname, CHOOSE);
+}
+
+function withView(pathname: string, view: string): string {
   const segs = segmentsOf(pathname);
   const last = (segs[segs.length - 1] ?? "").toLowerCase();
-  if (TAB_IDS.has(last) || last === ONBOARDING) segs.pop();
-  segs.push(tab);
+  if (VIEW_SEGMENTS.has(last)) segs.pop();
+  segs.push(view);
   return "/" + segs.map(encodeURIComponent).join("/");
 }

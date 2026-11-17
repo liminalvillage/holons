@@ -3,7 +3,7 @@
   import Icon from "$lib/components/Icon.svelte";
   import { glide } from "$lib/glide";
   import { get } from "svelte/store";
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { autoScrollToEnd } from "$lib/autoscroll";
   import {
     backlog,
@@ -18,6 +18,8 @@
     taskViewMode,
     taskSort,
     questsPulled,
+    chooseOpen,
+    openChoose,
   } from "$lib/stores";
   import { requestSwitch } from "$lib/dock";
   import { privacyOfHolon } from "@holons/core/privacy";
@@ -97,7 +99,7 @@
     return () =>
       window.removeEventListener("kiosk:privacy-changed", onPrivacyChanged);
   });
-  import TaskSwipeView from "./TaskSwipeView.svelte";
+  import ChooseDeck from "$lib/components/ChooseDeck.svelte";
   import TaskGraphView from "./TaskGraphView.svelte";
 
   // The graph layout's drawer, measured, so the FAB row can clear it: it takes
@@ -114,9 +116,11 @@
 
   // Kiosk displays are unattended — glide the wall down to the last note once
   // so the whole backlog is shown without anyone dragging. (The scroll
-  // container only exists in cards/list mode; the swipe deck doesn't scroll.)
+  // container only exists in cards/list mode; the graph doesn't scroll.)
   let scrollEl: HTMLElement | undefined;
   onMount(() => (scrollEl ? autoScrollToEnd(scrollEl) : undefined));
+  // The deck belongs to this view: leaving Tasks (a tab tap, rotation) closes it.
+  onDestroy(() => chooseOpen.set(false));
 
   // Layout and sort are chosen in the shell's global pills band (see
   // GlobalPills); this view only reads the stores. setSort stays for the
@@ -237,8 +241,10 @@
   // What the wall, list and graph render: the open tasks, then — while the
   // Done switch is on — the completed ones, faded and out of the reorder.
   // (Whether partners' tasks are in is decided upstream, in the derived
-  // stores; here it is everything that arrived.) The swipe deck deals open
+  // stores; here it is everything that arrived.) The Choose deck deals open
   // tasks only: joining or liking a finished task is no decision to make.
+  // What the Choose deck can deal: the open tasks not blocked by others.
+  $: chooseCount = orderedTasks.filter((x) => x.unmetDeps === 0).length;
   $: shownTasks = $showCompleted
     ? [...orderedTasks, ...$completedTasks]
     : orderedTasks;
@@ -704,8 +710,8 @@
     }
   }
 
-  // ── Swipe-deck actions ─────────────────────────────────────────────────────
-  // One-way join/like for TaskSwipeView (a swipe never un-does), routed to a
+  // ── Choose-deck actions ────────────────────────────────────────────────────
+  // One-way join/like for ChooseDeck (a swipe never un-does), routed to a
   // federated card's owner holon like delete above. The view stays
   // holosphere-free; it only sees these handlers.
   function swipeRef(taskId: string) {
@@ -830,22 +836,28 @@
 <!-- The graph drawer's live size (0 in every other layout), so the floating
      buttons can ride clear of it — same contract as the calendar. -->
 <div class="board" style="--tray-h: {graphTrayH}px; --tray-w: {graphTrayW}px;">
-  {#if $taskViewMode === "swipe"}
-    <div class="deckwrap">
-      <TaskSwipeView
-        tasks={orderedTasks}
-        colorFor={noteColorFor}
-        {lockedIds}
-        {dueLabel}
-        onOpen={openTask}
-        onJoin={onSwipeJoin}
-        onLike={onSwipeLike}
-        onRevert={onSwipeRevert}
-      />
+  <!-- The Choose deck's door, at the head of the board: the backlog one card
+       at a time, full screen (also a direct link, `/<holon>/choose`). -->
+  {#if chooseCount}
+    <div class="choosebar">
+      <button
+        type="button"
+        class="choosebtn"
+        aria-haspopup="dialog"
+        aria-label={$t("choose.openAria")}
+        title={$t("choose.openAria")}
+        on:click={(e) => openChoose(e.currentTarget)}
+      >
+        <span class="cards" aria-hidden="true"><Icon name="card" /></span>
+        <span class="txt">{$t("choose.open")}</span>
+        <span class="n">{$t("choose.waiting", { n: chooseCount })}</span>
+        <span class="go" aria-hidden="true"><Icon name="chevron-right" /></span>
+      </button>
     </div>
-  {:else if $taskViewMode === "graph" && shownTasks.length}
-    <!-- The graph pans/zooms itself, so it takes the whole board area like
-         the swipe deck (no scroll pane). Empty states fall through below. -->
+  {/if}
+  {#if $taskViewMode === "graph" && shownTasks.length}
+    <!-- The graph pans/zooms itself, so it takes the whole board area (no
+         scroll pane). Empty states fall through below. -->
     <TaskGraphView
       tasks={shownTasks}
       colorFor={noteColorFor}
@@ -1040,6 +1052,21 @@
   </div>
 </div>
 
+<!-- Full screen over the board (portalled to <body>), so it lives here only
+     for its data and handlers: the backlog and the routed join/like writes. -->
+{#if $chooseOpen}
+  <ChooseDeck
+    tasks={orderedTasks}
+    colorFor={noteColorFor}
+    {lockedIds}
+    {dueLabel}
+    onOpen={openTask}
+    onJoin={onSwipeJoin}
+    onLike={onSwipeLike}
+    onRevert={onSwipeRevert}
+  />
+{/if}
+
 {#if confirmDrop}
   <Modal on:close={() => (confirmDrop = null)}>
     <div class="add">
@@ -1202,13 +1229,6 @@
     padding: 0.5rem 1.4rem 1.6rem;
   }
 
-  .deckwrap {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-  }
-
   /* Phone widths: tighter gutters so the wall/list/deck get the room. */
   @media (max-width: 560px) {
     .tasks {
@@ -1231,8 +1251,6 @@
     justify-content: center;
     pointer-events: none;
     gap: 0.8rem;
-    /* Above the swipe deck's cards (z-index 8) — a card dragged toward the
-       corner passes under the controls instead of hiding them. */
     z-index: 12;
     transition: bottom 0.18s ease;
   }
@@ -1270,6 +1288,56 @@
   .fab:active {
     transform: scale(0.92);
     background: var(--teal-deep);
+  }
+  /* Choose: the deck's door at the head of the board — a fanned little
+     stack, so it reads as "cards to pick from". */
+  .choosebar {
+    flex: none;
+    display: flex;
+    justify-content: center;
+    padding: 0.5rem 1.4rem 0.2rem;
+  }
+  .choosebtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-height: 48px;
+    max-width: 100%;
+    padding: 0 0.9rem 0 1rem;
+    border-radius: 999px;
+    font-size: 1rem;
+    font-weight: 750;
+    color: var(--on-teal);
+    background: var(--teal);
+    box-shadow: 0 8px 22px -10px
+      color-mix(in srgb, var(--teal) 80%, transparent);
+    transition: transform 0.12s ease;
+  }
+  .choosebtn:active {
+    transform: scale(0.96);
+  }
+  .choosebtn .cards {
+    display: grid;
+    place-items: center;
+    font-size: 1.3rem;
+    transform: rotate(-8deg);
+    filter: drop-shadow(3px -2px 0 rgba(255, 255, 255, 0.35));
+  }
+  .choosebtn .n {
+    font-weight: 600;
+    font-size: 0.86rem;
+    opacity: 0.85;
+    white-space: nowrap;
+  }
+  .choosebtn .go {
+    display: grid;
+    place-items: center;
+    opacity: 0.85;
+  }
+  @media (max-width: 560px) {
+    .choosebar {
+      padding: 0.4rem 0.7rem 0.1rem;
+    }
   }
 
   /* Responsive grid of post-its that reflow to fit the width and animate (FLIP)

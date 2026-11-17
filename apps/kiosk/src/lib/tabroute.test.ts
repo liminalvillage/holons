@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it } from "vitest";
-import { opensOnboarding, pathForTab, tabForPath } from "./tabroute";
+import {
+  opensChoose,
+  opensOnboarding,
+  pathForChoose,
+  pathForTab,
+  tabForPath,
+} from "./tabroute";
 
 describe("tabForPath", () => {
   it("reads a bare tab path", () => {
@@ -56,5 +62,22 @@ describe("opensOnboarding", () => {
     expect(pathForTab("/liminal/onboarding", "calendar")).toBe(
       "/liminal/calendar",
     );
+  });
+});
+
+describe("the Choose deck link", () => {
+  it("opens the Tasks tab with the deck over it", () => {
+    expect(tabForPath("/liminal/choose")).toBe("tasks");
+    expect(tabForPath("/choose")).toBe("tasks");
+    expect(opensChoose("/liminal/choose")).toBe(true);
+    expect(opensChoose("/Choose/")).toBe(true);
+    expect(opensChoose("/liminal/tasks")).toBe(false);
+  });
+
+  it("swaps with the tab segment both ways, keeping the holon", () => {
+    expect(pathForChoose("/liminal/tasks")).toBe("/liminal/choose");
+    expect(pathForChoose("/liminal")).toBe("/liminal/choose");
+    expect(pathForChoose("/liminal/choose")).toBe("/liminal/choose");
+    expect(pathForTab("/liminal/choose", "tasks")).toBe("/liminal/tasks");
   });
 });
