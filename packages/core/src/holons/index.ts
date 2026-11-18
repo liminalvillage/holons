@@ -462,3 +462,20 @@ export {
   type PeopleHost,
   type PersonAcross,
 } from './people.js';
+
+// ── Succession: a holon carrying on under a new id ─────────────────────────
+export {
+  PREDECESSOR_PREFIX,
+  SUCCESSION_LENS,
+  SUCCESSOR_ID,
+  isSuccessionRecord,
+  readSuccessor,
+  resolveHolon,
+  succeedHolon,
+  type SkipReason,
+  type SuccessionInput,
+  type SuccessionRecord,
+  type SuccessionRefusal,
+  type SuccessionReport,
+  type SuccessionResult,
+} from './succession.js';
