@@ -40,6 +40,12 @@ service secret can sign as it. `/key` is the way to hold a key of your own.
 - `/key unlink <npub|hex>` - Unlinks a key
 Linked keys are published in the kind-31926 attestation for `telegram:<your id>`, so a signup from any of them counts as you on every board (bot, kiosk, Elinor).
 
+## A group that became a supergroup (admins)
+Telegram gives a group a new id when it is upgraded to a supergroup (making it public is enough). The bot carries the holon over to the new id by itself at that moment. For a group that was upgraded before the bot could do this:
+- `/adopt <old holon id>` - Brings the earlier holon's records and members into this group's holon; where both sides hold different content this group's is kept
+- `/adopt <old holon id> replace` - The same, with the earlier records winning
+Signed logs (fund claims, mints, votes) and private lenses are not brought over; the bot lists what it left behind.
+
 ## Role Management
 - `/assignroles` - Assigns roles to members of the community based on their actions
 - `/setroles [roles]` - Defines roles within the community

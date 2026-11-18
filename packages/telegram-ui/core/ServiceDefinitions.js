@@ -26,6 +26,7 @@ import Keys from '../src/Keys.js';
 import JoinRequests from '../src/JoinRequests.js';
 import FederationRequests from '../src/FederationRequests.js';
 import AppsPin from '../src/AppsPin.js';
+import Succession from '../src/Succession.js';
 import { linkHolons, unlinkHolons } from '../src/federationLinks.js';
 import { invalidateLinkedKeys } from '../src/createHoloSphere.js';
 import Roles from '../src/Roles.js';
@@ -531,6 +532,16 @@ export const serviceDefinitions = {
   federationRequests: {
     factory: ({ telebot, database, settings }) =>
       new FederationRequests(telebot, database, settings),
+    singleton: true,
+    dependencies: ['telebot', 'database', 'settings'],
+  },
+
+  // A group upgraded to a supergroup gets a new chat id: its holon carries
+  // on under it (core succeedHolon) — on Telegram's service message, or by
+  // /adopt for one that was split earlier.
+  succession: {
+    factory: ({ telebot, database, settings }) =>
+      new Succession(telebot, database, settings),
     singleton: true,
     dependencies: ['telebot', 'database', 'settings'],
   },
