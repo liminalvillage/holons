@@ -20,6 +20,26 @@ import { createTask } from '../tasks/creation.js';
 import type { Quest } from '../tasks/types.js';
 import type { JoinRequest } from './index.js';
 
+// The card (and the message beside it) carries a one-shot link: the
+// holon's board with `?link=<asking key>`. It holds no authority of its
+// own — whoever opens it must be an admin there, and their key signs the
+// seat — it only brings them straight to "Link Kamala?". Used once, the
+// key is linked and the link has nothing left to do.
+
+/** The query parameter naming the key an admin is asked to link. */
+export const JOIN_LINK_PARAM = 'link';
+
+/** The one-shot link: `<board>/<holon>?link=<key>`. */
+export function joinLinkUrl(board: string, holon: string, pubkey: string): string {
+  return `${String(board).replace(/\/+$/, '')}/${encodeURIComponent(holon)}?${JOIN_LINK_PARAM}=${String(pubkey).toLowerCase()}`;
+}
+
+/** The key a one-shot link names (64 hex, lower case), or null. */
+export function parseJoinLink(search: string | null | undefined): string | null {
+  const v = new URLSearchParams(search ?? '').get(JOIN_LINK_PARAM)?.trim().toLowerCase();
+  return v && /^[0-9a-f]{64}$/.test(v) ? v : null;
+}
+
 /** The lens the review cards live in: the admin's ordinary tasks. */
 export const JOIN_REVIEW_LENS = 'quests';
 

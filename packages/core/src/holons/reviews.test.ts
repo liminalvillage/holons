@@ -6,7 +6,7 @@ import { bytesToHex } from '@noble/hashes/utils';
 import { createHoloSphere } from '../holosphere/factory.js';
 import { testKey } from '../protocol/testing.js';
 import { questKind } from '../tasks/index.js';
-import { JOIN_REVIEW_LENS, dealJoinReview, joinReviewCard, joinReviewId, settleJoinReview } from './reviews.js';
+import { JOIN_REVIEW_LENS, dealJoinReview, joinLinkUrl, joinReviewCard, joinReviewId, parseJoinLink, settleJoinReview } from './reviews.js';
 
 const bot = testKey();
 const H = 'holon_aaaaaaaaaaaaaaaa';
@@ -64,5 +64,21 @@ describe('a join request as a card on an admin’s board', () => {
     const hs = instance();
     expect(await settleJoinReview(hs, H, HOME, request.pubkey)).toBe(false);
     await hs.close();
+  });
+});
+
+describe('the one-shot link', () => {
+  it('names the holon and the asking key, and reads back', () => {
+    const url = joinLinkUrl('https://hubs.network/', H, request.pubkey);
+    expect(url).toBe(`https://hubs.network/${H}?link=${request.pubkey.toLowerCase()}`);
+    expect(parseJoinLink(new URL(url).search)).toBe(request.pubkey.toLowerCase());
+  });
+
+  it('is nothing unless it carries a whole key', () => {
+    expect(parseJoinLink('')).toBeNull();
+    expect(parseJoinLink(null)).toBeNull();
+    expect(parseJoinLink('?link=abc')).toBeNull();
+    expect(parseJoinLink(`?link=${'g'.repeat(64)}`)).toBeNull();
+    expect(parseJoinLink(`?dna=${'a'.repeat(64)}`)).toBeNull();
   });
 });
