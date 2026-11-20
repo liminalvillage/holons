@@ -5,7 +5,7 @@
  * adapt their user-shape to {@link TelegramUserLike} before calling.
  */
 import { rememberHolon } from '../holons/list.js';
-import type { TelegramUserLike, UserDB, UserProfile } from './index.js';
+import type { TelegramUserLike, UserDB, UserProfile } from './types.js';
 
 const USERS_LENS = 'users';
 const PROFILE_VERSION = '0.3'; // REA-aware profile

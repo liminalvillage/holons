@@ -18,7 +18,7 @@
  */
 
 import { DEFAULT_EQUATION, type ScoreEquation } from './equation.js';
-import { toAggregates, ZERO_USER_AGGREGATES, type UserAggregates } from './aggregator.js';
+import { toAggregates, ZERO_USER_AGGREGATES, type UserAggregates } from './aggregates.js';
 
 export interface ScoreBreakdown {
   initiated: number;

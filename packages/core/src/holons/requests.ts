@@ -32,7 +32,7 @@ import { cleanName, isPlaceholderName, shortId } from '../identity/ids.js';
 import { createNameResolver, type ResolverHost } from '../identity/resolver.js';
 import { readGenes } from '../dna/genes.js';
 import { dnaHash } from '../dna/version.js';
-import type { JoinRequest } from './index.js';
+import type { JoinRequest } from './types.js';
 
 /** The lens holding what a holon answered to each asking key. */
 export const JOIN_REQUESTS_LENS = 'joinrequests';

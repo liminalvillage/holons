@@ -6,7 +6,7 @@
  * profile from the holon's `users` lens.
  */
 import { getUserProfile } from './profile.js';
-import type { TelegramUserLike, UserDB, UserProfile } from './index.js';
+import type { TelegramUserLike, UserDB, UserProfile } from './types.js';
 
 const USERS_LENS = 'users';
 
