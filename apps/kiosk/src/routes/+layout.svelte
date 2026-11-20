@@ -55,6 +55,7 @@
   import { may, writeAcceptance } from "@holons/core/holosphere";
   import { bindFedRequests } from "$lib/fedrequests";
   import { bindJoinAsks } from "$lib/joinasks";
+  import JoinLinkPrompt from "$lib/components/JoinLinkPrompt.svelte";
   import { sessionKeyPub } from "$lib/sessionKey";
   import { loadSettings } from "@holons/core/settings";
   import { get } from "svelte/store";
@@ -1377,6 +1378,9 @@
 {#if $keySheetOpen}
   <KeyExportSheet on:close={() => keySheetOpen.set(false)} />
 {/if}
+
+<!-- A one-shot "link this person" link, opened by an admin. -->
+<JoinLinkPrompt />
 
 <!-- Caretaker settings: holon, name, logo, accent. -->
 {#if $settingsOpen}

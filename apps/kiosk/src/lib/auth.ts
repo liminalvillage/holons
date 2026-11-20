@@ -58,6 +58,12 @@ setNamesSelf(() => get(currentUser));
 
 /** Whether a login overlay is currently requested. */
 export const loginOpen = writable<boolean>(false);
+/**
+ * The boot's question "who is this?" was answered (`initAuth` returned),
+ * either way. Until then "nobody is logged in" only means "not known yet":
+ * nothing should ask a person to log in on that.
+ */
+export const authSettled = writable<boolean>(false);
 
 function normalize(u: any): KioskUser | null {
   if (!u || u.id == null) return null;
@@ -114,6 +120,14 @@ async function hydrateKeyUser(pubkey: string): Promise<void> {
  */
 export async function initAuth(): Promise<void> {
   if (typeof window === "undefined") return;
+  try {
+    await resolveSession();
+  } finally {
+    authSettled.set(true);
+  }
+}
+
+async function resolveSession(): Promise<void> {
   try {
     // Opened as a Telegram Mini App: the launch is the login — whoever
     // opened it, whatever session this webview carried before.
