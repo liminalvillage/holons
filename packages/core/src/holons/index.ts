@@ -500,6 +500,9 @@ export {
   type RecordJoinRequestInput,
 } from './requests.js';
 
+// ── A request as a card on an admin's board ────────────────────────────────
+export { JOIN_REVIEW_LENS, dealJoinReview, joinReviewCard, joinReviewId, settleJoinReview, type JoinReviewOptions, type JoinReviewTag } from './reviews.js';
+
 // ── Trust ──────────────────────────────────────────────────────────────────
 export { membersTrustedAuthors } from './trust.js';
 
