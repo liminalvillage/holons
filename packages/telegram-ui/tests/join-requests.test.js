@@ -18,6 +18,7 @@ import {
 import {
   approvedJoinKeys,
   joinRequestRecords,
+  joinReviewId,
   parseJoinRequest,
 } from '@holons/core/holons';
 import { dnaHash, putGene, readGenes } from '@holons/core/dna';
@@ -324,6 +325,14 @@ describe('a join request for a holon with no Telegram group', () => {
     );
     // Nothing is written to the holon: the bot holds no seat there.
     expect((await joinRequestRecords(hs, H)).size).toBe(0);
+    // The admin also finds it as a task on their own board.
+    expect(await hs.get(ADMIN, 'quests', joinReviewId(H, A.pk))).toMatchObject({
+      title: 'Link Kamala to Solstice <Celebration>',
+      status: 'ongoing',
+      link: `https://hubs.network/${H}`,
+      participants: [{ id: 4242 }],
+      joinReview: { holon: H, pubkey: A.pk },
+    });
     // A replay — the same process or a restarted one over the same store.
     expect(await service.tellAdmins(req)).toBe('known');
     const restarted = new JoinRequests(null, hs, null, {
@@ -347,6 +356,25 @@ describe('a join request for a holon with no Telegram group', () => {
     expect(text).toContain('signed in with Telegram');
   });
 
+  it('closes the admin’s card once the person is linked, and only then', async () => {
+    const { hs, service, ask } = await keyed();
+    await service.tellAdmins(ask(A.sk, { reason: 'Kamala' }));
+    const card = () => hs.get(ADMIN, 'quests', joinReviewId(H, A.pk));
+    expect(await service.sweepReviews()).toBe(0);
+    expect((await card()).status).toBe('ongoing');
+    await addHolonMember(hs, H, A.pk, 'member');
+    expect(await service.sweepReviews()).toBe(1);
+    expect((await card()).status).toBe('completed');
+    expect(await service.sweepReviews()).toBe(0);
+  });
+
+  it('an admin who blocked the bot still gets the card', async () => {
+    const { hs, telegram, service, ask } = await keyed();
+    telegram.sendMessage.mockRejectedValue(new Error('403: blocked'));
+    expect(await service.tellAdmins(ask(A.sk))).toBe('told');
+    expect(await hs.get(ADMIN, 'quests', joinReviewId(H, A.pk))).toBeTruthy();
+  });
+
   it('says nothing about someone already linked', async () => {
     const { hs, telegram, service, ask } = await keyed();
     await addHolonMember(hs, H, A.pk, 'member');
@@ -354,18 +382,10 @@ describe('a join request for a holon with no Telegram group', () => {
     expect(telegram.sendMessage).not.toHaveBeenCalled();
   });
 
-  it('an admin the bot never met, or who blocked it, is unreachable — and asked again later', async () => {
+  it('an admin the bot never met is unreachable', async () => {
     const unmet = await keyed({ known: false });
     expect(await unmet.service.tellAdmins(unmet.ask(A.sk))).toBe('unreachable');
     expect(unmet.telegram.sendMessage).not.toHaveBeenCalled();
-
-    const blocked = await keyed();
-    blocked.telegram.sendMessage.mockRejectedValueOnce(
-      new Error('403: bot was blocked by the user')
-    );
-    const req = blocked.ask(A.sk);
-    expect(await blocked.service.tellAdmins(req)).toBe('unreachable');
-    expect(await blocked.service.tellAdmins(req)).toBe('told');
   });
 });
 

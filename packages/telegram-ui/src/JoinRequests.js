@@ -28,11 +28,15 @@
 // onboarding re-checks it, and a proven group member is linked then.
 //
 // A holon founded from a screen (`holon_…`) has no group to post in, and the
-// bot holds no seat there: it can only TELL the holon's admins, each in
-// their own chat with the bot, that someone is waiting, with a link to the
-// holon (tellAdmins). An admin is reached when their key is the one a
-// Telegram user known to this bot derives. What was told is noted in the
-// bot's local store only, so a restart does not tell twice.
+// bot holds no seat there: it can only TELL the holon's admins that someone
+// is waiting (tellAdmins). Each admin gets a card on their own board — an
+// ordinary task in their holon, "Link Kamala to Solstice" (core
+// `dealJoinReview`) — and a message in their chat with the bot, both with a
+// link to the holon, where an admin links the person. Once the key is
+// linked the cards are closed (sweepReviews). An admin is reached when
+// their key is the one a Telegram user known to this bot derives. What was
+// told is noted in the bot's local store only, so a restart does not tell
+// twice.
 //
 // JOIN_NOTICES=off silences the service — set it on one of two bots that
 // share a namespace, or both would post.
@@ -44,6 +48,7 @@ import {
   DnaNotAcknowledged,
   applyToHolon,
   approveJoin,
+  dealJoinReview,
   describeApplicant,
   holonDnaHash,
   joinRequestRecords,
@@ -51,10 +56,11 @@ import {
   parseJoinRequest,
   recordJoinRequest,
   settleJoinRequest,
+  settleJoinReview,
   watchAllJoinRequests,
 } from '@holons/core/holons';
 import { deriveTelegramNostrKey } from '@holons/core/auth';
-import { signerFromSecretKey } from '@holons/core/holosphere';
+import { signerFromSecretKey, writeAcceptance } from '@holons/core/holosphere';
 import {
   holonMembers,
   isHolonId,
@@ -74,6 +80,8 @@ const DAY = 86400;
 const TOLD = { holon: 'joinnotices', lens: 'told' };
 /** How long the known key owners are trusted before the bot looks again. */
 const OWNERS_FRESH_SEC = 600;
+/** How often the admins' review cards are checked against who is linked. */
+const REVIEW_SWEEP_MS = 2 * 60 * 1000;
 const KIOSK_ADDRESS = () =>
   (process.env.KIOSK_ADDRESS || 'https://hubs.network').replace(/\/+$/, '');
 const IN_CHAT = new Set(['creator', 'administrator', 'member', 'restricted']);
@@ -120,6 +128,8 @@ export default class JoinRequests {
    * @param {(ctx: object) => Promise<boolean>} [options.isAdmin]
    * @param {() => number} [options.now] unix seconds, for tests
    * @param {number} [options.onboardingSweepMs] see HolonOnboarding
+   * @param {number} [options.reviewSweepMs] how often open review cards are
+   *   checked against who is linked (0: never)
    */
   constructor(bot, db, settings = null, options = {}) {
     this.bot = bot;
@@ -147,6 +157,7 @@ export default class JoinRequests {
     /** Derived key → the Telegram user it belongs to (see telegramIdsOf). */
     this.keyOwners = new Map();
     this.ownersAt = 0;
+    this.reviewTimer = null;
     this.onboarding = new HolonOnboarding(bot, db, settings, {
       signer: () => this._signer(),
       isAdmin: ctx => this.isAdmin(ctx),
@@ -160,7 +171,20 @@ export default class JoinRequests {
       bot.action(new RegExp(`^${ACTION.decline}:([0-9a-f]{${PREFIX}})$`), ctx =>
         this.decide(ctx, 'declined')
       );
-      if (this.enabled) this.start();
+      if (this.enabled) {
+        this.start();
+        const every = options.reviewSweepMs ?? REVIEW_SWEEP_MS;
+        if (every > 0) {
+          this.reviewTimer = setInterval(
+            () =>
+              this.sweepReviews().catch(e =>
+                console.warn('[join] review sweep failed:', e?.message)
+              ),
+            every
+          );
+          this.reviewTimer.unref?.();
+        }
+      }
     }
   }
 
@@ -179,6 +203,8 @@ export default class JoinRequests {
     this.stop = null;
     for (const t of this.timers) clearTimeout(t);
     this.timers.clear();
+    if (this.reviewTimer) clearInterval(this.reviewTimer);
+    this.reviewTimer = null;
     this.onboarding.shutdown();
   }
 
@@ -234,8 +260,9 @@ export default class JoinRequests {
 
   /**
    * Tell the admins of a holon that has no Telegram group that someone asks
-   * to be linked. The bot cannot link there itself (it holds no seat): the
-   * message opens the holon, where an admin does. Returns what was done:
+   * to be linked: a card on each admin's own board and a message in their
+   * chat with the bot. The bot cannot link there itself (it holds no seat):
+   * both open the holon, where an admin does. Returns what was done:
    * 'seated' | 'known' | 'told' | 'unreachable'.
    */
   async tellAdmins(request) {
@@ -304,6 +331,34 @@ export default class JoinRequests {
         'You are an admin of this holon: open its Settings → Members to link them.'
       ),
     ];
+    const url = `${KIOSK_ADDRESS()}/${encodeURIComponent(holon)}`;
+    const plainName = who.name || shortNpub(request.pubkey);
+    const review = {
+      name: plainName,
+      holonName,
+      link: url,
+      title: translated(
+        language,
+        'joinReviewTitle',
+        'Link {{name}} to {{holon}}',
+        {
+          name: plainName,
+          holon: holonName,
+          interpolation: { escapeValue: false },
+        }
+      ),
+      description: translated(
+        language,
+        'joinReviewHow',
+        '{{name}} asks to link their key to {{holon}}. Open the holon, then Settings → Members, to link them: {{url}}',
+        {
+          name: plainName,
+          holon: holonName,
+          url,
+          interpolation: { escapeValue: false },
+        }
+      ),
+    };
     const extra = {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
@@ -312,28 +367,78 @@ export default class JoinRequests {
             holon: holonName,
             interpolation: { escapeValue: false },
           }).slice(0, 60),
-          `${KIOSK_ADDRESS()}/${encodeURIComponent(holon)}`
+          url
         ),
       ]),
     };
     let told = 0;
+    const homes = [];
     for (const chat of chats) {
+      let reached = false;
+      try {
+        // The card lands only where the bot's key counts (a person's holon
+        // it keeps); an open one it already dealt is left as it is.
+        if ((await writeAcceptance(this.db, chat)).status !== 'held') {
+          await dealJoinReview(this.db, holon, chat, request, review);
+          homes.push(chat);
+          reached = true;
+        }
+      } catch (e) {
+        console.info(`[join] no review card for admin ${chat}:`, e?.message);
+      }
       try {
         await this.bot.telegram.sendMessage(chat, lines.join('\n'), extra);
-        told += 1;
+        reached = true;
       } catch (e) {
         // They never started the bot, or blocked it.
-        console.info(`[join] admin ${chat} not told:`, e?.message);
+        console.info(`[join] admin ${chat} not messaged:`, e?.message);
       }
+      if (reached) told += 1;
     }
     if (!told) return 'unreachable';
     await this.db.put(
       TOLD.holon,
       TOLD.lens,
-      { id: request.eventId, holon, key: request.pubkey, at: this.now() },
+      {
+        id: request.eventId,
+        holon,
+        key: request.pubkey,
+        homes,
+        open: homes.length > 0,
+        at: this.now(),
+      },
       { local: true }
     );
     return 'told';
+  }
+
+  /**
+   * Close the review cards of everyone who was linked since they were
+   * dealt. Read from the bot's own notes, so it survives a restart.
+   * Returns how many cards were closed.
+   */
+  async sweepReviews() {
+    let notes = [];
+    try {
+      notes = (await this.db.getAll(TOLD.holon, TOLD.lens)) ?? [];
+    } catch {
+      return 0;
+    }
+    let closed = 0;
+    for (const note of notes) {
+      if (!note?.open || !note.holon || !note.key) continue;
+      if (!(await holonMembers(this.db, note.holon)).has(note.key)) continue;
+      for (const home of note.homes ?? [])
+        if (await settleJoinReview(this.db, note.holon, home, note.key))
+          closed += 1;
+      await this.db.put(
+        TOLD.holon,
+        TOLD.lens,
+        { ...note, open: false },
+        { local: true }
+      );
+    }
+    return closed;
   }
 
   /** Where a request stands with the holon's DNA, as a line (none when it asks for nothing). */
