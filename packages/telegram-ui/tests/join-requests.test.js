@@ -135,21 +135,28 @@ describe('a join request for a Telegram group', () => {
     expect(telegram.sendMessage).toHaveBeenCalledTimes(1);
   });
 
-  it('only listens for Telegram groups and answers each event once', async () => {
+  it('answers each event once: a group in the group, a keyed holon to its admins, a person never', async () => {
     const { service, ask } = await setup();
     service.settleMs = 0;
     const handle = vi.spyOn(service, 'handle').mockResolvedValue('posted');
+    const tell = vi.spyOn(service, 'tellAdmins').mockResolvedValue('told');
     const req = ask(A.sk);
     service.onRequest(req);
     service.onRequest(req);
-    service.onRequest({
+    const keyed = {
       ...req,
       eventId: 'f'.repeat(64),
       holon: 'holon_aaaaaaaaaaaaaaaa',
-    });
+    };
+    service.onRequest(keyed);
+    service.onRequest(keyed);
     service.onRequest({ ...req, eventId: 'e'.repeat(64), holon: '4242' });
-    await until(() => handle.mock.calls.length > 0);
+    await until(
+      () => handle.mock.calls.length > 0 && tell.mock.calls.length > 0
+    );
     expect(handle).toHaveBeenCalledTimes(1);
+    expect(tell).toHaveBeenCalledTimes(1);
+    expect(tell.mock.calls[0][0].holon).toBe('holon_aaaaaaaaaaaaaaaa');
     service.shutdown();
   });
 
@@ -283,6 +290,82 @@ describe('a join request for a Telegram group', () => {
     expect(telegram.getChatMember).not.toHaveBeenCalled();
     expect(telegram.sendMessage.mock.calls[0][1]).toMatch(/own Nostr key/);
     expect((await holonMembers(hs, T)).has(A.pk)).toBe(false);
+  });
+});
+
+describe('a join request for a holon with no Telegram group', () => {
+  const H = 'holon_aaaaaaaaaaaaaaaa';
+  const ADMIN = '4242';
+  // The holon as a screen founds it: the founder is a Telegram login, so
+  // their key is the one their Telegram id derives.
+  async function keyed({ known = true } = {}) {
+    const ctx = await setup();
+    const admin = deriveTelegramNostrKey(ADMIN, SECRET);
+    await syncMembersLog(ctx.hs, H, new Map([[admin.publicKey, 'admin']]));
+    await ctx.hs.put(H, 'settings', { id: H, name: 'Solstice <Celebration>' });
+    // The bot has met the admin: their own holon is one it knows.
+    if (known) await ctx.hs.put(ADMIN, 'settings', { id: ADMIN, name: 'Ada' });
+    const ask = (sk, opts = {}) => ({ ...ctx.ask(sk, opts), holon: H });
+    return { ...ctx, ask, admin };
+  }
+
+  it('tells the admin in their own chat with the bot, once, with a link to the holon', async () => {
+    const { hs, telegram, service, ask } = await keyed();
+    const req = ask(A.sk, { reason: 'Kamala' });
+    expect(await service.tellAdmins(req)).toBe('told');
+    expect(telegram.sendMessage).toHaveBeenCalledTimes(1);
+    const [chat, text, extra] = telegram.sendMessage.mock.calls[0];
+    expect(chat).toBe(ADMIN);
+    expect(text).toContain('<b>Kamala</b>');
+    expect(text).toContain('<b>Solstice &lt;Celebration&gt;</b>');
+    expect(text).toMatch(/own Nostr key: <code>npub1/);
+    expect(extra.reply_markup.inline_keyboard.flat()[0].url).toBe(
+      `https://hubs.network/${H}`
+    );
+    // Nothing is written to the holon: the bot holds no seat there.
+    expect((await joinRequestRecords(hs, H)).size).toBe(0);
+    // A replay — the same process or a restarted one over the same store.
+    expect(await service.tellAdmins(req)).toBe('known');
+    const restarted = new JoinRequests(null, hs, null, {
+      derivationSecret: SECRET,
+    });
+    restarted.bot = { telegram };
+    expect(await restarted.tellAdmins(req)).toBe('known');
+    expect(telegram.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('names a proven Telegram login so the admin can write to them', async () => {
+    const { telegram, service, ask } = await keyed();
+    const kamala = deriveTelegramNostrKey('6539', SECRET);
+    const req = ask(kamala.privateKey, {
+      reason: 'Kamala',
+      telegramId: '6539',
+    });
+    expect(await service.tellAdmins(req)).toBe('told');
+    const [, text] = telegram.sendMessage.mock.calls[0];
+    expect(text).toContain('<b><a href="tg://user?id=6539">Kamala</a></b>');
+    expect(text).toContain('signed in with Telegram');
+  });
+
+  it('says nothing about someone already linked', async () => {
+    const { hs, telegram, service, ask } = await keyed();
+    await addHolonMember(hs, H, A.pk, 'member');
+    expect(await service.tellAdmins(ask(A.sk))).toBe('seated');
+    expect(telegram.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('an admin the bot never met, or who blocked it, is unreachable — and asked again later', async () => {
+    const unmet = await keyed({ known: false });
+    expect(await unmet.service.tellAdmins(unmet.ask(A.sk))).toBe('unreachable');
+    expect(unmet.telegram.sendMessage).not.toHaveBeenCalled();
+
+    const blocked = await keyed();
+    blocked.telegram.sendMessage.mockRejectedValueOnce(
+      new Error('403: bot was blocked by the user')
+    );
+    const req = blocked.ask(A.sk);
+    expect(await blocked.service.tellAdmins(req)).toBe('unreachable');
+    expect(await blocked.service.tellAdmins(req)).toBe('told');
   });
 });
 

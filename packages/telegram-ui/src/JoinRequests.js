@@ -27,6 +27,13 @@
 // asked again) updates that record (core `recordJoinRequest`): the
 // onboarding re-checks it, and a proven group member is linked then.
 //
+// A holon founded from a screen (`holon_…`) has no group to post in, and the
+// bot holds no seat there: it can only TELL the holon's admins, each in
+// their own chat with the bot, that someone is waiting, with a link to the
+// holon (tellAdmins). An admin is reached when their key is the one a
+// Telegram user known to this bot derives. What was told is noted in the
+// bot's local store only, so a restart does not tell twice.
+//
 // JOIN_NOTICES=off silences the service — set it on one of two bots that
 // share a namespace, or both would post.
 
@@ -48,7 +55,12 @@ import {
 } from '@holons/core/holons';
 import { deriveTelegramNostrKey } from '@holons/core/auth';
 import { signerFromSecretKey } from '@holons/core/holosphere';
-import { holonMembers, isTelegramChatId } from '@holons/core/protocol';
+import {
+  holonMembers,
+  isHolonId,
+  isTelegramChatId,
+} from '@holons/core/protocol';
+import { readHolonSettings } from '@holons/core/settings';
 import { toNpub } from '@holons/core/nostr';
 import { holonSigner } from './createHoloSphere.js';
 import HolonOnboarding from './HolonOnboarding.js';
@@ -58,6 +70,12 @@ const ACTION = { approve: 'joinok', decline: 'joinno' };
 /** Callback data is capped at 64 bytes: the key's first half names the request. */
 const PREFIX = 32;
 const DAY = 86400;
+/** The bot's own note of the admins it told: local store only, never published. */
+const TOLD = { holon: 'joinnotices', lens: 'told' };
+/** How long the known key owners are trusted before the bot looks again. */
+const OWNERS_FRESH_SEC = 600;
+const KIOSK_ADDRESS = () =>
+  (process.env.KIOSK_ADDRESS || 'https://hubs.network').replace(/\/+$/, '');
 const IN_CHAT = new Set(['creator', 'administrator', 'member', 'restricted']);
 
 const esc = s =>
@@ -126,6 +144,9 @@ export default class JoinRequests {
     this.seen = new Set();
     this.timers = new Set();
     this.stop = null;
+    /** Derived key → the Telegram user it belongs to (see telegramIdsOf). */
+    this.keyOwners = new Map();
+    this.ownersAt = 0;
     this.onboarding = new HolonOnboarding(bot, db, settings, {
       signer: () => this._signer(),
       isAdmin: ctx => this.isAdmin(ctx),
@@ -162,16 +183,171 @@ export default class JoinRequests {
   }
 
   onRequest(request) {
-    if (!isTelegramGroup(request.holon) || this.seen.has(request.eventId))
+    const group = isTelegramGroup(request.holon);
+    if ((!group && !isHolonId(request.holon)) || this.seen.has(request.eventId))
       return;
     this.seen.add(request.eventId);
     const timer = setTimeout(() => {
       this.timers.delete(timer);
-      this.handle(request).catch(e =>
+      (group ? this.handle(request) : this.tellAdmins(request)).catch(e =>
         console.warn('[join] request not answered:', e?.message)
       );
     }, this.settleMs);
     this.timers.add(timer);
+  }
+
+  /**
+   * The Telegram users behind `keys`, for the ones this bot can know: a
+   * Telegram login's key is derived from the id, so the owner of a key is
+   * found among the people the bot has met (every personal holon it knows).
+   * A key someone brought themselves has no Telegram user behind it.
+   */
+  async telegramIdsOf(keys) {
+    const want = [...new Set(keys.map(k => String(k).toLowerCase()))];
+    if (!this.secret || !want.length) return [];
+    const found = () => want.map(k => this.keyOwners.get(k)).filter(Boolean);
+    if (
+      found().length < want.length &&
+      this.now() - this.ownersAt >= OWNERS_FRESH_SEC
+    ) {
+      this.ownersAt = this.now();
+      let known = [];
+      try {
+        known = await this.db.listHolons();
+      } catch {
+        /* the owners already learned stand */
+      }
+      for (const id of known) {
+        if (!/^\d{1,20}$/.test(String(id))) continue;
+        try {
+          this.keyOwners.set(
+            deriveTelegramNostrKey(String(id), this.secret).publicKey,
+            String(id)
+          );
+        } catch {
+          /* not an id a key derives from */
+        }
+      }
+    }
+    return found();
+  }
+
+  /**
+   * Tell the admins of a holon that has no Telegram group that someone asks
+   * to be linked. The bot cannot link there itself (it holds no seat): the
+   * message opens the holon, where an admin does. Returns what was done:
+   * 'seated' | 'known' | 'told' | 'unreachable'.
+   */
+  async tellAdmins(request) {
+    const holon = String(request.holon);
+    const members = await holonMembers(this.db, holon);
+    if (members.has(request.pubkey)) return 'seated';
+    const noted = await this.db
+      .get(TOLD.holon, TOLD.lens, request.eventId)
+      .catch(() => null);
+    if (noted) return 'known';
+
+    const admins = [...members]
+      .filter(([, role]) => role === 'admin')
+      .map(([key]) => key);
+    const chats = await this.telegramIdsOf(admins);
+    if (!chats.length) {
+      console.info(`[join] no admin of ${holon} is reachable on Telegram`);
+      return 'unreachable';
+    }
+
+    const who = await describeApplicant(this.db, request, {
+      secret: this.secret,
+    });
+    const tgId = who.telegram?.verified ? who.telegram.id : null;
+    const language = await this.language(holon);
+    let holonName = holon;
+    try {
+      holonName = String(
+        (await readHolonSettings(this.db, holon))?.name || holon
+      );
+    } catch {
+      /* the id names it */
+    }
+    const shown = esc(who.name || shortNpub(request.pubkey));
+    const name = tgId ? `<a href="tg://user?id=${tgId}">${shown}</a>` : shown;
+    const lines = [
+      translated(
+        language,
+        'joinAsksHolon',
+        '🔑 <b>{{name}}</b> asks to link their key to <b>{{holon}}</b>.',
+        {
+          name,
+          holon: esc(holonName),
+          interpolation: { escapeValue: false },
+        }
+      ),
+      tgId
+        ? translated(
+            language,
+            'joinFromTelegramLogin',
+            'They signed in with Telegram.'
+          )
+        : translated(
+            language,
+            'joinFromKey',
+            'They signed in with their own Nostr key: {{key}}',
+            {
+              key: `<code>${shortNpub(request.pubkey)}</code>`,
+              interpolation: { escapeValue: false },
+            }
+          ),
+      ...this.dnaLines(language, who.dna),
+      translated(
+        language,
+        'joinAdminsOpen',
+        'You are an admin of this holon: open its Settings → Members to link them.'
+      ),
+    ];
+    const extra = {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([
+        Markup.button.url(
+          translated(language, 'joinOpenHolon', 'Open {{holon}}', {
+            holon: holonName,
+            interpolation: { escapeValue: false },
+          }).slice(0, 60),
+          `${KIOSK_ADDRESS()}/${encodeURIComponent(holon)}`
+        ),
+      ]),
+    };
+    let told = 0;
+    for (const chat of chats) {
+      try {
+        await this.bot.telegram.sendMessage(chat, lines.join('\n'), extra);
+        told += 1;
+      } catch (e) {
+        // They never started the bot, or blocked it.
+        console.info(`[join] admin ${chat} not told:`, e?.message);
+      }
+    }
+    if (!told) return 'unreachable';
+    await this.db.put(
+      TOLD.holon,
+      TOLD.lens,
+      { id: request.eventId, holon, key: request.pubkey, at: this.now() },
+      { local: true }
+    );
+    return 'told';
+  }
+
+  /** Where a request stands with the holon's DNA, as a line (none when it asks for nothing). */
+  dnaLines(language, dna) {
+    if (dna === 'none-required') return [];
+    return [
+      dna === 'acknowledged'
+        ? translated(language, 'readyAcknowledged', 'DNA acknowledged')
+        : dna === 'outdated'
+          ? translated(language, 'readyOutdated', 'DNA outdated')
+          : dna === 'unknown'
+            ? translated(language, 'readyUnknown', 'DNA not readable')
+            : translated(language, 'readyMissing', 'DNA not acknowledged'),
+    ];
   }
 
   async language(holon) {
@@ -266,21 +442,7 @@ export default class JoinRequests {
                 interpolation: { escapeValue: false },
               }
             ),
-      ...(who.dna === 'none-required'
-        ? []
-        : [
-            who.dna === 'acknowledged'
-              ? translated(language, 'readyAcknowledged', 'DNA acknowledged')
-              : who.dna === 'outdated'
-                ? translated(language, 'readyOutdated', 'DNA outdated')
-                : who.dna === 'unknown'
-                  ? translated(language, 'readyUnknown', 'DNA not readable')
-                  : translated(
-                      language,
-                      'readyMissing',
-                      'DNA not acknowledged'
-                    ),
-          ]),
+      ...this.dnaLines(language, who.dna),
       translated(
         language,
         'joinAdminsDecide',
