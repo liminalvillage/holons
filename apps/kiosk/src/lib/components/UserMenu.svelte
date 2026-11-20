@@ -29,6 +29,17 @@
   import { isHolonId, isTelegramChatId } from "@holons/core/protocol";
   import { t, tr } from "$lib/i18n";
   import { fedRequests } from "$lib/fedrequests";
+  import { joinAsks } from "$lib/joinasks";
+
+  // What waits for this board's admins, in words (empty: nothing).
+  $: waiting = [
+    $fedRequests.length
+      ? $t("fed.requestsBadge", { n: $fedRequests.length })
+      : "",
+    $joinAsks.length ? $t("members.asksBadge", { n: $joinAsks.length }) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   $: who = $holonName;
 
@@ -139,11 +150,11 @@
   <button class="row" on:click={openSettings}>
     <span class="ico"><Icon name="gear" /></span>
     <span class="label"
-      >{$t("menu.settings")}{#if $fedRequests.length}<span class="hint"
-          >{$t("fed.requestsBadge", { n: $fedRequests.length })}</span
+      >{$t("menu.settings")}{#if waiting}<span class="hint">{waiting}</span
         >{/if}</span
     >
-    {#if $fedRequests.length}<span class="count">{$fedRequests.length}</span
+    {#if waiting}<span class="count"
+        >{$fedRequests.length + $joinAsks.length}</span
       >{/if}
     <span class="chev">›</span>
   </button>

@@ -837,6 +837,10 @@ export const es: Record<MessageKey, Msg> = {
   "members.chatUnlinked":
     "Desvinculado. Los miembros del chat ya no están vinculados aquí.",
   "members.pending": "{n} piden ser vinculados",
+  "members.asksBadge": {
+    one: "{n} persona pide ser vinculada",
+    other: "{n} personas piden ser vinculadas",
+  },
   "members.approve": "Vincular",
   "members.decline": "Descartar",
   "members.roleAdmin": "admin",
@@ -2487,6 +2491,7 @@ export const es: Record<MessageKey, Msg> = {
   "walk.sending": "Enviando…",
   "walk.sent": "Solicitud enviada. Próximos pasos:",
   "walk.next": "Próximos pasos:",
+  "walk.sentNone": "Solicitud enviada. Un admin del holón te vinculará.",
   "walk.loginHint":
     "Tu solicitud se firma con tu clave: inicia sesión primero. Lo recorrido se guarda.",
   "walk.loginToSend": "Inicia sesión para enviar",

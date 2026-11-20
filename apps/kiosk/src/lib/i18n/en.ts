@@ -831,6 +831,10 @@ export const en = {
   "members.chatUnlinked":
     "Unlinked. The chat’s members are no longer linked here.",
   "members.pending": "{n} asking to be linked",
+  "members.asksBadge": {
+    one: "{n} person asking to be linked",
+    other: "{n} people asking to be linked",
+  },
   "members.approve": "Link",
   "members.decline": "Dismiss",
   "members.roleAdmin": "admin",
@@ -2450,6 +2454,7 @@ export const en = {
   "walk.sending": "Sending…",
   "walk.sent": "Request sent. Next:",
   "walk.next": "Next:",
+  "walk.sentNone": "Request sent. An admin of the holon will link you.",
   "walk.loginHint":
     "Your request is signed with your key: log in first. What you walked is kept.",
   "walk.loginToSend": "Log in to send",

@@ -68,13 +68,8 @@
   import { sessionKeyPub } from "$lib/sessionKey";
   import { nameOf } from "$lib/names";
   import { shortId } from "@holons/core/identity";
-  import {
-    dismissJoin,
-    seat,
-    unseat,
-    watchRequests,
-    type ReadiedRequest,
-  } from "$lib/hubmembers";
+  import { seat, unseat, type ReadiedRequest } from "$lib/hubmembers";
+  import { dismissJoinAsk, joinAsks, settleJoinAsk } from "$lib/joinasks";
   import { segmentFor } from "$lib/dock";
   import {
     answerFedRequest,
@@ -163,10 +158,11 @@
   let hubRole: "admin" | "member" | null = null;
   let keyDraft = "";
   let keyBusy = false;
-  // Keys asking to be seated (NIP-29 join requests), watched while this
-  // panel is open and the adopted key admins a key-founded hub.
+  // Keys asking to be seated (NIP-29 join requests): the layout follows
+  // them for a key that admins the hub ($lib/joinasks), so the gear can say
+  // someone is waiting before this panel is ever opened.
   let joinRequests: ReadiedRequest[] = [];
-  let stopRequests: (() => void) | null = null;
+  $: joinRequests = hubRole === "admin" && keyed($holonId) ? $joinAsks : [];
   let inviteCopied = false;
   // Hubs that seat members by key: founded from a screen, or born in
   // Telegram (its bot founds the signed log). A person's own holon and a
@@ -239,7 +235,6 @@
     $holonId && typeof location !== "undefined"
       ? `${location.origin}/${encodeURIComponent(segmentFor($holonId))}`
       : "";
-  onDestroy(() => stopRequests?.());
   $: void loadPrivacy($holonId, $isLoggedIn, $sessionKeyPub);
 
   async function loadPrivacy(
@@ -360,17 +355,11 @@
     );
 
   function watchJoins(id: string, role: "admin" | "member" | null) {
-    stopRequests?.();
-    stopRequests = null;
-    joinRequests = [];
     onbConfig = null;
     onbPeople = [];
     onbEditing = false;
     if (role !== "admin" || !keyed(id)) return;
     void loadOnb(id);
-    stopRequests = watchRequests(id, (r) => {
-      if (id === $holonId) joinRequests = r;
-    });
   }
 
   // Federation requests other holons' admins made of this one (the store
@@ -420,7 +409,7 @@
     try {
       const pub = await seat($holonId, req.pubkey, "member", req.reason);
       hubKeys = new Map(hubKeys).set(pub, "member");
-      joinRequests = joinRequests.filter((r) => r.pubkey !== pub);
+      settleJoinAsk(pub);
     } catch (err) {
       showNotice(tr("members.failed", { reason: reasonOf(err) }));
     } finally {
@@ -430,8 +419,7 @@
 
   function decline(req: ReadiedRequest) {
     if (!$holonId) return;
-    dismissJoin($holonId, req.pubkey);
-    joinRequests = joinRequests.filter((r) => r.pubkey !== req.pubkey);
+    dismissJoinAsk($holonId, req.pubkey);
   }
 
   async function copyInvite() {

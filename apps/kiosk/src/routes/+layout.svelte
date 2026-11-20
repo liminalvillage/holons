@@ -54,6 +54,7 @@
   import { langMode, holonLang, startI18n, tr, type Lang } from "$lib/i18n";
   import { may, writeAcceptance } from "@holons/core/holosphere";
   import { bindFedRequests } from "$lib/fedrequests";
+  import { bindJoinAsks } from "$lib/joinasks";
   import { sessionKeyPub } from "$lib/sessionKey";
   import { loadSettings } from "@holons/core/settings";
   import { get } from "svelte/store";
@@ -1188,6 +1189,12 @@
     bindFedRequests(
       $holonIdStore ?? null,
       !!$standing && may($standing, "federation"),
+    );
+  // People asking to be linked, likewise: only a key that can link them.
+  $: if (mounted)
+    bindJoinAsks(
+      $holonIdStore ?? null,
+      !!$standing && may($standing, "members"),
     );
 
   $: if (mounted && $holonIdStore) {

@@ -37,6 +37,7 @@
   import { noteColor } from "$lib/palette";
   import { currentUser, displayName } from "$lib/auth";
   import { fedRequests } from "$lib/fedrequests";
+  import { joinAsks } from "$lib/joinasks";
   import { requestClose } from "$lib/dock";
   import { resolveAddTipSeen, markAddTipSeen } from "$lib/config";
   import { t, locale } from "$lib/i18n";
@@ -344,6 +345,16 @@
   type Facet = "holons" | "categories" | "people";
   let searchFocused = false;
   let searchInput: HTMLInputElement;
+  // What waits for this board's admins, in words (empty: nothing).
+  $: waiting = [
+    $fedRequests.length
+      ? $t("fed.requestsBadge", { n: $fedRequests.length })
+      : "",
+    $joinAsks.length ? $t("members.asksBadge", { n: $joinAsks.length }) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   $: typed = $searchQuery.trim().toLowerCase();
   const hit = (label: string) => !typed || label.toLowerCase().includes(typed);
   $: holonName$ = $facetHolonName;
@@ -605,12 +616,11 @@
         class="account"
         class:in={$currentUser != null}
         on:click={() => userMenuOpen.set(true)}
-        aria-label={$fedRequests.length
-          ? `${$t("tabbar.menu")} — ${$t("fed.requestsBadge", { n: $fedRequests.length })}`
+        aria-label={waiting
+          ? `${$t("tabbar.menu")} — ${waiting}`
           : $t("tabbar.menu")}
       >
-        {#if $fedRequests.length}<span class="badge" aria-hidden="true"
-          ></span>{/if}
+        {#if waiting}<span class="badge" aria-hidden="true"></span>{/if}
         {#if $currentUser}
           {#if $currentUser.photo_url}
             <img src={$currentUser.photo_url} alt="" />
@@ -628,18 +638,18 @@
       </button>
       <!-- The holon's general settings (name, logo, accent, federation…) —
            apart from a view's own settings, which are the sliders in the
-           pills band. Dotted while a federation request waits in it. -->
+           pills band. Dotted while a federation request or someone asking
+           to be linked waits in it. -->
       <button
         class="holonset"
         on:click={() => settingsOpen.set(true)}
-        aria-label={$fedRequests.length
-          ? `${$t("tabbar.holonSettings")} — ${$t("fed.requestsBadge", { n: $fedRequests.length })}`
+        aria-label={waiting
+          ? `${$t("tabbar.holonSettings")} — ${waiting}`
           : $t("tabbar.holonSettings")}
-        title={$t("tabbar.holonSettings")}
+        title={waiting || $t("tabbar.holonSettings")}
       >
         <Icon name="gear" />
-        {#if $fedRequests.length}<span class="dot" aria-hidden="true"
-          ></span>{/if}
+        {#if waiting}<span class="dot" aria-hidden="true"></span>{/if}
       </button>
       <div class="clock">
         <span class="time">{timeLabel}</span>

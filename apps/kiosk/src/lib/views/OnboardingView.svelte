@@ -106,6 +106,15 @@
 
   $: holonLabel = $holonName || $holonId || "";
 
+  // What follows a request just sent: the holon's steps, when it walks
+  // newcomers through any; otherwise only an admin's answer.
+  $: askedSteps =
+    mine &&
+    (mine.state === "none" || mine.state === "off") &&
+    mine.config.enabled
+      ? previewSteps($holonId ?? "", mine.config, -1)
+      : [];
+
   $: applyHref = hrefForPage($page.url, "apply");
   // Their request does not carry the DNA as it is now: nothing links until
   // they walk the changed parts and send it again (core's mayLink).
@@ -232,12 +241,10 @@
       {#if asking}
         <div class="sent" role="status">
           <span class="sent__ico" aria-hidden="true"><Icon name="send" /></span>
-          <p>{$t("walk.sent")}</p>
+          <p>{$t(askedSteps.length ? "walk.sent" : "walk.sentNone")}</p>
         </div>
-        {#if mine.config.enabled}
-          <OnboardingSteps
-            steps={previewSteps($holonId ?? "", mine.config, -1)}
-          />
+        {#if askedSteps.length}
+          <OnboardingSteps steps={askedSteps} />
         {/if}
       {:else}
         <p class="state">

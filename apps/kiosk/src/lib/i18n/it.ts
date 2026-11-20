@@ -838,6 +838,10 @@ export const it: Record<MessageKey, Msg> = {
   "members.chatUnlinked":
     "Scollegata. I membri della chat non sono più collegati qui.",
   "members.pending": "{n} chiedono di essere collegati",
+  "members.asksBadge": {
+    one: "{n} persona chiede di essere collegata",
+    other: "{n} persone chiedono di essere collegate",
+  },
   "members.approve": "Collega",
   "members.decline": "Ignora",
   "members.roleAdmin": "admin",
@@ -2496,6 +2500,7 @@ export const it: Record<MessageKey, Msg> = {
   "walk.sending": "Invio…",
   "walk.sent": "Richiesta inviata. Prossimi passi:",
   "walk.next": "Prossimi passi:",
+  "walk.sentNone": "Richiesta inviata. Un admin dell’holon ti collegherà.",
   "walk.loginHint":
     "La richiesta è firmata con la tua chiave: prima accedi. Il percorso fatto resta.",
   "walk.loginToSend": "Accedi per inviare",
