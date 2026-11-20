@@ -321,7 +321,7 @@ describe('a join request for a holon with no Telegram group', () => {
     expect(text).toContain('<b>Solstice &lt;Celebration&gt;</b>');
     expect(text).toMatch(/own Nostr key: <code>npub1/);
     expect(extra.reply_markup.inline_keyboard.flat()[0].url).toBe(
-      `https://hubs.network/${H}`
+      `https://hubs.network/${H}?link=${A.pk}`
     );
     // Nothing is written to the holon: the bot holds no seat there.
     expect((await joinRequestRecords(hs, H)).size).toBe(0);
@@ -329,7 +329,7 @@ describe('a join request for a holon with no Telegram group', () => {
     expect(await hs.get(ADMIN, 'quests', joinReviewId(H, A.pk))).toMatchObject({
       title: 'Link Kamala to Solstice <Celebration>',
       status: 'ongoing',
-      link: `https://hubs.network/${H}`,
+      link: `https://hubs.network/${H}?link=${A.pk}`,
       participants: [{ id: 4242 }],
       joinReview: { holon: H, pubkey: A.pk },
     });

@@ -51,6 +51,7 @@ import {
   dealJoinReview,
   describeApplicant,
   holonDnaHash,
+  joinLinkUrl,
   joinRequestRecords,
   mayLink,
   parseJoinRequest,
@@ -328,10 +329,11 @@ export default class JoinRequests {
       translated(
         language,
         'joinAdminsOpen',
-        'You are an admin of this holon: open its Settings → Members to link them.'
+        'You are an admin of this holon: the button opens it on their request, to link them in one tap.'
       ),
     ];
-    const url = `${KIOSK_ADDRESS()}/${encodeURIComponent(holon)}`;
+    // One-shot: it opens the holon on "Link them?" for an admin's key.
+    const url = joinLinkUrl(KIOSK_ADDRESS(), holon, request.pubkey);
     const plainName = who.name || shortNpub(request.pubkey);
     const review = {
       name: plainName,
@@ -350,7 +352,7 @@ export default class JoinRequests {
       description: translated(
         language,
         'joinReviewHow',
-        '{{name}} asks to link their key to {{holon}}. Open the holon, then Settings → Members, to link them: {{url}}',
+        '{{name}} asks to link their key to {{holon}}. This link opens the holon on their request, to link them in one tap: {{url}}',
         {
           name: plainName,
           holon: holonName,
@@ -363,10 +365,7 @@ export default class JoinRequests {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
         Markup.button.url(
-          translated(language, 'joinOpenHolon', 'Open {{holon}}', {
-            holon: holonName,
-            interpolation: { escapeValue: false },
-          }).slice(0, 60),
+          translated(language, 'joinReviewLink', '✅ Review and link'),
           url
         ),
       ]),
