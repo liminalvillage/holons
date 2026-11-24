@@ -142,6 +142,43 @@ describe('createNameResolver', () => {
     expect(r.snapshot().has('holon_x')).toBe(false);
   });
 
+  it('a primed name stands in until a source answers: resolve still asks, and a later prime never overwrites it', async () => {
+    const h = host();
+    const r = createNameResolver(h, { holon: HOLON });
+    // A federation record's stale label for a partner, and one nothing else names.
+    r.prime([['-1001', 'Roberto'], ['-3003', 'Only Primed']]);
+    expect(r.nameOf('-1001')).toBe('Roberto');
+    const got = await r.resolve(['-1001', '-3003']);
+    expect(got.get('-1001')).toBe('Liminal');
+    expect(got.get('-3003')).toBe('Only Primed');
+    expect(r.primed('-3003')).toBe(true); // nothing answered: still only the surface's word
+    expect(r.primed('-1001')).toBe(false);
+    r.prime([['-1001', 'Roberto']]);
+    expect(r.nameOf('-1001')).toBe('Liminal');
+    const calls = h.get.mock.calls.length;
+    await r.resolve(['-1001']);
+    expect(h.get.mock.calls.length).toBe(calls); // answered: cached, not asked again
+  });
+
+  it('asks every holon at once, not one after another', async () => {
+    const h = host();
+    let open = 0;
+    let most = 0;
+    const get = h.get.getMockImplementation()!;
+    h.get.mockImplementation(async (holon: string, lens: string, key: string) => {
+      open += 1;
+      most = Math.max(most, open);
+      await new Promise((r) => setTimeout(r, 5));
+      open -= 1;
+      return get(holon, lens, key);
+    });
+    const r = createNameResolver(h, { holon: HOLON });
+    const got = await r.resolve(['-1001', 'holon_titled', 'holon_none']);
+    expect(got.get('-1001')).toBe('Liminal');
+    expect(got.get('holon_titled')).toBe('Titled');
+    expect(most).toBe(3);
+  });
+
   it('cleans untrusted text from the relays', async () => {
     const h = host({ relay: [kind0(KEY_A, { display_name: 'Mal\u0000ory​ ' + 'x'.repeat(200) })] });
     const r = createNameResolver(h, { holon: HOLON });

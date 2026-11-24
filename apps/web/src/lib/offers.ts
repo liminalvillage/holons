@@ -9,6 +9,7 @@
 // scale control that widens the market from this holon to its partners to
 // its home cell and the cells above.
 
+import { words } from "./vocabulary";
 import {
   UNMET_COST,
   dedupeMarket,
@@ -63,7 +64,12 @@ export function scaleOptions(
   partnerCount: number,
 ): ScaleOption[] {
   const out: ScaleOption[] = [
-    { id: "holon", label: "This holon", glyph: "⌂", scale: { kind: "holon" } },
+    {
+      id: "holon",
+      label: `This ${words.holon}`,
+      glyph: "⌂",
+      scale: { kind: "holon" },
+    },
     {
       id: "partners",
       label: partnerCount ? `Federation (${partnerCount})` : "Federation",

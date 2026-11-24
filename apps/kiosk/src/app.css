@@ -44,6 +44,10 @@
   --caution: #8f4a0b;
   --heart: #b0241c;
   --on-heart: #fff;
+  /* A count of things waiting for you (the red badge): the same red in both
+     themes, as on any phone's app icon. */
+  --alert: #d0271d;
+  --on-alert: #fff;
   /* The heart nobody here has given yet: the same heart, gone quiet. */
   --heart-quiet: color-mix(in srgb, var(--heart) 55%, var(--ink-soft));
   /* A faint accent wash: today's cell, a row that is on, a drop target. */

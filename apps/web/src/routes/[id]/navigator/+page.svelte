@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
     import HolonNavigator from '../../../components/Navigator.svelte';
 
     function handleHolonSelect(event) {
@@ -9,6 +10,6 @@
 </script>
 
 <div class="p-6">
-    <h1 class="text-2xl font-bold text-white mb-6">Holon Navigator</h1>
+    <h1 class="text-2xl font-bold text-white mb-6">{words.Holon} Navigator</h1>
     <HolonNavigator on:holonSelect={handleHolonSelect} />
 </div> 

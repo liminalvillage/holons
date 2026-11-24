@@ -240,9 +240,178 @@ export function isValidICalUrl(url: string): boolean {
     }
 }
 
-/** `webcal://` is a subscribe hint, not a transport — fetch it over https. */
+/**
+ * The URL a feed is actually fetched from.
+ *
+ * - `webcal://` is a subscribe hint, not a transport — fetch it over https.
+ * - A Google Calendar *share* or *embed* link (`…/calendar/u/0?cid=…`,
+ *   `…/calendar/embed?src=…`) is a web page, not a feed: fetched as-is it
+ *   returns HTML and the board stays empty. It is rewritten to the calendar's
+ *   public iCal address (see {@link googleICalUrl}).
+ *
+ * Anything else comes back trimmed and otherwise untouched.
+ */
 export function normalizeICalUrl(url: string): string {
-    return url.trim().replace(/^webcal:\/\//i, 'https://');
+    const https = url.trim().replace(/^webcal:\/\//i, 'https://');
+    return googleICalUrl(https) ?? https;
+}
+
+/**
+ * Every feed a pasted link subscribes to: one per calendar for a Google
+ * share/embed link that names several ({@link googleICalUrls}), else the one
+ * {@link normalizeICalUrl} address. What an "add calendar" form stores.
+ */
+export function normalizeICalUrls(url: string): string[] {
+    const google = googleICalUrls(url.trim().replace(/^webcal:\/\//i, 'https://'));
+    return google.length ? google : [normalizeICalUrl(url)];
+}
+
+/** Hosts that serve Google Calendar's web UI. */
+const GOOGLE_CALENDAR_HOSTS = new Set(['calendar.google.com', 'www.google.com', 'google.com']);
+
+/**
+ * A Google Calendar id carried in a share link's `cid`: either the id itself
+ * (`team@group.calendar.google.com`) or — what Google's "Get shareable link"
+ * produces — that id base64-encoded, often without padding.
+ */
+function decodeGoogleCalendarId(raw: string): string | null {
+    const value = raw.trim();
+    if (!value) return null;
+    if (value.includes('@')) return value;
+    try {
+        const b64 = value.replace(/-/g, '+').replace(/_/g, '/');
+        const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+        const decoded = atob(padded);
+        // A real id is printable ASCII with an `@` (user@gmail.com,
+        // …@group.calendar.google.com, …#holiday@group.v.calendar.google.com).
+        if (decoded.includes('@') && /^[\x21-\x7e]+$/.test(decoded)) return decoded;
+    } catch {
+        /* not base64 */
+    }
+    return null;
+}
+
+/**
+ * The public iCal address behind a Google Calendar share/embed link, or
+ * `null` when `url` is not such a link (including when it already IS a feed
+ * address — `…/calendar/ical/…/basic.ics`).
+ *
+ * Handles `?cid=<id or base64 id>` (share links, `/calendar/u/0`, `/r`,
+ * `/render`) and `?src=<id>` (embed links). A `cid` that is itself a feed URL
+ * (Google's "add by URL" links) resolves to that feed. The result only reads
+ * if the calendar is public; a private one needs the "Secret address in iCal
+ * format" from the calendar's Google settings, which is already a feed URL.
+ */
+export function googleICalUrl(url: string): string | null {
+    return googleICalUrls(url)[0] ?? null;
+}
+
+/**
+ * Every public iCal address behind a Google Calendar share/embed link — an
+ * embed link shows several calendars at once (`?src=a&src=b…`), and each is
+ * its own feed. Empty when `url` is not such a link. Order follows the link,
+ * duplicates are dropped. See {@link googleICalUrl} for the single-feed case.
+ */
+export function googleICalUrls(url: string): string[] {
+    let parsed: URL;
+    try {
+        parsed = new URL(url.trim().replace(/^webcal:\/\//i, 'https://'));
+    } catch {
+        return [];
+    }
+    if (!GOOGLE_CALENDAR_HOSTS.has(parsed.hostname.toLowerCase())) return [];
+    const path = parsed.pathname;
+    if (!/^\/calendar(\/|$)/i.test(path) || /\/ical\//i.test(path)) return [];
+
+    const out: string[] = [];
+    const raws = [...parsed.searchParams.getAll('cid'), ...parsed.searchParams.getAll('src')];
+    for (const raw of raws) {
+        let feed: string | null = null;
+        if (/^(https?|webcal):\/\//i.test(raw.trim())) {
+            const inner = raw.trim().replace(/^webcal:\/\//i, 'https://');
+            feed = googleICalUrl(inner) ?? inner;
+        } else {
+            const id = decodeGoogleCalendarId(raw);
+            if (id) feed = `https://calendar.google.com/calendar/ical/${encodeURIComponent(id)}/public/basic.ics`;
+        }
+        if (feed && !out.includes(feed)) out.push(feed);
+    }
+    return out;
+}
+
+/**
+ * Whether fetched text is an iCal feed at all. A share page, a login wall or
+ * an error page comes back as HTML with a 200, so "the fetch worked" is not
+ * "we got a calendar".
+ */
+export function looksLikeICal(text: string): boolean {
+    return /^\s*BEGIN:VCALENDAR/i.test(text.replace(/^﻿/, ''));
+}
+
+/** Two feed URLs name the same feed once normalised. */
+function sameFeed(a: string, b: string): boolean {
+    return normalizeICalUrl(a) === normalizeICalUrl(b);
+}
+
+/** One change to a holon's imported-calendar list, addressed by feed id. */
+export type ImportedCalendarEdit =
+    | { type: 'add'; entry: ImportedCalendar }
+    | { type: 'remove'; id: string }
+    | { type: 'toggle'; id: string }
+    /** `color` `#rrggbb`, or `''`/`null` to go back to the automatic colour. */
+    | { type: 'recolor'; id: string; color: string | null };
+
+/**
+ * `calendars` with `edit` (or each of `edits`, in order) applied.
+ *
+ * Every surface saves the list the same way: re-read the persisted list, apply
+ * the ONE change the person made to that fresh copy, write it back. Never a
+ * union with what a surface held in memory — that would resurrect a feed
+ * removed on another device. An edit naming an id that is no longer there is
+ * a no-op; an add of a feed already followed is too (see
+ * {@link appendImportedCalendar}).
+ */
+export function applyCalendarEdit(
+    calendars: readonly ImportedCalendar[],
+    edit: ImportedCalendarEdit | readonly ImportedCalendarEdit[]
+): ImportedCalendar[] {
+    const edits = Array.isArray(edit) ? edit : [edit as ImportedCalendarEdit];
+    let out = [...calendars];
+    for (const e of edits) {
+        switch (e.type) {
+            case 'add':
+                out = appendImportedCalendar(out, e.entry);
+                break;
+            case 'remove':
+                out = out.filter((c) => c.id !== e.id);
+                break;
+            case 'toggle':
+                out = out.map((c) => (c.id === e.id ? { ...c, enabled: !c.enabled } : c));
+                break;
+            case 'recolor': {
+                const clean = normalizeHolonColor(e.color ?? '');
+                out = out.map((c) => {
+                    if (c.id !== e.id) return c;
+                    const { color: _drop, ...rest } = c;
+                    return clean ? { ...rest, color: clean } : rest;
+                });
+                break;
+            }
+        }
+    }
+    return out;
+}
+
+/**
+ * `calendars` with `entry` added — unless the same feed is already followed,
+ * in which case the list comes back unchanged (no duplicate subscriptions).
+ */
+export function appendImportedCalendar(
+    calendars: readonly ImportedCalendar[],
+    entry: ImportedCalendar
+): ImportedCalendar[] {
+    if (calendars.some((c) => c.id === entry.id || sameFeed(c.url, entry.url))) return [...calendars];
+    return [...calendars, entry];
 }
 
 /** The `webcal://` form of a feed URL — what a calendar app subscribes to. */

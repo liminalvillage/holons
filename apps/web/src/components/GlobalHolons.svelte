@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
     import { createEventDispatcher, onMount, onDestroy, getContext } from "svelte";
     import { fade, slide } from "svelte/transition";
     import { goto } from "$app/navigation";
@@ -592,8 +593,8 @@
     <div class="bg-gradient-to-r from-gray-800 to-gray-700 py-6 px-8 rounded-3xl shadow-2xl">
         <div class="flex flex-col md:flex-row justify-between items-center">
             <div class="text-center md:text-left mb-4 md:mb-0">
-                <h1 class="text-4xl font-bold text-white mb-2">Global Holons Network</h1>
-                <p class="text-gray-300 text-lg">Discover and explore all holons in the network</p>
+                <h1 class="text-4xl font-bold text-white mb-2">Global {words.Holons} Network</h1>
+                <p class="text-gray-300 text-lg">Discover and explore all {words.holons} in the network</p>
             </div>
             <div class="flex items-center space-x-4">
                 <button 
@@ -606,7 +607,7 @@
                 </button>
                 <div class="text-white text-right">
                     <p class="text-2xl font-bold">{holons.length}</p>
-                    <p class="text-sm text-gray-300">Total Holons</p>
+                    <p class="text-sm text-gray-300">Total {words.Holons}</p>
                         {#if statsComputed.size > 0 && statsComputed.size < holons.length}
                             <p class="text-xs text-blue-400">Stats: {statsComputed.size}/{holons.length}</p>
                             <div class="w-16 h-1 bg-gray-600 rounded-full mt-1">
@@ -630,7 +631,7 @@
                     <input
                         type="text"
                         bind:value={searchQuery}
-                        placeholder="Search holons by name, ID, or purpose..."
+                        placeholder="Search {words.holons} by name, ID, or purpose..."
                         class="w-full pl-10 pr-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                 </div>
@@ -659,17 +660,17 @@
         {#if isLoading && holons.length === 0}
             <div class="p-8 text-center">
                 <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                <p class="text-gray-400">Loading holons...</p>
+                <p class="text-gray-400">Loading {words.holons}...</p>
             </div>
         {:else if filteredHolons.length === 0}
             <div class="p-8 text-center">
                 {#if processingHolons.size > 0}
                     <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                    <p class="text-gray-400">Processing holons...</p>
-                    <p class="text-gray-500 text-sm mt-2">Found {processingHolons.size} holons, fetching data...</p>
+                    <p class="text-gray-400">Processing {words.holons}...</p>
+                    <p class="text-gray-500 text-sm mt-2">Found {processingHolons.size} {words.holons}, fetching data...</p>
                 {:else}
                 <i class="fas fa-search text-4xl text-gray-500 mb-4"></i>
-                <p class="text-gray-400 text-lg">No holons found</p>
+                <p class="text-gray-400 text-lg">No {words.holons} found</p>
                 <p class="text-gray-500 text-sm mt-2">Try adjusting your search criteria</p>
                 {/if}
             </div>
@@ -683,7 +684,7 @@
                                     on:click={() => handleSort('name')}
                                     class="flex items-center space-x-1 text-gray-300 hover:text-white transition-colors"
                                 >
-                                    <span>Holon</span>
+                                    <span>{words.Holon}</span>
                                     <i class="fas fa-sort text-xs"></i>
                                 </button>
                             </th>

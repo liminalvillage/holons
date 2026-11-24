@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
 	import { onMount } from 'svelte';
 	import { shortenUrl } from '../utils/url-shortener';
 
@@ -93,7 +94,7 @@
 		<!-- Action Info -->
 		<div class="action-info">
 			<p><strong>Action:</strong> {action.toLowerCase() === 'action' ? 'task' : action}</p>
-			<p><strong>Holon ID:</strong> {holonID}</p>
+			<p><strong>{words.Holon} ID:</strong> {holonID}</p>
 			{#if deckId}
 				<p><strong>Deck ID:</strong> {deckId}</p>
 			{/if}

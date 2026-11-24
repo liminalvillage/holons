@@ -8,6 +8,7 @@ import {
   dayIndexIn,
   isTimedValue,
   localDayNumber,
+  questCreatedAt,
   questSchedule,
   scheduleToFields,
   shiftSchedule,
@@ -293,5 +294,33 @@ describe('isTimedValue', () => {
     expect(isTimedValue('')).toBe(false);
     expect(isTimedValue(undefined)).toBe(false);
     expect(isTimedValue('2026-08-20T09:00:00.000Z')).toBe(true);
+  });
+});
+
+describe('questCreatedAt', () => {
+  it('reads an ISO created stamp', () => {
+    expect(questCreatedAt({ created: '2026-11-20T10:00:00.000Z' })?.toISOString()).toBe(
+      '2026-11-20T10:00:00.000Z',
+    );
+  });
+  it('reads epoch milliseconds and seconds', () => {
+    const ms = Date.UTC(2026, 10, 20, 10);
+    expect(questCreatedAt({ created: ms })?.getTime()).toBe(ms);
+    expect(questCreatedAt({ created: ms / 1000 })?.getTime()).toBe(ms);
+    expect(questCreatedAt({ created: String(ms) })?.getTime()).toBe(ms);
+  });
+  it('reads a bare date as local midnight, not UTC (no previous-day shift)', () => {
+    const d = questCreatedAt({ created: '2026-11-20' });
+    expect(d && [d.getFullYear(), d.getMonth(), d.getDate(), d.getHours()]).toEqual([2026, 10, 20, 0]);
+    expect(questCreatedAt({ created: '2026-13-40' })).toBeNull();
+  });
+  it('is null on missing or junk values', () => {
+    expect(questCreatedAt(null)).toBeNull();
+    expect(questCreatedAt({})).toBeNull();
+    expect(questCreatedAt({ created: '' })).toBeNull();
+    expect(questCreatedAt({ created: 'not a date' })).toBeNull();
+    expect(questCreatedAt({ created: NaN })).toBeNull();
+    expect(questCreatedAt({ created: -5 })).toBeNull();
+    expect(questCreatedAt({ created: {} })).toBeNull();
   });
 });

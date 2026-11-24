@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
   // Value Flows — the dashboard twin of the kiosk's Flows board, built the way
@@ -638,7 +639,7 @@
     windowDays,
     members: memberIds,
     nameOf: (id: string) => nameMap.get(id),
-    hubLabel: "Holon",
+    hubLabel: words.Holon,
   };
 
   $: graph = buildValueFlows(flowInput);
@@ -1623,7 +1624,7 @@
   <header class="top">
     <div class="titles">
       <h1>Value Flows</h1>
-      <p class="sub">Where this holon's value comes from, where it goes, and how it is shared out.</p>
+      <p class="sub">Where this {words.holon}'s value comes from, where it goes, and how it is shared out.</p>
     </div>
   </header>
 
@@ -2003,7 +2004,7 @@
         <div class="claims-panel">
           <h3>Claims on the fund</h3>
           {#if claimsProvisional}
-            <p class="note">This holon is not founded yet: who counts is provisional until the bot signs its membership.</p>
+            <p class="note">This {words.holon} is not founded yet: who counts is provisional until the bot signs its membership.</p>
           {/if}
           {#if selfId}
             <form class="claim-form" on:submit|preventDefault={submitClaim}>
@@ -2019,7 +2020,7 @@
                  like a claim, never taken back. -->
             <form class="claim-form give-form" on:submit|preventDefault={submitGive}>
               <label class="grow">Give to
-                <input type="text" list="give-parties" maxlength="80" bind:value={giveTo} placeholder="a member, a partner holon, or an id" required />
+                <input type="text" list="give-parties" maxlength="80" bind:value={giveTo} placeholder="a member, a partner {words.holon}, or an id" required />
                 <datalist id="give-parties">
                   {#each Object.keys(ceilings ?? {}).filter((id) => id !== selfId) as id (id)}<option value={id}>{partyName(id)}</option>{/each}
                 </datalist>
@@ -2089,7 +2090,7 @@
             </summary>
             <p class="note">
               How claims are judged: who may raise one, who attests, how many attestations count, and what
-              happens when two draw on the same thing. An admin's signed entry of the holon's policy log.
+              happens when two draw on the same thing. An admin's signed entry of the {words.holon}'s policy log.
             </p>
             {#if !rulesCanSign}
               <p class="note warn">Only an admin's signature sets the rules; yours would be recorded but not counted.</p>

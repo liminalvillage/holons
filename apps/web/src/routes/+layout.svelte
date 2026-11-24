@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn } from '$lib/vocabulary';
 	import { onDestroy, onMount } from 'svelte';
 	import { membersTrustedAuthors } from '@holons/core/holons';
 	import { goto } from '$app/navigation';
@@ -169,7 +170,7 @@
 					nameSource = 'hns';
 					console.log('Resolved name from HNS:', hnsName);
 				} else {
-					resolvedName = 'My Holon';
+					resolvedName = nn('My {@Holon}');
 					nameSource = 'fallback';
 				}
 			}
@@ -592,7 +593,7 @@
 				const homeHolonId = String(telegramUserId);
 				homeHolonIdOverride.set(homeHolonId);
 				if (browser) {
-					addVisitedHolon(null, homeHolonId, holonName || 'My Holon', 'personal');
+					addVisitedHolon(null, homeHolonId, holonName || nn('My {@Holon}'), 'personal');
 				}
 			}
 		} catch (err) {

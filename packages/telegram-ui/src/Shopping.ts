@@ -10,6 +10,7 @@
 
 import { Markup, Telegraf } from 'telegraf';
 import * as utils from './utilities.js';
+import { askArgs } from './AskMissing.js';
 
 import {
   createEmptyChecklist,
@@ -187,32 +188,31 @@ class Shopping {
     return msg.message_thread_id ? `Topic ${msg.message_thread_id}` : '';
   }
 
-  async buy(ctx: AnyCtx) {
+  async buy(ctx: AnyCtx): Promise<unknown> {
     const holonId = String(ctx.chat!.id);
     const language = await this.settings.getLanguage(holonId);
     const items = utils.parseList(ctx.message!.text);
     const category = this.getCategory(ctx);
 
     if (!items || items.length === 0) {
-      // No items provided, use InputScene to collect them.
-      return ctx.scene!.enter('input_scene', {
-        promptText: utils.i18next.t('shoppingprompt', { lng: language }),
-        inputType: 'array',
-        allowEmpty: false,
-        onComplete: async (cbCtx: AnyCtx, collected: string[]) => {
-          const cbHolonId = String(cbCtx.chat!.id);
-          const cbLanguage = await this.settings.getLanguage(cbHolonId);
-          // Use the original command's category — the InputScene reply may
-          // arrive in the general chat even if the user started in a topic.
-          await this.service.addItems(cbHolonId, collected, cbCtx.from?.id, category);
-          await cbCtx.reply(
-            utils.i18next.t('shoppingadded', {
-              items: collected.join(', '),
-              lng: cbLanguage,
-            }),
-          );
-        },
-      });
+      // No items given: ask for them, then run /buy again with the answer as
+      // its arguments — the original command keeps its topic (category).
+      const prompt = utils.i18next.t('shoppingprompt', { lng: language });
+      return askArgs(
+        ctx,
+        [
+          {
+            key: 'items',
+            ask: 'ask_buy_items',
+            question:
+              'What do you want to buy? Separate items with commas, e.g. milk, bread, eggs',
+            validate: (input: string) =>
+              input.split(',').some((item) => item.trim().length > 0),
+          },
+        ],
+        (again: object) => this.buy(again as AnyCtx),
+        { lng: language, usage: prompt },
+      );
     }
 
     await this.service.addItems(holonId, items, ctx.from?.id, category);

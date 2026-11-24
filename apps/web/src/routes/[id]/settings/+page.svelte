@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import { ID } from '../../../dashboard/store';
@@ -21,8 +22,8 @@
 </script>
 
 <svelte:head>
-  <title>Settings - Holon {holonId}</title>
-  <meta name="description" content="Configure settings for Holon {holonId}" />
+  <title>Settings - {words.Holon} {holonId}</title>
+  <meta name="description" content="Configure settings for {words.Holon} {holonId}" />
 </svelte:head>
 
 <Settings holonId={holonId} /> 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
     import { createEventDispatcher, onMount, getContext } from "svelte";
     import { fade, slide } from "svelte/transition";
     import type { HoloSphere } from "holosphere";
@@ -762,7 +763,7 @@
                                                 <div class="text-white truncate">
                                                     {resolvedName(c.id, $nameMap, null, c.name)}
                                                     {#if c.type === 'holon'}
-                                                        <span class="ml-1 text-[10px] uppercase text-gray-400">holon</span>
+                                                        <span class="ml-1 text-[10px] uppercase text-gray-400">{words.holon}</span>
                                                     {/if}
                                                 </div>
                                                 {#if c.resources.size > 0}
@@ -989,7 +990,7 @@
                                                     <div class="text-white truncate">
                                                         {resolvedName(c.id, $nameMap, null, c.name)}
                                                         {#if c.type === 'holon'}
-                                                            <span class="ml-1 text-[10px] uppercase text-gray-400">holon</span>
+                                                            <span class="ml-1 text-[10px] uppercase text-gray-400">{words.holon}</span>
                                                         {/if}
                                                     </div>
                                                     {#if c.resources.size > 0}

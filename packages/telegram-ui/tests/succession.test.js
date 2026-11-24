@@ -13,6 +13,7 @@ import { createHoloSphere } from '@holons/core/holosphere';
 import { syncMembersLog } from '@holons/core/protocol';
 import { readSuccessor } from '@holons/core/holons';
 import Succession, { migratedTo } from '../src/Succession.ts';
+import { shutdownAskMissing } from '../src/AskMissing.js';
 
 const key = () => {
   const sk = generateSecretKey();
@@ -90,6 +91,7 @@ async function setup({ admin = true, probe = async () => true } = {}) {
       chat: { id: Number(NEW), type: 'supergroup' },
       from,
       message: { text },
+      telegram,
     });
   return { hs, telegram, handlers, service, cache, adopt };
 }
@@ -165,8 +167,13 @@ describe('/adopt', () => {
     expect(await member.adopt(`/adopt ${OLD}`)).toBe('not-admin');
     expect(await readSuccessor(member.hs, OLD)).toBeNull();
 
-    const { hs, adopt, handlers } = await setup();
-    expect(await adopt('/adopt')).toBe('usage');
+    const { hs, adopt, handlers, telegram } = await setup();
+    // No id: the bot asks for it (src/AskMissing.js) instead of the usage.
+    telegram.sendMessage.mockClear();
+    expect(await adopt('/adopt')).toBe('asked');
+    expect(telegram.sendMessage).toHaveBeenCalledTimes(1);
+    expect(telegram.sendMessage.mock.calls[0][1]).toMatch(/id of this group/);
+    shutdownAskMissing();
     expect(await adopt('/adopt 12345')).toBe('usage');
     expect(await adopt(`/adopt ${NEW}`)).toBe('usage');
     expect(await adopt(`/adopt ${OLD}/settings`)).toBe('usage');

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn } from '$lib/vocabulary';
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import { page } from "$app/stores";
@@ -304,7 +305,7 @@
             }
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
+                notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
             } else {
                 console.error("Failed to toggle checklist item:", error);
             }
@@ -343,7 +344,7 @@
             }
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
+                notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
             } else {
                 console.error("Failed to clear checklist:", error);
             }
@@ -389,7 +390,7 @@
             showImportModal = false;
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
+                notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
             } else {
                 console.error("Failed to import checklists:", error);
             }
@@ -427,7 +428,7 @@
             inputText = "";
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
+                notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
             } else {
                 console.error("Failed to add item:", error);
             }
@@ -464,7 +465,7 @@
             console.log(`Created checklist for task ${taskId}: ${newChecklistId}`);
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
+                notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
             } else {
                 console.error("Error creating checklist for task:", error);
             }
@@ -492,7 +493,7 @@
             }
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to delete - no write permission for this holon');
+                notifyWriteDenied(nn('Unable to delete - no write permission for this {@holon}'));
             } else {
                 console.error("Failed to delete checklist:", error);
             }
@@ -522,7 +523,7 @@
             }
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
+                notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
             } else {
                 console.error("Failed to remove item:", error);
             }

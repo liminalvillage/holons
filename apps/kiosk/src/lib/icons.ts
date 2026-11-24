@@ -430,6 +430,16 @@ export const ICONS = {
       ...f("M18.2 3.4a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2Z"),
     ],
   },
+  // Metatron's cube: the noosphere, the flower of life's centres joined
+  // by straight lines — each holon a seed with its partners round it.
+  metatron: {
+    paths: s(
+      "M12 3L19.8 7.5V16.5L12 21L4.2 16.5V7.5Z",
+      "M12 3L19.8 16.5H4.2Z",
+      "M12 21L4.2 7.5H19.8Z",
+      "M12 9.8a2.2 2.2 0 1 1 0 4.4 2.2 2.2 0 0 1 0-4.4Z",
+    ),
+  },
   // A clock face with one hand: the year drawn as a dial.
   dial: { paths: s(CIRCLE, "M12 12V5.5", "M12 12l4 2.4") },
   // Two straight lines: the year drawn as lines.

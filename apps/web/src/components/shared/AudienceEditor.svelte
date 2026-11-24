@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn, words } from '$lib/vocabulary';
 	import { nameMap, resolvedName } from "$lib/stores/nameResolver";
 	import { get } from "svelte/store";
     // SPDX-License-Identifier: AGPL-3.0-or-later
@@ -106,8 +107,8 @@
             ? "Making it public rewrites this item in the clear, and its changes stay public, for anyone to read."
             : "Making it public rewrites every item of this lens in the clear, old and new, for anyone to read."
         : scope.item
-          ? "Making it private seals this item and every change to it, so only this holon's members and the holons you share it with can read it. What was read before stays read."
-          : "Making it private seals every item of this lens — the ones already here and every new one — so only this holon's members and the holons you share it with can read them. What was read before stays read.";
+          ? nn("Making it private seals this item and every change to it, so only this {@holon}'s members and the {@holons} you share it with can read it. What was read before stays read.")
+          : nn("Making it private seals every item of this lens — the ones already here and every new one — so only this {@holon}'s members and the {@holons} you share it with can read them. What was read before stays read.");
     const add = (id: string, name?: string) => {
         if (name) names = { ...names, [id]: name };
         addOpen = false;
@@ -183,15 +184,15 @@
         {#if addOpen}
             <div class="aud__picker">
                 {#if candidates.length}
-                    <p class="aud__group">Federated holons</p>
+                    <p class="aud__group">Federated {words.holons}</p>
                     <div class="aud__opts">
                         {#each candidates as p (p.id)}
                             <button type="button" class="aud__opt" disabled={!!busy} on:click={() => add(p.id, p.name)}>{p.name}</button>
                         {/each}
                     </div>
                 {/if}
-                <p class="aud__group">Any holon</p>
-                <input class="aud__search" type="search" bind:value={query} placeholder="Name or holon id" autocomplete="off" />
+                <p class="aud__group">Any {words.holon}</p>
+                <input class="aud__search" type="search" bind:value={query} placeholder="Name or {words.holon} id" autocomplete="off" />
                 {#if hits.length}
                     <div class="aud__opts">
                         {#each hits as h (h.id)}
@@ -201,7 +202,7 @@
                         {/each}
                     </div>
                 {:else if query.trim().length >= 2}
-                    <p class="aud__hint">No holon by that name.</p>
+                    <p class="aud__hint">No {words.holon} by that name.</p>
                 {/if}
             </div>
         {/if}

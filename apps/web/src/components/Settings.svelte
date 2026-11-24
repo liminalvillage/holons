@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn, words } from '$lib/vocabulary';
   import { readHolonSettings } from '@holons/core/settings';
   import { onMount, onDestroy, getContext } from 'svelte';
   import { get } from 'svelte/store';
@@ -454,10 +455,10 @@
     foundBusy = true;
     try {
       await foundHolon(holosphere, holonId, { name: settings.name || undefined });
-      showNotification('Started: your key now signs for this hub', 'success');
+      showNotification(nn('Started: your key now signs for this {@holon}'), 'success');
       await loadFounding(holonId);
     } catch (err) {
-      showNotification(`Could not start this hub — ${reasonOf(err)}`, 'error');
+      showNotification(`Could not start this ${words.holon} — ${reasonOf(err)}`, 'error');
     } finally {
       foundBusy = false;
     }
@@ -617,7 +618,7 @@
             <h3 class="settings-section__title">Identity</h3>
 
             <div class="settings-field">
-              <span class="settings-field__label">Holon ID</span>
+              <span class="settings-field__label">{words.Holon} ID</span>
               <code class="settings-field__readonly">{settings.id || 'Not set'}</code>
             </div>
 
@@ -630,7 +631,7 @@
                 bind:value={settings.name}
                 on:blur={() => updateSetting('name', settings.name)}
                 on:keydown={(e) => e.key === 'Enter' && updateSetting('name', settings.name)}
-                placeholder="Enter holon name"
+                placeholder="Enter {words.holon} name"
               />
             </div>
 
@@ -795,7 +796,7 @@
             <textarea
               class="input"
               rows="3"
-              placeholder="Define your holon's purpose…"
+              placeholder="Define your {words.holon}'s purpose…"
               bind:value={settings.purpose}
               on:blur={() => updateSetting('purpose', settings.purpose)}
             ></textarea>
@@ -913,7 +914,7 @@
             {#if founding?.kind === 'anchored'}
               {#if keyed(holonId) && standing === 'held'}
                 <p class="hub-key__note hub-key__note--warn">
-                  You (<strong>{resolvedName(holosphere?.currentPubkey ?? '', $nameMap)}</strong>) aren't linked to this hub yet,
+                  You (<strong>{resolvedName(holosphere?.currentPubkey ?? '', $nameMap)}</strong>) aren't linked to this {words.holon} yet,
                   so only this device sees your changes. Ask below — the ask is signed by your key, nothing else is needed.
                   {#if isTelegramChatId(holonId)}
                     Or link this key to your Telegram account: send <code>/key</code> to the bot in a private chat.
@@ -931,29 +932,29 @@
                   </button>
                 {/if}
               {:else if keyed(holonId) && standing === 'accepted'}
-                <p class="hub-key__note">Your key is linked to this hub: your changes count for everyone.</p>
+                <p class="hub-key__note">Your key is linked to this {words.holon}: your changes count for everyone.</p>
               {/if}
               {#if isTelegramChatId(holonId)}
                 <p class="hub-key__note">
-                  <strong>Telegram chat</strong> · This hub started in a Telegram chat and stays linked to it: the chat's members are linked here.
+                  <strong>Telegram chat</strong> · This {words.holon} started in a Telegram chat and stays linked to it: the chat's members are linked here.
                 </p>
               {/if}
             {:else if founding?.kind === 'self'}
-              <p class="hub-key__note">This holon is its own key.</p>
+              <p class="hub-key__note">This {words.holon} is its own key.</p>
             {:else if founding?.kind === 'bot'}
               <p class="hub-key__note hub-key__note--warn">
-                This hub started in Telegram; its bot gives it a key the first time it runs with
+                This {words.holon} started in Telegram; its bot gives it a key the first time it runs with
                 signing on. Until then nothing can be linked to it.
               </p>
             {:else if founding?.kind === 'open'}
               <p class="hub-key__note hub-key__note--warn">
-                This hub has no key of its own yet. Start it with yours: you become its first admin.
+                This {words.holon} has no key of its own yet. Start it with yours: you become its first admin.
               </p>
               <button type="button" class="btn btn--primary btn--sm" disabled={foundBusy} on:click={foundThisHub}>
-                Start this hub with my key
+                Start this {words.holon} with my key
               </button>
             {:else if founding?.kind === 'cell'}
-              <p class="hub-key__note">A cell aggregates many holons: nobody starts it.</p>
+              <p class="hub-key__note">A cell aggregates many {words.holons}: nobody starts it.</p>
             {:else}
               <p class="hub-key__note">Reading the relays…</p>
             {/if}
@@ -1047,7 +1048,7 @@
               {/each}
               {#if linkAccept}
                 <p class="hub-key__note">
-                  Link <strong>{linkAccept.record.chat?.title || linkAccept.chat}</strong>? The chat's members are linked here, the bot's key becomes an admin of this hub, and both boards show each other's items.
+                  Link <strong>{linkAccept.record.chat?.title || linkAccept.chat}</strong>? The chat's members are linked here, the bot's key becomes an admin of this {words.holon}, and both boards show each other's items.
                 </p>
                 <div class="hub-key__actions">
                   <button type="button" class="btn btn--primary btn--sm" disabled={linkBusy} on:click={confirmTelegramLink}>Link it</button>

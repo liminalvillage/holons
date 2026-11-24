@@ -1,6 +1,7 @@
 import { Scenes, Markup } from 'telegraf';
 import { getholonId } from '../src/utilities.js';
 import { completeStep } from './flow.js';
+import { holonText } from '../utils/holonNoun.js';
 
 // Create a scene
 const h3Scene = new Scenes.BaseScene('h3');
@@ -12,7 +13,9 @@ h3Scene.enter(async ctx => {
 
   ctx
     .reply(
-      "Please click the 'Select Hexagon' button below, zoom in and select the hexagon where this holon is located / centered on.",
+      holonText(
+        "Please click the 'Select Hexagon' button below, zoom in and select the hexagon where this {@holon} is located / centered on."
+      ),
       Markup.keyboard([
         Markup.button.webApp(
           'Select Hexagon',

@@ -25,11 +25,12 @@
     completionRequest,
     editOnOpen,
     partnerNames,
+    names,
     showNotice,
     minute,
     standing,
   } from "$lib/stores";
-  import { may } from "@holons/core/holosphere";
+  import { may, questWriteTarget } from "@holons/core/holosphere";
   import { holonColors } from "$lib/palette";
   import { selectionCardUrl } from "$lib/cardlink";
   import { requestSwitch, segmentFor } from "$lib/dock";
@@ -40,10 +41,12 @@
   import { privacyOfHolon, type Audience } from "@holons/core/privacy";
   import AudienceEditor from "./AudienceEditor.svelte";
   import {
+    acceptedIn,
     refreshQuestMessages,
     toggleJoin,
     toggleAppreciate,
   } from "$lib/membership";
+  import { nameFor } from "$lib/names";
   import {
     checkComplete,
     checkOccurrenceComplete,
@@ -99,6 +102,7 @@
     isQuestSettled,
     isRecurring,
     questFrequency,
+    questCreatedAt,
     questKind,
     questSchedule,
     scheduleToFields,
@@ -152,6 +156,17 @@
   // A locally-built draft (e.g. long-press on the calendar) not yet written to
   // Holosphere: Cancel discards it and Save needs a title before it can land.
   $: isNew = !!(sel && sel.kind !== "thing" && sel.isNew);
+  // "Added {date} · by {name}": core reads the stamp (ISO or legacy epoch);
+  // the name follows the resolver as it learns it.
+  const ADDED_DAY: Intl.DateTimeFormatOptions = {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  };
+  $: createdAt = quest ? questCreatedAt(quest) : null;
+  // `$names` is read so the line re-renders as the resolver learns names.
+  $: initiatorName =
+    $names && quest?.initiator ? personName(quest.initiator) : "";
   $: item = sel && sel.kind === "thing" ? sel.item : null;
   $: tint = isThing ? "var(--card)" : noteColor(quest?.category);
 
@@ -961,9 +976,19 @@
     );
   }
 
-  async function putQuest(updated: Quest): Promise<boolean> {
-    const holon = $holonId;
-    if (!holon) return false;
+  async function putQuest(edited: Quest): Promise<boolean> {
+    // A card federated in from a partner (or a resolved hologram) is edited
+    // where it lives, under the source's key — writing our own holon would fork
+    // a stray local copy. Provenance tags are never persisted.
+    const target = questWriteTarget(edited, $holonId);
+    if (!target) return false;
+    const { holon, record: updated } = target;
+    // A key the source holon does not seat would be stored but never shown
+    // there: say so instead of "saving" into the void.
+    if (target.foreign && !(await acceptedIn(holon))) {
+      message = $t("detail.editHeld", { holon: nameFor(holon) });
+      return false;
+    }
     const writer = await getWriter(holon, (m) => (message = m));
     const ok = await writer.put("quests", updated);
     if (!ok) {
@@ -1287,8 +1312,14 @@
       // be written there, not onto the local pointer. lib/membership resolves
       // that, reads fresh, and applies core's participate-XOR-appreciate rule.
       const id = String(sel.quest.id ?? sel.quest.title);
-      const ok = await toggleJoin($holonId, id, user, sourceRef(sel.quest, id));
-      if (ok) closeDetail();
+      const ref = sourceRef(sel.quest, id);
+      const ok = await toggleJoin($holonId, id, user, ref);
+      if (ok === "held-join" || ok === "held-leave")
+        message = $t(
+          ok === "held-join" ? "detail.joinHeld" : "detail.leaveHeld",
+          { holon: nameFor(ref?.holon ?? $holonId) },
+        );
+      else if (ok) closeDetail();
       else message = $t("detail.joinFailed");
     } catch (err) {
       message = (err as Error)?.message || $t("detail.joinFailed");
@@ -2210,6 +2241,20 @@
         </section>
       {/if}
 
+      <!-- When the card was added, and by whom — for everyone, read-only. -->
+      {#if !isNew && createdAt}
+        <p class="added">
+          {initiatorName
+            ? $t("detail.addedBy", {
+                date: createdAt.toLocaleDateString($locale, ADDED_DAY),
+                name: initiatorName,
+              })
+            : $t("detail.added", {
+                date: createdAt.toLocaleDateString($locale, ADDED_DAY),
+              })}
+        </p>
+      {/if}
+
       <!-- The story: running text, typed where it is read. -->
       {#if canEdit}
         <div class="story">
@@ -2858,6 +2903,11 @@
   .when.done {
     text-decoration: line-through;
     opacity: 0.7;
+  }
+  .added {
+    color: var(--ink-soft);
+    font-size: 0.85rem;
+    margin: 0 0 0.5rem;
   }
   .repeats {
     color: var(--ink-soft);

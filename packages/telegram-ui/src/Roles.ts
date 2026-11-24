@@ -12,6 +12,13 @@ import * as utils from './utilities.js';
 import { createPaddedCaption } from './utilities.js';
 import fs from 'fs';
 import { miniAppButton, miniApps } from './MiniApps.js';
+import { askArgs, askMissing, withArgs } from './AskMissing.js';
+
+/** What follows the command word (`/cmd` or `/cmd@BotName`). */
+const commandArgs = (text) => (text || '').replace(/^\/\S+\s*/, '').trim();
+
+/** A role title as the commands compare it: trimmed, outer quotes dropped. */
+const bareTitle = (text) => text.trim().replace(/^["']|["']$/g, '');
 import {
     normalizeParticipants,
     toggleParticipant as coreToggleRoleParticipant,
@@ -150,6 +157,20 @@ export default class Roles {
 
     }
 
+    /**
+     * Answer check for a dialogue question that names an existing role (see
+     * AskMissing.js): true, or the line to ask again under. `quoted` matches
+     * the commands that accept the title in quotes.
+     */
+    existingRole(holonId, { quoted = false } = {}) {
+        return async (answer, _values, _ctx, t) => {
+            if (answer.includes('|')) return t('ask_err_addrole_title', 'Please send only the title, without "|".');
+            const title = quoted ? bareTitle(answer) : answer;
+            const roles = await this.db.getAll(holonId.toString(), 'roles');
+            return roles.some(role => role.title === title) ? true : t('ask_err_role_unknown', 'Role "{{title}}" not found.', { title });
+        };
+    }
+
     async addrole(ctx) {
         if (!(await utils.isAdmin(ctx))) {
             ctx.reply('Only admins can add roles');
@@ -160,18 +181,33 @@ export default class Roles {
         let messageText = ctx.message.text;
         
         // Parse command: /addrole Title | Description (description is optional)
-        let commandParts = messageText.substring(9).trim(); // Remove '/addrole '
-        if (!commandParts) {
-            ctx.reply('Please provide a title for the role. Eg: /addrole Space Angel | Responsible for welcoming new members');
-            return;
-        }
-        
+        let commandParts = commandArgs(messageText);
+
         // Split by | to separate title and description
         let [title, description] = commandParts.split('|').map(part => part.trim());
-        
+
         if (!title) {
-            ctx.reply('Please provide a title for the role. Eg: /addrole Space Angel | Responsible for welcoming new members');
-            return;
+            // Ask for the title, and for the description when none was
+            // typed (it can be skipped); the answers re-enter as
+            // `/addrole <title> | <description>`.
+            const questions = [{
+                key: 'title',
+                ask: 'ask_addrole_title',
+                question: 'What is the title of the new role?',
+                validate: answer => !answer.includes('|') && !!answer.trim(),
+                error: 'ask_err_addrole_title',
+                errorText: 'Please send only the title, without "|".',
+            }];
+            if (!description) questions.push({
+                key: 'description',
+                ask: 'ask_addrole_description',
+                question: 'What is the role "{{title}}" responsible for?',
+                optional: true,
+            });
+            return askMissing(ctx, questions, (v, ctx) => {
+                const about = v.description || description;
+                return this.addrole(withArgs(ctx, about ? `${v.title} | ${about}` : v.title));
+            }, { usage: 'Please provide a title for the role. Eg: /addrole Space Angel | Responsible for welcoming new members' });
         }
         
         let role = {
@@ -248,6 +284,14 @@ export default class Roles {
             return;
         }
         let title = ctx.message.text.split(' ').slice(1).join(' ');
+        if (!title.trim()) {
+            return askArgs(ctx, [{
+                key: 'title',
+                ask: 'ask_removerole_title',
+                question: 'Which role should I remove?',
+                validate: this.existingRole(holonId),
+            }], ctx => this.removerole(ctx), { usage: 'Please provide a role title. Eg: /removerole Space Angel' });
+        }
         let roles = await this.db.getAll(holonId.toString(), 'roles');
         let role = roles.find(role => role.title == title);
         if (role) {
@@ -294,18 +338,30 @@ export default class Roles {
         let messageText = ctx.message.text;
         
         // Parse command: /editrole "Role Title" | New Description
-        let commandParts = messageText.substring(10).trim(); // Remove '/editrole '
-        if (!commandParts) {
-            ctx.reply('Please provide role title and new description. Eg: /editrole Space Angel | Updated description of responsibilities');
-            return;
-        }
-        
+        let commandParts = commandArgs(messageText);
+
         // Split by | to separate title and description
         let [title, newDescription] = commandParts.split('|').map(part => part.trim());
-        
+
         if (!title || !newDescription) {
-            ctx.reply('Please provide both role title and description. Eg: /editrole Space Angel | Updated description of responsibilities');
-            return;
+            // Ask for whatever is missing; the answers re-enter as
+            // `/editrole <title> | <description>`.
+            const questions = [];
+            if (!title) questions.push({
+                key: 'title',
+                ask: 'ask_editrole_title',
+                question: 'Which role do you want to edit?',
+                validate: this.existingRole(holonId, { quoted: true }),
+            });
+            if (!newDescription) questions.push({
+                key: 'description',
+                ask: 'ask_editrole_description',
+                question: 'What is the new description of "{{title}}"?',
+                vars: v => ({ title: bareTitle(v.title || title) }),
+            });
+            return askMissing(ctx, questions, (v, ctx) =>
+                this.editrole(withArgs(ctx, `${v.title || title} | ${v.description || newDescription}`)),
+                { usage: 'Please provide both role title and description. Eg: /editrole Space Angel | Updated description of responsibilities' });
         }
         
         // Remove quotes if present
@@ -331,10 +387,14 @@ export default class Roles {
         let messageText = ctx.message.text;
         
         // Parse command: /roleinfo Role Title
-        let roleTitle = messageText.substring(10).trim(); // Remove '/roleinfo '
+        let roleTitle = commandArgs(messageText);
         if (!roleTitle) {
-            ctx.reply('Please provide a role title. Eg: /roleinfo Space Angel');
-            return;
+            return askArgs(ctx, [{
+                key: 'title',
+                ask: 'ask_roleinfo_title',
+                question: 'Which role do you want to know about?',
+                validate: this.existingRole(holonId, { quoted: true }),
+            }], ctx => this.roleinfo(ctx), { usage: 'Please provide a role title. Eg: /roleinfo Space Angel' });
         }
         
         // Remove quotes if present

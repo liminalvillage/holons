@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn } from '$lib/vocabulary';
 	// SPDX-License-Identifier: AGPL-3.0-or-later
 	//
 	// Confirm who actually took part before a completion is recorded. The
@@ -195,7 +196,7 @@
 			</div>
 		{:else if visibleRows.length === 0}
 			<p class="text-gray-500 text-sm py-6 text-center">
-				{search ? 'No matching members' : 'No users in this holon'}
+				{search ? 'No matching members' : nn('No users in this {@holon}')}
 			</p>
 		{/if}
 	</div>

@@ -421,3 +421,76 @@ describe('nodeBreakdown', () => {
     expect(rolledUpNodes(many, l, 'hub')).toEqual([]);
   });
 });
+
+describe('layoutSankey with unit lanes', () => {
+  /** Every unit together: two givers, a hub, two receivers, two units. */
+  const combined: ValueFlowTrack = {
+    id: 'combined',
+    unit: '',
+    nodes: [
+      { id: 'a', label: 'A', depth: 0, value: 100 },
+      { id: 'b', label: 'B', depth: 0, value: 60 },
+      { id: 'h', label: 'Hub', depth: 1, value: 160 },
+      { id: 'x', label: 'X', depth: 2, value: 100 },
+      { id: 'y', label: 'Y', depth: 2, value: 40 },
+    ],
+    links: [
+      { id: 'a-h-usd', source: 'a', target: 'h', value: 40, unit: 'usd' },
+      { id: 'a-h-eur', source: 'a', target: 'h', value: 60, unit: 'eur' },
+      { id: 'b-h-usd', source: 'b', target: 'h', value: 60, unit: 'usd' },
+      // The hub sends on all its eur but only part of its usd.
+      { id: 'h-x-eur', source: 'h', target: 'x', value: 60, unit: 'eur' },
+      { id: 'h-x-usd', source: 'h', target: 'x', value: 40, unit: 'usd' },
+      { id: 'h-y-usd', source: 'h', target: 'y', value: 40, unit: 'usd' },
+    ],
+    totalIn: 160,
+    totalOut: 140,
+    balance: null,
+  };
+
+  /** Where a ribbon meets its source (`out`) or its target (`in`). */
+  const ends = (path: string) => {
+    const ys = [...path.matchAll(/(-?\d*\.?\d+),(-?\d*\.?\d+)/g)].map((m) =>
+      Number(m[2]),
+    );
+    return { out: [ys[0], ys[7]], in: [ys[3], ys[4]] };
+  };
+
+  const layout = layoutSankey(combined, { unitLanes: true });
+  const link = (id: string) => layout.links.find((l) => l.id === id)!;
+  const node = (id: string) => layout.nodes.find((n) => n.id === id)!;
+
+  it('gives every unit one lane per bar, in one order everywhere', () => {
+    // usd is seen first, so it is the upper lane on every bar.
+    const hub = node('h');
+    expect(ends(link('a-h-usd').path).in[0]).toBeCloseTo(hub.y, 4);
+    expect(ends(link('h-x-usd').path).out[0]).toBeCloseTo(hub.y, 4);
+    expect(ends(link('a-h-usd').path).out[0]).toBeCloseTo(node('a').y, 4);
+    expect(ends(link('h-x-usd').path).in[0]).toBeCloseTo(node('x').y, 4);
+  });
+
+  it('lets a unit leave a bar where it came in', () => {
+    // eur arrives below all of the hub's usd, and leaves from the same place.
+    const eurIn = ends(link('a-h-eur').path).in;
+    const eurOut = ends(link('h-x-eur').path).out;
+    expect(eurOut[0]).toBeCloseTo(eurIn[0], 4);
+    expect(eurOut[1]).toBeCloseTo(eurIn[1], 4);
+  });
+
+  it('makes a lane as long as its bigger side, leaving the rest empty', () => {
+    // usd: 100 in, 80 out — the lane is 100 long; eur starts after it.
+    const usdIn = ends(link('b-h-usd').path).in;
+    const usdOutEnd = ends(link('h-y-usd').path).out[1];
+    const eurStart = ends(link('a-h-eur').path).in[0];
+    expect(usdIn[1]).toBeCloseTo(eurStart, 4);
+    expect(usdOutEnd).toBeLessThan(eurStart);
+    const hub = node('h');
+    expect(hub.y + hub.h).toBeCloseTo(ends(link('a-h-eur').path).in[1], 4);
+  });
+
+  it('leaves the default layout as it was', () => {
+    const plain = layoutSankey(combined);
+    expect(ends(plain.links.find((l) => l.id === 'h-x-eur')!.path).out[0])
+      .toBeCloseTo(node('h').y, 4);
+  });
+});

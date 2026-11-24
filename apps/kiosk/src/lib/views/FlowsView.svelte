@@ -58,14 +58,18 @@
     flowsViewMode,
     now,
     offerSettings,
+    flowsUnit,
+    flowsUnitOptions,
+    flowsEditUnits,
+    flowsWindowChoice,
+    pickFlowsUnit,
+    pickFlowsWindow,
   } from "$lib/stores";
+  import FlowsViewPicker from "$lib/components/FlowsViewPicker.svelte";
+  import { LAYOUT_SEGMENTS } from "$lib/pills";
+  import { setFlowsView, type FlowsViewMode } from "$lib/config";
+  import { unitHue } from "$lib/unithues";
   import { t, locale, type MessageKey, type Translator } from "$lib/i18n";
-  import {
-    resolveFlowsUnit,
-    setFlowsUnit,
-    resolveFlowsWindow,
-    setFlowsWindow,
-  } from "$lib/config";
   import {
     getHolosphere,
     subscribeLens,
@@ -104,7 +108,6 @@
     buildValueFlows,
     windowFromChoice,
     type FlowsWindow,
-    type FlowsWindowChoice,
     chordBreakdown,
     layoutChord,
     filterLedger,
@@ -147,7 +150,14 @@
     type ValueFlowTrack,
   } from "@holons/core/flows";
   import { getFederationSnapshot } from "@holons/core/federation";
-  import { loadSettings } from "@holons/core/settings";
+  import {
+    loadSettings,
+    currencyUsage,
+    readHolonCurrencies,
+    saveHolonCurrencies,
+  } from "@holons/core/settings";
+  import { getReaStore } from "$lib/holosphere";
+  import CurrenciesSheet from "$lib/components/CurrenciesSheet.svelte";
   import { buildNameMap } from "@holons/core/identity";
   import {
     computeMutualCredit,
@@ -190,19 +200,41 @@
   import type { Policy } from "@holons/core/protocol";
 
   // The period, one choice for every chart and statement on the board,
-  // picked in the settings drawer and kept per device. 90 days is the
+  // picked above the first graph or in the Filters sheet, kept per device. 90 days is the
   // default: long enough that a quiet month still shows structure, short
   // enough to describe the holon as it is now. A relative preset ("this
   // month", "30 days") resolves against the clock once an hour — not every
   // minute, since a new window object redraws every chart — so a kiosk left
   // alone rolls over on its own.
-  let windowChoice: FlowsWindowChoice = resolveFlowsWindow();
-  function pickWindow(choice: FlowsWindowChoice) {
-    windowChoice = choice;
-    setFlowsWindow(choice);
+  $: windowChoice = $flowsWindowChoice;
+
+  // ── The holon's currencies (✎ on the unit row) ──────────────────────────
+  let currenciesOpen = false;
+  async function saveCurrencies(list: string[]) {
+    if (!$currentUser) {
+      loginOpen.set(true);
+      throw new Error($t("currencies.signIn"));
+    }
+    if (!hid) return;
+    const store = await getReaStore();
+    const written = await saveHolonCurrencies(store, hid, list);
+    // Drawn at once; the written doc follows from the relay.
+    settings = { ...(settings ?? {}), currencies: written };
+  }
+
+  // The board's views, as tabs across its top (no longer a band pill).
+  // The graph view is named for what it draws: the flows.
+  const FLOWS_TABS = (["mine", "balances", "graph"] as const).map((id) => ({
+    id,
+    ...LAYOUT_SEGMENTS[id],
+    ...(id === "graph" ? { labelKey: "flows.tabFlows" as const } : {}),
+  }));
+  function pickFlowsView(mode: FlowsViewMode) {
+    flowsViewMode.set(mode);
+    setFlowsView(mode);
   }
   $: windowHour = Math.floor($now.getTime() / 3_600_000) * 3_600_000;
-  let flowsWindow: FlowsWindow = windowFromChoice(windowChoice);
+  let flowsWindow: FlowsWindow = windowFromChoice(get(flowsWindowChoice));
   $: {
     const next = windowFromChoice(windowChoice, windowHour);
     if (next.from !== flowsWindow.from || next.to !== flowsWindow.to)
@@ -249,6 +281,10 @@
   // The give: part of your access handed to another party, a `transfer` in
   // the same log, under the same ceiling. Opened on demand beside the claim.
   let giveOpen = false;
+  // The card leads with one number; the claim form and the statement (the
+  // receipt that number adds up from) open under it on demand.
+  let claimOpen = false;
+  let receiptOpen = false;
   let giveTo = "";
   let giveToOther = "";
   let giveAmount = "";
@@ -331,6 +367,19 @@
     myLogRole &&
     mintsCtx.policy.attesters.includes(myLogRole)
   );
+  // Funding the holon is offered in the add sheet beside an expense
+  // (BalancesView): same amount and unit chips, recorded as a mint.
+  $: fund = mintsCtx
+    ? {
+        canMint,
+        signable: !!logSigner,
+        units: potUnitList,
+        sources: partners
+          .filter((p) => p.kind !== "person")
+          .map((p) => ({ id: p.id, name: p.name })),
+        onMint: submitMint,
+      }
+    : null;
   async function submitMint(input: {
     amount: number;
     unit: string;
@@ -557,12 +606,9 @@
    * one chart each — never summed, because there are no exchange rates here.
    */
   const ALL_TRACKS = "all";
-  // Picked in the settings drawer; kept per device.
-  let trackId = resolveFlowsUnit();
-  function pickUnit(id: string) {
-    trackId = id;
-    setFlowsUnit(id);
-  }
+  // Picked above the first graph or in the Filters sheet; kept per device.
+  $: trackId = $flowsUnit;
+  const pickUnit = pickFlowsUnit;
   let selected: SankeyLayoutNode | null = null;
   /** The track a tapped movement bar belongs to; "all" draws several. */
   let selectedTrackKey = "";
@@ -673,7 +719,11 @@
     trackId === ALL_TRACKS
       ? combineTracks(tracks, combineOptions)
       : (tracks.find((t) => trackKey(t) === trackId) ?? null);
-  $: movementLayout = activeTrack ? layoutSankey(activeTrack) : null;
+  // Every unit together: each unit keeps one lane through every bar, so a
+  // colour leaves a bar where it came in.
+  $: movementLayout = activeTrack
+    ? layoutSankey(activeTrack, { unitLanes: true })
+    : null;
   // A combined bar's number is a share of each unit's own flow, so it reads as
   // a percentage; the real amounts ride on each node's and link's `display`.
   $: formatMovement =
@@ -923,6 +973,14 @@
   $: myShare =
     selfId && cascade ? (cascade.leaves[selfId]?.percentage ?? 0) : 0;
   $: myAccount = selfId ? fundAccount(rights, usageJudged, selfId) : null;
+  // How full the bar under the one number is: what is left of everything the
+  // viewer could direct (their right plus what others gave them).
+  $: leftPct = (() => {
+    const whole = (myAccount?.right ?? 0) + (myAccount?.received ?? 0);
+    if (!(whole > 0) || (myAccount?.over ?? 0) > 0) return 0;
+    const left = Math.max(0, myAccount?.available ?? 0);
+    return Math.min(100, (left / whole) * 100);
+  })();
 
   // ── The wallet: every unit at once ──────────────────────────────────────
   // One line per unit the viewer holds anything in — a seat on the fund,
@@ -964,7 +1022,30 @@
   function pickWalletUnit(unit: string) {
     walletPick = unit;
     potUnitPick = unit;
+    // The strip above is the board's one unit choice: follow it there too.
+    const id = `money:${normalizeCurrency(unit).toLowerCase()}`;
+    if (unitOptions.some((o) => o.id === id)) pickUnit(id);
   }
+  // …and the strip leads: a unit picked there is the wallet's line and the
+  // pot's unit, on every tab.
+  $: pickedCode =
+    trackId === ALL_TRACKS
+      ? ""
+      : trackId.slice(trackId.indexOf(":") + 1).toLowerCase();
+  $: if (trackId.startsWith("money:")) {
+    walletPick = pickedCode;
+    potUnitPick = pickedCode;
+  }
+  $: sameUnit = (u: string) =>
+    normalizeCurrency(u).toLowerCase() === pickedCode;
+  // The wallet lists only the picked unit; "All" lists every one.
+  $: walletShown = pickedCode ? wallet.filter((l) => sameUnit(l.unit)) : wallet;
+  // The shared tab is kept in currencies: a picked unit that is not one
+  // (hours, kudos, kg) has no sheet to show.
+  $: balancesUnit =
+    trackId === ALL_TRACKS || trackId.startsWith("money:")
+      ? null
+      : (unitOptions.find((o) => o.id === trackId)?.label ?? pickedCode);
   /** A person's own board → the hub a right comes from, on that unit's balance. */
   async function claimThere(r: InboundRight) {
     const unit = normalizeCurrency(r.unit).toLowerCase();
@@ -1251,9 +1332,13 @@
   // still need it). Money first, as the tracks lay it out.
   $: unitOptions = (() => {
     const opts = [...trackOptions];
-    for (const c of currencies) {
+    // The fund's own units (a mint, a token) too, so My balance can pick them.
+    // A unit already offered under another track (litres of oil moved as
+    // items) is not offered twice: picking it there picks the fund's too.
+    const code = (id: string) => id.slice(id.indexOf(":") + 1).toLowerCase();
+    for (const c of [...currencies, ...potUnitList]) {
       const id = `money:${c}`;
-      if (!opts.some((o) => o.id === id))
+      if (!opts.some((o) => o.id === id || code(o.id) === c.toLowerCase()))
         opts.push({ id, label: c.toUpperCase() });
     }
     return opts;
@@ -1266,8 +1351,32 @@
     unitOptions.length > 1 &&
     !unitOptions.some((o) => o.id === trackId)
   ) {
-    trackId = ALL_TRACKS;
+    flowsUnit.set(ALL_TRACKS);
   }
+  // A unit's colour is computed from its name (`unitHue`) — the lane label
+  // the combined Sankey names its ribbons with (`combineOptions.labelOf`) —
+  // so a chip is the colour of its ribbons, the same on every board.
+  $: laneOf = (() => {
+    const out = new Map<string, string>();
+    for (const tk of tracks) out.set(trackKey(tk), combineOptions.labelOf(tk));
+    for (const p of peopleTracks)
+      if (!out.has(peopleKey(p)))
+        out.set(peopleKey(p), combineOptions.labelOf(p));
+    for (const o of unitOptions)
+      if (!out.has(o.id) && o.id.startsWith("money:"))
+        out.set(
+          o.id,
+          combineOptions.labelOf({ id: "money", unit: o.id.slice(6) }),
+        );
+    return out;
+  })();
+  // The pickers (above the graph, in the Filters sheet) offer these.
+  $: flowsUnitOptions.set(
+    unitOptions.map((o) => {
+      const lane = laneOf.get(o.id);
+      return { ...o, colour: lane ? unitHue(lane) : undefined };
+    }),
+  );
 
   // ── Derived: between people ─────────────────────────────────────────────
   // The same records with both ends kept: who gave what to whom, one matrix
@@ -1741,7 +1850,11 @@
     const unsub = holonId.subscribe((h) => {
       if (h !== hid) void bind(h);
     });
+    // The unit row's ✎ (above the board and in Filters) opens the holon's
+    // currencies while this board is on screen.
+    flowsEditUnits.set(() => (currenciesOpen = true));
     return () => {
+      flowsEditUnits.set(null);
       unsub();
       teardown();
       rotationHold.set(false);
@@ -1963,6 +2076,27 @@
 </script>
 
 <div class="board">
+  <!-- The board's three views as tabs, and under them the one unit + period
+       every view reads (also in Filters). Fixed above the scroll, so what
+       is shown is always said where it is read. -->
+  <div class="flows-head">
+    <div class="view-tabs" role="tablist" aria-label={$t("pills.flowsLayout")}>
+      {#each FLOWS_TABS as tab (tab.id)}
+        <button
+          type="button"
+          role="tab"
+          class="view-tab"
+          class:on={$flowsViewMode === tab.id}
+          aria-selected={$flowsViewMode === tab.id}
+          on:click={() => pickFlowsView(tab.id)}
+        >
+          <Icon name={tab.icon} class="vt-icon" />
+          <span>{$t(tab.labelKey)}</span>
+        </button>
+      {/each}
+    </div>
+    <FlowsViewPicker compact />
+  </div>
   <div class="scrollarea scroll">
     {#if loading}
       <p class="empty">{$t("flows.loading")}</p>
@@ -1977,7 +2111,16 @@
           <!-- Every unit at once: tokens, vouchers, mutual credit — each on
                its own line, nothing converted. The tapped line is the unit
                the statement below reads. -->
-          {#if wallet.length}
+          {#if wallet.length && !walletShown.length}
+            <p class="empty">
+              {$t("flows.walletNoneInUnit", {
+                unit: unitOptions.find((o) => o.id === trackId)?.label ?? "",
+              })}
+            </p>
+          {/if}
+          <!-- One unit is already the one number below: the list is for
+               telling several apart. -->
+          {#if walletShown.length > 1}
             <div class="account wallet">
               <div class="account-head">
                 <div>
@@ -1990,7 +2133,7 @@
                 role="radiogroup"
                 aria-label={$t("flows.walletTitle")}
               >
-                {#each wallet as l (l.unit)}
+                {#each walletShown as l (l.unit)}
                   <li>
                     <button
                       type="button"
@@ -2140,8 +2283,10 @@
                 {$t("flows.walletOpenBalances")}
               </button>
             </div>
-          {:else if myAccount}
-            <div class="account" class:over={myAccount.over > 0}>
+          {:else if myAccount && (!pickedCode || !potUnit || sameUnit(potUnit))}
+            <!-- The fund card is in the pot's unit: shown under "All" or when
+                 that unit is the one picked above. -->
+            <div class="account one" class:over={myAccount.over > 0}>
               <div class="account-head">
                 <div>
                   <div class="k">
@@ -2166,25 +2311,66 @@
                 >
               </div>
               {#if myAccount.right != null}
-                <div class="account-main">
-                  <span class="k"
+                <!-- One number: what is still yours to direct. Tapping it
+                     opens the receipt it adds up from. -->
+                <button
+                  type="button"
+                  class="one-number"
+                  aria-expanded={receiptOpen}
+                  on:click={() => (receiptOpen = !receiptOpen)}
+                >
+                  <span class="one-k"
                     >{myAccount.over > 0
                       ? $t("flows.accountOverBy")
-                      : $t("flows.available")}</span
+                      : $t("flows.oneYours")}</span
                   >
-                  <span class="v"
+                  <span class="one-v"
                     >{formatAccount(
                       myAccount.over > 0
                         ? myAccount.over
                         : (myAccount.available ?? 0),
                     )}</span
                   >
+                  <span class="one-of"
+                    >{$t("flows.oneOf", {
+                      right: formatAccount(myAccount.right),
+                    })}</span
+                  >
+                </button>
+                <div class="one-bar" aria-hidden="true">
+                  <span style={`width: ${leftPct}%`}></span>
                 </div>
-                <!-- Claiming is offered only for money that is actually
-                     yours to take: a collective to claim from, and something
-                     left after everything already spent or claimed. Someone
-                     who has overrun their right sees no button at all. -->
-                {#if potCollective && (myAccount.available ?? 0) > 0}
+                <div class="one-actions">
+                  <button
+                    type="button"
+                    class="act primary"
+                    aria-expanded={claimOpen}
+                    on:click={() => {
+                      claimOpen = !claimOpen;
+                      giveOpen = false;
+                    }}
+                  >
+                    {$t("flows.claimAction")}
+                  </button>
+                  {#if selfId}
+                    <button
+                      type="button"
+                      class="act"
+                      aria-expanded={giveOpen}
+                      disabled={!logSigner || !claimUnit}
+                      on:click={() => {
+                        giveOpen = !giveOpen;
+                        claimOpen = false;
+                      }}
+                    >
+                      {$t("flows.giveAction")}
+                    </button>
+                  {/if}
+                </div>
+                <!-- Claiming on the collective is offered only for money that
+                     is actually yours to take: a collective to claim from, and
+                     something left after everything already spent or claimed. -->
+                {#if claimOpen && potCollective && (myAccount.available ?? 0) > 0}
                   <a
                     class="claim"
                     href={`https://opencollective.com/${potCollective.slug}/expenses/new`}
@@ -2200,50 +2386,43 @@
                      you take from the fund, judged by its attesters, folded
                      the same way on every screen. -->
                 {#if selfId}
-                  <form
-                    class="claim-form"
-                    on:submit|preventDefault={submitClaim}
-                  >
-                    <label class="claim-field">
-                      <span class="k">{$t("flows.claimAmount")}</span>
-                      <input
-                        type="number"
-                        min="0.01"
-                        step="0.01"
-                        max={claimMax ?? undefined}
-                        inputmode="decimal"
-                        bind:value={claimAmount}
-                        required
-                      />
-                    </label>
-                    <label class="claim-field grow">
-                      <span class="k">{$t("flows.claimMemo")}</span>
-                      <input
-                        type="text"
-                        maxlength="140"
-                        bind:value={claimMemo}
-                      />
-                    </label>
-                    <button
-                      class="claim"
-                      type="submit"
-                      disabled={claimBusy ||
-                        !logSigner ||
-                        !claimUnit ||
-                        claimTooBig}
+                  {#if claimOpen}
+                    <form
+                      class="claim-form"
+                      on:submit|preventDefault={submitClaim}
                     >
-                      {$t("flows.claimRecord")}
-                    </button>
-                    <button
-                      class="claim ghost"
-                      type="button"
-                      aria-expanded={giveOpen}
-                      disabled={!logSigner || !claimUnit}
-                      on:click={() => (giveOpen = !giveOpen)}
-                    >
-                      {$t("flows.giveAction")}
-                    </button>
-                  </form>
+                      <label class="claim-field">
+                        <span class="k">{$t("flows.claimAmount")}</span>
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          max={claimMax ?? undefined}
+                          inputmode="decimal"
+                          bind:value={claimAmount}
+                          required
+                        />
+                      </label>
+                      <label class="claim-field grow">
+                        <span class="k">{$t("flows.claimMemo")}</span>
+                        <input
+                          type="text"
+                          maxlength="140"
+                          bind:value={claimMemo}
+                        />
+                      </label>
+                      <button
+                        class="claim"
+                        type="submit"
+                        disabled={claimBusy ||
+                          !logSigner ||
+                          !claimUnit ||
+                          claimTooBig}
+                      >
+                        {$t("flows.claimRecord")}
+                      </button>
+                    </form>
+                  {/if}
                   {#if giveOpen}
                     <!-- A give: a `transfer` in the same log, judged like a
                          claim, under the same access. It burns yours and
@@ -2331,7 +2510,7 @@
                         : ""}{$t("flows.giveHint")}
                     </p>
                   {/if}
-                  {#if claimMax != null}
+                  {#if claimOpen && claimMax != null}
                     <p class="claim-hint" class:error={claimTooBig}>
                       {$t("flows.claimMax", {
                         amount: formatAccount(claimMax),
@@ -2381,95 +2560,142 @@
                     </ul>
                   {/if}
                 {/if}
-                <dl class="statement">
-                  <div>
-                    <dt>{$t("flows.accountRight")}</dt>
-                    <dd>{formatAccount(myAccount.right)}</dd>
-                  </div>
-                  <!-- A statement is cumulative: this is everything drawn on
+                <div class="one-links">
+                  <button
+                    type="button"
+                    class="one-link"
+                    aria-expanded={receiptOpen}
+                    on:click={() => (receiptOpen = !receiptOpen)}
+                  >
+                    {$t("flows.oneStatement")}
+                    <Icon name="chevron-down" />
+                  </button>
+                  <button
+                    type="button"
+                    class="one-link"
+                    on:click={() => pickFlowsView("graph")}
+                  >
+                    {$t("flows.oneSource")}
+                  </button>
+                </div>
+                {#if receiptOpen}
+                  <dl class="statement receipt">
+                    <div>
+                      <dt>{$t("flows.accountRight")}</dt>
+                      <dd>{formatAccount(myAccount.right)}</dd>
+                    </div>
+                    <!-- A statement is cumulative: this is everything drawn on
                        the right, not just what moved in the period, so the
                        four lines below actually add up to what is left. -->
-                  <div>
-                    <dt>{$t("flows.spent")}</dt>
-                    <dd class="debit">
-                      −{formatAccount(myAccount.lifetimeSpent)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{$t("flows.claimed")}</dt>
-                    <dd class="debit">−{formatAccount(myAccount.claimed)}</dd>
-                  </div>
-                  {#if myAccount.received > 0}
                     <div>
-                      <dt>{$t("flows.accountReceived")}</dt>
-                      <dd class="credit">
-                        +{formatAccount(myAccount.received)}
+                      <dt>{$t("flows.spent")}</dt>
+                      <dd class="debit">
+                        −{formatAccount(myAccount.lifetimeSpent)}
                       </dd>
                     </div>
-                  {/if}
-                  {#if myAccount.given > 0}
                     <div>
-                      <dt>{$t("flows.accountGiven")}</dt>
-                      <dd class="debit">−{formatAccount(myAccount.given)}</dd>
+                      <dt>{$t("flows.claimed")}</dt>
+                      <dd class="debit">−{formatAccount(myAccount.claimed)}</dd>
                     </div>
-                  {/if}
-                  {#if walletSelected?.credit && walletSelected.unit === potUnit}
-                    <!-- Mutual credit is a ledger between people, not a draw
+                    {#if myAccount.received > 0}
+                      <div>
+                        <dt>{$t("flows.accountReceived")}</dt>
+                        <dd class="credit">
+                          +{formatAccount(myAccount.received)}
+                        </dd>
+                      </div>
+                    {/if}
+                    {#if myAccount.given > 0}
+                      <div>
+                        <dt>{$t("flows.accountGiven")}</dt>
+                        <dd class="debit">−{formatAccount(myAccount.given)}</dd>
+                      </div>
+                    {/if}
+                    <div class="total">
+                      <dt>
+                        {myAccount.over > 0
+                          ? $t("flows.accountOverBy")
+                          : $t("flows.oneTotal")}
+                      </dt>
+                      <dd>
+                        {formatAccount(
+                          myAccount.over > 0
+                            ? myAccount.over
+                            : (myAccount.available ?? 0),
+                        )}
+                      </dd>
+                    </div>
+                    {#if walletSelected?.credit && walletSelected.unit === potUnit}
+                      <!-- Mutual credit is a ledger between people, not a draw
                          on the fund: shown beside the statement, never summed
                          into it. -->
-                    <div class="foot">
-                      <dt>{$t("flows.walletCredit")}</dt>
-                      <dd
-                        class:debit={walletSelected.credit.net < 0}
-                        class:credit={walletSelected.credit.net > 0}
-                      >
-                        {signed(potUnit, walletSelected.credit.net)}
-                        <button
-                          class="linkish"
-                          type="button"
-                          on:click={() => openBalances(potUnit)}
-                          >{$t("flows.walletOpenBalances")}</button
+                      <div class="foot">
+                        <dt>{$t("flows.walletCredit")}</dt>
+                        <dd
+                          class:debit={walletSelected.credit.net < 0}
+                          class:credit={walletSelected.credit.net > 0}
                         >
+                          {signed(potUnit, walletSelected.credit.net)}
+                          <button
+                            class="linkish"
+                            type="button"
+                            on:click={() => openBalances(potUnit)}
+                            >{$t("flows.walletOpenBalances")}</button
+                          >
+                        </dd>
+                      </div>
+                    {/if}
+                    {#each myAccount.otherUnits as other (other.unit)}
+                      {#if other.spent > 0}
+                        <div class="foot">
+                          <dt>
+                            {$t("flows.spent")} · {other.unit.toUpperCase()}
+                          </dt>
+                          <dd>{moneyFormatter(other.unit, 2)(other.spent)}</dd>
+                        </div>
+                      {/if}
+                      {#if other.claimed > 0}
+                        <div class="foot">
+                          <dt>
+                            {$t("flows.claimed")} · {other.unit.toUpperCase()}
+                          </dt>
+                          <dd>
+                            {moneyFormatter(other.unit, 2)(other.claimed)}
+                          </dd>
+                        </div>
+                      {/if}
+                    {/each}
+                    <div class="foot">
+                      <dt>{$t("flows.accountVia")}</dt>
+                      <dd>
+                        {myAccount.side === "interior"
+                          ? myAccount.zone != null
+                            ? `${$t("flows.interior")} · ${$t("flows.tipZoneN", { n: String(myAccount.zone) })}`
+                            : $t("flows.interior")
+                          : myAccount.zone != null
+                            ? $t("flows.tipZoneN", {
+                                n: String(myAccount.zone),
+                              })
+                            : $t("flows.accountViaPassed")}
                       </dd>
                     </div>
-                  {/if}
-                  {#each myAccount.otherUnits as other (other.unit)}
-                    {#if other.spent > 0}
-                      <div class="foot">
-                        <dt>
-                          {$t("flows.spent")} · {other.unit.toUpperCase()}
-                        </dt>
-                        <dd>{moneyFormatter(other.unit, 2)(other.spent)}</dd>
-                      </div>
-                    {/if}
-                    {#if other.claimed > 0}
-                      <div class="foot">
-                        <dt>
-                          {$t("flows.claimed")} · {other.unit.toUpperCase()}
-                        </dt>
-                        <dd>{moneyFormatter(other.unit, 2)(other.claimed)}</dd>
-                      </div>
-                    {/if}
-                  {/each}
-                  <div class="foot">
-                    <dt>{$t("flows.accountVia")}</dt>
-                    <dd>
-                      {myAccount.side === "interior"
-                        ? myAccount.zone != null
-                          ? `${$t("flows.interior")} · ${$t("flows.tipZoneN", { n: String(myAccount.zone) })}`
-                          : $t("flows.interior")
-                        : myAccount.zone != null
-                          ? $t("flows.tipZoneN", { n: String(myAccount.zone) })
-                          : $t("flows.accountViaPassed")}
-                    </dd>
-                  </div>
-                </dl>
+                  </dl>
+                {/if}
               {:else}
-                <div class="account-main">
-                  <span class="k">{$t("flows.accountRight")}</span>
-                  <span class="v">{sharePct(myAccount.percentage)}%</span>
+                <div class="one-number still">
+                  <span class="one-k">{$t("flows.accountRight")}</span>
+                  <span class="one-v">{sharePct(myAccount.percentage)}%</span>
+                  <span class="one-of">{$t("flows.accountNoPot")}</span>
                 </div>
-                <p class="account-sub">{$t("flows.accountNoPot")}</p>
+                <div class="one-links">
+                  <button
+                    type="button"
+                    class="one-link"
+                    on:click={() => pickFlowsView("graph")}
+                  >
+                    {$t("flows.oneSource")}
+                  </button>
+                </div>
               {/if}
               {#if myPassesTo}
                 <p class="account-sub">
@@ -2553,26 +2779,44 @@
         </section>
 
         <!-- The shared tab: what you owe and are owed, and a way to settle. -->
+        {#if balancesUnit}
+          <p class="empty">
+            {$t("flows.balancesMoneyOnly", { unit: balancesUnit })}
+          </p>
+        {:else}
+          <BalancesView
+            holonId={hid ?? ""}
+            {expenses}
+            {people}
+            {currencies}
+            {currency}
+            mine
+            period={flowsWindow}
+            onCurrency={(c) => pickUnit(`money:${c}`)}
+            currencyPicker={false}
+            {fund}
+          />
+        {/if}
+      {/if}
+    {:else if $flowsViewMode === "balances"}
+      <!-- ── All balances ───────────────────────────────────────────────── -->
+      {#if balancesUnit}
+        <p class="empty">
+          {$t("flows.balancesMoneyOnly", { unit: balancesUnit })}
+        </p>
+      {:else}
         <BalancesView
           holonId={hid ?? ""}
           {expenses}
           {people}
           {currencies}
           {currency}
-          mine
+          period={flowsWindow}
           onCurrency={(c) => pickUnit(`money:${c}`)}
+          currencyPicker={false}
+          {fund}
         />
       {/if}
-    {:else if $flowsViewMode === "balances"}
-      <!-- ── All balances ───────────────────────────────────────────────── -->
-      <BalancesView
-        holonId={hid ?? ""}
-        {expenses}
-        {people}
-        {currencies}
-        {currency}
-        onCurrency={(c) => pickUnit(`money:${c}`)}
-      />
     {:else}
       <!-- ── Graph ──────────────────────────────────────────────────────── -->
       {#if !tracks.length && !peopleTracks.length && !hasAllocation}
@@ -2690,7 +2934,7 @@
                     class="chip pick"
                     class:on={u === potUnit}
                     aria-checked={u === potUnit}
-                    on:click={() => (potUnitPick = u)}>{u.toUpperCase()}</button
+                    on:click={() => pickWalletUnit(u)}>{u.toUpperCase()}</button
                   >
                 {/each}
               </div>
@@ -2786,6 +3030,15 @@
   </div>
 </div>
 
+{#if currenciesOpen}
+  <CurrenciesSheet
+    listed={readHolonCurrencies(settings)}
+    usage={currencyUsage(expenses)}
+    onSave={saveCurrencies}
+    on:close={() => (currenciesOpen = false)}
+  />
+{/if}
+
 {#if allocationOpen}
   <AllocationSettings
     holonId={hid ?? ""}
@@ -2799,22 +3052,15 @@
     scored={memberShares}
     shares={savedShares}
     collectiveSlug={readCollectiveSlug(settings)}
-    units={unitOptions}
-    unit={trackId}
-    period={windowChoice}
     policy={claimsCtx?.policy ?? null}
     policyRole={myLogRole}
     policySignable={!!logSigner}
     {partnerKeys}
     mints={mintsCtx?.folded.mints ?? []}
     mintUnits={potUnitList}
-    {canMint}
     {inbound}
     nameOf={(id) => nameFor(id)}
-    onMint={submitMint}
     on:policy={(e) => void savePolicy(e.detail)}
-    on:unit={(e) => pickUnit(e.detail)}
-    on:period={(e) => pickWindow(e.detail)}
     on:draft={(e) => (allocationDraft = e.detail)}
     on:close={closeAllocation}
     on:saved={() => void afterAllocationSave()}
@@ -2972,6 +3218,49 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+
+  .flows-head {
+    flex: none;
+    padding: 0.4rem 1.4rem 0;
+    border-bottom: 1.5px solid var(--line);
+  }
+  .view-tabs {
+    display: flex;
+    gap: 0.25rem;
+    margin-bottom: 0.6rem;
+    border-bottom: 1.5px solid var(--line);
+  }
+  .view-tab {
+    flex: 1 1 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    min-height: 44px;
+    margin-bottom: -1.5px;
+    padding: 0 0.6rem;
+    border-bottom: 3px solid transparent;
+    color: var(--ink-soft);
+    font-weight: 700;
+    font-size: 0.92rem;
+    white-space: nowrap;
+    touch-action: manipulation;
+    transition:
+      color 0.18s ease,
+      border-color 0.18s ease;
+  }
+  .view-tab.on {
+    color: var(--teal-ink);
+    border-bottom-color: var(--teal);
+  }
+  .view-tab :global(.vt-icon) {
+    flex: none;
+    width: 1.1rem;
+    height: 1.1rem;
+  }
+  .flows-head :global(.picker.compact) {
+    margin-bottom: 0.5rem;
   }
 
   .scrollarea {
@@ -3272,9 +3561,6 @@
   .hero .account-main .v {
     font-size: 2.6rem;
   }
-  .account.none {
-    border-left-color: var(--line);
-  }
   .account.none .account-sub {
     margin-top: 0.3rem;
     font-size: 0.95rem;
@@ -3287,10 +3573,27 @@
     border-radius: var(--radius);
     background: var(--card);
     box-shadow: var(--shadow-soft);
-    border-left: 4px solid var(--teal);
   }
-  .account.over {
-    border-left-color: #c0392b;
+  /* The one number stands on the page itself: no card, no edge, nothing
+     beside it. Its caption and share sit centred above it as plain text. */
+  .hero .account.one {
+    padding: 0.4rem 0 0;
+    background: none;
+    box-shadow: none;
+  }
+  .account.one .account-head {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    text-align: center;
+  }
+  .account.one .account-head .account-sub {
+    display: none;
+  }
+  .account.one .chip {
+    padding: 0;
+    background: none;
+    font-size: 0.82rem;
   }
 
   .account-head {
@@ -3363,9 +3666,6 @@
     line-height: 1.1;
     color: var(--teal-ink);
     font-variant-numeric: tabular-nums;
-  }
-  .account.over .account-main .v {
-    color: var(--danger);
   }
 
   /* The one action on the card: take what the balance says is still yours.
@@ -3522,6 +3822,149 @@
     color: var(--ink);
     text-align: right;
     font-variant-numeric: tabular-nums;
+  }
+  /* ── One number ─────────────────────────────────────────────────────────
+     The fund card leads with what is still yours, as large as the card
+     allows; the bar under it is how much of the right is left. */
+  .one-number {
+    display: grid;
+    justify-items: center;
+    gap: 0.2rem;
+    width: 100%;
+    margin: 0.6rem 0 0.2rem;
+    padding: 0.6rem 0 0.4rem;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: center;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .one-number.still {
+    cursor: default;
+  }
+  .one-k {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+  .one-v {
+    font-size: clamp(3.4rem, 15vw, 5.6rem);
+    line-height: 1;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    color: var(--teal-ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .account.over .one-v {
+    color: var(--danger);
+  }
+  .one-of {
+    font-size: 0.95rem;
+    color: var(--ink-soft);
+  }
+  .one-bar {
+    height: 0.75rem;
+    margin: 0.5rem 0 0.9rem;
+    border-radius: 999px;
+    background: var(--line);
+    overflow: hidden;
+  }
+  .one-bar span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--teal);
+    transition: width 0.3s ease;
+  }
+  .account.over .one-bar span {
+    background: var(--danger);
+  }
+  .one-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+    gap: 0.7rem;
+    margin: 0 0 0.7rem;
+  }
+  .act {
+    min-height: var(--tap);
+    box-sizing: border-box;
+    border: 2px solid var(--teal);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--teal-ink);
+    font: inherit;
+    font-size: 1.15rem;
+    font-weight: 700;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .act.primary {
+    background: var(--teal);
+    color: var(--on-teal);
+  }
+  .act:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .one-links {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.4rem 1rem;
+    margin: 0.2rem 0 0.3rem;
+  }
+  .one-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-height: 44px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--teal-ink);
+    font: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  /* The statement as a till receipt: the arithmetic behind the one number. */
+  .statement.receipt {
+    margin: 0.2rem 0 0.4rem;
+    padding: 0.9rem 1rem;
+    border-radius: 6px;
+    background: var(--paper-deep);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.88rem;
+  }
+  .statement.receipt > div {
+    border-top: 0;
+    padding: 0.2rem 0;
+  }
+  .statement.receipt dt {
+    color: var(--ink-soft);
+  }
+  .statement.receipt > .total {
+    margin: 0.35rem 0;
+    padding: 0.55rem 0;
+    border-top: 2px solid var(--ink);
+    border-bottom: 2px dashed var(--ink-soft);
+    align-items: baseline;
+  }
+  .statement.receipt > .total dt {
+    color: var(--ink);
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .statement.receipt > .total dd {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--teal-ink);
+  }
+  .account.over .statement.receipt > .total dd {
+    color: var(--danger);
   }
   .statement .debit {
     color: var(--danger);

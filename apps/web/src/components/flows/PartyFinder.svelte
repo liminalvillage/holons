@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn } from '$lib/vocabulary';
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
   // Find a party for the split: a person or a holon, by name or by id — the
@@ -12,7 +13,7 @@
   export let holosphere: HoloSphere | null = null;
   /** Ids already seated, left out of the hits. */
   export let exclude: readonly string[] = [];
-  export let placeholder = "Add a partner holon or a person — name or id";
+  export let placeholder = nn("Add a partner {@holon} or a person — name or id");
   export let disabled = false;
 
   const dispatch = createEventDispatcher<{

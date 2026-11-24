@@ -32,6 +32,7 @@ import {
   type SuccessionResult,
 } from '@holons/core/holons';
 import { isAdmin as isChatAdmin } from './utilities.js';
+import { askArgs } from './AskMissing.js';
 
 interface SettingsLike {
   getLanguage?(holonId: string | number): Promise<string>;
@@ -83,7 +84,7 @@ export function successionSummary(
         from: report.from,
         count: copied,
         defaultValue:
-          '🧬 This group carries on the holon it had as <code>{{from}}</code>: {{count}} records brought over.',
+          '🧬 This group carries on {@the_holon} it had as <code>{{from}}</code>: {{count}} records brought over.',
       })
     ),
   ];
@@ -302,7 +303,7 @@ export default class Succession {
     if (chat.type === 'private') {
       await reply(
         'adoptGroupOnly',
-        'Use /adopt in the group whose earlier holon you want to bring over.'
+        'Use /adopt in the group whose earlier {@holon} you want to bring over.'
       );
       return 'private';
     }
@@ -314,6 +315,27 @@ export default class Succession {
       (ctx.message as { text?: string } | undefined)?.text ?? ''
     );
     const [, arg = '', mode = ''] = text.trim().split(/\s+/);
+    if (!arg) {
+      // No id given: ask for it, then run the command again with the answer.
+      const asked = await askArgs(
+        ctx,
+        [
+          {
+            key: 'from',
+            ask: 'ask_adopt_from',
+            question:
+              'What was the id of this group before Telegram upgraded it? It is a negative number, as in its old board link.',
+            validate: (s: string) => CHAT_ID_RE.test(s) && s !== to,
+            error: 'ask_err_adopt_from',
+            errorText:
+              "Please send the old group's id: a negative number (for example -4123456789), not this group's own id.",
+          },
+        ],
+        (c: object) => this.adopt(c as Context),
+        { lng }
+      );
+      if (asked) return 'asked';
+    }
     if (!CHAT_ID_RE.test(arg) || arg === to) {
       await reply(
         'adoptUsage',
@@ -338,7 +360,7 @@ export default class Succession {
       console.error(`[succession] /adopt ${arg} → ${to} failed:`, e);
       await reply(
         'adoptFailed',
-        'Something went wrong bringing that holon over. Nothing was removed; try again.'
+        'Something went wrong bringing that {@holon} over. Nothing was removed; try again.'
       );
       return 'failed';
     }
@@ -347,17 +369,17 @@ export default class Succession {
       return 'moved';
     }
     const why: Record<string, string> = {
-      'not-admin': 'I do not hold that holon, so I cannot bring it over.',
-      moved: 'That holon already carries on in another group.',
+      'not-admin': 'I do not hold that {@holon}, so I cannot bring it over.',
+      moved: 'That {@holon} already carries on in another group.',
       taken:
-        "This group's holon is held by another key, so I cannot write into it.",
-      cycle: "This group's holon already carries on as that one.",
+        "This group's {@holon} is held by another key, so I cannot write into it.",
+      cycle: "This group's {@holon} already carries on as that one.",
       same: 'That is this group.',
-      'not-holon': 'That is not a holon id.',
+      'not-holon': 'That is not {@a_holon} id.',
     };
     await reply(
       `adoptRefused_${result.refused}`,
-      why[result.refused] ?? 'That holon cannot be brought over.'
+      why[result.refused] ?? 'That {@holon} cannot be brought over.'
     );
     return result.refused;
   }

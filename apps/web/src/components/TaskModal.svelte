@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn, words } from '$lib/vocabulary';
     import { createEventDispatcher, getContext, onMount } from "svelte";
     import { fade, scale } from "svelte/transition";
     import { goto } from '$app/navigation';
@@ -357,7 +358,7 @@
             quest = previousQuest;
             dispatch("updated", { questId, quest: previousQuest });
             if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
+                notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
             } else {
                 console.error("[TaskModal.svelte] Error syncing participant:", error);
             }
@@ -390,7 +391,7 @@
             quest = previousQuest;
             dispatch("updated", { questId, quest: previousQuest });
             if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
+                notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
             } else {
                 console.error("[TaskModal.svelte] Error syncing host:", error);
             }
@@ -450,7 +451,7 @@
             }
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
+                notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
             } else {
                 console.error("[TaskModal.svelte] Error updating quest:", error);
             }
@@ -489,7 +490,7 @@
                 dispatch("close", { deleted: true, questId });
             } catch (error: any) {
                 if (error?.name === 'AuthorizationError') {
-                    notifyWriteDenied('Unable to delete - no write permission for this holon');
+                    notifyWriteDenied(nn('Unable to delete - no write permission for this {@holon}'));
                 } else {
                     console.error("Error deleting quest:", error);
                 }
@@ -616,7 +617,7 @@
             await executeCompletionPlan(holosphere as any, eventStore, holonId, plan, { lens });
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
+                notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
                 return;
             }
             console.error('[TaskModal] executeCompletionPlan failed:', error);
@@ -651,7 +652,7 @@
             await executeCompletionPlan(holosphere as any, getEventStore(holosphere), holonId, plan, { lens });
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
+                notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
                 return;
             }
             console.error('[TaskModal] executeCompletionPlan (occurrence) failed:', error);
@@ -785,7 +786,7 @@
                     })
                     .catch((error: any) => {
                         if (error?.name === 'AuthorizationError') {
-                            notifyWriteDenied('Unable to save - no write permission for this holon');
+                            notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
                         } else {
                             console.error("Error updating quest position:", error);
                         }
@@ -1203,7 +1204,7 @@
             cancelBreakdown();
         } catch (e: any) {
             if (e?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
+                notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
             } else {
                 breakdownError = e?.message || 'Could not create the steps.';
             }
@@ -1267,7 +1268,7 @@
         } catch (error: any) {
             w?.close();
             if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
+                notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
             } else {
                 console.error("Error creating whiteboard for task:", error);
             }
@@ -1308,7 +1309,7 @@
         ]).catch((error: any) => {
             quest = previousQuest;
             if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
+                notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
             } else {
                 console.error("Error creating checklist for task:", error);
             }
@@ -1415,7 +1416,7 @@
                             type="button"
                             class="ml-auto flex items-center gap-1 text-xs text-gray-300 hover:text-white"
                             aria-expanded={lockOpen}
-                            title={cardLocked ? "Private — only this holon and the holons it is shared with can read it" : "Public — anyone can read it"}
+                            title={cardLocked ? nn("Private — only this {@holon} and the {@holons} it is shared with can read it") : "Public — anyone can read it"}
                             on:click={() => (lockOpen = !lockOpen)}
                         >
                             {#if cardLocked}<Lock size="12" /> Private{:else}<Unlock size="12" /> Public{/if}
@@ -1737,7 +1738,7 @@
                                 class="px-2 py-1 bg-purple-700/70 text-purple-100 rounded hover:bg-purple-600 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 on:click={requestBreakdown}
                                 disabled={isBreakingDown || !!quest._hologram}
-                                title={quest._hologram ? 'Open the source holon to break down this task' : 'Use AI to break this task into steps'}
+                                title={quest._hologram ? nn('Open the source {@holon} to break down this task') : 'Use AI to break this task into steps'}
                                 type="button"
                             >
                                 {isBreakingDown ? '⏳ Breaking down…' : '✨ Break down'}
@@ -2035,7 +2036,7 @@
                                     <span class="text-gray-400 text-xs ml-2">Loading team...</span>
                                 </div>
                             {:else if Object.keys(userStore).length === 0}
-                                <p class="text-gray-500 text-xs py-2 text-center">No users in this holon</p>
+                                <p class="text-gray-500 text-xs py-2 text-center">No users in this {words.holon}</p>
                             {:else if filteredUserEntries.length === 0}
                                 <p class="text-gray-500 text-xs py-2 text-center">No matching users</p>
                             {:else}

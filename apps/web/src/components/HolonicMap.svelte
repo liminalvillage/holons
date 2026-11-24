@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
     import { getContext, createEventDispatcher} from "svelte";
     import { ID } from "../dashboard/store";
     import Map from "./Map.svelte";
@@ -35,7 +36,7 @@
         { value: 'projects', label: 'Projects' },
         { value: 'currencies', label: 'Currencies' },
         { value: 'people', label: 'People' },
-        { value: 'holons', label: 'Holons' }
+        { value: 'holons', label: words.Holons }
     ];
 </script>
 

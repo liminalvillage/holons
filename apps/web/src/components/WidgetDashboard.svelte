@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
     import { onMount, onDestroy, getContext } from "svelte";
 import { fade, slide } from "svelte/transition";
 import { ID } from "../dashboard/store";
@@ -701,7 +702,7 @@ import ItemModal from "./ItemModal.svelte";
                             {holonName}
                         </div>
                     {:else}
-                        <div class="text-white/40 text-sm">Unknown Holon</div>
+                        <div class="text-white/40 text-sm">Unknown {words.Holon}</div>
                     {/if}
                 </div>
 

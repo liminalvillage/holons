@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn } from '$lib/vocabulary';
 	import { onMount, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
 	import { page } from "$app/stores";
@@ -461,7 +462,7 @@
 			});
 		} catch (err: any) {
 			if (err?.name === 'AuthorizationError') {
-				notifyWriteDenied('Unable to save currency — no write permission for this holon');
+				notifyWriteDenied(nn('Unable to save currency — no write permission for this {@holon}'));
 			} else {
 				console.warn('Failed to persist currency to settings:', err);
 			}
@@ -630,7 +631,7 @@
 			showImportModal = false;
 		} catch (error: any) {
 			if (error?.name === 'AuthorizationError') {
-				notifyWriteDenied('Unable to save - no write permission for this holon');
+				notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
 			} else {
 				console.error('Error importing expenses:', error);
 			}

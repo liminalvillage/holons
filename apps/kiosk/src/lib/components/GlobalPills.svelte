@@ -49,7 +49,6 @@
     libraryViewMode,
     libraryCalendarMode,
     rolesViewMode,
-    flowsViewMode,
     stockViewMode,
     offersViewMode,
     calendarMode,
@@ -58,7 +57,6 @@
     setTaskView,
     setLibraryView,
     setRolesView,
-    setFlowsView,
     setStockView,
     setOffersView,
     setCalendarView,
@@ -66,7 +64,6 @@
     type TaskViewMode,
     type LibraryViewMode,
     type RolesViewMode,
-    type FlowsViewMode,
     type StockViewMode,
     type OffersViewMode,
     type CalendarMode,
@@ -107,14 +104,6 @@
     { id: "list", ...LAYOUT_SEGMENTS.list },
     { id: "cards", ...LAYOUT_SEGMENTS.wall },
     { id: "week", ...LAYOUT_SEGMENTS.week },
-  ];
-
-  // ── Flows: my balance (the viewer's account), everyone's balances, or
-  // the Sankey graph. Whether partner items show is the switch's business.
-  const FLOWS_MODES: (Segment & { id: FlowsViewMode })[] = [
-    { id: "mine", ...LAYOUT_SEGMENTS.mine },
-    { id: "balances", ...LAYOUT_SEGMENTS.balances },
-    { id: "graph", ...LAYOUT_SEGMENTS.graph },
   ];
 
   // ── Stock: the shelf (what is on hand) / the reorder (what to buy) / the
@@ -177,10 +166,6 @@
     offersViewMode.set(m as OffersViewMode);
     setOffersView(m as OffersViewMode);
   }
-  function pickFlowsMode(m: string) {
-    flowsViewMode.set(m as FlowsViewMode);
-    setFlowsView(m as FlowsViewMode);
-  }
   // Only the choice itself lives here; CalendarView reacts to the store for
   // its offset-reset / focus side effects.
   function pickCalendarMode(m: string) {
@@ -213,7 +198,6 @@
     libMode: string,
     libCalMode: string,
     rolesMode: string,
-    flowsMode: string,
     stockMode: string,
     offersMode: string,
     calMode: string,
@@ -269,18 +253,7 @@
           label: tr("pills.rolesLayout"),
         },
       ];
-    if (tab === "flows")
-      return [
-        {
-          key: "layout",
-          options: resolve(tr, FLOWS_MODES),
-          value: flowsMode,
-          onChange: pickFlowsMode,
-          icon: "eye",
-          title: tr("pills.view"),
-          label: tr("pills.flowsLayout"),
-        },
-      ];
+    // Flows: its views are tabs across the board itself (FlowsView).
     if (tab === "stock")
       return [
         {
@@ -327,7 +300,6 @@
     $libraryViewMode,
     $libraryCalendarMode,
     $rolesViewMode,
-    $flowsViewMode,
     $stockViewMode,
     $offersViewMode,
     $calendarMode,

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
 
@@ -20,7 +21,7 @@
         
         <p class="text-xl text-gray-400 mb-8">
             {#if $page.status === 404}
-                The holon you're looking for doesn't exist or might have been moved.
+                The {words.holon} you're looking for doesn't exist or might have been moved.
             {:else}
                 Something went wrong. Please try again later.
             {/if}
@@ -31,7 +32,7 @@
                 class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 on:click={() => goToDemo()}
             >
-                Try Demo Holon
+                Try Demo {words.Holon}
             </button>
             
             <button

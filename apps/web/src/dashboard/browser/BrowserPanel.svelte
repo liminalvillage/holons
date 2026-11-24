@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn, words } from '$lib/vocabulary';
 	import { createEventDispatcher, getContext, onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
@@ -317,7 +318,7 @@
 
 		const memberships = [
 			// User's own holon (they are always the owner of their pubkey holon)
-			{ id: $homeHolonId, name: homeHolonName || 'My Holon', isOwner: true }
+			{ id: $homeHolonId, name: homeHolonName || nn('My {@Holon}'), isOwner: true }
 		];
 
 		// Add federated holons where user might have write access
@@ -469,7 +470,7 @@
 					partnerName: index >= 0 ? holons[index].name : undefined,
 					holonName: homeHolonName || undefined
 				});
-				if (outcome.self === 'held') throw new Error('Only an admin of this holon can change its federation');
+				if (outcome.self === 'held') throw new Error(nn('Only an admin of this {@holon} can change its federation'));
 				if (outcome.partner === 'requested' && index >= 0) {
 					holons[index] = { ...holons[index], federationStatus: 'pending_outgoing' };
 					holons = [...holons];
@@ -514,7 +515,7 @@
 	async function startNewHub() {
 		if (!holosphere || isFoundingHub) return;
 		if (!holosphere.currentPubkey) {
-			addError = 'Sign in with a key to start a hub';
+			addError = nn('Sign in with a key to start {@a_holon}');
 			return;
 		}
 		isFoundingHub = true;
@@ -636,7 +637,7 @@
 
 	async function addNewHolon() {
 		if (!newHolonId.trim()) {
-			addError = 'Please enter a Holon ID';
+			addError = nn('Please enter {@a_holon} ID');
 			return;
 		}
 
@@ -677,7 +678,7 @@
 				holonName: homeHolonName || undefined
 			});
 			if (outcome.self === 'held') {
-				addError = 'Only an admin of your holon can federate it.';
+				addError = nn('Only an admin of your {@holon} can federate it.');
 				return;
 			}
 			const federationStatus: FederationStatus = outcome.partner === 'requested' ? 'pending_outgoing' : 'accepted';
@@ -701,7 +702,7 @@
 				goto(`/${holonId}/dashboard`);
 			}, 500);
 		} catch (err) {
-			addError = err instanceof Error ? err.message : 'Failed to add holon';
+			addError = err instanceof Error ? err.message : nn('Failed to add {@holon}');
 		} finally {
 			isInitiatingFederation = false;
 		}
@@ -711,7 +712,7 @@
 <aside
 	class="browser-panel"
 	class:browser-panel--open={isOpen}
-	aria-label="Holon browser"
+	aria-label="{words.Holon} browser"
 >
 	<!-- Compact header with search and add -->
 	<div class="browser-panel__header">
@@ -719,14 +720,14 @@
 			<Search size="14" />
 			<input
 				type="text"
-				placeholder="Search holons..."
+				placeholder="Search {words.holons}..."
 				bind:value={searchQuery}
 			/>
 		</div>
 		<button
 			class="browser-panel__add-btn"
 			onclick={handleAddHolon}
-			title="Add holon"
+			title="Add {words.holon}"
 		>
 			<Plus size="16" />
 		</button>
@@ -810,7 +811,7 @@
 			tabindex="-1"
 		>
 			<div class="add-modal__header">
-				<h3>Add Holon</h3>
+				<h3>Add {words.Holon}</h3>
 				<button class="add-modal__close" onclick={closeAddModal} aria-label="Close">×</button>
 			</div>
 
@@ -823,13 +824,13 @@
 				{/if}
 
 				<div class="add-modal__field">
-					<label for="holon-id-input">Holon ID</label>
+					<label for="holon-id-input">{words.Holon} ID</label>
 					<div class="add-modal__input-row">
 						<input
 							id="holon-id-input"
 							type="text"
 							bind:value={newHolonId}
-							placeholder="Enter Holon ID"
+							placeholder="Enter {words.Holon} ID"
 							onkeydown={(e) => e.key === 'Enter' && addNewHolon()}
 						/>
 						<button
@@ -857,14 +858,14 @@
 				</div>
 
 				<div class="add-modal__found">
-					<span>No hub yet? Start one here, founded by your key — no Telegram needed.</span>
+					<span>No {words.holon} yet? Start one here, founded by your key — no Telegram needed.</span>
 					<button
 						type="button"
 						class="add-modal__found-btn"
 						disabled={isFoundingHub}
 						onclick={startNewHub}
 					>
-						{isFoundingHub ? 'Founding…' : 'Start a new hub'}
+						{isFoundingHub ? 'Founding…' : nn('Start a new {@holon}')}
 					</button>
 				</div>
 
@@ -873,10 +874,10 @@
 					<div class="add-modal__lens-section">
 						<div class="add-modal__lens-head">
 							<span class="add-modal__lens-label">Lens</span>
-							<span class="add-modal__lens-col" title="Inbound — receive from this holon">
+							<span class="add-modal__lens-col" title="Inbound — receive from this {words.holon}">
 								<ArrowDown size="12" /> In
 							</span>
-							<span class="add-modal__lens-col" title="Outbound — send to this holon">
+							<span class="add-modal__lens-col" title="Outbound — send to this {words.holon}">
 								<ArrowUp size="12" /> Out
 							</span>
 						</div>

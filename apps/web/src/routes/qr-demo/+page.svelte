@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 
@@ -140,7 +141,7 @@
 							<div><strong>Action:</strong> {action.example.action}</div>
 							<div><strong>Title:</strong> {action.example.title}</div>
 							<div><strong>Description:</strong> {action.example.desc}</div>
-							<div><strong>Holon ID:</strong> {action.example.holonID}</div>
+							<div><strong>{words.Holon} ID:</strong> {action.example.holonID}</div>
 							{#if action.example.deckId}
 								<div><strong>Deck ID:</strong> {action.example.deckId}</div>
 							{/if}
@@ -211,7 +212,7 @@
 				<ul class="text-yellow-100 text-sm space-y-2 text-left max-w-2xl mx-auto">
 					<li>• <strong>Telegram login is completely bypassed</strong></li>
 					<li>• <strong>Actions use hardcoded user ID:</strong> 235114395</li>
-					<li>• <strong>Original holon ID from QR code is preserved</strong></li>
+					<li>• <strong>Original {words.holon} ID from QR code is preserved</strong></li>
 					<li>• <strong>Mock user is automatically created</strong> for testing</li>
 					<li>• <strong>Perfect for development and testing</strong> without external dependencies</li>
 				</ul>

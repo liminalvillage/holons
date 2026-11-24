@@ -462,13 +462,14 @@
     >
     <span class="name">{nameB()}</span>
   </div>
-  <p class="status" class:idle={!linked}>
-    {linked ? $t("fed.flowsOpen", { n: flowCount }) : $t("fed.notLinked")}
-  </p>
-
+  <!-- Until the pair's record is read, say only that: "not federated" over
+       a federated pair would invite a write on a wrong premise. -->
   {#if loading}
-    <p class="hint">{$t("fed.loading")}</p>
+    <p class="hint" role="status">{$t("fed.loading")}</p>
   {:else}
+    <p class="status" class:idle={!linked}>
+      {linked ? $t("fed.flowsOpen", { n: flowCount }) : $t("fed.notLinked")}
+    </p>
     {#if incoming}
       <!-- What the partner asked of this holon: its admins answer here. -->
       <div class="ask" role="status">

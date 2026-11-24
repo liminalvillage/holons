@@ -16,6 +16,7 @@
  */
 
 import { log } from '../utils/logger.js';
+import { askArgs } from '../src/AskMissing.js';
 
 export default class SignalDiagnostics {
   /**
@@ -76,15 +77,28 @@ export default class SignalDiagnostics {
     });
 
     // Command to test a specific signal
-    this.bot.command('test_signal', async ctx => {
+    const testSignal = async ctx => {
       if (!(await this.isAdmin(ctx))) {
         return ctx.reply('This command is for administrators only.');
       }
 
       const args = ctx.message.text.split(' ').slice(1).join(' ');
       if (!args) {
-        return ctx.reply(
-          'Usage: /test_signal <callback_data>\nExample: /test_signal view_original_quest_123_456'
+        return askArgs(
+          ctx,
+          [
+            {
+              key: 'signal',
+              ask: 'ask_test_signal_signal',
+              question:
+                'Which signal should I test? Send its callback data, for example: view_original_quest_123_456',
+            },
+          ],
+          testSignal,
+          {
+            usage:
+              'Usage: /test_signal <callback_data>\nExample: /test_signal view_original_quest_123_456',
+          }
         );
       }
 
@@ -104,10 +118,11 @@ export default class SignalDiagnostics {
       message += `\n🎯 The handler with highest priority (${matches[0].priority}) from module "${matches[0].module}" will be executed.`;
 
       await ctx.reply(message);
-    });
+    };
+    this.bot.command('test_signal', testSignal);
 
     // Command to clear and re-register signals for a module
-    this.bot.command('reset_signals', async ctx => {
+    const resetSignals = async ctx => {
       if (!(await this.isAdmin(ctx))) {
         return ctx.reply('This command is for administrators only.');
       }
@@ -116,8 +131,35 @@ export default class SignalDiagnostics {
       const moduleName = args[0];
 
       if (!moduleName) {
-        return ctx.reply(
-          'Usage: /reset_signals <module_name>\nExample: /reset_signals Quests'
+        let modules = [];
+        try {
+          modules = Object.keys(
+            this.signalManager.getDiagnostics()?.byModule || {}
+          );
+        } catch {}
+        return askArgs(
+          ctx,
+          [
+            {
+              key: 'module',
+              ask: modules.length
+                ? 'ask_reset_signals_module_list'
+                : 'ask_reset_signals_module',
+              question: modules.length
+                ? "Which module's signals should I clear?\n{{modules}}"
+                : "Which module's signals should I clear? For example: Quests",
+              vars: { modules: modules.join(', ') },
+              validate: s => !/\s/.test(s),
+              error: 'ask_err_reset_signals_module',
+              errorText:
+                'Please send a single module name, for example: Quests',
+            },
+          ],
+          resetSignals,
+          {
+            usage:
+              'Usage: /reset_signals <module_name>\nExample: /reset_signals Quests',
+          }
         );
       }
 
@@ -125,7 +167,8 @@ export default class SignalDiagnostics {
       await ctx.reply(
         `Cleared ${cleared} signals for module ${moduleName}. Module will need to re-register its handlers.`
       );
-    });
+    };
+    this.bot.command('reset_signals', resetSignals);
 
     // Command to export signal registry
     this.bot.command('export_signals', async ctx => {

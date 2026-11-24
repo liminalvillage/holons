@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn } from '$lib/vocabulary';
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
   // Balances — the holon's mutual credit, read like a phone reads it.
@@ -316,8 +317,8 @@
       done();
     } catch (err: any) {
       if (err?.name === "AuthorizationError") {
-        notifyWriteDenied("Unable to save — no write permission for this holon");
-        error = "You can't write to this holon.";
+        notifyWriteDenied(nn("Unable to save — no write permission for this {@holon}"));
+        error = nn("You can't write to this {@holon}.");
       } else {
         console.error("[flows] expense write failed", err);
         error = "Couldn't save that. Try again.";

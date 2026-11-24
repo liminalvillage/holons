@@ -8,6 +8,7 @@
 import { CARDS_TAG, getTagEntries, tagCard, tagMessage, type TagsDB } from '@holons/core/tags';
 import { transcribeImage } from './AI.js';
 import { hostTelegramPicture } from './Pictures.js';
+import { askArgs } from './AskMissing.js';
 
 // Minimal structural types so we don't depend on the full Telegraf surface
 // area in this UI-only handler. The bot/db are duck-typed against what this
@@ -70,49 +71,80 @@ export default class Tags {
 
     this.bot.command('card', (ctx: any) => this.card(ctx));
 
-    this.bot.command('tag', async (ctx: any) => {
-      if (!ctx.message.reply_to_message) {
-        return ctx.reply('Please reply to a message you want to tag.');
-      }
-
-      const tags: string[] = ctx.message.text.split(' ').slice(1);
-      if (tags.length === 0) {
-        return ctx.reply('Please provide at least one tag.');
-      }
-
-      const messageId: number = ctx.message.reply_to_message.message_id;
-      // Holon ids are always strings — coerce Telegram's numeric chat id here.
-      const holonId: string = ctx.message.chat.id.toString();
-      const messageContent: string | undefined = ctx.message.reply_to_message.text;
-
-      for (let i = 0; i < tags.length; i++) {
-        await tagMessage(this.db, holonId, tags[i], {
-          holonId,
-          messageId,
-          messageContent,
-        });
-      }
-
-      ctx.reply('Message tagged successfully.');
-    });
+    this.bot.command('tag', (ctx: any) => this.tag(ctx));
 
     // Query tagged messages
-    this.bot.command('gettag', async (ctx: any) => {
-      const holonId: string = ctx.message.chat.id.toString();
-      const tag: string | undefined = ctx.message.text.split(' ')[1];
-      if (!tag) {
-        return ctx.reply('Please specify a tag.');
-      }
+    this.bot.command('gettag', (ctx: any) => this.gettag(ctx));
+  }
 
-      const entries = await getTagEntries(this.db, holonId, tag);
+  /** `/tag <tag> [<tag> …]`, as a reply to the message to tag. */
+  async tag(ctx: any): Promise<unknown> {
+    // The message to tag can only be pointed at by replying to it, so this
+    // one cannot be asked for in a dialogue.
+    if (!ctx.message.reply_to_message) {
+      return ctx.reply('Please reply to a message you want to tag.');
+    }
 
-      if (entries.length === 0) {
-        return ctx.reply('No messages found for this tag.');
-      }
+    const tags: string[] = ctx.message.text.split(' ').slice(1).filter(Boolean);
+    if (tags.length === 0) {
+      // Ask for the tags; the answer re-enters as `/tag <tags>` on the same
+      // command message, which still carries the reply.
+      return askArgs(
+        ctx,
+        [{
+          key: 'tags',
+          ask: 'ask_tag_tags',
+          question: 'Which tag should I put on that message? Send one, or several separated by spaces.',
+        }],
+        (ctx: any) => this.tag(ctx),
+        { usage: 'Please provide at least one tag.' },
+      );
+    }
 
-      const response = entries.map((entry) => entry.messageContent).join('\n');
-      ctx.reply(response);
-    });
+    const messageId: number = ctx.message.reply_to_message.message_id;
+    // Holon ids are always strings — coerce Telegram's numeric chat id here.
+    const holonId: string = ctx.message.chat.id.toString();
+    const messageContent: string | undefined = ctx.message.reply_to_message.text;
+
+    for (let i = 0; i < tags.length; i++) {
+      await tagMessage(this.db, holonId, tags[i], {
+        holonId,
+        messageId,
+        messageContent,
+      });
+    }
+
+    return ctx.reply('Message tagged successfully.');
+  }
+
+  /** `/gettag <tag>` — the messages filed under a tag. */
+  async gettag(ctx: any): Promise<unknown> {
+    const holonId: string = ctx.message.chat.id.toString();
+    const tag: string | undefined = ctx.message.text.split(' ')[1];
+    if (!tag) {
+      return askArgs(
+        ctx,
+        [{
+          key: 'tag',
+          ask: 'ask_gettag_tag',
+          question: 'Which tag do you want to see?',
+          validate: (answer: string) => !/\s/.test(answer),
+          error: 'ask_err_gettag_tag',
+          errorText: 'Please send a single tag, without spaces.',
+        }],
+        (ctx: any) => this.gettag(ctx),
+        { usage: 'Please specify a tag.' },
+      );
+    }
+
+    const entries = await getTagEntries(this.db, holonId, tag);
+
+    if (entries.length === 0) {
+      return ctx.reply('No messages found for this tag.');
+    }
+
+    const response = entries.map((entry) => entry.messageContent).join('\n');
+    return ctx.reply(response);
   }
 
   /**

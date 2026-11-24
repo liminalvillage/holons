@@ -1,5 +1,6 @@
 <script lang="ts">
     // @ts-nocheck -- Disabling TypeScript checking for this file due to Svelte 5 JSX compatibility issues
+	import { words } from '$lib/vocabulary';
     import { onDestroy, onMount, getContext } from "svelte";
     import { formatDate, formatTime } from "../utils/date";
     import type { Writable } from "svelte/store";
@@ -60,7 +61,7 @@
         },
         {
             value: 'holons' as LensType,
-            label: 'Holons',
+            label: words.Holons,
             schema: 'holons_schema-v0.0.1' as SchemaName
         },
         {
@@ -494,12 +495,12 @@
                 <button
                     on:click={goToHolon}
                     class="w-full px-3 py-2 bg-gray-600 text-gray-200 rounded-lg hover:bg-gray-500 border border-gray-500 transition-colors flex items-center justify-center gap-2 text-sm"
-                    title="Navigate to this hexagon holon"
+                    title="Navigate to this hexagon {words.holon}"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
                     </svg>
-                    Go to this holon
+                    Go to this {words.holon}
                 </button>
             </div>
         {:else if stats && stats[selectedLens] && !isOverlay}
@@ -527,12 +528,12 @@
                     <button
                         on:click={goToHolon}
                         class="w-full px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 transition-colors flex items-center justify-center gap-2 text-sm font-medium"
-                        title="Navigate to this hexagon holon"
+                        title="Navigate to this hexagon {words.holon}"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
                         </svg>
-                        Go to this holon
+                        Go to this {words.holon}
                     </button>
                 </div>
             {/if}

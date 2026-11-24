@@ -4,6 +4,7 @@
  */
 
 import schedule from 'node-schedule';
+import { askArgs } from './AskMissing.js';
 
 /**
  * One-on-one conversation pairing system for community networking.
@@ -60,9 +61,24 @@ class OneOnOne {
       ctx.reply('Scheduled speed dating rounds.');
     });
 
-    bot.command(['summary'], async ctx => {
+    const report = async ctx => {
       const user = ctx.from.username;
-      const summary = ctx.message.text.split('/summary ')[1];
+      const summary = ctx.message.text.replace(/^\/\S+\s*/, '');
+      if (this.conversations[user] && !summary.trim()) {
+        return askArgs(
+          ctx,
+          [
+            {
+              key: 'summary',
+              ask: 'ask_summary_summary',
+              question:
+                'How did your conversation go? Send me a short summary.',
+            },
+          ],
+          report,
+          { usage: 'Usage: /summary <text>' }
+        );
+      }
       if (this.conversations[user]) {
         const { partner, holonId } = this.conversations[user];
         // Store the summary in the database
@@ -77,7 +93,8 @@ class OneOnOne {
       } else {
         ctx.reply('You have no ongoing conversations to report.');
       }
-    });
+    };
+    bot.command(['summary'], report);
   }
 
   async startRound(participants, holonId) {

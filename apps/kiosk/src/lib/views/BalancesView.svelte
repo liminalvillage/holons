@@ -49,7 +49,10 @@
     type CreditPair,
     type Expense,
   } from "@holons/core/expenses";
+  import { resolveWindow, type FlowsWindow } from "@holons/core/flows";
   import Modal from "$lib/components/Modal.svelte";
+  import ChipRow from "$lib/components/ChipRow.svelte";
+  import { unitHue } from "$lib/unithues";
   import {
     avatarInitial,
     avatarUrl,
@@ -69,6 +72,35 @@
   export let onCurrency: (c: string) => void = () => {};
   /** The viewer's own tab only (the "My balance" view). */
   export let mine = false;
+  /** Draw the board's own currency row. Off when a shared unit picker
+   *  above (the Flows board's strip) already chooses the sheet. */
+  export let currencyPicker = true;
+  /** The board's period. Balances stay all-time — a debt does not lapse —
+   *  while Spent, the count and Recent cover only this window. */
+  export let period: FlowsWindow | null = null;
+  /**
+   * Funding the holon, offered beside an expense in the same sheet: the same
+   * amount and unit chips, recorded as a MINT on the fund log (core
+   * `recordMint`) — signed, attester-gated, under the log's quorum. An
+   * expense split with the holon is the opposite: a claim on the fund.
+   * `null` when the board offers no fund (the sheet is expense-only).
+   */
+  export let fund: {
+    /** The viewer holds an attester role on the fund log. */
+    canMint: boolean;
+    /** The viewer can sign log entries at all. */
+    signable: boolean;
+    /** Units the fund already holds, offered first. */
+    units: string[];
+    /** Partners a lot may come from. */
+    sources: { id: string; name: string }[];
+    onMint: (input: {
+      amount: number;
+      unit: string;
+      memo?: string;
+      source?: string;
+    }) => Promise<void>;
+  } | null = null;
 
   const PAGE = 10;
 
@@ -143,12 +175,26 @@
   $: maxAbs = active.reduce((m, b) => Math.max(m, Math.abs(b.net)), 0) || 1;
   let showSquare = false;
 
-  // The list under it all: this currency's records, newest first.
-  $: inCurrency = expenses
+  $: span = period ? resolveWindow({ window: period }, null) : null;
+  $: inPeriod = (ts: number) => !span || (ts >= span.from && ts <= span.to);
+  // What moved in the period, for Spent and the count.
+  $: periodCredit = span
+    ? computeMutualCredit(
+        expenses.filter((e) => e && inPeriod(stamp(e))),
+        people.map((p) => ({ id: p.id, first_name: p.name })),
+        currency,
+      )
+    : credit;
+
+  // The list under it all: this currency's records, newest first — every
+  // one (`allInCurrency`, which decides "nothing here yet"), and those in
+  // the period (`inCurrency`, the list itself).
+  $: allInCurrency = expenses
     .filter((e) => e && expenseCurrency(e) === currency)
     .filter((e) => !mine || involvesMe(e))
     .map((e) => ({ e, ts: stamp(e) }))
     .sort((a, b) => b.ts - a.ts);
+  $: inCurrency = allInCurrency.filter((r) => inPeriod(r.ts));
 
   let limit = PAGE;
   $: if (currency) limit = PAGE;
@@ -352,9 +398,46 @@
   // normalizes (lowercase, singular, letters only) so "Euros" and "eur" meet.
   let otherCurrency = "";
   let pickingOther = false;
+  /** The "Other…" chip's id — never a currency code. */
+  const OTHER = "\u0000other";
   $: draftCurrency = pickingOther
     ? normalizeCurrency(otherCurrency)
     : draft.currency;
+
+  // Expense or funding: one sheet, two kinds.
+  let kind: "expense" | "fund" = "expense";
+  let fundSource = "";
+  $: funding = kind === "fund" && !!fund;
+  $: sheetUnits = [
+    ...new Set([
+      ...(fund && funding ? fund.units.map(normalizeCurrency) : []),
+      ...(currencies.length ? currencies : ["usd"]),
+    ]),
+  ].filter(Boolean);
+  $: fundValid =
+    !!fund?.canMint &&
+    Number.isFinite(draftAmount) &&
+    draftAmount > 0 &&
+    !!draftCurrency;
+
+  async function confirmFund() {
+    if (!fund || !fundValid || busy) return;
+    busy = true;
+    error = "";
+    try {
+      await fund.onMint({
+        amount: draftAmount,
+        unit: draftCurrency.toUpperCase(),
+        memo: draft.description.trim() || undefined,
+        source: fundSource || undefined,
+      });
+      addSheet = false;
+    } catch (err: any) {
+      error = err?.message ? String(err.message) : String(err);
+    } finally {
+      busy = false;
+    }
+  }
 
   $: draftAmount = Number(draft.amount);
   $: draftValid =
@@ -380,6 +463,8 @@
     };
     otherCurrency = "";
     pickingOther = false;
+    kind = "expense";
+    fundSource = "";
     error = "";
     addSheet = true;
   }
@@ -458,31 +543,31 @@
       </p>
     </div>
   </header>
-  {#if currencies.length > 1}
+  {#if !currencyPicker}
+    {#if currency && currencies.length > 1}
+      <p class="note">
+        {$t("balances.sheetIn", { currency: currency.toUpperCase() })}
+      </p>
+    {/if}
+    {#if span}<p class="note">{$t("balances.periodNote")}</p>{/if}
+  {:else if currencies.length > 1}
     <!-- One sheet per currency, and a way to turn to the others: without it
          a tab kept in tree or usd reads as "no shared expenses" while the
          sheet on show is euro. -->
-    <ul
-      class="picks sheets"
-      role="radiogroup"
-      aria-label={$t("balances.currencyLabel")}
-    >
-      {#each currencies as c (c)}
-        <li>
-          <button
-            role="radio"
-            aria-checked={c === currency}
-            class="pick"
-            class:on={c === currency}
-            on:click={() => onCurrency(c)}>{c.toUpperCase()}</button
-          >
-        </li>
-      {/each}
-    </ul>
+    <ChipRow
+      options={currencies.map((c) => ({
+        id: c,
+        label: c.toUpperCase(),
+        colour: unitHue(c),
+      }))}
+      value={currency}
+      onPick={onCurrency}
+      label={$t("balances.currencyLabel")}
+    />
     <p class="note">{$t("balances.allCurrencies")}</p>
   {/if}
 
-  {#if !currency || !inCurrency.length}
+  {#if !currency || !allInCurrency.length}
     <p class="empty">
       {$t("balances.empty")}
       {#if $currentUser}<br /><span class="hint"
@@ -558,11 +643,11 @@
       <div class="stats">
         <div class="stat">
           <span class="k">{$t("balances.spent")}</span>
-          <span class="v">{format(credit.volume)}</span>
+          <span class="v">{format(periodCredit.volume)}</span>
         </div>
         <div class="stat">
           <span class="k">{$t("balances.expenses")}</span>
-          <span class="v">{credit.count}</span>
+          <span class="v">{periodCredit.count}</span>
         </div>
         <div class="stat">
           <span class="k">{$t("balances.openDebts")}</span>
@@ -725,6 +810,9 @@
 
     <!-- The records -->
     <h3 class="list-head">{$t("balances.recent")}</h3>
+    {#if !inCurrency.length}
+      <p class="note">{$t("balances.noneInPeriod")}</p>
+    {/if}
     <ul class="records">
       {#each visible as { e, ts } (String(e.id))}
         {@const mine = myLine(e)}
@@ -928,7 +1016,18 @@
 {#if addSheet}
   <Modal on:close={() => (addSheet = false)}>
     <div class="sheet">
-      <h3>{$t("balances.newExpense")}</h3>
+      <h3>{funding ? $t("balances.newFunding") : $t("balances.newExpense")}</h3>
+      {#if fund}
+        <ChipRow
+          options={[
+            { id: "expense", label: $t("balances.kindExpense") },
+            { id: "fund", label: $t("balances.kindFund") },
+          ]}
+          value={kind}
+          onPick={(id) => (kind = id as "expense" | "fund")}
+          label={$t("balances.kind")}
+        />
+      {/if}
       <label class="field">
         <span class="k"
           >{$t("balances.amount")} · {(
@@ -949,35 +1048,23 @@
       </label>
 
       <div class="k">{$t("balances.currency")}</div>
-      <ul class="picks" role="radiogroup" aria-label={$t("balances.currency")}>
-        {#each currencies.length ? currencies : ["usd"] as c (c)}
-          <li>
-            <button
-              role="radio"
-              aria-checked={!pickingOther && draft.currency === c}
-              class="pick"
-              class:on={!pickingOther && draft.currency === c}
-              on:click={() => {
-                pickingOther = false;
-                draft.currency = c;
-              }}
-            >
-              {c.toUpperCase()}
-            </button>
-          </li>
-        {/each}
-        <li>
-          <button
-            role="radio"
-            aria-checked={pickingOther}
-            class="pick"
-            class:on={pickingOther}
-            on:click={() => (pickingOther = true)}
-          >
-            {$t("balances.otherCurrency")}
-          </button>
-        </li>
-      </ul>
+      <!-- The same coloured unit chips as the Flows board's strip. -->
+      <ChipRow
+        options={[
+          ...sheetUnits.map((c) => ({
+            id: c,
+            label: c.toUpperCase(),
+            colour: unitHue(c),
+          })),
+          { id: OTHER, label: $t("balances.otherCurrency") },
+        ]}
+        value={pickingOther ? OTHER : draft.currency}
+        onPick={(id) => {
+          pickingOther = id === OTHER;
+          if (id !== OTHER) draft.currency = id;
+        }}
+        label={$t("balances.currency")}
+      />
       {#if pickingOther}
         <label class="field tight">
           <span class="k">{$t("balances.currency")}</span>
@@ -1000,93 +1087,124 @@
         />
       </label>
 
-      <div class="k">{$t("balances.paidBy")}</div>
-      <ul class="picks" role="radiogroup" aria-label={$t("balances.paidBy")}>
-        {#each people as p (p.id)}
-          <li>
-            <button
-              role="radio"
-              aria-checked={draft.paidBy === p.id}
-              class="pick"
-              class:on={draft.paidBy === p.id}
-              on:click={() => (draft.paidBy = p.id)}
-            >
-              {who(p.id)}
-            </button>
-          </li>
-        {/each}
-      </ul>
-
-      <div class="field-row">
-        <span class="k">{$t("balances.splitWith")}</span>
-        <button class="link" on:click={splitEveryone}>
-          {everyoneIn ? $t("balances.nobody") : $t("balances.everyone")}
-        </button>
-      </div>
-      <ul class="picks" aria-label={$t("balances.splitWith")}>
-        {#if holonId}
-          <li>
-            <button
-              role="checkbox"
-              aria-checked={draftInto}
-              class="pick"
-              class:on={draftInto}
-              on:click={() => toggleSplit(holonId)}
-            >
-              {$t("balances.intoHolon", { holon: nameOf(holonId) })}
-            </button>
-          </li>
+      {#if funding && fund}
+        {#if fund.sources.length}
+          <div class="k">{$t("balances.fundFrom")}</div>
+          <ChipRow
+            options={[
+              { id: "", label: $t("alloc.mintSourceNone") },
+              ...fund.sources.map((p) => ({ id: p.id, label: p.name })),
+            ]}
+            value={fundSource}
+            onPick={(id) => (fundSource = id)}
+            label={$t("balances.fundFrom")}
+          />
         {/if}
-        {#each people as p (p.id)}
-          <li>
-            <button
-              role="checkbox"
-              aria-checked={draft.splitWith.includes(p.id)}
-              class="pick"
-              class:on={draft.splitWith.includes(p.id)}
-              on:click={() => toggleSplit(p.id)}
-            >
-              {who(p.id)}
-            </button>
-          </li>
-        {/each}
-      </ul>
-      {#if draftInto}
-        <p class="sub">
-          {$t("balances.intoHolonHint", {
-            holon: nameOf(holonId),
-            name: who(draft.paidBy),
-          })}
-        </p>
-      {:else if draftShare > 0}
-        <p class="sub">
-          {$t("balances.eachOf", {
-            amount: format(draftShare),
-            n: draft.splitWith.length,
-          })}
-        </p>
+        {#if !fund.signable}
+          <p class="sub warn">{$t("alloc.mintNoSigner")}</p>
+        {:else if !fund.canMint}
+          <p class="sub warn">{$t("alloc.mintNotAttester")}</p>
+        {:else}
+          <p class="sub">
+            {$t("balances.fundHint", { holon: nameOf(holonId) })}
+          </p>
+        {/if}
+      {:else}
+        <div class="k">{$t("balances.paidBy")}</div>
+        <ul class="picks" role="radiogroup" aria-label={$t("balances.paidBy")}>
+          {#each people as p (p.id)}
+            <li>
+              <button
+                role="radio"
+                aria-checked={draft.paidBy === p.id}
+                class="pick"
+                class:on={draft.paidBy === p.id}
+                on:click={() => (draft.paidBy = p.id)}
+              >
+                {who(p.id)}
+              </button>
+            </li>
+          {/each}
+        </ul>
+
+        <div class="field-row">
+          <span class="k">{$t("balances.splitWith")}</span>
+          <button class="link" on:click={splitEveryone}>
+            {everyoneIn ? $t("balances.nobody") : $t("balances.everyone")}
+          </button>
+        </div>
+        <ul class="picks" aria-label={$t("balances.splitWith")}>
+          {#if holonId}
+            <li>
+              <button
+                role="checkbox"
+                aria-checked={draftInto}
+                class="pick"
+                class:on={draftInto}
+                on:click={() => toggleSplit(holonId)}
+              >
+                {$t("balances.intoHolon", { holon: nameOf(holonId) })}
+              </button>
+            </li>
+          {/if}
+          {#each people as p (p.id)}
+            <li>
+              <button
+                role="checkbox"
+                aria-checked={draft.splitWith.includes(p.id)}
+                class="pick"
+                class:on={draft.splitWith.includes(p.id)}
+                on:click={() => toggleSplit(p.id)}
+              >
+                {who(p.id)}
+              </button>
+            </li>
+          {/each}
+        </ul>
+        {#if draftInto}
+          <p class="sub">
+            {$t("balances.intoHolonHint", {
+              holon: nameOf(holonId),
+              name: who(draft.paidBy),
+            })}
+          </p>
+        {:else if draftShare > 0}
+          <p class="sub">
+            {$t("balances.eachOf", {
+              amount: format(draftShare),
+              n: draft.splitWith.length,
+            })}
+          </p>
+        {/if}
       {/if}
       {#if error}<p class="error">{error}</p>{/if}
       <div class="actions">
         <button class="ghost" on:click={() => (addSheet = false)}
           >{$t("common.cancel")}</button
         >
-        <button
-          class="primary"
-          disabled={busy || !draftValid}
-          on:click={confirmAdd}
-        >
-          {busy ? $t("common.saving") : $t("balances.add")}
-        </button>
+        {#if funding}
+          <button
+            class="primary"
+            disabled={busy || !fundValid}
+            on:click={confirmFund}
+          >
+            {busy ? $t("common.saving") : $t("balances.fundRecord")}
+          </button>
+        {:else}
+          <button
+            class="primary"
+            disabled={busy || !draftValid}
+            on:click={confirmAdd}
+          >
+            {busy ? $t("common.saving") : $t("balances.add")}
+          </button>
+        {/if}
       </div>
     </div>
   </Modal>
 {/if}
 
 <style>
-  .sheets {
-    margin: 0 0 0.4rem;
-  }
   .balances {
     animation: kiosk-rise 0.42s ease both;
     padding-bottom: 5rem; /* room for the FAB */
@@ -1117,6 +1235,9 @@
     margin: 0.15rem 0 0;
     font-size: 0.85rem;
     color: var(--muted);
+  }
+  .sub.warn {
+    color: var(--danger);
   }
 
   .k {

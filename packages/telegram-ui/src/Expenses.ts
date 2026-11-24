@@ -8,6 +8,7 @@ import i18next from 'i18next';
 import * as utils from './utilities.js';
 import { createPaddedCaption } from './utilities.js';
 import { hostTelegramPicture } from './Pictures.js';
+import { askArgs, askMissing, withArgs } from './AskMissing.js';
 import { REAEventStore, REAEventFactory } from '@holons/core/rea';
 import { REAAggregator } from '@holons/core/scoring';
 import {
@@ -27,6 +28,12 @@ type ExpenseCurrency = string;
 export type { ExpenseRecord, ExpenseCurrency };
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
+
+/** The currency code as /expense stores it: lowercase, singular, letters only. */
+const normalizeCurrencyWord = (word: string): string =>
+    word.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '');
+
+const isMention = (e: any) => e.type === 'text_mention' || e.type === 'mention';
 
 // --- Local structural types (UI-only; bot/db are duck-typed) ---
 type AnyCtx = any;
@@ -155,7 +162,7 @@ export default class Expenses {
             await this.selectAllParticipants(ctx, holonId, messageId, expenseID);
         });
 
-        bot.command(['clear', 'balance', 'credit', 'bilancio'], async (ctx: any) => {
+        const balance = async (ctx: any): Promise<any> => {
             const holonId = ctx.chat.id;
             const currency = ctx.message.text.split(' ').slice(1)[0];
             const language = await this.settings.getLanguage(holonId)
@@ -167,7 +174,19 @@ export default class Expenses {
             
             if (currency == null || currency.length == 0) {
                 console.log(`❌ No currency specified`);
-                return ctx.reply(i18next.t('balanceusage', { lng: language }));
+                const currentSettings = await this.settings.getSettings(holonId);
+                const allowed: string[] = currentSettings?.currencies || [];
+                return askArgs(ctx, [{
+                    key: 'currency',
+                    ask: allowed.length ? 'ask_balance_currency_allowed' : 'ask_balance_currency',
+                    question: allowed.length
+                        ? 'Which currency do you want the balance for? ({{allowed}})'
+                        : 'Which currency do you want the balance for?',
+                    vars: { allowed: allowed.join(', ') },
+                    validate: (s: string) => !/\s/.test(s),
+                    error: 'ask_err_balance_currency',
+                    errorText: 'Please send just the currency, in one word — e.g. euro',
+                }], balance, { lng: language, usage: i18next.t('balanceusage', { lng: language }) ?? undefined });
             }
             
             console.log(`✅ Currency specified: ${currency}`);
@@ -216,7 +235,8 @@ export default class Expenses {
                       ])
                 }).catch((err: unknown) => console.log(err));
             });
-        });
+        };
+        bot.command(['clear', 'balance', 'credit', 'bilancio'], balance);
 
     }
     // show all transactions in the ledger
@@ -249,10 +269,6 @@ export default class Expenses {
         const args = ctx.message.text.split(' ').slice(1);
         const language = await this.settings.getLanguage(holonId)
         const command = ctx.message.text.split(' ')[0].replace('/', '');
-        if (args.length < 3) {
-            return ctx.reply(i18next.t('expenseusage', { command: command, lng: language }));
-        }
-
         // An admin posting anonymously arrives as Telegram's anonymous-admin
         // bot, so there is no person to record as the payer.
         if (ctx.from?.is_bot) {
@@ -260,6 +276,10 @@ export default class Expenses {
                 lng: language,
                 defaultValue: 'Expenses need a payer — turn off "Remain anonymous" and try again.'
             }));
+        }
+
+        if (args.length < 3) {
+            return this.askExpense(ctx, holonId, language, command, args.filter(Boolean));
         }
 
         const amount = parseFloat(args[0]);
@@ -302,6 +322,117 @@ export default class Expenses {
         }
     };
 
+    /**
+     * /expense without all three of amount, currency and description: ask for
+     * the ones that are missing, one at a time, then run the command again
+     * with all three in place. What was typed is kept — positionally, or as
+     * the description when it does not start with a number.
+     */
+    async askExpense(ctx: any, holonId: number | string, language: string, command: string, given: string[]) {
+        const usage = i18next.t('expenseusage', { command: command, lng: language });
+        const amountOf = (s: string) => Number(s.replace(',', '.'));
+        const currentSettings = await this.settings.getSettings(holonId);
+        const allowed: string[] = currentSettings?.currencies || [];
+
+        const typed: { amount?: string; currency?: string; description?: string } = {};
+        if (given.length && !(amountOf(given[0]) > 0)) typed.description = given.join(' ');
+        else [typed.amount, typed.currency] = given;
+
+        const questions: any[] = [];
+        if (!typed.amount) questions.push({
+            key: 'amount',
+            ask: 'ask_expense_amount',
+            question: 'How much did you spend? Send just the number, e.g. 12.50',
+            validate: (s: string) => /^\d+([.,]\d+)?$/.test(s) && amountOf(s) > 0,
+            error: 'ask_err_expense_amount',
+            errorText: 'Please send a number above zero, e.g. 12.50',
+        });
+        if (!typed.currency) questions.push({
+            key: 'currency',
+            ask: allowed.length ? 'ask_expense_currency_allowed' : 'ask_expense_currency',
+            question: allowed.length ? 'In which currency? ({{allowed}})' : 'In which currency?',
+            vars: { allowed: allowed.join(', ') },
+            // The same rule spent() applies to the currency word.
+            validate: (s: string) => {
+                if (/\s/.test(s)) return false;
+                const normalized = normalizeCurrencyWord(s);
+                return allowed.length > 0 ? allowed.includes(normalized) : normalized.length > 0;
+            },
+            error: allowed.length ? 'ask_err_expense_currency' : 'ask_err_balance_currency',
+            errorText: allowed.length
+                ? 'Please send one of: {{allowed}}'
+                : 'Please send just the currency, in one word — e.g. euro',
+        });
+        if (!typed.description) questions.push({
+            key: 'description',
+            ask: 'ask_expense_description',
+            question: 'What was it for?',
+        });
+
+        return askMissing(ctx, questions, (values: any, original: any) => this.spent(withArgs(
+            original,
+            (typed.amount ?? values.amount).replace(',', '.'),
+            typed.currency ?? values.currency,
+            typed.description ?? values.description,
+        )), { lng: language, usage });
+    }
+
+    /**
+     * /add and /remove name an expense (by replying to its message) and a
+     * person (by @mention). Ask for whichever is missing — the expense by its
+     * id, as /ledger lists it — then run the command again as if the user had
+     * replied to that expense and mentioned that person.
+     */
+    askSplitChange(ctx: any, language: string, mode: 'add' | 'remove', need: { expense: boolean; user: boolean }) {
+        const holonId = ctx.chat.id;
+        const toId = (s: string) => {
+            const id = s.replace(/^#/, '');
+            return /^\d+$/.test(id) ? Number(id) : id;
+        };
+        let mention: { text: string; entities: any[] } | null = null;
+        const questions: any[] = [];
+        if (need.expense) questions.push({
+            key: 'expense',
+            ask: mode === 'add' ? 'ask_add_expense' : 'ask_remove_expense',
+            question: mode === 'add'
+                ? 'Which expense do you want to add someone to? Send its id (the ledger shows them: /ledger).'
+                : 'Which expense do you want to remove someone from? Send its id (the ledger shows them: /ledger).',
+            validate: async (s: string) => !/\s/.test(s) && !!(await this.db.get(holonId.toString(), 'expenses', toId(s) as any)),
+            error: 'ask_err_add_expense',
+            errorText: 'I cannot find an expense with that id.',
+        });
+        if (need.user) questions.push({
+            key: 'user',
+            ask: mode === 'add' ? 'ask_add_user' : 'ask_remove_user',
+            question: mode === 'add'
+                ? 'Who should be added to the split? @mention them.'
+                : 'Who should be removed from the split? @mention them.',
+            validate: (_s: string, _values: any, answerCtx: any) => {
+                const entities = (answerCtx?.message?.entities || []).filter(isMention);
+                if (!entities.length) return false;
+                mention = { text: answerCtx.message.text, entities };
+                return true;
+            },
+            error: 'ask_err_add_user',
+            errorText: 'Please @mention the person, e.g. @username',
+        });
+        const usage = need.expense
+            ? `Please reply to the expense message you want to ${mode === 'add' ? 'add a user to' : 'remove a user from'}`
+            : i18next.t(mode === 'add' ? 'expenseaddusage' : 'expenseremoveusage', { lng: language });
+        return askMissing(ctx, questions, (values: any, original: any) => {
+            const message = original.message;
+            if (values.expense) message.reply_to_message = { message_id: toId(values.expense) };
+            if (mention) {
+                // The command text becomes "/add <the answer>", its mention
+                // entities moved along so the handler reads them as typed.
+                const lead = `${String(message.text).split(/\s+/)[0]} `;
+                message.entities = mention.entities.map((e: any) => ({ ...e, offset: e.offset + lead.length }));
+                message.text = lead + mention.text;
+            }
+            return mode === 'add' ? this.addToSplit(original) : this.removeFromSplit(original);
+        }, { lng: language, usage });
+    }
+
     async addExpense(messageId: number | null, holonId: number | string, amount: number, currency: string, description: string, paidBy: number | string, splitWith: Array<number | string>, picture: string | null = null) {
         // Delegate validation, currency normalization and description-prefix
         // stripping to @holons/core/expenses.createExpense. Returns null on
@@ -340,23 +471,17 @@ export default class Expenses {
     async removeFromSplit(ctx: any) {
         const language = await this.settings.getLanguage(ctx.chat.id)
 
-        if (!ctx.message.reply_to_message){
-            ctx.reply('Please reply to the expense message you want to remove a user from');
-            return;
-        }
-
-        if (!ctx.message.entities || !ctx.message.entities.length) {
-            return ctx.reply(i18next.t('expenseremoveusage', { lng: language }));
+        // The expense is the message replied to (a topic's root is not a
+        // reply); the person is the @mention. Ask for whichever is missing.
+        const replied = ctx.message.reply_to_message;
+        const hasExpense = !!replied && !replied.forum_topic_created;
+        const entity = (ctx.message.entities || []).find(isMention);
+        if (!hasExpense || !entity) {
+            return this.askSplitChange(ctx, language, 'remove', { expense: !hasExpense, user: !entity });
         }
 
         let holonId = ctx.chat.id;
         let expenseID = ctx.message.reply_to_message.message_id; 
-
-        // Get the mentioned user
-        const entity = ctx.message.entities.find((e: any) => e.type === 'text_mention' || e.type === 'mention');
-        if (!entity) {
-            return ctx.reply(i18next.t('usernotfound', { lng: language }));
-        }
 
         try {
             let userId;
@@ -397,19 +522,17 @@ export default class Expenses {
 
     async addToSplit(ctx: any) {
         const language = await this.settings.getLanguage(ctx.chat.id)
-        if (!ctx.message.reply_to_message){
-            ctx.reply('Please reply to the expense message you want to add a user to');
-            return;
+        // The expense is the message replied to (a topic's root is not a
+        // reply); the person is the @mention. Ask for whichever is missing.
+        const replied = ctx.message.reply_to_message;
+        const hasExpense = !!replied && !replied.forum_topic_created;
+        const entity = (ctx.message.entities || []).find(isMention);
+        if (!hasExpense || !entity) {
+            return this.askSplitChange(ctx, language, 'add', { expense: !hasExpense, user: !entity });
         }
 
         let holonId = ctx.chat.id;
         let expenseID = ctx.message.reply_to_message.message_id;
-
-        // Get the mentioned user
-        const entity = ctx.message.entities.find((e: any) => e.type === 'text_mention' || e.type === 'mention');
-        if (!entity) {
-            return ctx.reply(i18next.t('expenseaddusage', { lng: language }));
-        }
 
         try {
             let userId;

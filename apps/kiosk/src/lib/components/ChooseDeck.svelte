@@ -72,9 +72,10 @@
   export let colorFor: (category: string | undefined) => string;
   export let dueLabel: (t: BacklogTask) => string | null;
   export let onOpen: (id: string) => void;
+  /** `"held"`: the key isn't linked where the card lives — the caller says so. */
   export let onJoin: (
     t: BacklogTask,
-  ) => Promise<"joined" | "already" | "failed">;
+  ) => Promise<"joined" | "already" | "held" | "failed">;
   export let onLike: (
     t: BacklogTask,
   ) => Promise<"liked" | "already" | "failed">;
@@ -365,7 +366,10 @@
         burst("celebrate");
         offerUndo(task, "join", k);
       } else if (res === "already") showNotice($t("swipe.alreadyIn"));
-      else refused(k, task, "swipe.joinFailed");
+      else if (res === "held") {
+        unDismiss(k, task.id);
+        putBack(task.id);
+      } else refused(k, task, "swipe.joinFailed");
       return;
     }
     if (appreciating(task)) return showNotice($t("swipe.alreadyAppreciated"));

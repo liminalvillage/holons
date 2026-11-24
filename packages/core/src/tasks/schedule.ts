@@ -233,3 +233,34 @@ function dateField(d: Date): string {
 function timeField(d: Date): string {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
+
+/**
+ * When a quest was added — its `created` stamp (ISO string; older bot records
+ * may carry epoch milliseconds or seconds; a bare `YYYY-MM-DD` is that day's
+ * local midnight). Null when absent or unparsable, so
+ * a UI simply leaves the "Added …" line out rather than showing a bogus date.
+ */
+export function questCreatedAt(q: { created?: unknown } | null | undefined): Date | null {
+  const raw = q?.created;
+  let d: Date;
+  if (typeof raw === 'number') {
+    if (!Number.isFinite(raw) || raw <= 0) return null;
+    // Seconds vs milliseconds: anything below 1e11 is seconds (pre-1973 in ms).
+    d = new Date(raw < 1e11 ? raw * 1000 : raw);
+  } else if (typeof raw === 'string') {
+    const s = raw.trim();
+    if (!s) return null;
+    if (/^\d+$/.test(s)) return questCreatedAt({ created: Number(s) });
+    // A bare date is a calendar day, not an instant: `new Date('YYYY-MM-DD')`
+    // reads it as UTC midnight, which is the previous day west of UTC.
+    const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (day) {
+      const [y, m, dd] = [Number(day[1]), Number(day[2]) - 1, Number(day[3])];
+      d = new Date(y, m, dd);
+      if (d.getMonth() !== m || d.getDate() !== dd) return null; // 2026-13-40
+    } else d = new Date(s);
+  } else {
+    return null;
+  }
+  return Number.isNaN(d.getTime()) ? null : d;
+}

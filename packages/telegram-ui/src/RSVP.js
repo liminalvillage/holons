@@ -5,6 +5,7 @@
 
 import { Markup } from 'telegraf';
 import { toggleRSVP } from '@holons/core/calendar';
+import { askArgs } from './AskMissing.js';
 
 /**
  * RSVP system for event participation tracking.
@@ -41,8 +42,20 @@ export default class RSVP {
     const holonId = ctx.chat.id;
     const topic = ctx.message.text.split(' ').slice(1).join(' '); // TODO: Save topic in db (under chat/usermessage) so it can be retrieved later
     if (!topic) {
-      ctx.reply('Please provide a title for the RSVP.');
-      return;
+      // A bare /rsvp asks for the title; the answer re-enters as
+      // `/rsvp <title>`.
+      return askArgs(
+        ctx,
+        [
+          {
+            key: 'title',
+            ask: 'ask_rsvp_title',
+            question: 'What is the RSVP for? Send its title.',
+          },
+        ],
+        ctx => this.rsvp(ctx),
+        { usage: 'Please provide a title for the RSVP.' }
+      );
     }
     const users = await this.db.getAll(holonId.toString(), 'users');
     if (users.lenght == 0) {

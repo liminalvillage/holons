@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn, words } from '$lib/vocabulary';
   // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
@@ -306,7 +307,7 @@
   function fail(err: unknown, text: string) {
     console.error("[offers]", err);
     if (isDenied(err)) {
-      notifyWriteDenied("Unable to save — no write permission for this holon");
+      notifyWriteDenied(nn("Unable to save — no write permission for this {@holon}"));
       say("You can't change this.");
     } else say(text);
   }
@@ -753,7 +754,7 @@
   {#if loading && !quests.length}
     <p class="empty">Reading the market…</p>
   {:else if !board}
-    <p class="empty">Pick a holon.</p>
+    <p class="empty">Pick {words.a_holon}.</p>
   {:else if lane === "supply"}
     <section class="panel">
       <div class="stats">

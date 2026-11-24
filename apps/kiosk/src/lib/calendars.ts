@@ -17,14 +17,17 @@
 import { writable, get } from "svelte/store";
 import {
   IMPORTED_CALENDARS_KEY,
+  applyCalendarEdit,
   isValidICalUrl,
+  looksLikeICal,
   normalizeICalUrl,
+  normalizeICalUrls,
   parseICalText,
   readImportedCalendars,
   type ImportedCalendar,
+  type ImportedCalendarEdit,
 } from "@holons/core/calendar";
 import { getHolosphere, getWriter } from "./holosphere";
-import { normalizeHolonColor } from "@holons/core/settings";
 import {
   externalEventColor,
   toExternalEvents,
@@ -41,6 +44,13 @@ export const externalEvents = writable<CalendarEvent[]>([]);
 
 /** True while feeds are being (re)fetched — the settings sheet says so. */
 export const calendarsSyncing = writable(false);
+
+/**
+ * Feeds whose last read failed, by calendar id — the settings sheet flags
+ * them so a bad link (a Google share page instead of its iCal address) is
+ * visible instead of silently drawing nothing.
+ */
+export const calendarFeedErrors = writable<Record<string, true>>({});
 
 /** Which holon the two stores above currently describe. */
 let boundHolon: string | null = null;
@@ -61,14 +71,21 @@ function expansionWindow(): { start: Date; end: Date } {
   };
 }
 
+/** Read the holon's subscribed feeds; throws when the record can't be read. */
+async function readPersistedCalendars(
+  holon: string,
+): Promise<ImportedCalendar[]> {
+  const hs = await getHolosphere();
+  const record = await hs.get(holon, "settings", IMPORTED_CALENDARS_KEY);
+  return readImportedCalendars(record);
+}
+
 /** Read the holon's subscribed feeds. Returns [] for an unreadable record. */
 export async function loadImportedCalendars(
   holon: string,
 ): Promise<ImportedCalendar[]> {
   try {
-    const hs = await getHolosphere();
-    const record = await hs.get(holon, "settings", IMPORTED_CALENDARS_KEY);
-    return readImportedCalendars(record);
+    return await readPersistedCalendars(holon);
   } catch (err) {
     console.error("[kiosk] failed to read the subscribed calendars", err);
     return [];
@@ -97,10 +114,15 @@ export async function saveImportedCalendars(
   }
 }
 
-/** Fetch and parse one feed. A failing feed yields [] — the board still draws. */
-async function readFeed(calendar: ImportedCalendar): Promise<CalendarEvent[]> {
+/**
+ * Fetch and parse one feed. A failing feed yields no events — the board still
+ * draws — and `failed`, so the settings sheet can say which link is broken.
+ */
+async function readFeed(
+  calendar: ImportedCalendar,
+): Promise<{ events: CalendarEvent[]; failed: boolean }> {
   const url = normalizeICalUrl(calendar.url);
-  if (!isValidICalUrl(url)) return [];
+  if (!isValidICalUrl(url)) return { events: [], failed: true };
   try {
     // Calendar hosts (Google, iCloud, Nextcloud) send no CORS headers, so the
     // request goes through our own endpoint rather than straight out.
@@ -108,16 +130,19 @@ async function readFeed(calendar: ImportedCalendar): Promise<CalendarEvent[]> {
       headers: { Accept: "text/calendar, text/plain, */*" },
     });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const text = await res.text();
+    // A share page or login wall answers 200 with HTML — not a calendar.
+    if (!looksLikeICal(text)) throw new Error("response is not an iCal feed");
     const parsed = parseICalText(
-      await res.text(),
+      text,
       calendar.url,
       calendar.name,
       expansionWindow(),
     );
-    return toExternalEvents(parsed.events, calendar);
+    return { events: toExternalEvents(parsed.events, calendar), failed: false };
   } catch (err) {
     console.warn(`[kiosk] calendar feed "${calendar.name}" failed`, err);
-    return [];
+    return { events: [], failed: true };
   }
 }
 
@@ -137,6 +162,7 @@ export async function refreshExternalCalendars(
     boundHolon = null;
     importedCalendars.set([]);
     externalEvents.set([]);
+    calendarFeedErrors.set({});
     return;
   }
   const switched = holon !== boundHolon;
@@ -145,6 +171,7 @@ export async function refreshExternalCalendars(
     boundHolon = holon;
     importedCalendars.set([]);
     externalEvents.set([]);
+    calendarFeedErrors.set({});
   }
 
   lastRefreshAt = Date.now();
@@ -157,36 +184,75 @@ export async function refreshExternalCalendars(
     const enabled = calendars.filter((c) => c.enabled);
     if (!enabled.length) {
       externalEvents.set([]);
+      calendarFeedErrors.set({});
       return;
     }
     const feeds = await Promise.all(enabled.map(readFeed));
     // A holon switch mid-fetch must not land the old holon's events.
     if (boundHolon !== holon) return;
-    externalEvents.set(feeds.flat());
+    externalEvents.set(feeds.flatMap((f) => f.events));
+    const failed: Record<string, true> = {};
+    enabled.forEach((c, i) => {
+      if (feeds[i].failed) failed[c.id] = true;
+    });
+    calendarFeedErrors.set(failed);
   } finally {
     if (boundHolon === holon) calendarsSyncing.set(false);
   }
 }
 
-/** Add a feed, persist it, and pull it in. `false` when the URL is unusable. */
+/**
+ * Apply `edit` to the holon's feed list and save it.
+ *
+ * The list is re-read from the settings lens and the ONE change is applied to
+ * that fresh copy (core `applyCalendarEdit`) — never merged with what this
+ * kiosk holds, so a feed removed on another device stays removed, and an edit
+ * made before the store loaded never saves a partial list. An unreadable
+ * record aborts the save.
+ */
+async function editImportedCalendars(
+  holon: string,
+  edit: ImportedCalendarEdit | ImportedCalendarEdit[],
+): Promise<boolean> {
+  let persisted: ImportedCalendar[];
+  try {
+    persisted = await readPersistedCalendars(holon);
+  } catch (err) {
+    console.error("[kiosk] failed to read the subscribed calendars", err);
+    return false;
+  }
+  const calendars = applyCalendarEdit(persisted, edit);
+  if (boundHolon === holon) importedCalendars.set(calendars);
+  return saveImportedCalendars(holon, calendars);
+}
+
+/**
+ * Add a feed, persist it, and pull it in. `false` when the URL is unusable.
+ * A Google share/embed link is stored as its iCal address — one entry per
+ * calendar when the link shows several (core `normalizeICalUrls`); a feed
+ * already followed is not added twice.
+ */
 export async function addImportedCalendar(
   holon: string,
   url: string,
   name: string,
 ): Promise<boolean> {
-  const trimmed = url.trim();
-  if (!isValidICalUrl(trimmed)) return false;
-  const calendars = [
-    ...get(importedCalendars),
-    {
-      id: `cal_${Date.now()}`,
-      url: trimmed,
-      name: name.trim() || "Imported Calendar",
-      enabled: true,
-    },
-  ];
-  importedCalendars.set(calendars);
-  const ok = await saveImportedCalendars(holon, calendars);
+  const feeds = normalizeICalUrls(url).filter(isValidICalUrl);
+  if (!feeds.length) return false;
+  const label = name.trim() || "Imported Calendar";
+  const stamp = Date.now();
+  const ok = await editImportedCalendars(
+    holon,
+    feeds.map((feed, i) => ({
+      type: "add" as const,
+      entry: {
+        id: i ? `cal_${stamp}_${i}` : `cal_${stamp}`,
+        url: feed,
+        name: feeds.length > 1 ? `${label} ${i + 1}` : label,
+        enabled: true,
+      },
+    })),
+  );
   await refreshExternalCalendars(holon, true);
   return ok;
 }
@@ -196,9 +262,7 @@ export async function removeImportedCalendar(
   holon: string,
   id: string,
 ): Promise<boolean> {
-  const calendars = get(importedCalendars).filter((c) => c.id !== id);
-  importedCalendars.set(calendars);
-  const ok = await saveImportedCalendars(holon, calendars);
+  const ok = await editImportedCalendars(holon, { type: "remove", id });
   await refreshExternalCalendars(holon, true);
   return ok;
 }
@@ -208,11 +272,7 @@ export async function toggleImportedCalendar(
   holon: string,
   id: string,
 ): Promise<boolean> {
-  const calendars = get(importedCalendars).map((c) =>
-    c.id === id ? { ...c, enabled: !c.enabled } : c,
-  );
-  importedCalendars.set(calendars);
-  const ok = await saveImportedCalendars(holon, calendars);
+  const ok = await editImportedCalendars(holon, { type: "toggle", id });
   await refreshExternalCalendars(holon, true);
   return ok;
 }
@@ -228,22 +288,20 @@ export async function recolorImportedCalendar(
   id: string,
   color: string,
 ): Promise<boolean> {
-  const clean = normalizeHolonColor(color);
-  const calendars = get(importedCalendars).map((c) => {
-    if (c.id !== id) return c;
-    const { color: _, ...rest } = c;
-    return clean ? { ...rest, color: clean } : rest;
-  });
-  importedCalendars.set(calendars);
-  const changed = calendars.find((c) => c.id === id);
-  if (changed) {
-    const next = externalEventColor(changed);
-    const prefix = `ext:${id}:`;
-    externalEvents.update((evs) =>
-      evs.map((e) => (e.id.startsWith(prefix) ? { ...e, color: next } : e)),
-    );
+  const edit: ImportedCalendarEdit = { type: "recolor", id, color };
+  // Recolour on screen at once; the save re-reads the list (see above).
+  if (boundHolon === holon) {
+    importedCalendars.update((cals) => applyCalendarEdit(cals, edit));
+    const changed = get(importedCalendars).find((c) => c.id === id);
+    if (changed) {
+      const next = externalEventColor(changed);
+      const prefix = `ext:${id}:`;
+      externalEvents.update((evs) =>
+        evs.map((e) => (e.id.startsWith(prefix) ? { ...e, color: next } : e)),
+      );
+    }
   }
-  return saveImportedCalendars(holon, calendars);
+  return editImportedCalendars(holon, edit);
 }
 
 /**

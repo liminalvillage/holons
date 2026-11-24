@@ -30,6 +30,7 @@ import {
 import { DEFAULT_EQUATION } from '@holons/core/scoring';
 import { hostTelegramPicture } from './Pictures.js';
 import { miniAppButton } from './MiniApps.js';
+import { askArgs } from './AskMissing.js';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
@@ -238,7 +239,14 @@ export default class Events {
         const picture = ctx.message.photo ? ctx.message.photo[ctx.message.photo.length - 1].file_id : null;
 
         if (!title) {
-            return ctx.reply(i18next.t('usage', { type: 'event', lng: language }));
+            const usage = i18next.t('usage', { type: 'event', lng: language });
+            // A bare /event asks for the title; the answer re-enters this
+            // handler as `/event <title>`.
+            return askArgs(ctx, [{
+                key: 'title',
+                ask: 'ask_event_title',
+                question: 'What is the title of the event?',
+            }], ctx => this.createEvent(ctx), { lng: language, usage });
         }
 
         // Create event object

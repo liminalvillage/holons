@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
 	import { createEventDispatcher } from 'svelte';
 	import { Search, Plus, X } from 'svelte-feathers';
 
@@ -25,7 +26,7 @@
 		<input
 			type="text"
 			class="browser-header__search-input"
-			placeholder="Search holons..."
+			placeholder="Search {words.holons}..."
 			bind:value={searchQuery}
 		/>
 		{#if searchQuery}
@@ -35,7 +36,7 @@
 		{/if}
 	</div>
 
-	<button class="browser-header__add" on:click={handleAdd} aria-label="Add holon">
+	<button class="browser-header__add" on:click={handleAdd} aria-label="Add {words.holon}">
 		<Plus size="18" />
 	</button>
 

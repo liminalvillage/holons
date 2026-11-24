@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
 	import { goto } from '$app/navigation';
 	import { ShieldOff, Home, ArrowLeft } from 'svelte-feathers';
 	import { getContext } from 'svelte';
@@ -31,7 +32,7 @@
 		<h1 class="access-denied__title">Access Denied</h1>
 
 		<p class="access-denied__message">
-			You don't have permission to view this holon
+			You don't have permission to view this {words.holon}
 			{#if holonName}
 				<span class="access-denied__holon-name">"{holonName}"</span>
 			{:else if holonId}
@@ -40,13 +41,13 @@
 		</p>
 
 		<p class="access-denied__hint">
-			To access this holon, the owner needs to grant you federation access.
+			To access this {words.holon}, the owner needs to grant you federation access.
 		</p>
 
 		<div class="access-denied__actions">
 			<button class="access-denied__btn access-denied__btn--primary" on:click={goToMyHolon}>
 				<Home size="18" />
-				Go to My Holon
+				Go to My {words.Holon}
 			</button>
 			<button class="access-denied__btn access-denied__btn--secondary" on:click={goBack}>
 				<ArrowLeft size="18" />

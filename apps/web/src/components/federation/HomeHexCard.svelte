@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
     // The home hex, configured like any other federation partner.
     //
     // A cell differs from a peer in one way that matters: it sits inside a nest
@@ -169,7 +170,7 @@
             <div>
                 <h3>Home hex</h3>
                 <p class="hexcard__sub">
-                    The ground this holon stands on. Linked, it works like any other
+                    The ground this {words.holon} stands on. Linked, it works like any other
                     federation partner — but what you send out appears on the map.
                 </p>
             </div>
@@ -201,7 +202,7 @@
     {#if !loading && !cell}
         <p class="hexcard__empty">
             No hex address set. Pick one in <a href="/{$ID}/settings">Settings → Hex Address</a>
-            to put this holon on the map.
+            to put this {words.holon} on the map.
         </p>
     {:else if cell}
         <p class="hexcard__cell"><code>{cell}</code></p>

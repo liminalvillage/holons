@@ -21,6 +21,7 @@ import timezone from 'dayjs/plugin/timezone.js';
 import { log } from '../utils/logger.js';
 import { getQuestHolon } from './utilities.js';
 import { notifyNostr } from './createHoloSphere.js';
+import { askArgs, askMissing, withArgs } from './AskMissing.js';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -150,14 +151,6 @@ class Scheduler {
     const holonId = ctx.message.chat.id;
     const [frequency, ...taskDetails] = ctx.message.text.split(' ').slice(1);
 
-    if (!frequency || taskDetails.length === 0) {
-      ctx.reply(
-        'Usage: /recurring [frequency] [task description]\nFrequencies: daily, weekly, monthly, quarterly, yearly\nUse /when to set the start time'
-      );
-      return;
-    }
-
-    // Validate frequency
     const validFrequencies = [
       'daily',
       'weekly',
@@ -165,7 +158,50 @@ class Scheduler {
       'quarterly',
       'yearly',
     ];
-    if (!validFrequencies.includes(frequency.toLowerCase())) {
+    const isFrequency = s => validFrequencies.includes(s.toLowerCase());
+
+    if (!frequency || taskDetails.length === 0) {
+      // Ask for what is missing instead of explaining the command; the
+      // answers re-enter this handler as `/recurring <frequency> <task>`.
+      const usage =
+        'Usage: /recurring [frequency] [task description]\nFrequencies: daily, weekly, monthly, quarterly, yearly\nUse /when to set the start time';
+      const askFrequency = {
+        key: 'frequency',
+        ask: 'ask_recurring_frequency',
+        question: 'How often should it repeat?\n{{frequencies}}',
+        vars: { frequencies: validFrequencies.join(', ') },
+        validate: isFrequency,
+        error: 'ask_err_recurring_frequency',
+        errorText: 'Please send one of: {{frequencies}}',
+      };
+      const askTask = {
+        key: 'task',
+        ask: 'ask_recurring_task',
+        question: 'What is the task to repeat {{frequency}}?',
+        vars: v => ({ frequency: v.frequency || frequency }),
+      };
+      if (!frequency)
+        return askArgs(ctx, [askFrequency, askTask], ctx => this.addTask(ctx), {
+          usage,
+        });
+      if (isFrequency(frequency))
+        return askArgs(ctx, [askTask], ctx => this.addTask(ctx), {
+          usage,
+          prefix: frequency,
+        });
+      // One word that is not a frequency: it is the task, the frequency is
+      // what is missing.
+      return askMissing(
+        ctx,
+        [askFrequency],
+        (values, ctx) =>
+          this.addTask(withArgs(ctx, values.frequency, frequency)),
+        { usage }
+      );
+    }
+
+    // Validate frequency
+    if (!isFrequency(frequency)) {
       ctx.reply(
         `Invalid frequency. Please use one of: ${validFrequencies.join(', ')}`
       );

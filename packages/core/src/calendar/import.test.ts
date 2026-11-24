@@ -8,6 +8,12 @@ import {
     toWebcalUrl,
     readImportedCalendars,
     importedCalendarColor,
+    googleICalUrl,
+    looksLikeICal,
+    googleICalUrls,
+    normalizeICalUrls,
+    applyCalendarEdit,
+    appendImportedCalendar,
 } from './index.js';
 
 /** Minimal well-formed feed builder — VEVENT bodies are passed in. */
@@ -125,6 +131,130 @@ describe('feed URLs', () => {
         expect(normalizeICalUrl('https://example.com/c.ics')).toBe('https://example.com/c.ics');
         expect(toWebcalUrl('https://example.com/c.ics')).toBe('webcal://example.com/c.ics');
         expect(toWebcalUrl('http://example.com/c.ics')).toBe('webcal://example.com/c.ics');
+    });
+});
+
+describe('Google Calendar links', () => {
+    const ical = (id: string) =>
+        `https://calendar.google.com/calendar/ical/${encodeURIComponent(id)}/public/basic.ics`;
+
+    it('turns a share link with a base64 cid into the public iCal address', () => {
+        // btoa('team@group.calendar.google.com'), padding stripped as Google does.
+        const cid = btoa('team@group.calendar.google.com').replace(/=+$/, '');
+        const share = `https://calendar.google.com/calendar/u/0?cid=${cid}`;
+        expect(googleICalUrl(share)).toBe(ical('team@group.calendar.google.com'));
+        expect(normalizeICalUrl(share)).toBe(ical('team@group.calendar.google.com'));
+        expect(normalizeICalUrl(`https://calendar.google.com/calendar/r?cid=${cid}`)).toBe(
+            ical('team@group.calendar.google.com')
+        );
+    });
+
+    it('accepts a raw id in cid and an embed src', () => {
+        expect(normalizeICalUrl('https://calendar.google.com/calendar/u/0?cid=someone%40gmail.com')).toBe(
+            ical('someone@gmail.com')
+        );
+        expect(
+            normalizeICalUrl(
+                'https://calendar.google.com/calendar/embed?src=en.italian%23holiday%40group.v.calendar.google.com&ctz=Europe%2FRome'
+            )
+        ).toBe(
+            'https://calendar.google.com/calendar/ical/en.italian%23holiday%40group.v.calendar.google.com/public/basic.ics'
+        );
+    });
+
+    it('follows a cid that is itself a feed URL', () => {
+        expect(
+            normalizeICalUrl('https://calendar.google.com/calendar/r?cid=webcal%3A%2F%2Fexample.com%2Fc.ics')
+        ).toBe('https://example.com/c.ics');
+    });
+
+    it('leaves real feed addresses and other hosts alone', () => {
+        const secret =
+            'https://calendar.google.com/calendar/ical/me%40gmail.com/private-abc123/basic.ics';
+        expect(googleICalUrl(secret)).toBeNull();
+        expect(normalizeICalUrl(secret)).toBe(secret);
+        expect(normalizeICalUrl('webcal://calendar.google.com/calendar/ical/x%40gmail.com/public/basic.ics')).toBe(
+            'https://calendar.google.com/calendar/ical/x%40gmail.com/public/basic.ics'
+        );
+        expect(googleICalUrl('https://example.com/calendar?cid=abc%40x.com')).toBeNull();
+        expect(googleICalUrl('https://calendar.google.com/calendar/u/0')).toBeNull();
+        // A cid that is neither an id nor base64 of one is left for the user to fix.
+        expect(googleICalUrl('https://calendar.google.com/calendar/u/0?cid=!!!')).toBeNull();
+        expect(googleICalUrl('not a url')).toBeNull();
+    });
+});
+
+describe('googleICalUrls', () => {
+    const ical = (id: string) =>
+        `https://calendar.google.com/calendar/ical/${encodeURIComponent(id)}/public/basic.ics`;
+
+    it('returns one feed per calendar an embed link shows', () => {
+        const embed =
+            'https://calendar.google.com/calendar/embed?src=team%40group.calendar.google.com' +
+            '&src=en.italian%23holiday%40group.v.calendar.google.com&src=team%40group.calendar.google.com&ctz=Europe%2FRome';
+        const both = [ical('team@group.calendar.google.com'), ical('en.italian#holiday@group.v.calendar.google.com')];
+        expect(googleICalUrls(embed)).toEqual(both);
+        expect(normalizeICalUrls(embed)).toEqual(both);
+        // The single-feed form keeps answering with the first.
+        expect(googleICalUrl(embed)).toBe(both[0]);
+    });
+
+    it('skips unreadable ids and leaves non-Google links to normalizeICalUrl', () => {
+        expect(googleICalUrls('https://calendar.google.com/calendar/embed?src=!!!&src=me%40gmail.com')).toEqual([
+            ical('me@gmail.com'),
+        ]);
+        expect(googleICalUrls('https://example.com/c.ics')).toEqual([]);
+        expect(normalizeICalUrls('webcal://example.com/c.ics')).toEqual(['https://example.com/c.ics']);
+    });
+});
+
+describe('looksLikeICal', () => {
+    it('tells a feed from an HTML page', () => {
+        expect(looksLikeICal(feed(''))).toBe(true);
+        expect(looksLikeICal('﻿  BEGIN:VCALENDAR\r\nEND:VCALENDAR')).toBe(true);
+        expect(looksLikeICal('<!doctype html><html>…</html>')).toBe(false);
+        expect(looksLikeICal('')).toBe(false);
+    });
+});
+
+describe('imported-calendar list edits', () => {
+    const a = { id: 'a', url: 'https://x.com/a.ics', name: 'A', enabled: true };
+    const b = { id: 'b', url: 'https://x.com/b.ics', name: 'B', enabled: false };
+
+    it('applies one edit to the fresh list — a feed removed elsewhere stays removed', () => {
+        // Device 1 held [a, b]; device 2 removed b. Device 1 now toggles a:
+        // the edit lands on the FRESH persisted list, b does not come back.
+        const fresh = [a];
+        expect(applyCalendarEdit(fresh, { type: 'toggle', id: 'a' })).toEqual([{ ...a, enabled: false }]);
+        // Toggling the feed removed elsewhere is a no-op, not a resurrection.
+        expect(applyCalendarEdit(fresh, { type: 'toggle', id: 'b' })).toEqual([a]);
+        expect(applyCalendarEdit(fresh, { type: 'recolor', id: 'b', color: '#112233' })).toEqual([a]);
+    });
+
+    it('adds, removes, toggles and recolours by id', () => {
+        expect(applyCalendarEdit([a], { type: 'add', entry: b })).toEqual([a, b]);
+        // The same feed under another id is not doubled.
+        expect(applyCalendarEdit([a], { type: 'add', entry: { ...b, url: 'webcal://x.com/a.ics' } })).toEqual([a]);
+        expect(applyCalendarEdit([a, b], { type: 'remove', id: 'a' })).toEqual([b]);
+        expect(applyCalendarEdit([b], { type: 'toggle', id: 'b' })).toEqual([{ ...b, enabled: true }]);
+        const red = applyCalendarEdit([a], { type: 'recolor', id: 'a', color: '#FF0000' });
+        expect(red[0].color).toBe('#ff0000');
+        expect(applyCalendarEdit(red, { type: 'recolor', id: 'a', color: '' })).toEqual([a]);
+        expect(applyCalendarEdit([a], { type: 'recolor', id: 'a', color: 'red; x' })).toEqual([a]);
+        // Several edits apply in order; the input is never mutated.
+        const input = [a];
+        expect(
+            applyCalendarEdit(input, [
+                { type: 'add', entry: b },
+                { type: 'remove', id: 'a' },
+            ])
+        ).toEqual([b]);
+        expect(input).toEqual([a]);
+    });
+
+    it('append adds a new feed and refuses a duplicate', () => {
+        expect(appendImportedCalendar([a], b)).toEqual([a, b]);
+        expect(appendImportedCalendar([a], { ...b, url: 'webcal://x.com/a.ics' })).toEqual([a]);
     });
 });
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
   // DNA Editor route page
   // Feature: 001-holon-dna-editor
 
@@ -30,7 +31,7 @@
         {#if !holosphere}
           Holosphere context not found
         {:else if !holonId}
-          No holon ID provided
+          No {words.holon} ID provided
         {:else}
           Unknown error
         {/if}

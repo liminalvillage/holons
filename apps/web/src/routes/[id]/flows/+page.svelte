@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
   import Flows from '../../../components/flows/Flows.svelte';
   import { page } from '$app/stores';
   import { ID } from '../../../dashboard/store';
@@ -19,10 +20,10 @@
 </script>
 
 <svelte:head>
-  <title>Value Flows - Holon {holonId}</title>
+  <title>Value Flows - {words.Holon} {holonId}</title>
   <meta
     name="description"
-    content="Value movement and resource allocation for Holon {holonId}"
+    content="Value movement and resource allocation for {words.Holon} {holonId}"
   />
 </svelte:head>
 

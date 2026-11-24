@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   anchoredIds,
+  geoAnchoredIds,
   beaconPath,
   beaconTangents,
   boundsPath,
@@ -35,6 +36,7 @@ import {
   requestSwitch,
   confirmSwitch,
   cancelSwitch,
+  travelTo,
   switchRequest,
   type DockEntry,
 } from "./dock";
@@ -361,6 +363,32 @@ describe("orbClusters", () => {
     expect(clusters.map((c) => [...c].sort())).toEqual([
       ["-1", "-2", "-3"],
       ["-4"],
+    ]);
+  });
+});
+
+describe("geoAnchoredIds (who the geosphere shows)", () => {
+  const placed =
+    (...ids: string[]) =>
+    (id: string) =>
+      ids.includes(id);
+  it("shows only holons with a hex", () => {
+    expect([...geoAnchoredIds(["-1", "-2", "-3"], placed("-2"))]).toEqual([
+      "-2",
+    ]);
+  });
+  it("keeps the current holon even without a hex", () => {
+    expect(
+      [...geoAnchoredIds(["-1", "-2", "-3"], placed("-2"), "-3")].sort(),
+    ).toEqual(["-2", "-3"]);
+  });
+  it("ignores a current holon that is not docked", () => {
+    expect([...geoAnchoredIds(["-1"], placed(), "-9")]).toEqual([]);
+  });
+  it("does not lift a hexless partner of a placed holon", () => {
+    // anchoredIds would carry -2 up through its link to -1; the map does not.
+    expect([...geoAnchoredIds(["-1", "-2"], placed("-1"), null)]).toEqual([
+      "-1",
     ]);
   });
 });
@@ -940,5 +968,41 @@ describe("beaconPath", () => {
     expect(beaconPath(orb, { x: 100, y: 100 }, 50)).toBe("");
     expect(beaconPath(orb, { x: 150, y: 100 }, 50)).toBe("");
     expect(beaconPath(orb, { x: 400, y: 100 }, 0)).toBe("");
+  });
+});
+
+describe("travelTo", () => {
+  const reset = () => {
+    dockEntries.set([]);
+    dockState.set("window");
+    dockOpenTarget.set(null);
+    dockSwitchTarget.set(null);
+    switchRequest.set(null);
+  };
+
+  it("closes the shown board into the dock, then heads for the target — docked as the person's own", () => {
+    reset();
+    expect(travelTo("me", { name: "Me", from: "hub" })).toBe(true);
+    expect(get(switchRequest)).toBeNull();
+    expect(get(dockState)).toBe("closing");
+    expect(get(dockSwitchTarget)).toBe("me");
+    expect(get(dockEntries)).toMatchObject([{ id: "me", name: "Me" }]);
+    expect(get(dockEntries)[0].via).toBeUndefined();
+  });
+
+  it("opens straight from the dock", () => {
+    reset();
+    dockState.set("dock");
+    travelTo("me");
+    expect(get(dockState)).toBe("opening");
+    expect(get(dockOpenTarget)).toBe("me");
+  });
+
+  it("does nothing for the board already shown, or mid-morph", () => {
+    reset();
+    expect(travelTo("me", { from: "me" })).toBe(false);
+    dockState.set("closing");
+    expect(travelTo("me", { from: "hub" })).toBe(false);
+    expect(get(dockSwitchTarget)).toBeNull();
   });
 });

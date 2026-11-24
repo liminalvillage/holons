@@ -4,6 +4,7 @@
  */
 
 import * as utils from './utilities.js';
+import { askArgs } from './AskMissing.js';
 import {
   createAnnouncement,
   federationKey as buildFederationKey,
@@ -46,25 +47,27 @@ class Announcements {
     const language = await this.settings.getLanguage(holonId);
     const message = ctx.message.text.split(' ').slice(1).join(' ');
 
-    if (!message || message.length === 0 || message === '') {
-      // No message provided, use InputScene to collect it
-      // Store the original command message ID in scene state to preserve it
-      return ctx.scene.enter('input_scene', {
-        promptText: utils.i18next.t('announcementprompt', { lng: language }),
-        allowEmpty: false,
-        originalCommandMessageId: messageId, // Preserve original command message ID
-        onComplete: async (callbackCtx, message) => {
-          // Retrieve the original command message ID from scene state
-          const originalMessageId =
-            callbackCtx.scene.state.originalCommandMessageId ||
-            callbackCtx.message.message_id;
-          await this.createAndPublishAnnouncement(
-            callbackCtx,
-            message,
-            originalMessageId
-          );
-        },
-      });
+    if (!message || message.trim() === '') {
+      // No message provided: ask for it. The answer re-enters this handler
+      // on the original command ctx, so the announcement keeps the command's
+      // message id and author.
+      const prompt =
+        utils.i18next.t('announcementprompt', {
+          lng: language,
+          defaultValue: 'What would you like to announce?',
+        }) || 'What would you like to announce?';
+      return askArgs(
+        ctx,
+        [
+          {
+            key: 'message',
+            ask: 'ask_announce_message',
+            question: 'What would you like to announce?',
+          },
+        ],
+        ctx => this.announce(ctx),
+        { lng: language, usage: prompt }
+      );
     }
 
     // Message provided in command, process directly

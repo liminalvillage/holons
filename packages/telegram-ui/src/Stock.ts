@@ -25,6 +25,7 @@ import { Markup } from 'telegraf';
 import * as utils from './utilities.js';
 import { nameResolver } from './protocolContext.js';
 import { miniAppButton } from './MiniApps.js';
+import { askMissing, withArgs } from './AskMissing.js';
 import { REAEventStore } from '@holons/core/rea';
 import { syncSurplusFromShelf } from '@holons/core/offers';
 import { getFederationSnapshot } from '@holons/core/federation';
@@ -558,6 +559,145 @@ class Stock {
     });
   }
 
+  // ── asking for what is missing ───────────────────────────────────────────
+
+  /**
+   * A subcommand's line is `<qty> <item> [note]`. When it is incomplete, ask
+   * for the missing part(s) and run /stock again with the whole line:
+   *   `/stock add`        → how much? → of what?
+   *   `/stock add flour`  → how much?           (the item was typed)
+   *   `/stock add 5kg`    → of what?            (the quantity was typed)
+   * Returns null when the line is complete or wrong in another way — the
+   * caller then answers as before.
+   */
+  private askLine(
+    ctx: AnyCtx,
+    language: string,
+    rest: string,
+    specs: StockItemSpecRecord[],
+    sub: 'add' | 'use' | 'count' | 'target' | 'keep'
+  ): Promise<boolean> | null {
+    const names = specs.map(s => s.name);
+    // Only /stock add may name a new item, and only add/use need more than 0.
+    const mustExist = sub !== 'add';
+    const positive = sub === 'add' || sub === 'use';
+    const typed = rest.trim();
+    /** A quantity on its own: `5`, `5kg`, `5 kg`, `2,5l`. */
+    const isQuantity = (s: string) => {
+      const p = parseQuantityLine(`${s} x`);
+      return !!p && p.item === 'x' && !p.note && (!positive || p.quantity > 0);
+    };
+    const typedQty = typed && isQuantity(typed) ? typed : '';
+    const typedItem = typed && !/^\d/.test(typed) ? typed : '';
+    if (typed && !typedQty && !typedItem) return null;
+    if (mustExist && specs.length === 0) return null;
+
+    const example = {
+      add: '5kg',
+      use: '2kg',
+      count: '12',
+      target: '10kg',
+      keep: '2kg',
+    }[sub];
+    // Each question: its locale key and the English it defaults to.
+    const howMuch = {
+      add: {
+        ask: 'ask_stock_add_qty',
+        question: 'How much came in? Send the quantity, e.g. {{example}}',
+      },
+      use: {
+        ask: 'ask_stock_use_qty',
+        question: 'How much was used? Send the quantity, e.g. {{example}}',
+      },
+      count: {
+        ask: 'ask_stock_count_qty',
+        question:
+          'How much is there now? Send the quantity you counted, e.g. {{example}}',
+      },
+      target: {
+        ask: 'ask_stock_target_qty',
+        question:
+          'Restock up to how much? Send the quantity, e.g. {{example}} (0 clears the target)',
+      },
+      keep: {
+        ask: 'ask_stock_keep_qty',
+        question:
+          'How much should always be kept back? Send the quantity, e.g. {{example}} (0 clears it)',
+      },
+    }[sub];
+    const ofWhat = mustExist
+      ? {
+          ask: 'ask_stock_item_known',
+          question: 'Of which item? ({{items}})',
+          vars: { items: this.itemNames(specs) },
+        }
+      : names.length
+        ? {
+            ask: 'ask_stock_item_named',
+            question:
+              'Of what? Send the item name — a new name creates the item. ({{items}})',
+            vars: { items: names.join(', ') },
+          }
+        : {
+            ask: 'ask_stock_item',
+            question:
+              'Of what? Send the item name — a new name creates the item.',
+          };
+
+    const questions: any[] = [];
+    if (!typedQty)
+      questions.push({
+        key: 'qty',
+        ...howMuch,
+        vars: { example },
+        validate: isQuantity,
+        error: 'ask_err_stock_qty',
+        errorText: 'Please send a quantity, e.g. {{example}}',
+      });
+    if (!typedItem)
+      questions.push({
+        key: 'item',
+        ...ofWhat,
+        validate: (input: string, values: { qty?: string }) => {
+          const line = parseQuantityLine(
+            `${typedQty || values.qty} ${input}`,
+            names
+          );
+          if (!line) return false;
+          if (mustExist && !this.findSpec(specs, line.item))
+            return (
+              this.t('stockunknown', language, {
+                name: line.item,
+                items: this.itemNames(specs),
+              }) || false
+            );
+          return true;
+        },
+      });
+
+    // The subcommand word as it was typed (`add`, `usa`, …), kept for the re-run.
+    const word = (ctx.message?.text ?? '').trim().split(/\s+/)[1] ?? sub;
+    return askMissing(
+      ctx,
+      questions,
+      (values: { qty?: string; item?: string }, original: object) =>
+        this.handle(
+          withArgs(
+            original,
+            word,
+            typedQty || values.qty,
+            typedItem || values.item
+          ) as AnyCtx
+        ),
+      {
+        lng: language,
+        usage: this.t('stockqtyinvalid', language, {
+          example: `${sub} ${example} flour`,
+        }),
+      }
+    );
+  }
+
   // ── dispatch ─────────────────────────────────────────────────────────────
 
   async handle(ctx: AnyCtx) {
@@ -686,6 +826,8 @@ class Stock {
       specs.map(s => s.name)
     );
     if (!parsed || parsed.quantity <= 0) {
+      const asked = !parsed && this.askLine(ctx, language, rest, specs, 'add');
+      if (asked) return asked;
       return ctx.reply(
         this.t('stockqtyinvalid', language, { example: 'add 5kg flour' })
       );
@@ -740,6 +882,8 @@ class Stock {
       specs.map(s => s.name)
     );
     if (!parsed || parsed.quantity <= 0) {
+      const asked = !parsed && this.askLine(ctx, language, rest, specs, 'use');
+      if (asked) return asked;
       return ctx.reply(
         this.t('stockqtyinvalid', language, { example: 'use 2kg flour' })
       );
@@ -776,6 +920,8 @@ class Stock {
       specs.map(s => s.name)
     );
     if (!parsed) {
+      const asked = this.askLine(ctx, language, rest, specs, 'count');
+      if (asked) return asked;
       return ctx.reply(
         this.t('stockqtyinvalid', language, { example: 'count 12 flour' })
       );
@@ -825,6 +971,14 @@ class Stock {
       specs.map(s => s.name)
     );
     if (!parsed) {
+      const asked = this.askLine(
+        ctx,
+        language,
+        rest,
+        specs,
+        field === 'target' ? 'target' : 'keep'
+      );
+      if (asked) return asked;
       return ctx.reply(
         this.t('stockqtyinvalid', language, {
           example: field === 'target' ? 'target 10kg flour' : 'keep 2kg flour',
@@ -972,9 +1126,7 @@ class Stock {
 
   // ── /stock moves ─────────────────────────────────────────────────────────
 
-  private async readPartners(
-    holonId: string
-  ): Promise<{
+  private async readPartners(holonId: string): Promise<{
     federated: string[];
     names: Record<string, string>;
     partners: PartnerStock[];

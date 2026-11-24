@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn, words } from '$lib/vocabulary';
 	import { QRActionService, type QRActionResult, type TelegramUser } from '../../utils/qr-action-service';
 	import { onMount, getContext } from 'svelte';
 	import type { HoloSphere } from "holosphere";
@@ -71,7 +72,7 @@
 				console.log(`[QR Page] Looking up holonID for deckId: ${deckId}`);
 				finalHolonID = await getHolonIdForDeck(holosphere, deckId);
 				if (!finalHolonID) {
-					errorMessage = 'Could not find holon for this deck. The deck may not be registered.';
+					errorMessage = nn('Could not find {@holon} for this deck. The deck may not be registered.');
 					isProcessingAction = false;
 					return;
 				}
@@ -207,7 +208,7 @@
 								on:click={() => goto(actionResult?.redirectUrl || `/${resolvedHolonID}/dashboard`)}
 								class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 py-2.5 rounded-xl transition-colors"
 							>
-								Go to Holon
+								Go to {words.Holon}
 							</button>
 						{:else if myHolonId}
 							<button

@@ -10,6 +10,7 @@ import { extractItemsFromImage } from './AI.js';
 import { Calendar } from './Calendar.js';
 import { miniApps, miniAppButton } from './MiniApps.js';
 import { isAdmin } from './utilities.js';
+import { askArgs } from './AskMissing.js';
 import {
     LIBRARY_TYPES as LIBRARY_TYPES_CORE,
     bookItem as coreBookItem,
@@ -35,6 +36,14 @@ import {
 const LIBRARY_TYPES = LIBRARY_TYPES_CORE;
 export { LIBRARY_TYPES };
 export type { LibraryItem };
+
+/** What follows the command word (`/cmd` or `/cmd@BotName`). */
+const commandArgs = (text: string | undefined): string => (text || '').replace(/^\/\S+\s*/, '').trim();
+
+/** Commands that take more arguments after the item split on spaces. */
+const ONE_WORD = 'Please send the name as one word, without spaces.';
+/** The translator a dialogue hands its `validate` (see AskMissing.js). */
+type AskT = (key: string, english: string, vars?: Record<string, unknown>) => string;
 
 // --- Local structural types (UI-only; bot/db are duck-typed) ---
 type AnyCtx = any;
@@ -288,13 +297,36 @@ class Library {
         return LIBRARY_TYPES.OTHER;
     }
 
+    /**
+     * Answer check for a dialogue question that names a library item (see
+     * AskMissing.js): true, or the line to ask again under.
+     */
+    itemInLibrary(holonId: number | string, { oneWord = false }: { oneWord?: boolean } = {}) {
+        return async (name: string, _values: unknown, _ctx: unknown, t: AskT) => {
+            if (oneWord && /\s/.test(name)) return t('ask_err_name_oneword', ONE_WORD);
+            return (await this.db.get(holonId.toString(), 'library', name))
+                ? true
+                : t('ask_err_library_item_unknown', '{{name}} is not in the library.', { name });
+        };
+    }
+
     async addItem(ctx: any) {
         let holonId = ctx.chat.id;
         const [_, item, value, ...categoryWords] = ctx.message.text.split(/\s+/);
         const category = categoryWords.join(' ') || 'Uncategorized';
         if (!item) {
-            ctx.reply('Please specify an item to add. eg: /libadd hammer 10 tools');
-            return;
+            // Ask for the name; the answer re-enters as `/libadd <name>`.
+            // Value and category stay optional, as when typed.
+            return askArgs(ctx, [{
+                key: 'item',
+                ask: 'ask_libadd_item',
+                question: 'What would you like to add to the library?',
+                validate: async (name: string, _values: unknown, _ctx: unknown, t: AskT) => {
+                    if (/\s/.test(name)) return t('ask_err_name_oneword', ONE_WORD);
+                    if (await this.db.get(holonId.toString(), 'library', name)) return t('ask_err_libadd_item', '{{name}} is already in the library.', { name });
+                    return true;
+                },
+            }], (ctx: any) => this.addItem(ctx), { usage: 'Please specify an item to add. eg: /libadd hammer 10 tools' });
         }
         if (await this.db.get(holonId.toString(), 'library', item)) {
             ctx.reply(`${item} is already in the library.`);
@@ -317,10 +349,14 @@ class Library {
 
     async removeItem(ctx: any) {
         let holonId = ctx.chat.id;
-        const item = ctx.message.text.split('/libremove ')[1];
+        const item = commandArgs(ctx.message.text);
         if (!item) {
-            ctx.reply('Please specify an item to remove. eg: /libremove hammer');
-            return;
+            return askArgs(ctx, [{
+                key: 'item',
+                ask: 'ask_libremove_item',
+                question: 'Which item should I remove from the library?',
+                validate: this.itemInLibrary(holonId),
+            }], (ctx: any) => this.removeItem(ctx), { usage: 'Please specify an item to remove. eg: /libremove hammer' });
         }
         await this.db.delete(holonId.toString(), 'library', item);
         ctx.reply(`Removed ${item} from the library.`);
@@ -332,13 +368,20 @@ class Library {
         if (fromKeyboard) {
             item = ctx.match[1];
         } else {
-            item = ctx.message.text.split('/borrow ')[1];
+            item = commandArgs(ctx.message.text);
         }
 
         if (!item) {
-            if (fromKeyboard) await ctx.answerCbQuery('No item specified').catch(() => {});
-            else ctx.reply('Please specify an item to borrow. eg: /borrow hammer');
-            return;
+            if (fromKeyboard) {
+                await ctx.answerCbQuery('No item specified').catch(() => {});
+                return;
+            }
+            return askArgs(ctx, [{
+                key: 'item',
+                ask: 'ask_borrow_item',
+                question: 'What would you like to borrow?',
+                validate: this.itemInLibrary(holonId),
+            }], (ctx: any) => this.borrowItem(ctx, false), { usage: 'Please specify an item to borrow. eg: /borrow hammer' });
         }
 
         const currentItem = await this.db.get(holonId.toString(), 'library', item);
@@ -701,8 +744,28 @@ class Library {
         let holonId = ctx.chat.id;
         const [_, item, value] = ctx.message.text.split(/\s+/);
         if (!item || !value) {
-            ctx.reply('Please specify item and value. eg: /setvalue hammer 10');
-            return;
+            // Ask for whatever is missing; the answers re-enter as
+            // `/setvalue <item> <value>`.
+            const questions: any[] = [];
+            if (!item) questions.push({
+                key: 'item',
+                ask: 'ask_setvalue_item',
+                question: 'Which item do you want to set the value of?',
+                validate: this.itemInLibrary(holonId, { oneWord: true }),
+            });
+            questions.push({
+                key: 'value',
+                ask: 'ask_setvalue_value',
+                question: 'What is {{item}} worth? Send a whole number, e.g. 10',
+                vars: (v: any) => ({ item: v.item || item }),
+                validate: (answer: string) => /^\d+$/.test(answer),
+                error: 'ask_err_setvalue_value',
+                errorText: 'Please send a whole number, e.g. 10',
+            });
+            return askArgs(ctx, questions, (ctx: any) => this.setItemValue(ctx), {
+                prefix: item,
+                usage: 'Please specify item and value. eg: /setvalue hammer 10',
+            });
         }
 
         let currentItem = await this.db.get(holonId.toString(), 'library', item);
@@ -728,13 +791,20 @@ class Library {
         if (fromKeyboard) {
             item = ctx.match[1];
         } else {
-            item = ctx.message.text.split('/return ')[1];
+            item = commandArgs(ctx.message.text);
         }
 
         if (!item) {
-            if (fromKeyboard) await ctx.answerCbQuery('No item specified').catch(() => {});
-            else ctx.reply('Please specify an item to return. eg: /return hammer');
-            return;
+            if (fromKeyboard) {
+                await ctx.answerCbQuery('No item specified').catch(() => {});
+                return;
+            }
+            return askArgs(ctx, [{
+                key: 'item',
+                ask: 'ask_return_item',
+                question: 'Which item are you returning?',
+                validate: this.itemInLibrary(holonId),
+            }], (ctx: any) => this.returnItem(ctx, false), { usage: 'Please specify an item to return. eg: /return hammer' });
         }
 
         const now = await this.holonNow(holonId);

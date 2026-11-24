@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn, words } from '$lib/vocabulary';
 	import { createEventDispatcher } from 'svelte';
 	import { Users, Bell } from 'svelte-feathers';
 	import HolonItem from './HolonItem.svelte';
@@ -93,7 +94,7 @@
 			<div class="holon-list__home">
 				<HolonItem
 					id={homeHolonId}
-					name={homeHolonName || 'My Holon'}
+					name={homeHolonName || nn('My {@Holon}')}
 					isActive={currentHolonId === homeHolonId}
 					isPinned={false}
 					isStarred={false}
@@ -188,12 +189,12 @@
 		<!-- Empty state -->
 		{#if holons.length === 0 && !homeHolonId}
 			<div class="holon-list__empty">
-				<p>No federated holons yet</p>
-				<p class="holon-list__empty-hint">Add a holon with the + button to federate</p>
+				<p>No federated {words.holons} yet</p>
+				<p class="holon-list__empty-hint">Add {words.a_holon} with the + button to federate</p>
 			</div>
 		{:else if otherHolons.length === 0 && homeHolonId}
 			<div class="holon-list__empty holon-list__empty--compact">
-				<p class="holon-list__empty-hint">Federate with other holons using the + button</p>
+				<p class="holon-list__empty-hint">Federate with other {words.holons} using the + button</p>
 			</div>
 		{/if}
 	{/if}

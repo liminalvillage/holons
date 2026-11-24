@@ -17,6 +17,7 @@
   import { t } from "$lib/i18n";
   import {
     addImportedCalendar,
+    calendarFeedErrors,
     calendarsSyncing,
     holonFeedUrl,
     importedCalendars,
@@ -201,6 +202,11 @@
               <span class="feedwho">
                 <span class="feedname">{cal.name}</span>
                 <span class="feedurl">{shortUrl(cal.url)}</span>
+                {#if cal.enabled && $calendarFeedErrors[cal.id]}
+                  <span class="feederr" role="status"
+                    >{$t("cal.set.feedFailed")}</span
+                  >
+                {/if}
               </span>
               <button
                 type="button"
@@ -519,6 +525,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .feederr {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.8rem;
+    line-height: 1.35;
+    color: var(--danger);
   }
   .feedurl {
     display: block;

@@ -61,8 +61,13 @@ export interface NameResolver {
   resolve(ids: string | number | Iterable<string | number>): Promise<Map<string, string>>;
   /** The kind 0 learned for a key, for avatars and the like. */
   profileOf(id: string | number | null | undefined): ProfileMeta | undefined;
-  /** Names the surface already holds (partner names, remembered holons…). */
+  /**
+   * Names the surface already holds (partner names, remembered holons…):
+   * shown until a source answers, never over one — `resolve` still asks.
+   */
   prime(entries: Iterable<readonly [string | number, string | null | undefined]>): void;
+  /** Whether the name held for `id` is only one a surface primed — no source has answered for it. */
+  primed(id: string | number | null | undefined): boolean;
   /** Called after every lookup that changed a name; returns the unsubscribe. */
   subscribe(fn: (names: ReadonlyMap<string, string>) => void): () => void;
   /** Forget one id, or everything. */
@@ -75,7 +80,8 @@ export interface NameResolver {
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
-type Entry = { name: string; at: number };
+/** A name and when it was learned; `primed` when a surface handed it in rather than a source answering. */
+type Entry = { name: string; at: number; primed?: boolean };
 
 /** A users-lens record's name, '' when it has none (ids and numeric handles are not names). */
 function recordName(rec: unknown, format: NameOptions): string {
@@ -132,6 +138,11 @@ export function createNameResolver(hs: ResolverHost, opts: NameResolverOptions =
     return e && now() - e.at < ttl ? e.name : '';
   };
   const missed = (id: string) => (misses.get(id) ?? -Infinity) > now() - missTtl;
+  /** Fresh AND answered by a source: a primed name is only a stand-in until one does. */
+  const settled = (id: string) => {
+    const e = names.get(id);
+    return !!e && !e.primed && now() - e.at < ttl;
+  };
 
   const snapshot = (): ReadonlyMap<string, string> => new Map([...names].map(([k, v]) => [k, v.name]));
   const emit = () => {
@@ -244,7 +255,7 @@ export function createNameResolver(hs: ResolverHost, opts: NameResolverOptions =
       if (!id) continue;
       const me = selfName(id);
       if (me) learned.set(id, me);
-      else if (!fresh(id) && !missed(id)) left.add(id);
+      else if (!settled(id) && !missed(id)) left.add(id);
     }
     if (!left.size) return learned;
 
@@ -310,14 +321,15 @@ export function createNameResolver(hs: ResolverHost, opts: NameResolverOptions =
     }
 
     // 6. Holons — and keys no person source named: settings, then HNS.
-    for (const id of [...left]) {
-      if (/^\d+$/.test(id)) continue; // a Telegram id is never a holon's name
-      const n = await holonName(id);
-      if (n) {
-        learned.set(id, n);
+    // Each holon is its own read, so they are asked together, not in turn.
+    const holons = [...left].filter((id) => !/^\d+$/.test(id)); // a Telegram id is never a holon's name
+    const found = await Promise.all(holons.map((id) => holonName(id)));
+    holons.forEach((id, i) => {
+      if (found[i]) {
+        learned.set(id, found[i]);
         left.delete(id);
       }
-    }
+    });
 
     for (const id of left) misses.set(id, now());
     return learned;
@@ -381,15 +393,22 @@ export function createNameResolver(hs: ResolverHost, opts: NameResolverOptions =
     profileOf(id) {
       return profiles.get(normalizeId(id));
     },
+    primed(id) {
+      const n = normalizeId(id);
+      if (!n || selfName(n)) return false;
+      return !!fresh(n) && !settled(n);
+    },
     prime(entries) {
       let changed = false;
       for (const [id, name] of entries) {
         const n = normalizeId(id);
         const v = cleanName(name);
         if (!n || !v || isPlaceholder(v, n) || isPlaceholderName(v, n)) continue;
+        // A surface's label (a federation record's partner name, a remembered
+        // holon) ranks last: it never overwrites what a source answered.
+        if (settled(n)) continue;
         if (names.get(n)?.name !== v) changed = true;
-        names.set(n, { name: v, at: now() });
-        misses.delete(n);
+        names.set(n, { name: v, at: now(), primed: true });
       }
       if (changed) emit();
     },

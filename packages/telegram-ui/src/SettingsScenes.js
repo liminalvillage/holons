@@ -151,7 +151,7 @@ export default class SettingsScenes {
             i18next.t('settings_invalid_federation_id_format', {
               lng: language,
               defaultValue:
-                'Invalid holon ID format. Please enter a numeric ID (e.g., -1001234567890) or a hex address (e.g., 0x1234abcd).',
+                'Invalid {@holon} ID format. Please enter a numeric ID (e.g., -1001234567890) or a hex address (e.g., 0x1234abcd).',
             })
           );
           return;

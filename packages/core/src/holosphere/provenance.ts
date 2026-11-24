@@ -44,6 +44,35 @@ export function sourceRef(
   return { holon, key: sourceKey || localId };
 }
 
+/**
+ * Where an edit of a record lands, and the record as it is stored there.
+ *
+ * A record federated in from a partner (or a resolved hologram) is owned by
+ * its source holon: the edit must land there under the source's key (see
+ * {@link sourceRef}), or it forks a stray local copy that shadows the
+ * original. The read-side provenance tags (`_holon`, `_hologram`,
+ * `_federation`) are never persisted. `foreign` says the write leaves the
+ * holon on screen. `null` when there is no holon to write to.
+ *
+ * Named for quests (its first caller) but lens-agnostic: the key is the
+ * record's `id`, else its `title`.
+ */
+export function questWriteTarget<Q extends { id?: unknown; title?: unknown }>(
+  quest: Q,
+  currentHolon: string | null | undefined
+): { holon: string; record: Q; foreign: boolean } | null {
+  const localId = String(quest.id ?? quest.title ?? '');
+  const ref = sourceRef(quest, localId);
+  const holon = ref?.holon ?? currentHolon;
+  if (!holon) return null;
+  const record = { ...quest } as Record<string, unknown>;
+  delete record._holon;
+  delete record._hologram;
+  delete record._federation;
+  if (ref) record.id = ref.key;
+  return { holon, record: record as Q, foreign: !!ref && ref.holon !== currentHolon };
+}
+
 /** Where a delete lands, and why. */
 export interface DeleteRef {
   holon: string;

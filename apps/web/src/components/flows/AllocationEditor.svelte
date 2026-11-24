@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
 	import { nameMap, resolvedName } from "$lib/stores/nameResolver";
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
@@ -126,7 +127,7 @@
   // A partner holon can hold a contributor seat too: a collective whose
   // contributors are other holons weights them here, and the cascade follows
   // each seat into that holon's own split.
-  $: partnerRows = partnersAll.map((p) => ({ id: p.id, name: `${p.name} (holon)` }));
+  $: partnerRows = partnersAll.map((p) => ({ id: p.id, name: `${p.name} (${words.holon})` }));
   $: nameOf = new Map<string, string>(
     [...people, ...Object.entries(foundNames).map(([id, name]) => ({ id, name })), ...partnerRows].map((p) => [p.id, p.name]),
   );

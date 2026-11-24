@@ -130,6 +130,14 @@ export function profileFor(
   return resolver?.profileOf(id);
 }
 
+/**
+ * Whether the name held for an id is only one the kiosk primed (a federation
+ * record's label, a remembered hub) — no source has answered for it yet.
+ */
+export function isPrimedName(id: string | number | null | undefined): boolean {
+  return resolver?.primed(id) ?? false;
+}
+
 /** Names the surface already holds (a federation snapshot, a chat title…). */
 export function primeNames(
   entries: Iterable<readonly [string | number, string | null | undefined]>,

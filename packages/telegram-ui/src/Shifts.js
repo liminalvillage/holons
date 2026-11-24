@@ -53,6 +53,7 @@ import {
 } from '@holons/core/shifts';
 import { getDisplayName, getParseModeHTML, getholonId } from './utilities.js';
 import { miniAppButton, miniApps } from './MiniApps.js';
+import { holonText } from '../utils/holonNoun.js';
 
 const DAY_S = 86400;
 const DEFAULT_RELAY = 'wss://relay.holons.io';
@@ -330,7 +331,7 @@ export default class Shifts {
       });
     } catch (err) {
       console.error('[Shifts] list failed', err);
-      await ctx.reply(`Could not read shifts for this holon.`);
+      await ctx.reply(holonText('Could not read shifts for this {@holon}.'));
     }
   }
 
@@ -364,7 +365,7 @@ export default class Shifts {
       });
     } catch (err) {
       console.error('[Shifts] myshifts failed', err);
-      await ctx.reply(`Could not read shifts for this holon.`);
+      await ctx.reply(holonText('Could not read shifts for this {@holon}.'));
     }
   }
 

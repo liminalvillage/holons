@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn } from '$lib/vocabulary';
 	import { onMount, tick } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import { getContext } from 'svelte';
@@ -304,7 +305,7 @@
 	function tooltipText(): string {
 		if (!holosphere || !holonId) return 'Holosphere not ready';
 		if (isHologramItem) {
-			return 'Forward this hologram — the original holon stays the source';
+			return nn('Forward this hologram — the original {@holon} stays the source');
 		}
 		if (alreadyPublished && item.publishedAt) {
 			const when = new Date(item.publishedAt).toLocaleString();

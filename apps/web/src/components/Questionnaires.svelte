@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
   import { getContext, onDestroy, onMount } from 'svelte';
   import { ID } from '../dashboard/store';
   import { writable, get } from 'svelte/store';
@@ -339,7 +340,7 @@
     </button>
   </div>
 {:else if $columns.length === 0}
-  <p class="text-gray-400">No questionnaires found for this holon.</p>
+  <p class="text-gray-400">No questionnaires found for this {words.holon}.</p>
 {:else}
   <button class="export-btn" on:click={exportCSV}>Export CSV</button>
   <div class="overflow-auto mt-2">

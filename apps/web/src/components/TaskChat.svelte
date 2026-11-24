@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
     // SPDX-License-Identifier: AGPL-3.0-or-later
     // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
     //
@@ -113,7 +114,7 @@
             </form>
             {#if error}<p class="mt-1 text-red-300">{error}</p>{/if}
         {:else}
-            <p class="mt-2 text-gray-400">Only members of this holon can write here.</p>
+            <p class="mt-2 text-gray-400">Only members of this {words.holon} can write here.</p>
         {/if}
     {/if}
 </div>

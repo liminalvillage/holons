@@ -5,7 +5,8 @@
   // in which order, in one place. Federated (partners' items beside this
   // holon's own) is device-wide and offered on every tab; Holograms (cards
   // other holons placed here by reference) on the boards built from them;
-  // the Tasks tab adds Done (completed tasks too) and Sort. How items are laid out is not a
+  // the Tasks tab adds Done (completed tasks too) and Sort; Flows adds
+  // its unit and period. How items are laid out is not a
   // filter — that stays the band's Layout pill.
   //
   // Kiosk rule: no Apply step. Every tap takes effect at once and is
@@ -31,11 +32,13 @@
   import type { TaskSort } from "$lib/data";
   import { SORT_SEGMENTS } from "$lib/pills";
   import { t } from "$lib/i18n";
+  import FlowsViewPicker from "./FlowsViewPicker.svelte";
 
   const dispatch = createEventDispatcher();
 
   $: federated = $scope === "networked";
   $: tasks = $activeTab === "tasks";
+  $: flows = $activeTab === "flows";
   $: holograms = HOLOGRAM_TABS.includes($activeTab);
 
   function toggleFederated() {
@@ -130,6 +133,14 @@
         </div>
       {/if}
     </section>
+
+    {#if flows}
+      <!-- The Flows board's unit and period — the same picker that sits
+           above its first graph. -->
+      <section>
+        <FlowsViewPicker />
+      </section>
+    {/if}
 
     {#if tasks}
       <section>

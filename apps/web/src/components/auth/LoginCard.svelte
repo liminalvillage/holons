@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors -->
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
 	// The sign-in card. Your own key is the suggested path; passkey, your own Nostr
 	// key and an Ethereum wallet are equal secondary options. Every option ends
 	// in a `login` event carrying a ProviderLogin (a usable Nostr key) — except
@@ -63,7 +64,7 @@
 	{#if sheet === 'nostr'}
 		<NostrKeySheet on:login={onNostrLogin} on:back={() => { sheet = 'none'; error = ''; }} />
 	{:else}
-		<p class="subtitle">Your holon, your key. Pick how you'd like to sign in.</p>
+		<p class="subtitle">Your {words.holon}, your key. Pick how you'd like to sign in.</p>
 
 		<button class="telegram nostr" type="button" disabled={!!busy} on:click={() => { sheet = 'nostr'; error = ''; }}>
 			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

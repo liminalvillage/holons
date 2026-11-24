@@ -22,24 +22,11 @@
   // user, signed by the device key — the caller gates on login first.
 
   import { createEventDispatcher, onDestroy } from "svelte";
-  import { t, locale } from "$lib/i18n";
+  import { t } from "$lib/i18n";
   import { createAutosave } from "$lib/autosave";
   import SaveState from "./SaveState.svelte";
   import { may } from "@holons/core/holosphere";
   import { standing } from "$lib/stores";
-  import {
-    describeWindow,
-    describeWindowSpan,
-    WINDOW_PRESETS,
-    WINDOW_PRESET_LABELS,
-  } from "$lib/flowswindow";
-  import {
-    DEFAULT_WINDOW_PRESET,
-    formatLocalDate,
-    windowFromChoice,
-    type FlowsWindowChoice,
-    type FlowsWindowPreset,
-  } from "@holons/core/flows";
   import { getReaStore } from "$lib/holosphere";
   import {
     allocate,
@@ -82,11 +69,6 @@
   /** The hand-set split as saved (settings `allocation.shares`). */
   export let shares: InteriorShares = {};
   export let collectiveSlug = "";
-  /** The units the board can be drawn in (`all` first) and the current one. */
-  export let units: { id: string; label: string }[] = [];
-  export let unit = "all";
-  /** The period the board covers. */
-  export let period: FlowsWindowChoice = { preset: DEFAULT_WINDOW_PRESET };
   /** The rule in force for the claims log (core's fold of `_policy`). */
   export let policy: Policy | null = null;
   /** The logged-in person's role in the signed log, as of now. */
@@ -99,54 +81,10 @@
   export let mints: Mint[] = [];
   /** The units the fund holds anything in, the drawn one first. */
   export let mintUnits: string[] = [];
-  /** Whether the logged-in person may mint (an attester of the mints log). */
-  export let canMint = false;
   /** What reaches this fund from upstream holons. */
   export let inbound: InboundRight[] = [];
   /** A display name for a holon or person id, when the board knows one. */
   export let nameOf: (id: string) => string | undefined = () => undefined;
-  /** Records a mint, signed as the logged-in person; throws on failure. */
-  export let onMint:
-    | ((input: {
-        amount: number;
-        unit: string;
-        memo?: string;
-        source?: string;
-      }) => Promise<void>)
-    | null = null;
-
-  let mintAmount = "";
-  let mintUnit = "";
-  let mintMemo = "";
-  let mintSource = "";
-  let mintBusy = false;
-  let mintError = "";
-  let mintNotice = "";
-  $: if (!mintUnit && mintUnits.length) mintUnit = mintUnits[0].toUpperCase();
-  async function submitMint() {
-    if (!onMint || mintBusy) return;
-    const amount = Number(String(mintAmount).replace(",", "."));
-    const unit = mintUnit.trim().toUpperCase();
-    if (!(amount > 0) || !unit) return;
-    mintBusy = true;
-    mintError = "";
-    mintNotice = "";
-    try {
-      await onMint({
-        amount,
-        unit,
-        memo: mintMemo.trim() || undefined,
-        source: mintSource || undefined,
-      });
-      mintNotice = $t("alloc.mintRecorded", { amount: String(amount), unit });
-      mintAmount = "";
-      mintMemo = "";
-    } catch (err: any) {
-      mintError = err?.message ? String(err.message) : String(err);
-    } finally {
-      mintBusy = false;
-    }
-  }
   $: issuedMints = mints
     .filter((m) => m.status !== "rejected")
     .slice(-12)
@@ -156,34 +94,9 @@
     close: void;
     saved: void;
     draft: AllocationDraft;
-    /** The View tab's choices apply on the tap — they are how the board is
-     *  read, not a setting to save. */
-    unit: string;
-    period: FlowsWindowChoice;
     /** The Rules tab's word: an admin-signed policy record for the claims log. */
     policy: Partial<Policy>;
   }>();
-
-  $: unitLabel =
-    units.find((u) => u.id === unit)?.label ?? $t("flows.trackAll");
-
-  function pickPreset(preset: FlowsWindowPreset) {
-    // Custom starts from the period it replaces, so the dates are a tweak
-    // rather than two blanks.
-    if (preset === "custom" && period.preset !== "custom") {
-      const w = windowFromChoice(period);
-      dispatch("period", {
-        preset,
-        from: w.from == null ? null : formatLocalDate(w.from),
-        to: formatLocalDate(w.to ?? Date.now()),
-      });
-      return;
-    }
-    dispatch("period", { ...period, preset });
-  }
-  function setBound(end: "from" | "to", value: string) {
-    dispatch("period", { ...period, preset: "custom", [end]: value || null });
-  }
 
   // A draft, so Cancel costs nothing and Save writes once.
   let interiorPercent = config.interiorPercent;
@@ -265,19 +178,14 @@
   }
 
   // ── Tabs ────────────────────────────────────────────────────────────────
-  // Four questions, one screen each, instead of nine sections in one scroll.
+  // Five questions, one screen each, instead of nine sections in one scroll.
   // Each tab carries its current value in the strip, so the state of the whole
   // sheet is readable without opening anything.
-  type TabId = "view" | "split" | "contributors" | "zones" | "fund" | "rules";
-  let tab: TabId = "view";
+  type TabId = "split" | "contributors" | "zones" | "fund" | "rules";
+  let tab: TabId = "split";
   let tabEls: Record<string, HTMLButtonElement | undefined> = {};
 
   $: tabs = [
-    {
-      id: "view" as const,
-      label: $t("flows.tabView"),
-      summary: `${unitLabel} · ${describeWindow(period, $t, $locale)}`,
-    },
     {
       id: "split" as const,
       label: $t("alloc.tabSplit"),
@@ -663,80 +571,7 @@
     tabindex="0"
     class="tabpanel"
   >
-    {#if tab === "view"}
-      <!-- ── What the board shows: one unit, one period ─────────────────── -->
-      <div class="control">
-        <span class="k" id="alloc-unit-label">{$t("flows.trackLabel")}</span>
-        <div
-          class="chips"
-          role="radiogroup"
-          tabindex="-1"
-          aria-labelledby="alloc-unit-label"
-        >
-          {#each units as u (u.id)}
-            <button
-              type="button"
-              role="radio"
-              class="chip"
-              class:on={unit === u.id}
-              aria-checked={unit === u.id}
-              on:click={() => dispatch("unit", u.id)}>{u.label}</button
-            >
-          {/each}
-        </div>
-        <p class="sub">{$t("flows.unitAbout")}</p>
-      </div>
-
-      <div class="control">
-        <span class="k" id="alloc-period-label">
-          {$t("flows.windowLabel")}
-          <span class="value">{describeWindowSpan(period, $t)}</span>
-        </span>
-        <div
-          class="chips"
-          role="radiogroup"
-          tabindex="-1"
-          aria-labelledby="alloc-period-label"
-        >
-          {#each WINDOW_PRESETS as p (p)}
-            <button
-              type="button"
-              role="radio"
-              class="chip"
-              class:on={period.preset === p}
-              aria-checked={period.preset === p}
-              on:click={() => pickPreset(p)}
-              >{$t(WINDOW_PRESET_LABELS[p])}</button
-            >
-          {/each}
-        </div>
-        {#if period.preset === "custom"}
-          <div class="dates">
-            <label class="date">
-              <span>{$t("flows.windowFrom")}</span>
-              <input
-                type="date"
-                value={period.from ?? ""}
-                max={period.to ?? undefined}
-                on:change={(e) => setBound("from", e.currentTarget.value)}
-              />
-            </label>
-            <label class="date">
-              <span>{$t("flows.windowTo")}</span>
-              <input
-                type="date"
-                value={period.to ?? ""}
-                min={period.from ?? undefined}
-                on:change={(e) => setBound("to", e.currentTarget.value)}
-              />
-            </label>
-          </div>
-        {/if}
-        <p class="sub">
-          {describeWindow(period, $t, $locale)} — {$t("flows.windowAbout")}
-        </p>
-      </div>
-    {:else if tab === "split"}
+    {#if tab === "split"}
       <!-- ── How much goes to each side ─────────────────────────────────── -->
       <!-- The split is a guarded setting: a non-admin reads it, and the
            controls are locked rather than taking an edit that never saves. -->
@@ -1290,59 +1125,9 @@
         {:else if !inbound.length}
           <p class="sub">{$t("alloc.mintNone")}</p>
         {/if}
-        {#if !policySignable}
-          <p class="sub warn">{$t("alloc.mintNoSigner")}</p>
-        {:else if !canMint}
-          <p class="sub warn">{$t("alloc.mintNotAttester")}</p>
-        {:else}
-          <form class="mint-form" on:submit|preventDefault={submitMint}>
-            <label class="field">
-              <span class="k">{$t("alloc.mintAmount")}</span>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                inputmode="decimal"
-                bind:value={mintAmount}
-                required
-              />
-            </label>
-            <label class="field">
-              <span class="k">{$t("alloc.mintUnit")}</span>
-              <input
-                type="text"
-                autocapitalize="characters"
-                maxlength="5"
-                placeholder="L"
-                bind:value={mintUnit}
-                required
-              />
-            </label>
-            <label class="field">
-              <span class="k">{$t("alloc.mintMemo")}</span>
-              <input type="text" maxlength="140" bind:value={mintMemo} />
-            </label>
-            {#if partners.length}
-              <label class="field">
-                <span class="k">{$t("alloc.mintSource")}</span>
-                <select bind:value={mintSource}>
-                  <option value="">{$t("alloc.mintSourceNone")}</option>
-                  {#each partners as p (p.id)}
-                    <option value={p.id}>{p.name}</option>
-                  {/each}
-                </select>
-              </label>
-            {/if}
-            <button class="primary" type="submit" disabled={mintBusy}
-              >{$t("alloc.mintRecord")}</button
-            >
-          </form>
-          {#if mintError}
-            <p class="sub warn">{mintError}</p>
-          {:else if mintNotice}
-            <p class="sub">{mintNotice}</p>
-          {/if}
-        {/if}
+        <!-- Funding is recorded where expenses are: the + on the board,
+             "Into the fund" (same amount and unit chips, a signed mint). -->
+        <p class="sub">{$t("alloc.mintFromSheet")}</p>
       </div>
 
       <!-- ── Where the money is ─────────────────────────────────────────── -->
@@ -1362,10 +1147,7 @@
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     {#if notice}<p class="notice" role="status">{notice}</p>{/if}
     <div class="actions">
-      {#if tab === "view"}
-        <!-- The View tab applied on the tap; there is nothing to save. -->
-        <button class="primary" on:click={close}>{$t("common.close")}</button>
-      {:else if tab === "rules"}
+      {#if tab === "rules"}
         <!-- The rules are a signed log entry, not a settings write: their
              own button, gated on the signature that would count. -->
         <button class="ghost" on:click={close}>{$t("common.cancel")}</button>
@@ -1726,15 +1508,6 @@
   }
 
   /* ── Pickers, disclosure, zone bars ─────────────────────────────────── */
-  .mint-form {
-    display: grid;
-    gap: 0.6rem;
-    margin-top: 0.6rem;
-  }
-  .mint-form .primary {
-    justify-self: start;
-    min-height: 44px;
-  }
   .pshare.warn {
     color: var(--caution);
   }
@@ -1859,56 +1632,6 @@
   }
 
   /* ── Footer ─────────────────────────────────────────────────────────── */
-  /* ── View tab: unit and period chips ──────────────────────────────── */
-  .chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-    margin-top: 0.5rem;
-  }
-  .chip {
-    min-height: 44px;
-    padding: 0 0.95rem;
-    border-radius: 999px;
-    background: var(--paper);
-    color: var(--ink-soft);
-    font-size: 0.86rem;
-    font-weight: 700;
-    touch-action: manipulation;
-  }
-  .chip.on {
-    background: var(--teal);
-    color: var(--on-teal);
-    box-shadow: var(--shadow-soft);
-  }
-  .dates {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.6rem;
-    margin-top: 0.7rem;
-  }
-  .date {
-    flex: 1 1 10rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    font-size: 0.72rem;
-    font-weight: 700;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-  }
-  .date input {
-    min-height: 44px;
-    padding: 0 0.7rem;
-    border-radius: 12px;
-    border: 1px solid var(--line);
-    background: var(--card);
-    color: var(--ink);
-    font: inherit;
-    font-size: 0.95rem;
-  }
-
   .actions {
     display: flex;
     gap: 0.6rem;

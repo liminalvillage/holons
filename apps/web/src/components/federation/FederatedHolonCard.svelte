@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
 	import { nameMap, resolvedName } from "$lib/stores/nameResolver";
 	import { shortId } from "@holons/core/identity";
     import { createEventDispatcher } from "svelte";
@@ -143,7 +144,7 @@
                         <span>Copy ID</span>
                     {/if}
                 </button>
-                <button class="holon-card__action" on:click={handleNavigate} title="Open holon">
+                <button class="holon-card__action" on:click={handleNavigate} title="Open {words.holon}">
                     <ExternalLink size="14" />
                     <span>Open</span>
                 </button>

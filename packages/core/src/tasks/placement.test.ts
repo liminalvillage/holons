@@ -2,7 +2,12 @@
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 
 import { describe, expect, it } from 'vitest';
-import { isQuestCompleted, showsOnCalendar, taskWallPlacement } from './placement.js';
+import {
+  countOpenQuests,
+  isQuestCompleted,
+  showsOnCalendar,
+  taskWallPlacement,
+} from './placement.js';
 import type { Quest } from './types.js';
 
 const local = (y: number, mo: number, d: number, h = 0, mi = 0): Date =>
@@ -123,5 +128,24 @@ describe('taskWallPlacement', () => {
   it('keeps marketplace items and unknown types off the wall', () => {
     expect(taskWallPlacement(q({ type: 'offer' }), now)).toBeNull();
     expect(taskWallPlacement(q({ type: 'shift', when: '2026-10-01' }), now)).toBeNull();
+  });
+});
+
+describe('countOpenQuests', () => {
+  it('counts what the task wall shows: open tasks and upcoming events', () => {
+    const quests = [
+      q({ id: 'a' }), // open task
+      q({ id: 'b', when: stored(2026, 9, 1) }), // overdue task — still to do
+      q({ id: 'c', status: 'completed' }), // done
+      q({ id: 'd', type: 'event', when: stored(2026, 9, 25, 18) }), // upcoming
+      q({ id: 'e', type: 'event', when: stored(2026, 9, 2, 18) }), // past event
+      q({ id: 'f', type: 'offer' }), // marketplace, not a task
+      q({ id: 'g', _deleted: true } as Partial<Quest>), // gone
+    ];
+    expect(countOpenQuests(quests, now)).toBe(3);
+  });
+
+  it('is zero for nothing', () => {
+    expect(countOpenQuests([], now)).toBe(0);
   });
 });

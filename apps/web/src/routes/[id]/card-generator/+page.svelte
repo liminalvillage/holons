@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
 	import { page } from '$app/stores';
 	import { getContext } from 'svelte';
 	import type { HoloSphere } from 'holosphere';
@@ -205,7 +206,7 @@
 			previewCardIndex = 0;
 			pdfBlob = null;
 			if (loaded.length === 0) {
-				holonLoadError = `No ${holonSource} found in this holon yet.`;
+				holonLoadError = `No ${holonSource} found in this ${words.holon} yet.`;
 			}
 		} catch (err) {
 			console.error('[Card Generator] Failed to load from holon:', err);
@@ -327,7 +328,7 @@
 				<h2 class="text-lg font-semibold mb-3">Deck Config</h2>
 				<div class="space-y-3">
 					<div>
-						<label for="holon-id" class="block text-sm text-gray-300 mb-1">Holon ID</label>
+						<label for="holon-id" class="block text-sm text-gray-300 mb-1">{words.Holon} ID</label>
 						<input id="holon-id" type="text" value={holonId} disabled class="w-full px-3 py-2 rounded-lg bg-gray-700 text-gray-400 border border-gray-600 text-sm" />
 					</div>
 					<div>
@@ -349,7 +350,7 @@
 					<button
 						on:click={() => switchInputMode('holon')}
 						class="px-3 py-1 rounded-lg text-sm font-medium transition-colors {inputMode === 'holon' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}"
-					>From Holon</button>
+					>From {words.Holon}</button>
 					<button
 						on:click={() => switchInputMode('csv')}
 						class="px-3 py-1 rounded-lg text-sm font-medium transition-colors {inputMode === 'csv' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}"
@@ -382,7 +383,7 @@
 								<button on:click={() => { cards = []; pdfBlob = null; previewCardIndex = 0; }} class="ml-auto text-xs text-red-400 hover:text-red-300">Clear</button>
 							{/if}
 						</div>
-						<p class="text-xs text-gray-500">Pulls the holon's current {holonSource}. Scanning a card adds the signed-in user to that specific item.</p>
+						<p class="text-xs text-gray-500">Pulls the {words.holon}'s current {holonSource}. Scanning a card adds the signed-in user to that specific item.</p>
 						{#if holonLoadError}
 							<div class="text-amber-400 text-xs">{holonLoadError}</div>
 						{/if}
@@ -543,7 +544,7 @@
 					{/if}
 				{:else}
 					<div class="flex items-center justify-center h-48 text-gray-500 text-sm">
-						Load items from the holon, upload a CSV, or add cards manually to preview
+						Load items from the {words.holon}, upload a CSV, or add cards manually to preview
 					</div>
 				{/if}
 			</div>

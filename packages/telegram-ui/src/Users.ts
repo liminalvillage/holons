@@ -10,6 +10,7 @@
 
 import { Telegraf } from 'telegraf';
 import * as utils from './utilities.js';
+import { askArgs } from './AskMissing.js';
 import { REAEventStore } from '@holons/core/rea';
 import { REAAggregator } from '@holons/core/scoring';
 import type { ScoreEquation } from '@holons/core/scoring';
@@ -385,8 +386,19 @@ class Users {
     const user = ctx.message.from;
     const values = utils.parseList(ctx.message.text);
     if (!values || values.length === 0) {
-      await ctx.reply(
-        'Please specify a value or list of values to add. eg: /value freedom, non-violence',
+      // Ask for them; the answer re-enters as `/value <answer>`.
+      await askArgs(
+        ctx,
+        [{
+          key: 'values',
+          ask: 'ask_value_values',
+          question: 'What do you value? Send one value, or several separated by commas.',
+          validate: (answer: string) => answer.split(',').some((v) => v.trim()),
+          error: 'ask_err_value_values',
+          errorText: 'Please send at least one value, e.g. freedom, non-violence',
+        }],
+        (original: unknown) => this.addValue(original as TelegrafCtx),
+        { usage: 'Please specify a value or list of values to add. eg: /value freedom, non-violence' },
       );
       return;
     }
@@ -399,8 +411,19 @@ class Users {
     const user = ctx.message.from;
     const needs = utils.parseList(ctx.message.text);
     if (!needs || needs.length === 0) {
-      await ctx.reply(
-        'Please specify a need or comma separated list of needs to add. eg: /need hugs, massages',
+      // Ask for them; the answer re-enters as `/need <answer>`.
+      await askArgs(
+        ctx,
+        [{
+          key: 'needs',
+          ask: 'ask_need_needs',
+          question: 'What do you need? Send one need, or several separated by commas.',
+          validate: (answer: string) => answer.split(',').some((v) => v.trim()),
+          error: 'ask_err_need_needs',
+          errorText: 'Please send at least one need, e.g. hugs, massages',
+        }],
+        (original: unknown) => this.addNeed(original as TelegrafCtx),
+        { usage: 'Please specify a need or comma separated list of needs to add. eg: /need hugs, massages' },
       );
       return;
     }

@@ -11,6 +11,7 @@ import { Markup } from 'telegraf';
 import i18next from 'i18next';
 import * as utils from './utilities.js';
 import { miniApps, miniAppButton } from './MiniApps.js';
+import { askArgs } from './AskMissing.js';
 import {
     CHECKLIST_TYPES as CHECKLIST_TYPES_CORE,
     createChecklistObject as coreCreateChecklistObject,
@@ -28,6 +29,12 @@ export type { Checklist, ChecklistItem, ChecklistType };
  * Sourced from `@holons/core/checklists` so other UIs stay aligned.
  */
 const CHECKLIST_TYPES = CHECKLIST_TYPES_CORE;
+
+/** What follows the command word (`/cmd` or `/cmd@BotName`). */
+const commandArgs = (text) => (text || '').replace(/^\/\S+\s*/, '').trim();
+
+/** A list name is one word: the commands split their arguments on spaces. */
+const ONE_WORD = 'Please send the name as one word, without spaces.';
 
 /**
  * Checklist management class for creating and managing various types of checklists.
@@ -62,7 +69,7 @@ class Checklists {
         // Scenes migrated to InputScene - no custom scenes needed
         
         // Register commands and actions
-        this.bot.command('checklist', (ctx) => this.showChecklist(ctx));
+        this.bot.command('checklist', (ctx) => this.openChecklist(ctx));
         this.bot.command('newchecklist', (ctx) => this.createChecklist(ctx));
         this.bot.command('addcheck', (ctx) => this.addChecklistItem(ctx));
         this.bot.command('removecheck', (ctx) => this.removeChecklist(ctx));
@@ -267,16 +274,61 @@ class Checklists {
         }
     }
 
+    /**
+     * Answer check for a dialogue question that names an existing checklist
+     * (see AskMissing.js): true, or the line to ask again under.
+     */
+    existingChecklist(holonId, { oneWord = false } = {}) {
+        return async (name, _values, _ctx, t) => {
+            if (oneWord && /\s/.test(name)) return t('ask_err_name_oneword', ONE_WORD);
+            const checklist = await this.db.get(holonId.toString(), 'checklists', name);
+            return checklist ? true : t('ask_err_checklist_unknown', 'Checklist "{{name}}" not found.', { name });
+        };
+    }
+
+    // `/checklist <name>` — show one checklist; a bare `/checklist` asks which.
+    async openChecklist(ctx) {
+        const name = commandArgs(ctx.message.text);
+        const holonId = ctx.chat.id;
+        if (!name) {
+            return askArgs(ctx, [{
+                key: 'name',
+                ask: 'ask_checklist_name',
+                question: 'Which checklist do you want to open?',
+                validate: this.existingChecklist(holonId),
+            }], ctx => this.openChecklist(ctx), { usage: 'Please specify a checklist name. eg: /checklist morning' });
+        }
+
+        const checklist = await this.db.get(holonId.toString(), 'checklists', name);
+        if (!checklist) {
+            await ctx.reply(`Checklist "${name}" not found.`);
+            return;
+        }
+        await ctx.reply(
+            `${this.getChecklistIcon(checklist)} ${this.getChecklistDisplayTitle(checklist)}:`,
+            this.getChecklistKeyboard(checklist)
+        );
+    }
+
     async createChecklist(ctx) {
-        const name = ctx.message.text.split('/newchecklist ')[1]?.trim(); // Extract name after command
+        const name = commandArgs(ctx.message.text); // Extract name after command
         
         // Delete the user's command message immediately
         await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
         
         if (!name) {
-             await ctx.reply('Please specify a checklist name. eg: /newchecklist morning')
-                         .then(msg => setTimeout(() => ctx.deleteMessage(msg.message_id).catch(() => {}), 5000)); // Delete after 5s
-            return;
+            // Ask for the name; the answer re-enters as `/newchecklist <name>`.
+            const holonId = ctx.chat.id;
+            return askArgs(ctx, [{
+                key: 'name',
+                ask: 'ask_newchecklist_name',
+                question: 'What should the new checklist be called?',
+                validate: async (answer, _values, _ctx, t) => {
+                    if (answer.includes('_')) return t('ask_err_newchecklist_name_underscore', 'Checklist names cannot contain underscores (_). Please use a different name.');
+                    if (await this.db.get(holonId.toString(), 'checklists', answer)) return t('ask_err_newchecklist_name_exists', 'Checklist "{{name}}" already exists.', { name: answer });
+                    return true;
+                },
+            }], ctx => this.createChecklist(ctx), { usage: 'Please specify a checklist name. eg: /newchecklist morning' });
         }
 
         // Validate name: no underscores
@@ -312,39 +364,61 @@ class Checklists {
     async addChecklistItem(ctx) {
         const [_, listName, ...itemWords] = ctx.message.text.split(/\s+/);
         if (!listName || itemWords.length === 0) {
-            ctx.reply('Please specify list name and items. eg: /addcheck morning brush teeth, make bed, exercise');
-            return;
+            // Ask for whatever is missing; the answers re-enter as
+            // `/addcheck <list> <items>`.
+            const questions = [];
+            if (!listName) questions.push({
+                key: 'list',
+                ask: 'ask_addcheck_list',
+                question: 'Which checklist should I add to?',
+                validate: this.existingChecklist(ctx.chat.id, { oneWord: true }),
+            });
+            questions.push({
+                key: 'items',
+                ask: 'ask_addcheck_items',
+                question: 'What should I add to "{{list}}"? Send one item, or several separated by commas.',
+                vars: v => ({ list: v.list || listName }),
+            });
+            return askArgs(ctx, questions, ctx => this.addChecklistItem(ctx), {
+                prefix: listName,
+                usage: 'Please specify list name and items. eg: /addcheck morning brush teeth, make bed, exercise',
+            });
         }
 
         await this.addItemsToChecklist(listName, itemWords.join(' '), ctx.chat.id, ctx);
     }
 
     async directAddItem(ctx) {
-        const text = ctx.message.text.trim();
-        
-        // Check command format
-        if (text === '/additem' || !text.includes(' ')) {
-            ctx.reply('Please use format: /additem [checklist-name] [item1, item2, item3]');
-            return;
-        }
-        
         // Extract checklist name and items
-        const withoutCommand = text.substring(8).trim();
+        const withoutCommand = commandArgs(ctx.message.text);
         const firstSpace = withoutCommand.indexOf(' ');
-        
-        if (firstSpace === -1) {
-            ctx.reply('Please provide items to add. Format: /additem [checklist-name] [item1, item2, item3]');
-            return;
+        const checklistId = (firstSpace === -1 ? withoutCommand : withoutCommand.substring(0, firstSpace)).trim();
+        const itemsText = firstSpace === -1 ? '' : withoutCommand.substring(firstSpace + 1).trim();
+
+        if (!checklistId || !itemsText) {
+            // Ask for whatever is missing; the answers re-enter as
+            // `/additem <checklist> <items>`.
+            const questions = [];
+            if (!checklistId) questions.push({
+                key: 'list',
+                ask: 'ask_additem_list',
+                question: 'Which checklist should I add to? (A new name starts a new checklist.)',
+                validate: answer => !/\s/.test(answer),
+                error: 'ask_err_name_oneword',
+                errorText: ONE_WORD,
+            });
+            questions.push({
+                key: 'items',
+                ask: 'ask_additem_items',
+                question: 'What should I add to "{{list}}"? Send one item, or several separated by commas.',
+                vars: v => ({ list: v.list || checklistId }),
+            });
+            return askArgs(ctx, questions, ctx => this.directAddItem(ctx), {
+                prefix: checklistId,
+                usage: 'Please use format: /additem [checklist-name] [item1, item2, item3]',
+            });
         }
-        
-        const checklistId = withoutCommand.substring(0, firstSpace).trim();
-        const itemsText = withoutCommand.substring(firstSpace + 1).trim();
-        
-        if (!itemsText) {
-            ctx.reply('Please provide items to add. Format: /additem [checklist-name] [item1, item2, item3]');
-            return;
-        }
-        
+
         const holonId = ctx.chat.id;
         
         try {
@@ -467,8 +541,36 @@ class Checklists {
     async removeChecklistItem(ctx) {
         const [_, listName, ...itemWords] = ctx.message.text.split(/\s+/);
         if (!listName || itemWords.length === 0) {
-            ctx.reply('Please specify list name and item. eg: /removeitem morning "brush teeth"');
-            return;
+            // Ask for whatever is missing; the answers re-enter as
+            // `/removechecklistitem <list> <item>`.
+            const holonId = ctx.chat.id;
+            const questions = [];
+            if (!listName) questions.push({
+                key: 'list',
+                ask: 'ask_removechecklistitem_list',
+                question: 'Which checklist should I remove an item from?',
+                validate: this.existingChecklist(holonId, { oneWord: true }),
+            });
+            questions.push({
+                key: 'item',
+                ask: 'ask_removechecklistitem_item',
+                question: 'Which item should I remove from "{{list}}"? Send its exact text.',
+                vars: v => ({ list: v.list || listName }),
+                validate: async (answer, v, _ctx, t) => {
+                    const name = v.list || listName;
+                    const checklist = await this.db.get(holonId.toString(), 'checklists', name);
+                    if (!checklist) return t('ask_err_checklist_unknown', 'Checklist "{{name}}" not found.', { name });
+                    // Same comparison as below, on the text as it will be re-parsed.
+                    const wanted = answer.split(/\s+/).join(' ');
+                    return (checklist.items || []).some(item => item.text === wanted)
+                        ? true
+                        : t('ask_err_removechecklistitem_item', 'Item "{{item}}" not found in checklist "{{name}}".', { item: wanted, name });
+                },
+            });
+            return askArgs(ctx, questions, ctx => this.removeChecklistItem(ctx), {
+                prefix: listName,
+                usage: 'Please specify list name and item. eg: /removechecklistitem morning brush teeth',
+            });
         }
 
         const itemText = itemWords.join(' ');
@@ -493,10 +595,16 @@ class Checklists {
     }
 
     async removeChecklist(ctx) {
-        const name = ctx.message.text.split('/removelist ')[1];
+        // The command is /removecheck; it used to look for a `/removelist `
+        // prefix, so a name was never found.
+        const name = commandArgs(ctx.message.text);
         if (!name) {
-            ctx.reply('Please specify a checklist name. eg: /removelist morning');
-            return;
+            return askArgs(ctx, [{
+                key: 'name',
+                ask: 'ask_removecheck_name',
+                question: 'Which checklist should I remove?',
+                validate: this.existingChecklist(ctx.chat.id),
+            }], ctx => this.removeChecklist(ctx), { usage: 'Please specify a checklist name. eg: /removecheck morning' });
         }
 
         let holonId = ctx.chat.id;
@@ -822,8 +930,12 @@ class Checklists {
     async deleteCheckedItems(ctx) {
         const [_, listName] = ctx.message.text.split(/\s+/);
         if (!listName) {
-            ctx.reply('Please specify a checklist name. eg: /deletechecked morning');
-            return;
+            return askArgs(ctx, [{
+                key: 'list',
+                ask: 'ask_deletechecked_list',
+                question: 'Which checklist should I clear of its checked items?',
+                validate: this.existingChecklist(ctx.chat.id, { oneWord: true }),
+            }], ctx => this.deleteCheckedItems(ctx), { usage: 'Please specify a checklist name. eg: /deletechecked morning' });
         }
 
         let holonId = ctx.chat.id;

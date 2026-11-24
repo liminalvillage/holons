@@ -31,6 +31,12 @@ import {
   partyNames,
   readLogContext,
 } from './protocolContext.js';
+import { askMissing, withArgs } from './AskMissing.js';
+import { holonText } from '../utils/holonNoun.js';
+
+/** The English as written, its {{placeholders}} filled: `find` outside a dialogue. */
+const plain = (_key, english, vars = {}) =>
+  english.replace(/\{\{(\w+)\}\}/g, (_, name) => String(vars[name] ?? ''));
 
 const CHOICE_MARK = { yes: '👍', no: '👎', abstain: '🤷' };
 const STATUS_MARK = {
@@ -109,14 +115,16 @@ export default class GovernanceVotes {
   }
 
   /** One proposal by id prefix or title words. */
-  async find(holon, words) {
+  async find(holon, words, t = plain) {
     const needle = String(words.join(' ') || '')
       .trim()
       .toLowerCase();
     if (!needle)
       return {
-        error:
-          'Which proposal? Give its id or a few words of its title (see /votes).',
+        error: t(
+          'ask_err_vote_proposal_missing',
+          'Which proposal? Give its id or a few words of its title (see /votes).'
+        ),
       };
     const all = await this.proposals(holon);
     const byId = all.filter(q =>
@@ -131,14 +139,25 @@ export default class GovernanceVotes {
     if (byTitle.length === 1) return { proposal: byTitle[0] };
     const hits = byId.length ? byId : byTitle;
     if (!hits.length)
-      return { error: `No proposal matches “${words.join(' ')}”.` };
+      return {
+        error: t(
+          'ask_err_vote_proposal_unknown',
+          'No proposal matches “{{words}}”.',
+          { words: words.join(' ') }
+        ),
+      };
     return {
-      error:
-        `${hits.length} proposals match; be more specific:\n` +
-        hits
-          .slice(0, 6)
-          .map(q => `· ${String(q.id).slice(0, 8)} ${q.title || ''}`)
-          .join('\n'),
+      error: t(
+        'ask_err_vote_proposal_ambiguous',
+        '{{n}} proposals match; be more specific:\n{{matches}}',
+        {
+          n: hits.length,
+          matches: hits
+            .slice(0, 6)
+            .map(q => `· ${String(q.id).slice(0, 8)} ${q.title || ''}`)
+            .join('\n'),
+        }
+      ),
     };
   }
 
@@ -149,8 +168,7 @@ export default class GovernanceVotes {
     const userId = String(getUserId(ctx));
     const args = (ctx.message?.text || '').split(/\s+/).slice(1);
     const at = args.findIndex(a => VOTE_CHOICES.includes(a.toLowerCase()));
-    if (at < 1)
-      return ctx.reply('Usage: /vote <proposal> yes|no|abstain [why]');
+    if (at < 1) return this.askVote(ctx, holon, args, at);
     const choice = args[at].toLowerCase();
     const memo = args
       .slice(at + 1)
@@ -184,15 +202,92 @@ export default class GovernanceVotes {
           (mine && mine.status !== 'counted'
             ? ` · ${STATUS_MARK[mine.status] || mine.status}`
             : '') +
-          (delegated ? ' (signed by the holon on your behalf)' : '') +
+          (delegated
+            ? holonText(' (signed by {@the_holon} on your behalf)')
+            : '') +
           `\n${this.describeTally(t)}` +
           (fold.actors.source === 'bootstrap'
-            ? '\nThis holon is not founded yet: the signer set is provisional.'
+            ? holonText(
+                '\nThis {@holon} is not founded yet: the signer set is provisional.'
+              )
             : '')
       );
     } catch (err) {
       return ctx.reply(`Could not record the vote: ${err?.message || err}`);
     }
+  }
+
+  /**
+   * /vote without its proposal, its choice, or both: ask for what is missing
+   * and run the command again as `/vote <proposal> <choice> [why]`.
+   * `at` is where the choice sits in `args`: 0 = it came first (no proposal),
+   * -1 = there is none.
+   */
+  async askVote(ctx, holon, args, at) {
+    const usage = 'Usage: /vote <proposal> yes|no|abstain [why]';
+    const choices = VOTE_CHOICES.join(', ');
+    const isChoice = w => VOTE_CHOICES.includes(String(w).toLowerCase());
+    const choice = {
+      key: 'choice',
+      ask: 'ask_vote_choice',
+      question:
+        'How do you vote? Send one of: {{choices}} — you can add why after it.',
+      vars: { choices },
+      validate: s => isChoice(s.split(/\s+/)[0]),
+      error: 'ask_err_vote_choice',
+      errorText: 'Please answer with one of: {{choices}}.',
+    };
+    // The proposal was typed, the choice was not.
+    if (at === -1 && args[0])
+      return askMissing(
+        ctx,
+        [choice],
+        (values, original) =>
+          this.vote(withArgs(original, args.join(' '), values.choice)),
+        { usage }
+      );
+
+    const all = await this.proposals(holon);
+    if (!all.length)
+      return ctx.reply(
+        'No proposals here yet. Create one as a proposal-type quest, then /vote on it.'
+      );
+    const open = all
+      .filter(q => q.status !== 'executed' && q.status !== 'completed')
+      .slice(0, 8)
+      .map(q => `#${String(q.id).slice(0, 8)} ${q.title || ''}`);
+    const proposal = {
+      key: 'proposal',
+      ask: 'ask_vote_proposal',
+      question:
+        'Which proposal do you vote on? Send its id or a few words of its title.{{open}}',
+      vars: { open: open.length ? `\n\n${open.join('\n')}` : '' },
+      validate: async (input, _values, _ctx, t) => {
+        const words = input.split(/\s+/);
+        // A choice word here would be read as the vote itself.
+        if (words.some(isChoice))
+          return t(
+            'ask_err_vote_proposal_choice',
+            "Leave out {{choices}} for now — send the proposal's id or other words of its title.",
+            { choices }
+          );
+        const { error } = await this.find(holon, words, t);
+        return error || true;
+      },
+    };
+    return askMissing(
+      ctx,
+      at === 0 ? [proposal] : [proposal, choice],
+      (values, original) =>
+        this.vote(
+          withArgs(
+            original,
+            values.proposal,
+            at === 0 ? args.join(' ') : values.choice
+          )
+        ),
+      { usage }
+    );
   }
 
   describeTally(t) {

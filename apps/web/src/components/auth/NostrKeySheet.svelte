@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors -->
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
 	// Bring-your-own Nostr key: paste an nsec (or hex), or create a fresh one
 	// with a one-time backup step. Emits `login` with a ProviderLogin.
 	import { createEventDispatcher } from 'svelte';
@@ -87,7 +88,7 @@
 		<button class="primary" type="button" disabled={!preview} on:click={submitImport}>Continue</button>
 	{:else if fresh}
 		<p class="warn">
-			<strong>Save this key now.</strong> It is the only way back into this holon — there is no reset.
+			<strong>Save this key now.</strong> It is the only way back into this {words.holon} — there is no reset.
 		</p>
 		<div class="keybox">
 			<code>{fresh.nsec}</code>

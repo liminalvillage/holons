@@ -1,5 +1,6 @@
 <script lang="ts">
 	// @ts-nocheck -- Disabling TypeScript checking for this file due to Svelte 5 JSX compatibility issues
+	import { words } from '$lib/vocabulary';
 	import { onMount, onDestroy, getContext, createEventDispatcher} from "svelte";
 	// @ts-ignore - Fix for app/environment module error
 	import { browser } from "$app/environment";
@@ -494,7 +495,7 @@
 		{ value: 'projects', label: 'Projects' },
 		{ value: 'currencies', label: 'Currencies' },
 		{ value: 'people', label: 'People' },
-		{ value: 'holons', label: 'Holons' },
+		{ value: 'holons', label: words.Holons },
 		{ value: 'events', label: 'Events' },
 		{ value: 'library', label: 'Library' },
 		{ value: 'roles', label: 'Roles' },
@@ -2029,7 +2030,7 @@
 					checked={$showFederated}
 					label="Federated"
 					icon={Globe}
-					tooltip="Federated: also light cells that have content in the holons this map's cells are federated with — not just the local graph. Off by default."
+					tooltip="Federated: also light cells that have content in the {words.holons} this map's cells are federated with — not just the local graph. Off by default."
 					on:change={(e) => showFederated.set(e.detail)}
 				/>
 			</div>
@@ -2107,7 +2108,7 @@
 					<div class="lens-option-item">
 						<span class="lens-dot" style="background-color: #ff5722;"></span>
 						<div>
-							<strong>Holons</strong>
+							<strong>{words.Holons}</strong>
 							<span class="lens-desc">Organizational units</span>
 						</div>
 					</div>
@@ -2129,7 +2130,7 @@
 						<span class="lens-dot" style="background-color: #795548;"></span>
 						<div>
 							<strong>Roles</strong>
-							<span class="lens-desc">Holon responsibilities</span>
+							<span class="lens-desc">{words.Holon} responsibilities</span>
 						</div>
 					</div>
 					<div class="lens-option-item">

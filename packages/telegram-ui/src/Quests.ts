@@ -34,6 +34,8 @@ import { DEFAULT_EQUATION } from '@holons/core/scoring';
 import { createOffer, publishOfferNearby } from '@holons/core/offers';
 import { parseOfferText } from './Offers.js';
 import { hostTelegramPicture } from './Pictures.js';
+import { askArgs, askMissing, withArgs } from './AskMissing.js';
+import { holonText } from '../utils/holonNoun.js';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
@@ -348,7 +350,21 @@ export default class Quests {
         const pictureIsDocument = !ctx.message.photo && !!picture;
         
         if (!title) {
-            return ctx.reply(i18next.t(type === 'offer' ? 'offerusage' : 'usage', { type, lng: language }));
+            const usage = i18next.t(type === 'offer' ? 'offerusage' : 'usage', { type, lng: language });
+            // A bare command asks for what is missing instead of explaining
+            // itself; the answer re-enters this handler as `/task <title>`.
+            // Scheduler's recurring quests come with a made-up ctx: no dialogue.
+            if (type !== 'recurring') {
+                const [ask, question] = type === 'task'
+                    ? ['ask_task_title', 'What is the title of the task?']
+                    : type === 'request'
+                        ? ['ask_request_title', 'What are you asking for?']
+                        : type === 'offer'
+                            ? ['ask_offer_title', 'What are you offering?\nFor example: 5kg flour · lend a drill · sell 2 loaves for 3 EUR']
+                            : ['ask_any_title', 'What is the {{type}}?'];
+                return askArgs(ctx, [{ key: 'title', ask, question, vars: { type } }], ctx => this.quest(type, ctx), { lng: language, usage });
+            }
+            return ctx.reply(usage);
         }
         
         // Task limit check
@@ -1346,17 +1362,44 @@ export default class Quests {
     async delete(ctx) {
         const [, messageId] = ctx.message.text.split(' ');
         const holonId = ctx.message.chat.id;
+        if (!messageId) {
+            const language = await this.getLanguage(holonId);
+            return askArgs(ctx, [{
+                key: 'id',
+                ask: 'ask_delete_id',
+                question: 'Which quest should be deleted? Send its id.',
+                validate: s => !/\s/.test(s),
+                error: 'ask_err_delete_id',
+                errorText: 'Please send just the id, without spaces.',
+            }], ctx => this.delete(ctx), { lng: language, usage: 'Usage: /delete [id]' });
+        }
         const holonDB = await this.getHolonDB(holonId);
         holonDB.delete(holonId, 'quests', messageId);
         ctx.reply('Quest deleted');
     }
 
     async listtype(ctx) {
-        let type = ctx.message.text.split(' ')[0].replace('/', '');
-        if (type && type[type.length - 1] === 's') type = type.slice(0, -1);
-
+        const words = ctx.message.text.split(' ').filter(Boolean);
+        let type = words[0].replace('/', '').split('@')[0];
         const holonId = ctx.message.chat.id;
         const language = await this.getLanguage(holonId);
+        // `/listtype <type>`: the type is the argument, not the command word
+        // (the plural commands — /ideas, /notes — arrive here as `/idea`).
+        if (type === 'listtype') {
+            type = (words[1] || '').toLowerCase();
+            if (!type) {
+                return askArgs(ctx, [{
+                    key: 'type',
+                    ask: 'ask_listtype_type',
+                    question: 'Which type do you want to list? For example: idea, note, question, lesson, feedback',
+                    validate: s => !/\s/.test(s),
+                    error: 'ask_err_listtype_type',
+                    errorText: 'Please send a single word, e.g. idea',
+                }], ctx => this.listtype(ctx), { lng: language, usage: 'Usage: /listtype [type]' });
+            }
+        }
+        if (type && type[type.length - 1] === 's') type = type.slice(0, -1);
+
         const holonDB = await this.getHolonDB(holonId);
         const quests = await holonDB.getAll(holonId, 'quests');
         
@@ -1455,11 +1498,68 @@ export default class Quests {
         const text = ctx.message.text || ctx.message.caption;
         const args = text.split(' ').slice(1);
 
+        // Who to appreciate, asked for when the command does not say: an
+        // @username of this holon (the same lookup the command does below).
+        const askWho = {
+            key: 'who',
+            ask: 'ask_appreciate_who',
+            question: 'Who do you want to appreciate? Send their @username.',
+            validate: async (input, _values, _ctx, t) => {
+                if (!/^@\S+$/.test(input)) {
+                    return t('ask_err_appreciate_who', 'Please send one @username, e.g. @maria');
+                }
+                const users = await this.getUsers(holonId);
+                if (users.some(u => u.username === input.substring(1))) return true;
+                return t('user_not_found', 'User not found.') || false;
+            },
+        };
+
+        // In a forum topic every message "replies" to the topic's root
+        // service message; that is not a reply to a person.
+        const replied = ctx.message.reply_to_message;
+        const realReply =
+            replied &&
+            !replied.forum_topic_created &&
+            replied.message_id !== ctx.message.message_thread_id
+                ? replied
+                : undefined;
+
         if (args.length === 0) {
-            return ctx.reply(i18next.t('appreciation_usage', {
+            const usage = i18next.t('appreciation_usage', {
                 lng: language,
                 defaultValue: 'Usage: /appreciate [user] [amount] [reason]'
-            }));
+            });
+            // Sent as a reply: the person is known, only the reason is missing.
+            if (realReply?.from) {
+                return askArgs(ctx, [{
+                    key: 'reason',
+                    ask: 'ask_appreciate_reason_reply',
+                    question: 'What do you appreciate {{name}} for?',
+                    vars: { name: getDisplayName(realReply.from) },
+                }], ctx => this.sendAppreciation(ctx), { lng: language, usage });
+            }
+            return askArgs(ctx, [
+                askWho,
+                {
+                    key: 'reason',
+                    ask: 'ask_appreciate_reason',
+                    question: 'What do you appreciate {{who}} for?',
+                    optional: true,
+                },
+            ], ctx => this.sendAppreciation(ctx), { lng: language, usage });
+        }
+
+        // A reason but nobody to give it to: ask who, keep the reason.
+        if (!args[0].startsWith('@') && !realReply) {
+            return askMissing(ctx, [askWho],
+                (values, ctx) => this.sendAppreciation(withArgs(ctx, values.who, args.join(' '))),
+                {
+                    lng: language,
+                    usage: i18next.t('specify_user', {
+                        lng: language,
+                        defaultValue: 'Please specify a user to appreciate by replying to their message or using @username.'
+                    }),
+                });
         }
 
         try {
@@ -1488,9 +1588,9 @@ export default class Quests {
                 } else {
                     reason = args.slice(1).join(' ');
                 }
-            } else if (ctx.message.reply_to_message) {
+            } else if (realReply) {
                 // Replying to a message
-                targetUser = ctx.message.reply_to_message.from;
+                targetUser = realReply.from;
 
                 if (!isNaN(args[0])) {
                     amount = parseInt(args[0]);
@@ -2427,7 +2527,7 @@ export default class Quests {
                         questToView = {
                             id: actualOriginalQuestId,
                             holon: originalQuestholonId,
-                            title: userHologramData.title || 'Quest from Remote Holon',
+                            title: userHologramData.title || holonText('Quest from Remote {@Holon}'),
                             status: userHologramData.status || 'ongoing',
                             type: 'task',
                             initiator: { first_name: 'Remote User' },
@@ -2435,13 +2535,13 @@ export default class Quests {
                             appreciation: [],
                             timeTracking: {},
                             date: userHologramData.lastInteracted || Date.now(),
-                            description: 'This quest originates from a holon that is no longer accessible.'
+                            description: holonText('This quest originates from {@a_holon} that is no longer accessible.')
                         };
                     } else {
                         throw new Error('No hologram data found');
                     }
                 } catch (hologramError) {
-                    await ctx.answerCbQuery('Error: This quest is from an inaccessible holon.');
+                    await ctx.answerCbQuery(holonText('Error: This quest is from an inaccessible {@holon}.'));
                     return;
                 }
             }
@@ -2755,7 +2855,7 @@ export default class Quests {
                     const baseMessageText = await this.createMessage(updatedQuest, language);
                     const originalHolonName = await getHolonName(this.db, questHolon, ctx);
                     const federatedMessageText = `🌐 **${i18next.t('federated_quest', { lng: language, defaultValue: 'Federated Quest' })}**\n` +
-                        `📡 ${i18next.t('from_holon', { lng: language, defaultValue: 'From holon' })}: ${originalHolonName}\n\n` +
+                        `📡 ${i18next.t('from_holon', { lng: language, defaultValue: 'From {@holon}' })}: ${originalHolonName}\n\n` +
                         baseMessageText;
 
                     const federatedMarkup = Markup.inlineKeyboard([

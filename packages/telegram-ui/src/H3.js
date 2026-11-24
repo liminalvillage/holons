@@ -5,6 +5,10 @@
 
 import { publishToFederation } from '@holons/core/federation';
 import { linkHolons } from './federationLinks.js';
+import { askArgs } from './AskMissing.js';
+
+// One word: these commands read their arguments split on spaces.
+const oneWord = s => !/\s/.test(s);
 
 // WRAPPER CLASS FOR HOLOSPHERE
 class H3 {
@@ -14,41 +18,92 @@ class H3 {
     this.settings = settings;
     this.bot = bot;
 
-    this.bot.command('get', async ctx => {
+    const get = async ctx => {
       const holonId = ctx.message.chat.id;
       const tag = ctx.message.text.split(' ')[1];
       if (!tag) {
-        return ctx.reply('Please specify a tag.');
+        return askArgs(
+          ctx,
+          [
+            {
+              key: 'tag',
+              ask: 'ask_get_tag',
+              question: 'Which tag do you want to see?',
+              validate: oneWord,
+              error: 'ask_err_get_tag',
+              errorText: 'Please send a single tag, without spaces.',
+            },
+          ],
+          get,
+          { usage: 'Please specify a tag.' }
+        );
       }
       const hex = (await this.settings.getSettings(holonId)).hex;
 
       const data = await this.db.get(hex, tag);
       ctx.reply(JSON.stringify(data, null, 2));
-    });
+    };
+    this.bot.command('get', get);
 
-    this.bot.command('compute', async ctx => {
+    const askLense = {
+      key: 'lense',
+      ask: 'ask_compute_lense',
+      question: 'Which lens should I run it on? (for example: quests)',
+      validate: oneWord,
+      error: 'ask_err_compute_lense',
+      errorText: 'Please send a single lens name, without spaces.',
+    };
+    const compute = async ctx => {
       const holonId = ctx.message.chat.id;
       const operation = ctx.message.text.split(' ')[1];
+      if (!operation) {
+        return askArgs(
+          ctx,
+          [
+            {
+              key: 'operation',
+              ask: 'ask_compute_operation',
+              question: 'Which operation should I compute? Available: sum',
+              validate: s => s === 'sum',
+              error: 'ask_err_compute_operation',
+              errorText: 'Only "sum" is available for now.',
+            },
+            askLense,
+          ],
+          compute,
+          { usage: 'Operation not implemented' }
+        );
+      }
       if (operation != 'sum') {
         ctx.reply('Operation not implemented');
         return;
       }
       const lense = ctx.message.text.split(' ')[2];
       if (!lense) {
-        ctx.reply('Please specify a lense where to perform the operation ');
-        return;
+        return askArgs(ctx, [askLense], compute, {
+          prefix: operation,
+          usage: 'Please specify a lense where to perform the operation ',
+        });
       }
       const hex = (await this.settings.getSettings(holonId)).hex;
       await this.db.compute(hex, lense, operation);
-    });
+    };
+    this.bot.command('compute', compute);
 
-    this.bot.command('cast', async ctx => {
+    const askTags = {
+      key: 'tags',
+      ask: 'ask_cast_tags',
+      question: 'Which tags? Send one or more, separated by spaces.',
+    };
+    const cast = async ctx => {
       if (!ctx.message.reply_to_message) {
         return ctx.reply('Please reply to a message you want to cast.');
       }
       const tags = ctx.message.text.split(' ').slice(1);
       if (tags.length === 0) {
-        return ctx.reply('Please provide at least one tag.');
+        return askArgs(ctx, [askTags], cast, {
+          usage: 'Please provide at least one tag.',
+        });
       }
 
       const messageId = ctx.message.reply_to_message.message_id;
@@ -64,15 +119,18 @@ class H3 {
 
       await this.db.upcast(id, 'quests', node);
       //}
-    });
+    };
+    this.bot.command('cast', cast);
 
-    this.bot.command('publish', async ctx => {
+    const publish = async ctx => {
       if (!ctx.message.reply_to_message) {
         return ctx.reply('Please reply to a message you want to publish.');
       }
       const tags = ctx.message.text.split(' ').slice(1);
       if (tags.length === 0) {
-        return ctx.reply('Please provide at least one tag.');
+        return askArgs(ctx, [askTags], publish, {
+          usage: 'Please provide at least one tag.',
+        });
       }
 
       const messageId = ctx.message.reply_to_message.message_id;
@@ -127,7 +185,8 @@ class H3 {
         console.error('Error publishing quest:', error);
         ctx.reply('Error publishing quest');
       }
-    });
+    };
+    this.bot.command('publish', publish);
   }
 }
 

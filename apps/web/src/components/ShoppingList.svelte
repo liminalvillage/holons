@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn } from '$lib/vocabulary';
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import { page } from "$app/stores";
@@ -228,7 +229,7 @@
 
     function handleWriteError(error: any, fallbackMessage: string): void {
         if (error?.name === 'AuthorizationError') {
-            notifyWriteDenied('Unable to save - no write permission for this holon');
+            notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
         } else {
             console.error(fallbackMessage, error);
         }

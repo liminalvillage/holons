@@ -44,6 +44,15 @@ import { federationLinkState, laneState } from '@holons/core/federation';
 import { linkContext, outcomeText } from './federationLinks.js';
 import { initiatorAdmin } from './initiatorAdmin.js';
 import { ONBOARDING_DEEPLINK, startFromDeeplink } from '../scenes/flow.js';
+import { askArgs, askMissing } from './AskMissing.js';
+import { holonText } from '../utils/holonNoun.js';
+
+// Answer checks for the "ask what is missing" dialogues (see askFor below).
+const oneWord = s => !/\s/.test(s);
+const isHolonId = s => /^-?\d+$/.test(s) || /^(0x)?[0-9a-fA-F]+$/.test(s);
+const hasItems = s => s.split(/[,\n]/).some(x => x.trim());
+// Everything after the command word (`/cmd` or `/cmd@Bot`).
+const afterCommand = text => String(text ?? '').replace(/^\/\S+\s*/, '');
 
 // Re-export so other modules (web, ai-ui) can import the canonical settings
 // shape from either `./Settings.js` or `@holons/core/settings`.
@@ -762,7 +771,7 @@ export default class Settings {
         });
       } catch (error) {
         console.error('Error handling /id:', error);
-        ctx.reply('This holon ID is ' + holonId);
+        ctx.reply(holonText("This {@holon}'s ID is ") + holonId);
       }
     });
 
@@ -824,37 +833,82 @@ export default class Settings {
       holon: String(utils.getholonId(ctx)),
       lens,
     });
-    this.bot.command(['lock', 'unlock'], async ctx => {
+    const lockLens = async ctx => {
       if (!(await utils.isAdmin(ctx)))
         return ctx.reply('Only a chat admin can perform this action');
       const [lens] = privacyArgs(ctx);
+      const locking = /^\/lock\b/.test(String(ctx.message?.text ?? ''));
       if (!lens)
-        return ctx.reply(
+        return this.askFor(
+          ctx,
+          [
+            {
+              key: locking ? 'lock_lens' : 'unlock_lens',
+              ask: locking ? 'ask_lock_lens' : 'ask_unlock_lens',
+              question: locking
+                ? 'Which lens would you like to make private? e.g. quests'
+                : 'Which lens would you like to make public again? e.g. quests',
+              validate: oneWord,
+              error: 'ask_err_lock_lens',
+              errorText: 'Please send one lens name, e.g. quests',
+            },
+          ],
+          lockLens,
           'Usage: /lock <lens> or /unlock <lens> — e.g. /lock quests'
         );
-      const locking = /^\/lock\b/.test(String(ctx.message?.text ?? ''));
       try {
         const a = locking
           ? await lock(this.db, privacyScope(ctx, lens))
           : await unlock(this.db, privacyScope(ctx, lens));
         ctx.reply(
           a.locked
-            ? `🔒 ${lens} is private now: only this chat's members, and the holons it is shared with, can read it. /share ${lens} <holon id> to let another holon read it.`
+            ? holonText(`🔒 ${lens} is private now: only this chat's members, and {@the_holons} it is shared with, can read it. /share ${lens} <{@holon} id> to let another {@holon} read it.`)
             : `🔓 ${lens} is public again.`
         );
       } catch (e) {
         ctx.reply('Could not change that: ' + (e as Error).message);
       }
-    });
-    this.bot.command(['share', 'unshare'], async ctx => {
+    };
+    this.bot.command(['lock', 'unlock'], lockLens);
+    const shareLens = async ctx => {
       if (!(await utils.isAdmin(ctx)))
         return ctx.reply('Only a chat admin can perform this action');
       const [lens, target] = privacyArgs(ctx);
-      if (!lens || !target)
-        return ctx.reply(
-          'Usage: /share <lens> <holon id> or /unshare <lens> <holon id>'
-        );
       const sharing = /^\/share\b/.test(String(ctx.message?.text ?? ''));
+      if (!lens || !target)
+        return this.askFor(
+          ctx,
+          [
+            // The lens is asked only when it was not typed with the command.
+            ...(lens
+              ? []
+              : [
+                  {
+                    key: sharing ? 'share_lens' : 'unshare_lens',
+                    ask: sharing ? 'ask_share_lens' : 'ask_unshare_lens',
+                    question: sharing
+                      ? 'Which lens would you like to share? e.g. quests'
+                      : 'Which lens would you like to stop sharing? e.g. quests',
+                    validate: oneWord,
+                    error: 'ask_err_lock_lens',
+                    errorText: 'Please send one lens name, e.g. quests',
+                  },
+                ]),
+            {
+              key: sharing ? 'share_holon' : 'unshare_holon',
+              ask: sharing ? 'ask_share_holon' : 'ask_unshare_holon',
+              question: sharing
+                ? 'Which holon should be able to read it? Send its holon id.'
+                : 'Which holon should no longer read it? Send its holon id.',
+              validate: oneWord,
+              error: 'ask_err_share_holon',
+              errorText: 'Please send one holon id, without spaces.',
+            },
+          ],
+          shareLens,
+          'Usage: /share <lens> <holon id> or /unshare <lens> <holon id>',
+          lens
+        );
       try {
         const a = sharing
           ? await share(this.db, privacyScope(ctx, lens), target)
@@ -872,10 +926,26 @@ export default class Settings {
       } catch (e) {
         ctx.reply('Could not change that: ' + (e as Error).message);
       }
-    });
-    this.bot.command('audience', async ctx => {
+    };
+    this.bot.command(['share', 'unshare'], shareLens);
+    const lensAudience = async ctx => {
       const [lens] = privacyArgs(ctx);
-      if (!lens) return ctx.reply('Usage: /audience <lens>');
+      if (!lens)
+        return this.askFor(
+          ctx,
+          [
+            {
+              key: 'audience_lens',
+              ask: 'ask_audience_lens',
+              question: 'Which lens would you like to check? e.g. quests',
+              validate: oneWord,
+              error: 'ask_err_lock_lens',
+              errorText: 'Please send one lens name, e.g. quests',
+            },
+          ],
+          lensAudience,
+          'Usage: /audience <lens>'
+        );
       try {
         const a = await audience(this.db, privacyScope(ctx, lens));
         if (!a.locked)
@@ -901,7 +971,8 @@ export default class Settings {
       } catch (e) {
         ctx.reply('Could not read that: ' + (e as Error).message);
       }
-    });
+    };
+    this.bot.command('audience', lensAudience);
 
     this.bot.command(['separate', 'fork', 'spork'], async ctx => {
       if (await utils.isAdmin(ctx)) await this.separate(ctx);
@@ -946,9 +1017,27 @@ export default class Settings {
       }
     );
 
-    this.bot.command('sethex', async ctx =>
-      ctx.reply('New hex: ' + (await this.setHex(ctx)))
-    );
+    const setHex = async ctx => {
+      if (!ctx.message.text.split(' ')[1] && (await utils.isAdmin(ctx)))
+        return this.askFor(
+          ctx,
+          [
+            {
+              key: 'hex',
+              ask: 'ask_sethex_hex',
+              question:
+                'Which hex is this holon in? Send the H3 cell id, e.g. 8a1e80562c6ffff',
+              validate: oneWord,
+              error: 'ask_err_sethex_hex',
+              errorText: 'Please send one hex id, without spaces.',
+            },
+          ],
+          setHex,
+          'Usage: /sethex <hex>'
+        );
+      return ctx.reply('New hex: ' + (await this.setHex(ctx)));
+    };
+    this.bot.command('sethex', setHex);
     this.bot.command('gethex', async ctx =>
       ctx.reply('Current hex: ' + (await this.getHex(ctx)))
     );
@@ -956,9 +1045,27 @@ export default class Settings {
       ctx.reply(await this.getHexContent(ctx))
     );
 
-    this.bot.command('setroles', async ctx =>
-      ctx.reply('New roles: ' + (await this.setRoles(ctx)))
-    );
+    const setRoles = async ctx => {
+      if (utils.parseList(ctx.message.text).length === 0)
+        return this.askFor(
+          ctx,
+          [
+            {
+              key: 'roles',
+              ask: 'ask_setroles_roles',
+              question:
+                'Which roles would you like to add? Send them separated by commas, e.g. Gardener, Cook',
+              validate: s => s.split(',').some(x => x.trim()),
+              error: 'ask_err_setroles_roles',
+              errorText: 'Please send at least one role.',
+            },
+          ],
+          setRoles,
+          'Please specify the roles. Example: /setRoles role1, role2'
+        );
+      return ctx.reply('New roles: ' + (await this.setRoles(ctx)));
+    };
+    this.bot.command('setroles', setRoles);
     this.bot.command('getroles', async ctx => {
       let roles = await this.getRoles(utils.getholonId(ctx));
       ctx.reply(roles ? roles : 'No roles specified');
@@ -980,16 +1087,28 @@ export default class Settings {
       }
     });
 
-    this.bot.command('setdomains', async ctx => {
+    const setDomains = async ctx => {
       if (await utils.isAdmin(ctx)) {
         const holonId = ctx.message.chat.id;
-        const text = ctx.message.text.substring('/setDomains'.length).trim();
+        const text = afterCommand(ctx.message.text).trim();
 
         if (!text) {
-          ctx.reply(
+          return this.askFor(
+            ctx,
+            [
+              {
+                key: 'domains',
+                ask: 'ask_setdomains_domains',
+                question:
+                  'Which domains would you like to add? Send them separated by commas or one per line, e.g. Managing community resources, Coordinating events',
+                validate: hasItems,
+                error: 'ask_err_setdomains_domains',
+                errorText: 'Please send at least one domain.',
+              },
+            ],
+            setDomains,
             'Please specify the domains, separated by commas or newlines. Examples:\n\n1. Using commas:\n/setDomains Managing community resources, Coordinating events, Maintaining channels\n\n2. Using newlines:\n/setDomains\nManaging community resources\nCoordinating events\nMaintaining channels'
           );
-          return;
         }
 
         // Split by both newlines and commas
@@ -1013,7 +1132,8 @@ export default class Settings {
       } else {
         ctx.reply('Only admins can set the domains');
       }
-    });
+    };
+    this.bot.command('setdomains', setDomains);
 
     // Handle timezone region selection
     this.bot.action(/timezone_region_(.+)/, async ctx => {
@@ -1198,10 +1318,10 @@ export default class Settings {
         case 'help':
           await ctx
             .reply(
-              '🌟 Welcome to Holons Bot! 🌟\n\n' +
-                'A Holon is a self-organizing entity that is both a whole and a part of a larger whole. This bot helps manage your Holon community by:\n\n' +
+              holonText('🌟 Welcome to Holons Bot! 🌟\n\n' +
+                'A Holon is a self-organizing entity that is both a whole and a part of a larger whole. This bot helps manage your {@holon} community by:\n\n' +
                 '🌟 Purpose & Values:\n' +
-                "• Define your Holon's purpose\n" +
+                "• Define your {@holon}'s purpose\n" +
                 '• Set core values that guide your community\n' +
                 '• Establish domains of accountability\n\n' +
                 '👥 Roles & Responsibilities:\n' +
@@ -1213,16 +1333,16 @@ export default class Settings {
                 '• Track member contributions\n' +
                 '• Balance giving and receiving\n\n' +
                 '🔗 Integration:\n' +
-                '• Connect with other Holons via Hex IDs\n' +
+                '• Connect with other {@holons} via Hex IDs\n' +
                 '• Customize language and theme\n' +
                 '• Set your timezone for coordination\n\n' +
                 'To get started:\n' +
                 '1. Set an admin using the Admin setting\n' +
-                "2. Define your Holon's purpose\n" +
+                "2. Define your {@holon}'s purpose\n" +
                 '3. Add your core values\n' +
                 '4. Define accountability domains\n' +
                 '5. Configure roles as needed\n\n' +
-                'Need help? Click the Support & Feedback button to contact us!'
+                'Need help? Click the Support & Feedback button to contact us!')
             )
             .catch(e => console.log('Error sending help message:', e));
           break;
@@ -1653,13 +1773,25 @@ export default class Settings {
     });
 
     // Add a direct command to add values without scenes
-    this.bot.command('addvalues', async ctx => {
-      const text = ctx.message.text.replace('/addvalues', '').trim();
+    const addValues = async ctx => {
+      const text = afterCommand(ctx.message.text).trim();
       if (!text) {
-        await ctx.reply(
+        return this.askFor(
+          ctx,
+          [
+            {
+              key: 'values',
+              ask: 'ask_addvalues_values',
+              question:
+                'Which values would you like to add? Send them separated by commas or one per line, e.g. Collaboration, Communication',
+              validate: hasItems,
+              error: 'ask_err_setvalues_values',
+              errorText: 'Please send at least one value.',
+            },
+          ],
+          addValues,
           'Please provide values to add, like: /addvalues value1, value2, value3'
         );
-        return;
       }
 
       const holonId = ctx.chat.id;
@@ -1679,16 +1811,29 @@ export default class Settings {
 
       await ctx.reply(`Added ${values.length} values: ${values.join(', ')}`);
       await this.showArraySettingMenu(ctx, 'values', false);
-    });
+    };
+    this.bot.command('addvalues', addValues);
 
     // Add direct commands for other types
-    this.bot.command('adddomains', async ctx => {
-      const text = ctx.message.text.replace('/adddomains', '').trim();
+    const addDomains = async ctx => {
+      const text = afterCommand(ctx.message.text).trim();
       if (!text) {
-        await ctx.reply(
+        return this.askFor(
+          ctx,
+          [
+            {
+              key: 'domains',
+              ask: 'ask_adddomains_domains',
+              question:
+                'Which domains would you like to add? Send them separated by commas or one per line, e.g. Managing community resources, Coordinating events',
+              validate: hasItems,
+              error: 'ask_err_setdomains_domains',
+              errorText: 'Please send at least one domain.',
+            },
+          ],
+          addDomains,
           'Please provide domains to add, like: /adddomains domain1, domain2, domain3'
         );
-        return;
       }
 
       const holonId = ctx.chat.id;
@@ -1708,9 +1853,10 @@ export default class Settings {
 
       await ctx.reply(`Added ${domains.length} domains: ${domains.join(', ')}`);
       await this.showArraySettingMenu(ctx, 'domains', false);
-    });
+    };
+    this.bot.command('adddomains', addDomains);
 
-    this.bot.command('addroles', async ctx => {
+    const addRoles = async ctx => {
       const holonId = ctx.chat.id;
       const language = await this.getLanguage(holonId);
       const isAdmin = await utils.isAdmin(ctx);
@@ -1722,14 +1868,26 @@ export default class Settings {
 
       const args = ctx.message.text.split(' ').slice(1);
       if (args.length === 0) {
-        await ctx.reply(
+        return this.askFor(
+          ctx,
+          [
+            {
+              key: 'roles',
+              ask: 'ask_addroles_roles',
+              question:
+                'Which roles would you like to add? Send them separated by commas, e.g. Gardener, Cook',
+              validate: hasItems,
+              error: 'ask_err_setroles_roles',
+              errorText: 'Please send at least one role.',
+            },
+          ],
+          addRoles,
           i18next.t('settings_usage_array', {
             lng: language,
             command: '/addroles',
             example: '/addroles role1, role2, role3',
           })
         );
-        return;
       }
 
       const newRoles = args
@@ -1756,16 +1914,29 @@ export default class Settings {
           count: addedCount,
         })
       );
-    });
+    };
+    this.bot.command('addroles', addRoles);
 
     // Add command for adding currencies
-    this.bot.command('addcurrencies', async ctx => {
-      const text = ctx.message.text.replace('/addcurrencies', '').trim();
+    const addCurrencies = async ctx => {
+      const text = afterCommand(ctx.message.text).trim();
       if (!text) {
-        await ctx.reply(
+        return this.askFor(
+          ctx,
+          [
+            {
+              key: 'currencies',
+              ask: 'ask_addcurrencies_currencies',
+              question:
+                'Which currencies would you like to add? Send them separated by commas, in singular form, e.g. EUR, USD, hour',
+              validate: hasItems,
+              error: 'ask_err_addcurrencies_currencies',
+              errorText: 'Please send at least one currency.',
+            },
+          ],
+          addCurrencies,
           'Please provide currencies to add, like: /addcurrencies EUR, USD, JPY. Always use singular form.'
         );
-        return;
       }
 
       const holonId = ctx.chat.id;
@@ -1792,7 +1963,8 @@ export default class Settings {
         `Added currencies: ${newCurrencies.join(', ')}. Ensure these are in singular form.`
       );
       await this.showArraySettingMenu(ctx, 'currencies', false);
-    });
+    };
+    this.bot.command('addcurrencies', addCurrencies);
 
     // Individual handlers for adding items - using InputScene pattern
     // All handlers clear cache before reading, then pass settings directly to showArraySettingMenu
@@ -2105,30 +2277,45 @@ export default class Settings {
         return;
       }
 
-      const args = ctx.message.text.split(' ').slice(1);
-      if (args.length < 2) {
+      const applyName = async (ctx, newName) => {
+        let settings = await this.getSettings(holonId);
+        settings.name = newName;
+        await this.setSettings(settings);
+
         await ctx.reply(
-          i18next.t('settings_usage', {
+          i18next.t('settings_updated', {
             lng: language,
-            command: '/setname',
-            example: '/setname new name',
+            field: i18next.t('settings_name', { lng: language }),
+            value: newName,
           })
         );
-        return;
+      };
+
+      const typedName = ctx.message.text.split(' ').slice(1).join(' ').trim();
+      if (!typedName) {
+        return askMissing(
+          ctx,
+          [
+            {
+              key: 'name',
+              ask: 'ask_settings_name',
+              question: 'What should this holon be called?',
+              validate: s => s.trim() !== '',
+            },
+          ],
+          (values, ctx) => applyName(ctx, values.name.trim()),
+          {
+            lng: language,
+            usage: i18next.t('settings_usage', {
+              lng: language,
+              command: '/setname',
+              example: '/setname new name',
+            }),
+          }
+        );
       }
 
-      const newName = args.slice(1).join(' ');
-      let settings = await this.getSettings(holonId);
-      settings.name = newName;
-      await this.setSettings(settings);
-
-      await ctx.reply(
-        i18next.t('settings_updated', {
-          lng: language,
-          field: i18next.t('settings_name', { lng: language }),
-          value: newName,
-        })
-      );
+      await applyName(ctx, typedName);
     });
 
     this.bot.command('setpurpose', async ctx => {
@@ -2944,8 +3131,23 @@ export default class Settings {
     const language = ctx.message.text.split(' ')[1];
 
     if (language === undefined || language === null) {
-      ctx.reply('Please specify the language. Example: /setLanguage en');
-      return;
+      const languages = ['en', 'it', 'es', 'fr', 'ru', 'de'];
+      return this.askFor(
+        ctx,
+        [
+          {
+            key: 'language',
+            ask: 'ask_setlanguage_language',
+            question:
+              'Which language should I speak here? Send one of: en, it, es, fr, ru, de',
+            validate: s => languages.includes(s),
+            error: 'ask_err_setlanguage_language',
+            errorText: 'Please send "en", "it", "es", "fr", "ru" or "de".',
+          },
+        ],
+        ctx => this.setLanguage(ctx),
+        'Please specify the language. Example: /setLanguage en'
+      );
     }
     if (!['en', 'it', 'es', 'fr', 'ru', 'de'].includes(language)) {
       ctx.reply(
@@ -2988,8 +3190,21 @@ export default class Settings {
     const theme = ctx.message.text.split(' ')[1];
 
     if (theme === undefined || theme === null) {
-      ctx.reply('Please specify the theme. Example: /setTheme light');
-      return;
+      return this.askFor(
+        ctx,
+        [
+          {
+            key: 'theme',
+            ask: 'ask_settheme_theme',
+            question: 'Which theme would you like? Send light or dark.',
+            validate: s => s === 'light' || s === 'dark',
+            error: 'ask_err_settheme_theme',
+            errorText: 'Please send "light" or "dark".',
+          },
+        ],
+        ctx => this.setTheme(ctx),
+        'Please specify the theme. Example: /setTheme light'
+      );
     }
     if (theme !== 'light' && theme !== 'dark') {
       ctx.reply('Please specify "light" or "dark". Example: /setTheme light');
@@ -3024,8 +3239,22 @@ export default class Settings {
     const holonId = ctx.message.chat.id;
     const admin = ctx.message.text.split(' ')[1];
     if (admin === undefined || admin === null) {
-      ctx.reply('Please specify the admin. Example: /setAdmin @admin');
-      return;
+      return this.askFor(
+        ctx,
+        [
+          {
+            key: 'admin',
+            ask: 'ask_setadmin_admin',
+            question:
+              'Who should be the admin of this holon? Send their @username.',
+            validate: oneWord,
+            error: 'ask_err_setadmin_admin',
+            errorText: 'Please send one @username, without spaces.',
+          },
+        ],
+        ctx => this.setAdmin(ctx),
+        'Please specify the admin. Example: /setAdmin @admin'
+      );
     }
     let settings = await this.getSettings(holonId);
     settings.admin = admin;
@@ -3038,11 +3267,25 @@ export default class Settings {
     const federationID = ctx.message.text.split(' ')[1];
 
     if (federationID === undefined || federationID === null) {
-      ctx.reply(
-        'Please specify the ID you would like to federate with. Example: /federate 123456 or /federate 0x1234abcd. This holon ID is ' +
+      return this.askFor(
+        ctx,
+        [
+          {
+            key: 'federate_holon',
+            ask: 'ask_federate_holon',
+            question:
+              'Which holon would you like to federate with? Send its ID, e.g. -1001234567890 or 0x1234abcd. This holon ID is {{holonId}}',
+            vars: { holonId },
+            validate: isHolonId,
+            error: 'ask_err_federate_holon',
+            errorText:
+              'Invalid holon ID format. Please send a numeric ID (e.g., -1001234567890) or a hex address (e.g., 0x1234abcd).',
+          },
+        ],
+        ctx => this.federate(ctx),
+        holonText("Please specify the ID you would like to federate with. Example: /federate 123456 or /federate 0x1234abcd. This {@holon}'s ID is ") +
           holonId
       );
-      return;
     }
 
     // Validate federation ID format - accept completely numeric or hex holon IDs
@@ -3051,7 +3294,7 @@ export default class Settings {
 
     if (!isNumeric && !isHex) {
       ctx.reply(
-        'Invalid holon ID format. Please enter a numeric ID (e.g., -1001234567890) or a hex address (e.g., 0x1234abcd).'
+        holonText('Invalid {@holon} ID format. Please enter a numeric ID (e.g., -1001234567890) or a hex address (e.g., 0x1234abcd).')
       );
       return;
     }
@@ -3090,10 +3333,23 @@ export default class Settings {
     const federationID = ctx.message.text.split(' ')[1];
 
     if (federationID === undefined || federationID === null) {
-      ctx.reply(
+      return this.askFor(
+        ctx,
+        [
+          {
+            key: 'separate_holon',
+            ask: 'ask_separate_holon',
+            question:
+              'Which holon would you like to stop federating with? Send its ID, e.g. -1001234567890 or 0x1234abcd.',
+            validate: isHolonId,
+            error: 'ask_err_federate_holon',
+            errorText:
+              'Invalid holon ID format. Please send a numeric ID (e.g., -1001234567890) or a hex address (e.g., 0x1234abcd).',
+          },
+        ],
+        ctx => this.separate(ctx),
         'Please specify who you would like to revoke the federation with. Example: /separate 123456 or /separate 0x1234abcd.'
       );
-      return;
     }
 
     // Validate federation ID format - accept completely numeric or hex holon IDs
@@ -3102,7 +3358,7 @@ export default class Settings {
 
     if (!isNumeric && !isHex) {
       ctx.reply(
-        'Invalid holon ID format. Please enter a numeric ID (e.g., -1001234567890) or a hex address (e.g., 0x1234abcd).'
+        holonText('Invalid {@holon} ID format. Please enter a numeric ID (e.g., -1001234567890) or a hex address (e.g., 0x1234abcd).')
       );
       return;
     }
@@ -3189,13 +3445,25 @@ export default class Settings {
   async setValues(ctx) {
     if (await utils.isAdmin(ctx)) {
       const holonId = ctx.message.chat.id;
-      const text = ctx.message.text.substring('/setValues'.length).trim();
+      const text = afterCommand(ctx.message.text).trim();
 
       if (!text) {
-        ctx.reply(
+        return this.askFor(
+          ctx,
+          [
+            {
+              key: 'values',
+              ask: 'ask_setvalues_values',
+              question:
+                'Which values would you like to add? Send them separated by commas or one per line, e.g. Collaboration, Communication',
+              validate: hasItems,
+              error: 'ask_err_setvalues_values',
+              errorText: 'Please send at least one value.',
+            },
+          ],
+          ctx => this.setValues(ctx),
           'Please specify the values, separated by commas or newlines. Examples:\n\n1. Using commas:\n/setValues Collaboration, Communication, Pro-activity\n\n2. Using newlines:\n/setValues\nCollaboration\nCommunication\nPro-activity'
         );
-        return;
       }
 
       // Split by both newlines and commas
@@ -4088,15 +4356,43 @@ export default class Settings {
     }
   }
 
+  /**
+   * Ask for a command's missing parameters in a dialogue instead of replying
+   * with its usage (see ./AskMissing.js), then run `handler` again with the
+   * original command ctx carrying the answers. Each question names its own
+   * locale key (`ask`, with the English text as `question`); the helper
+   * translates it.
+   */
+  async askFor(ctx, questions, handler, usage, prefix = undefined) {
+    let lng;
+    try {
+      lng = await this.getLanguage(utils.getholonId(ctx));
+    } catch {
+      // no settings to read a language from — English labels
+    }
+    return askArgs(ctx, questions, handler, { lng, usage, prefix });
+  }
+
   // Add setPurpose method
   async setPurpose(ctx) {
     const holonId = ctx.message.chat.id;
-    const text = ctx.message.text.replace('/setpurpose', '').trim();
+    const text = afterCommand(ctx.message.text).trim();
     const language = await this.getLanguage(holonId);
 
     if (!text) {
-      ctx.reply(i18next.t('settings_specify_purpose', { lng: language }));
-      return;
+      return this.askFor(
+        ctx,
+        [
+          {
+            key: 'purpose',
+            ask: 'ask_setpurpose_purpose',
+            question: 'What is the purpose of this holon?',
+            validate: s => s.trim() !== '',
+          },
+        ],
+        ctx => this.setPurpose(ctx),
+        i18next.t('settings_specify_purpose', { lng: language })
+      );
     }
 
     let settings = await this.getSettings(holonId);
@@ -5111,7 +5407,11 @@ export default class Settings {
     // taken yet is waiting for its admins (⏳), not running (✅).
     let linkState = null;
     try {
-      linkState = await federationLinkState(this.db, holonIdStr, targetholonIdStr);
+      linkState = await federationLinkState(
+        this.db,
+        holonIdStr,
+        targetholonIdStr
+      );
     } catch {
       linkState = null;
     }
@@ -5119,7 +5419,10 @@ export default class Settings {
       if (!on) return '🔘';
       if (!linkState) return '✅';
       return laneState(
-        { ours: { inbound: inboundLenses, outbound: outboundLenses }, theirs: linkState.theirs },
+        {
+          ours: { inbound: inboundLenses, outbound: outboundLenses },
+          theirs: linkState.theirs,
+        },
         lensName,
         dir
       ) === 'agreed'

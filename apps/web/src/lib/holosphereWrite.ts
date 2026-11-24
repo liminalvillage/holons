@@ -17,6 +17,7 @@ import {
 } from "@holons/core/holosphere";
 import { activeHolonIdentity } from "./stores/activeHolonIdentity";
 import { notifyWriteDenied } from "./stores/writeNotifications";
+import { words } from "./vocabulary";
 
 /** Resolve the current acting-as identity from the Svelte store. */
 const actingAsFromStore = () => get(activeHolonIdentity);
@@ -24,7 +25,7 @@ const actingAsFromStore = () => get(activeHolonIdentity);
 /** Default denial handler — show a toast notification. */
 const defaultOnDenied = (info: WriteDeniedInfo): void => {
   notifyWriteDenied(
-    `Unable to save - no write permission for this holon's ${info.lensName}`,
+    `Unable to save - no write permission for this ${words.holon}'s ${info.lensName}`,
   );
 };
 

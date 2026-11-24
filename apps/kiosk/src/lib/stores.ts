@@ -11,6 +11,7 @@ import type { LibraryItem } from "@holons/core/library";
 import type { Role } from "@holons/core/roles";
 import type { Checklist } from "@holons/core/checklists";
 import type { ShiftOccurrence, ShiftRsvp } from "@holons/core/shifts";
+import type { FlowsWindowChoice } from "@holons/core/flows";
 import {
   toEvents,
   toBacklog,
@@ -43,6 +44,10 @@ import {
   setFlowsEnabled,
   setTasksEnabled,
   setCalendarEnabled,
+  resolveFlowsUnit,
+  setFlowsUnit,
+  resolveFlowsWindow,
+  setFlowsWindow,
   type Scope,
   type TaskViewMode,
   type LibraryViewMode,
@@ -281,6 +286,31 @@ export const rolesViewMode = writable<RolesViewMode>("cards");
 
 /** Flows layout: the Sankey graph, or the balances. */
 export const flowsViewMode = writable<FlowsViewMode>("graph");
+
+/**
+ * What the Flows board shows: the unit (`all`, or a track key such as
+ * `money:eur`) and the period. One choice for every chart on the board,
+ * picked above the first graph or in the Filters sheet, kept per device.
+ */
+export const flowsUnit = writable<string>(resolveFlowsUnit());
+export const flowsWindowChoice =
+  writable<FlowsWindowChoice>(resolveFlowsWindow());
+/** The units the board can draw right now — published by the Flows view. */
+/** Opens the holon's currency list from the unit row's ✎ chip — set by the
+ *  Flows view while it is on screen, null otherwise. */
+export const flowsEditUnits = writable<(() => void) | null>(null);
+export const flowsUnitOptions = writable<
+  { id: string; label: string; colour?: string }[]
+>([]);
+
+export function pickFlowsUnit(id: string): void {
+  flowsUnit.set(id);
+  setFlowsUnit(id);
+}
+export function pickFlowsWindow(choice: FlowsWindowChoice): void {
+  flowsWindowChoice.set(choice);
+  setFlowsWindow(choice);
+}
 
 /** Stock layout: the shelf, the reorder list, or the federation moves. */
 export const stockViewMode = writable<StockViewMode>("shelf");

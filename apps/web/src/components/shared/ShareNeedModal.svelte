@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
 	// SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 	// SPDX-License-Identifier: AGPL-3.0-or-later
 	//
@@ -82,7 +83,7 @@
 				<span class="share-option__title">Federation partners</span>
 				<span class="share-option__hint">
 					{partnerCount > 0
-						? `Visible to ${partnerCount} federated holon${partnerCount === 1 ? '' : 's'}`
+						? `Visible to ${partnerCount} federated ${partnerCount === 1 ? words.holon : words.holons}`
 						: 'No partners federated yet — nothing will be sent'}
 				</span>
 			</span>

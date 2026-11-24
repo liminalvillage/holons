@@ -44,6 +44,7 @@ import { toNpub } from '@holons/core/nostr';
 import { holonSigner } from './createHoloSphere.js';
 import HolonOnboarding from './HolonOnboarding.js';
 import { isAdmin as isChatAdmin } from './utilities.js';
+import { holonText } from '../utils/holonNoun.js';
 
 const ACTION = { approve: 'joinok', decline: 'joinno' };
 /** Callback data is capped at 64 bytes: the key's first half names the request. */
@@ -68,9 +69,12 @@ const shortNpub = pk => {
 /** A translated line with an inline default (see Settings.ts `translated`). */
 function translated(language, key, defaultValue, vars = {}) {
   const text = i18next.t(key, { lng: language, defaultValue, ...vars });
-  if (typeof text === 'string' && text.trim()) return text;
-  return defaultValue.replace(/\{\{(\w+)\}\}/g, (_, k) =>
-    String(vars[k] ?? '')
+  // Fill {@holon} tokens here too: the bot's i18next post-processor does it
+  // in production, but not every caller (tests, scripts) initialises it.
+  if (typeof text === 'string' && text.trim()) return holonText(text, language);
+  return holonText(
+    defaultValue.replace(/\{\{(\w+)\}\}/g, (_, k) => String(vars[k] ?? '')),
+    language
   );
 }
 
@@ -322,7 +326,7 @@ export default class JoinRequests {
         translated(
           language,
           'onbCannotAsk',
-          "This holon can't be joined from here."
+          "This {@holon} can't be joined from here."
         )
       );
       return 'refused';
@@ -350,7 +354,7 @@ export default class JoinRequests {
           translated(
             language,
             'onbAlreadyAsked',
-            'You already asked; the admins of this holon decide.'
+            'You already asked; the admins of this {@holon} decide.'
           )
         );
     } else if (outcome === 'seated' || outcome === 'linked') {
@@ -358,7 +362,7 @@ export default class JoinRequests {
         translated(
           language,
           'onbAlreadyIn',
-          '✅ Your key is linked to this holon.'
+          '✅ Your key is linked to this {@holon}.'
         )
       );
     } else if (outcome === 'posted') {
@@ -366,7 +370,7 @@ export default class JoinRequests {
         translated(
           language,
           'onbAsked',
-          'Asked: the admins of this holon decide.'
+          'Asked: the admins of this {@holon} decide.'
         )
       );
     } else if (outcome === 'limited') {

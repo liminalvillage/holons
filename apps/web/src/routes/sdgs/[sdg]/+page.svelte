@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn, words } from '$lib/vocabulary';
   import { readHolonSettings } from '@holons/core/settings';
   import { setFederationPartner } from '@holons/core/federation';
   import { getContext, onMount } from 'svelte';
@@ -74,7 +75,7 @@
       resolveNames(unique);
       federatedHolons = await Promise.all(unique.map(async (id) => ({ id, name: await awaitName(id) })));
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load federated holons';
+      error = e instanceof Error ? e.message : nn('Failed to load federated {@holons}');
     } finally {
       loading = false;
     }
@@ -87,7 +88,7 @@
       await ensureSdgHolon();
       // Core writes the SDG holon's half and asks the partner's admins for theirs.
       const outcome = await setFederationPartner(holosphere, sdgHolonId, newHolonId.trim(), { inbound: [], outbound: [] });
-      if (outcome.self === 'held') throw new Error('Only an admin of this SDG holon can federate it');
+      if (outcome.self === 'held') throw new Error(nn('Only an admin of this SDG {@holon} can federate it'));
       showAddDialog = false;
       newHolonName = '';
       newHolonId = '';
@@ -110,11 +111,11 @@
     try {
       await holosphere.put(id, 'settings', { id, name: newHolonName.trim() });
       const outcome = await setFederationPartner(holosphere, sdgHolonId, id, { inbound: [], outbound: [], partnerName: newHolonName.trim() });
-      if (outcome.self === 'held') throw new Error('Only an admin of this SDG holon can federate it');
+      if (outcome.self === 'held') throw new Error(nn('Only an admin of this SDG {@holon} can federate it'));
       showAddDialog = false; newHolonId = ''; newHolonName = '';
       await loadFederated();
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to create and federate holon';
+      error = e instanceof Error ? e.message : nn('Failed to create and federate {@holon}');
     }
   }
 </script>
@@ -130,12 +131,12 @@
       <div>
         <div class="text-xs text-gray-400 uppercase tracking-wide">Goal {sdg.number}</div>
         <h1 class="text-3xl font-semibold text-gray-100">{sdg.title}</h1>
-        <div class="text-xs text-gray-400">Holon: {sdgHolonId}</div>
+        <div class="text-xs text-gray-400">{words.Holon}: {sdgHolonId}</div>
       </div>
     </div>
 
     <div class="flex items-center justify-between">
-      <h2 class="text-2xl font-medium text-gray-100">Federated holons</h2>
+      <h2 class="text-2xl font-medium text-gray-100">Federated {words.holons}</h2>
       <div class="flex gap-2">
         <button class="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm" on:click={() => showAddDialog = true}>Add / Create</button>
         <button class="px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-100 ring-1 ring-white/10" on:click={loadFederated} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</button>
@@ -149,7 +150,7 @@
     {#if loading}
       <div class="p-6 text-sm text-gray-400">Loading…</div>
     {:else if federatedHolons.length === 0}
-      <div class="p-6 text-sm text-gray-400">No federated holons yet.</div>
+      <div class="p-6 text-sm text-gray-400">No federated {words.holons} yet.</div>
     {:else}
       <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {#each federatedHolons as h}
@@ -164,16 +165,16 @@
     {#if showAddDialog}
       <div class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
         <div class="w-full max-w-lg rounded-2xl bg-gray-900 ring-1 ring-white/10 p-6 space-y-5 shadow-xl">
-          <div class="text-lg font-semibold text-gray-100">Add or create a holon</div>
+          <div class="text-lg font-semibold text-gray-100">Add or create {words.a_holon}</div>
           <div class="grid gap-4">
             <div>
-              <label class="block text-sm text-gray-300 mb-1" for="sdg-existing-holon">Existing holon ID</label>
-              <input id="sdg-existing-holon" class="w-full rounded-lg bg-gray-800 px-3 py-2 ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500/50" placeholder="e.g. my-holon" bind:value={newHolonId} />
+              <label class="block text-sm text-gray-300 mb-1" for="sdg-existing-holon">Existing {words.holon} ID</label>
+              <input id="sdg-existing-holon" class="w-full rounded-lg bg-gray-800 px-3 py-2 ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500/50" placeholder="e.g. my-{words.holon}" bind:value={newHolonId} />
             </div>
             <div class="text-xs text-gray-400">— or —</div>
             <div>
-              <label class="block text-sm text-gray-300 mb-1" for="sdg-new-holon">New holon name</label>
-              <input id="sdg-new-holon" class="w-full rounded-lg bg-gray-800 px-3 py-2 ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500/50" placeholder="Human name for a new holon" bind:value={newHolonName} />
+              <label class="block text-sm text-gray-300 mb-1" for="sdg-new-holon">New {words.holon} name</label>
+              <input id="sdg-new-holon" class="w-full rounded-lg bg-gray-800 px-3 py-2 ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500/50" placeholder="Human name for a new {words.holon}" bind:value={newHolonName} />
             </div>
           </div>
           <div class="flex justify-end gap-2 pt-2">

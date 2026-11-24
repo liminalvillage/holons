@@ -25,6 +25,7 @@
   import { privacyOfHolon } from "@holons/core/privacy";
   import { setTaskSort } from "$lib/config";
   import { t, locale } from "$lib/i18n";
+  import { nameFor } from "$lib/names";
   import type { TaskSort } from "$lib/data";
   import { isLoggedIn, loginOpen, currentUser } from "$lib/auth";
   import { getHolosphere, getWriter } from "$lib/holosphere";
@@ -721,11 +722,15 @@
 
   async function onSwipeJoin(
     task: BacklogTask,
-  ): Promise<"joined" | "already" | "failed"> {
+  ): Promise<"joined" | "already" | "held" | "failed"> {
     const hid = get(holonId);
     const user = get(currentUser);
     if (!hid || !user) return "failed";
-    return joinOnly(hid, task.id, user, swipeRef(task.id));
+    const ref = swipeRef(task.id);
+    const res = await joinOnly(hid, task.id, user, ref);
+    if (res === "held")
+      showNotice($t("detail.joinHeld", { holon: nameFor(ref?.holon ?? hid) }));
+    return res;
   }
 
   async function onSwipeLike(
@@ -747,7 +752,14 @@
     if (!hid || !user) return;
     try {
       if (kind === "join") {
-        await toggleJoin(hid, task.id, user, swipeRef(task.id));
+        const ref = swipeRef(task.id);
+        const res = await toggleJoin(hid, task.id, user, ref);
+        if (res === "held-join" || res === "held-leave")
+          showNotice(
+            $t(res === "held-join" ? "detail.joinHeld" : "detail.leaveHeld", {
+              holon: nameFor(ref?.holon ?? hid),
+            }),
+          );
       } else {
         await toggleAppreciate(hid, task.id, user, swipeRef(task.id));
       }

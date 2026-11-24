@@ -891,18 +891,36 @@ export function anchoredIds(
   return out;
 }
 
+/**
+ * Which docked holons the GEOSPHERE shows: only the ones with a place of
+ * their own — a federation partner is no place on the earth, so it does not
+ * lift a hexless holon onto the map — plus the `current` one (the board on
+ * screen), kept up even without a place so it can be given one. Everything
+ * else waits in the drawer, from where a drag onto a hexagon places it.
+ */
+export function geoAnchoredIds(
+  ids: readonly string[],
+  hasHex: (id: string) => boolean,
+  current?: string | null,
+): Set<string> {
+  const out = new Set<string>();
+  for (const id of ids) if (id === current || hasHex(id)) out.add(id);
+  return out;
+}
+
 // ── Sky ⇄ earth ──────────────────────────────────────────────────────────--
 
 /**
  * What lies beneath the orbs: "deck" is the sky alone, "map" shows the earth
  * under it — each placed orb then hovers over its hexagon, tied to it by a
  * beacon. "people" is a view of its own: the same hubs, gathered by
- * the people they share, with everyone in them (PeopleView). The orbs
+ * the people they share, with everyone in them (PeopleView). "noosphere"
+ * is federation as circles within circles (NoosphereView). The orbs
  * themselves are always there. The earth is the
  * default: the map is the kiosk's front door, the first thing a bare visit
  * shows.
  */
-export type DockViewMode = "deck" | "map" | "people";
+export type DockViewMode = "deck" | "map" | "people" | "noosphere";
 
 const VIEW_KEY = "kiosk_dock_view";
 
@@ -911,7 +929,9 @@ function loadView(): DockViewMode {
     const kept = localStorage.getItem(VIEW_KEY);
     // A kept "list" (the retired List view) opens the earth: the list
     // lives in the drawer now, on both spheres.
-    return kept === "deck" || kept === "people" ? kept : "map";
+    return kept === "deck" || kept === "people" || kept === "noosphere"
+      ? kept
+      : "map";
   } catch {
     return "map";
   }
@@ -1084,6 +1104,28 @@ export function confirmSwitch(): void {
   if (!req || !switchable(req.id, req.from)) return;
   const { id, name, from } = req;
   rememberBoard(id, name ?? "", from ? { via: from } : {});
+  closeThenOpen(id);
+}
+
+/**
+ * Go to `id` straight away — no confirmation — the same way a confirmed
+ * switch goes: the shown board closes into its circle, the dock (map or
+ * holosphere) rests on screen a moment, then `id`'s circle opens. The
+ * person's own holon is reached this way from the account menu, so it is
+ * docked as theirs. Returns false when there is nothing to do (already
+ * shown, or mid-morph).
+ */
+export function travelTo(
+  id: string,
+  opts: { name?: string; from?: string | null } = {},
+): boolean {
+  if (!switchable(id, opts.from)) return false;
+  rememberBoard(id, opts.name ?? "");
+  closeThenOpen(id);
+  return true;
+}
+
+function closeThenOpen(id: string): void {
   if (get(dockState) === "dock") {
     requestOpen(id);
     return;

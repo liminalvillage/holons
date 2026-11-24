@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
     import HolonNavigator from '../../components/Navigator.svelte';
 
     import { goto } from '$app/navigation';
@@ -16,11 +17,11 @@
 </script>
 
 <svelte:head>
-    <title>Holon Navigator</title>
+    <title>{words.Holon} Navigator</title>
     <meta name="description" content="Navigate and explore the holonic network structure" />
 </svelte:head>
 
 <div class="p-6">
-    <h1 class="text-2xl font-bold text-white mb-6">Holon Navigator</h1>
+    <h1 class="text-2xl font-bold text-white mb-6">{words.Holon} Navigator</h1>
     <HolonNavigator on:holonSelect={handleHolonSelect} />
 </div> 

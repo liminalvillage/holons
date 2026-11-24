@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn, words } from '$lib/vocabulary';
 	import { shortId } from '@holons/core/identity';
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
@@ -352,7 +353,7 @@
             } catch (error) {
                 const match = hologramSoul.match(/Holons\/([^\/]+)/);
                 if (match) {
-                    hologramSourceNames.set(hologramSoul, `Holon ${match[1]}`);
+                    hologramSourceNames.set(hologramSoul, `${words.Holon} ${match[1]}`);
                 }
             }
         });
@@ -442,7 +443,7 @@
         }
 
         const match = hologramSoul.match(/Holons\/([^\/]+)/);
-        return match ? `Holon ${match[1]}` : 'External Source';
+        return match ? `${words.Holon} ${match[1]}` : 'External Source';
     }
 
     function getItemIcon(item: LibraryItem | string): string {
@@ -1127,7 +1128,7 @@
                                                         {#if bookingOriginLabel(booking)}
                                                             <span
                                                                 class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-600/30 text-indigo-200"
-                                                                title="Booked from a federated holon"
+                                                                title="Booked from a federated {words.holon}"
                                                             >⇄ {bookingOriginLabel(booking)}</span>
                                                         {/if}
                                                         <span class="whitespace-nowrap text-gray-300">
@@ -1627,7 +1628,7 @@
                                         {#if bookingOriginLabel(booking)}
                                             <span
                                                 class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-600/30 text-indigo-200"
-                                                title="Booked from a federated holon"
+                                                title="Booked from a federated {words.holon}"
                                             >⇄ {bookingOriginLabel(booking)}</span>
                                         {/if}
                                         <span class="whitespace-nowrap">
@@ -1640,7 +1641,7 @@
                                                     on:click={() => openEditBooking(selectedItem!, booking)}
                                                     class="px-2 py-0.5 rounded bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 text-xs font-medium transition-colors border border-indigo-600/30"
                                                     aria-label={mine ? 'Change this booking' : `Change ${booking.borrower || 'this'}'s booking`}
-                                                    title={mine ? undefined : 'As an admin of this holon'}
+                                                    title={mine ? undefined : nn('As an admin of this {@holon}')}
                                                 >
                                                     Change
                                                 </button>
@@ -1649,7 +1650,7 @@
                                                     on:click={() => cancelBooking(selectedItem!, booking)}
                                                     class="px-2 py-0.5 rounded bg-red-600/20 hover:bg-red-600/40 text-red-300 text-xs font-medium transition-colors border border-red-600/30"
                                                     aria-label={mine ? 'Cancel this booking' : `Cancel ${booking.borrower || 'this'}'s booking`}
-                                                    title={mine ? undefined : 'As an admin of this holon'}
+                                                    title={mine ? undefined : nn('As an admin of this {@holon}')}
                                                 >
                                                     Cancel
                                                 </button>

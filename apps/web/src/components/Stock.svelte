@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn, words } from '$lib/vocabulary';
   // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
@@ -347,8 +348,8 @@
   function fail(err: unknown, text: string) {
     console.error("[stock]", err);
     if (isDenied(err)) {
-      notifyWriteDenied("Unable to save — no write permission for this holon");
-      say("You can't change this holon's stock.");
+      notifyWriteDenied(nn("Unable to save — no write permission for this {@holon}"));
+      say(nn("You can't change this {@holon}'s stock."));
     } else {
       say(text);
     }
@@ -457,7 +458,7 @@
       afterShelfWrite(id);
     } catch (err) {
       fail(err, "Couldn't save the item.");
-      formError = isDenied(err) ? "You can't write to this holon." : "Couldn't save that. Try again.";
+      formError = isDenied(err) ? nn("You can't write to this {@holon}.") : "Couldn't save that. Try again.";
     } finally {
       saving = false;
     }
@@ -693,7 +694,7 @@
   <header class="top">
     <div class="titles">
       <h1>Stock</h1>
-      <p class="sub">What this holon keeps, in quantity — and what the federation could move.</p>
+      <p class="sub">What this {words.holon} keeps, in quantity — and what the federation could move.</p>
     </div>
   </header>
 

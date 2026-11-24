@@ -1,5 +1,6 @@
 <script lang="ts">
     // @ts-nocheck
+	import { nn, words } from '$lib/vocabulary';
 
     $: if (role && !role.participants) {
         role.participants = [];
@@ -66,7 +67,7 @@
             role = updatedRole;
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
+                notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
             } else {
                 console.error('[RoleModal.svelte] Error updating role:', error);
             }
@@ -81,7 +82,7 @@
             dispatch('close');
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to delete - no write permission for this holon');
+                notifyWriteDenied(nn('Unable to delete - no write permission for this {@holon}'));
             } else {
                 console.error('[RoleModal.svelte] Error deleting role:', error);
             }
@@ -194,7 +195,7 @@
         ]).catch((error: any) => {
             role = previousRole;
             if (error?.name === 'AuthorizationError') {
-                notifyWriteDenied('Unable to save - no write permission for this holon');
+                notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
             } else {
                 console.error('[RoleModal.svelte] Error creating checklist for role:', error);
             }
@@ -414,7 +415,7 @@
                             {#if Object.keys(userStore || {}).length === 0 && holosphere}
                                 <p class="text-gray-500 text-xs py-2 text-center">Loading users…</p>
                             {:else if Object.keys(userStore || {}).length === 0}
-                                <p class="text-gray-500 text-xs py-2 text-center">No users in this holon</p>
+                                <p class="text-gray-500 text-xs py-2 text-center">No users in this {words.holon}</p>
                             {:else if filteredUserEntries.length === 0}
                                 <p class="text-gray-500 text-xs py-2 text-center">No matching users</p>
                             {:else}

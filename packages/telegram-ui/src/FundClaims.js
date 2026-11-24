@@ -84,6 +84,8 @@ import {
   partyNames,
   readLogContext,
 } from './protocolContext.js';
+import { askArgs, askMissing, withArgs } from './AskMissing.js';
+import { holonText } from '../utils/holonNoun.js';
 
 const HEX64 = /^[0-9a-f]{64}$/i;
 /** A word that names a party: an @mention, a Telegram id, a hex key, a keyed holon. */
@@ -92,6 +94,24 @@ const isPartyWord = w =>
 
 // A unit is a currency code or a measure: EUR, L, KG, KWH — one to five letters.
 const UNIT_RE = /^[A-Za-z]{1,5}$/;
+/** `12`, `12,5` → a number above zero. */
+const isAmount = w => Number(String(w || '').replace(',', '.')) > 0;
+/** An amount, then anything: `50`, `50 EUR`, `50 EUR tools`. */
+const startsWithAmount = s => isAmount(s.split(/\s+/)[0]);
+/** The English as written, its {{placeholders}} filled: `find` outside a dialogue. */
+const plain = (_key, english, vars = {}) =>
+  english.replace(/\{\{(\w+)\}\}/g, (_, name) => String(vars[name] ?? ''));
+/** An amount and at most a unit: `5`, `5 L` — nothing that could shift what follows. */
+const isAmountAndUnit = s => {
+  const [amount, unit, ...more] = s.split(/\s+/);
+  return isAmount(amount) && (!unit || UNIT_RE.test(unit)) && !more.length;
+};
+/** A reply to someone's message — not the topic root every topic message points at. */
+const repliedAuthor = ctx => {
+  const replied = ctx.message?.reply_to_message;
+  return replied && !replied.forum_topic_created ? replied.from?.id : undefined;
+};
+
 const STATUS_MARK = {
   approved: '✅',
   settled: '💸',
@@ -195,7 +215,25 @@ export default class FundClaims {
     const args = (ctx.message?.text || '').split(/\s+/).slice(1);
     const amount = Number(String(args[0] || '').replace(',', '.'));
     if (!(amount > 0)) {
-      return ctx.reply('Usage: /fundclaim <amount> [EUR] [what for]');
+      const usage = 'Usage: /fundclaim <amount> [EUR] [what for]';
+      if (args[0]) return ctx.reply(usage);
+      return askArgs(
+        ctx,
+        [
+          {
+            key: 'amount',
+            ask: 'ask_fundclaim_amount',
+            question:
+              'How much do you want to claim? Send the amount — you can add a unit and what it is for, e.g. 50 EUR tools.',
+            validate: startsWithAmount,
+            error: 'ask_err_fundclaim_amount',
+            errorText:
+              'Please start with a number above zero, e.g. 50 or 50 EUR tools.',
+          },
+        ],
+        c => this.claim(c),
+        { usage }
+      );
     }
     let unit = 'EUR';
     let rest = args.slice(1);
@@ -234,9 +272,11 @@ export default class FundClaims {
       const status = mine ? this.describe(mine) : 'recorded';
       return ctx.reply(
         `Claim recorded: ${amount} ${unit}${memo ? ` — ${memo}` : ''}\n` +
-          `#${event.id.slice(0, 8)} · ${status}${delegated ? ' (signed by the holon on your behalf)' : ''}` +
+          `#${event.id.slice(0, 8)} · ${status}${delegated ? holonText(' (signed by {@the_holon} on your behalf)') : ''}` +
           (ctxFold.actors.source === 'bootstrap'
-            ? '\nThis holon is not founded yet: the signer set is provisional.'
+            ? holonText(
+                '\nThis {@holon} is not founded yet: the signer set is provisional.'
+              )
             : '')
       );
     } catch (err) {
@@ -256,8 +296,14 @@ export default class FundClaims {
     const userId = String(getUserId(ctx));
     const args = (ctx.message?.text || '').split(/\s+/).slice(1);
     const amount = Number(String(args[0] || '').replace(',', '.'));
+    const usage = 'Usage: /fundgive <amount> [L|EUR|…] <@user|id> [note]';
     if (!(amount > 0)) {
-      return ctx.reply('Usage: /fundgive <amount> [L|EUR|…] <@user|id> [note]');
+      if (args[0]) return ctx.reply(usage);
+      return this.askGive(ctx, {
+        amount: true,
+        to: !repliedAuthor(ctx),
+        usage,
+      });
     }
     let unit = 'EUR';
     let rest = args.slice(1);
@@ -268,16 +314,22 @@ export default class FundClaims {
     // The receiver: the word after the amount when it names someone, else
     // the author of the message replied to. The rest is the note.
     const named = !!rest[0] && isPartyWord(rest[0]);
-    const replied = ctx.message?.reply_to_message?.from?.id;
+    const replied = repliedAuthor(ctx);
     const to = named
       ? await this.receiver(ctx, rest[0])
       : replied
         ? String(replied)
         : null;
     if (!to) {
-      return ctx.reply(
-        'Who receives it? Reply to their message, @mention them, or give their id.'
-      );
+      // Ask who, keeping what was typed: the amount (and unit) before the
+      // receiver, the note after.
+      return this.askGive(ctx, {
+        to: true,
+        head: args.slice(0, args.length - rest.length),
+        tail: rest.slice(named ? 1 : 0),
+        usage:
+          'Who receives it? Reply to their message, @mention them, or give their id.',
+      });
     }
     if (to === userId) return ctx.reply('A give names someone else.');
     const memo = rest
@@ -312,11 +364,74 @@ export default class FundClaims {
       const names = await this.names(holon, [to]);
       return ctx.reply(
         `Given: ${amount} ${unit} to ${names.get(to) || to}${memo ? ` — ${memo}` : ''}\n` +
-          `#${event.id.slice(0, 8)} · ${mine ? this.describe(mine) : 'recorded'}${delegated ? ' (signed by the holon on your behalf)' : ''}`
+          `#${event.id.slice(0, 8)} · ${mine ? this.describe(mine) : 'recorded'}${delegated ? holonText(' (signed by {@the_holon} on your behalf)') : ''}`
       );
     } catch (err) {
       return ctx.reply(`Could not record the give: ${err?.message || err}`);
     }
+  }
+
+  /**
+   * Ask for what a give is missing — the amount, the receiver, or both — and
+   * run /fundgive again with the answers in place. The receiver is resolved
+   * from the ANSWER (its mention, or the roster) and handed on as an id.
+   */
+  askGive(ctx, { amount = false, to = false, head = [], tail = [], usage }) {
+    const userId = String(getUserId(ctx));
+    let receiver = null;
+    const questions = [];
+    if (amount)
+      questions.push({
+        key: 'amount',
+        ask: 'ask_fundgive_amount',
+        question:
+          'How much do you want to give? Send the amount, with its unit if it is not EUR — e.g. 5 or 5 L.',
+        validate: isAmountAndUnit,
+        error: 'ask_err_fundgive_amount',
+        errorText:
+          'Please send a number above zero, with a unit after it if you like — e.g. 5 or 5 L.',
+      });
+    if (to)
+      questions.push({
+        key: 'to',
+        ask: 'ask_fundgive_to',
+        question: 'Who receives it? Send their @username or their id.',
+        validate: async (input, _values, answerCtx, t) => {
+          const mention = (answerCtx?.message?.entities || []).find(
+            e => e.type === 'text_mention' && e.user?.id
+          );
+          const id = mention
+            ? String(mention.user.id)
+            : !/\s/.test(input) && isPartyWord(input)
+              ? await this.receiver(ctx, input)
+              : null;
+          if (!id)
+            return t(
+              'ask_err_fundgive_to',
+              'I could not tell who that is. Send their @username or their id.'
+            );
+          if (id === userId)
+            return t('ask_err_fundgive_to_self', 'A give names someone else.');
+          receiver = id;
+          return true;
+        },
+      });
+    return askMissing(
+      ctx,
+      questions,
+      (values, original) =>
+        this.give(
+          withArgs(
+            original,
+            [
+              ...(values.amount ? [values.amount] : head),
+              ...(receiver ? [receiver] : []),
+              ...tail,
+            ].join(' ')
+          )
+        ),
+      { usage }
+    );
   }
 
   /** The party a give's word names: a bare id as it is, an @mention through the message's entities or the roster. */
@@ -356,7 +471,25 @@ export default class FundClaims {
     const args = (ctx.message?.text || '').split(/\s+/).slice(1);
     const amount = Number(String(args[0] || '').replace(',', '.'));
     if (!(amount > 0)) {
-      return ctx.reply('Usage: /fundmint <amount> [L|EUR|…] [what it is]');
+      const usage = 'Usage: /fundmint <amount> [L|EUR|…] [what it is]';
+      if (args[0]) return ctx.reply(usage);
+      return askArgs(
+        ctx,
+        [
+          {
+            key: 'amount',
+            ask: 'ask_fundmint_amount',
+            question:
+              'How much comes into the fund? Send the amount — you can add its unit and what it is, e.g. 120 L olive oil.',
+            validate: startsWithAmount,
+            error: 'ask_err_fundmint_amount',
+            errorText:
+              'Please start with a number above zero, e.g. 120 or 120 L olive oil.',
+          },
+        ],
+        c => this.mint(c),
+        { usage }
+      );
     }
     let unit = 'EUR';
     let rest = args.slice(1);
@@ -382,7 +515,9 @@ export default class FundClaims {
             ? `\nThe fund now holds ${total} ${unit}.`
             : '') +
           (actors.source === 'bootstrap'
-            ? '\nThis holon is not founded yet: the signer set is provisional.'
+            ? holonText(
+                '\nThis {@holon} is not founded yet: the signer set is provisional.'
+              )
             : '')
       );
     } catch (err) {
@@ -539,25 +674,95 @@ export default class FundClaims {
     }
   }
 
-  async find(holon, prefix) {
+  async find(holon, prefix, t = plain) {
     const { folded } = await this.context(holon);
     const p = String(prefix || '')
       .replace(/^#/, '')
       .toLowerCase();
-    if (!p) return { error: 'Which claim? Give its id (see /fundclaims).' };
+    if (!p)
+      return {
+        error: t(
+          'ask_err_fund_claim_missing',
+          'Which claim? Give its id (see /fundclaims).'
+        ),
+      };
     const hits = folded.claims.filter(c => c.id.startsWith(p));
-    if (!hits.length) return { error: `No claim starts with ${p}.` };
+    if (!hits.length)
+      return {
+        error: t('ask_err_fund_claim_unknown', 'No claim starts with {{id}}.', {
+          id: p,
+        }),
+      };
     if (hits.length > 1)
       return {
-        error: `${hits.length} claims start with ${p}; give more of the id.`,
+        error: t(
+          'ask_err_fund_claim_ambiguous',
+          '{{n}} claims start with {{id}}; give more of the id.',
+          { n: hits.length, id: p }
+        ),
       };
     return { claim: hits[0] };
+  }
+
+  /**
+   * A command sent without its claim: ask which one, under the claims still
+   * open, then run the command again with the answer as its arguments.
+   * `ask` is the locale key of the question and `lead` its English; the open
+   * claims fill the `{{claims}}` placeholder that ends it.
+   */
+  async askClaim(ctx, holon, ask, lead, handler) {
+    let lines = [];
+    try {
+      const { folded } = await this.context(holon);
+      if (!folded.claims.length)
+        return ctx.reply('There are no claims on this fund yet.');
+      const open = folded.claims
+        .filter(c => c.status !== 'settled' && c.status !== 'rejected')
+        .slice(-8);
+      const names = await this.names(
+        holon,
+        open.map(c => c.party)
+      );
+      lines = open.map(
+        c =>
+          `#${c.id.slice(0, 8)} ${names.get(c.party) || c.party} ${c.amount} ${c.unit} · ${c.status}`
+      );
+    } catch {
+      // The question still stands without the list.
+    }
+    return askArgs(
+      ctx,
+      [
+        {
+          key: 'claim',
+          ask,
+          question: `${lead}{{claims}}`,
+          vars: { claims: lines.length ? `\n\n${lines.join('\n')}` : '' },
+          validate: async (input, _values, _ctx, t) => {
+            const { error } = await this.find(holon, input.split(/\s+/)[0], t);
+            return error || true;
+          },
+        },
+      ],
+      handler,
+      { usage: 'Which claim? Give its id (see /fundclaims).' }
+    );
   }
 
   async verdict(ctx, verdict) {
     const holon = getholonId(ctx);
     const userId = String(getUserId(ctx));
     const args = (ctx.message?.text || '').split(/\s+/).slice(1);
+    if (!args[0])
+      return this.askClaim(
+        ctx,
+        holon,
+        verdict === 'attest' ? 'ask_fundattest_claim' : 'ask_funddispute_claim',
+        verdict === 'attest'
+          ? 'Which claim do you attest? Send its id.'
+          : 'Which claim do you dispute? Send its id — you can add the reason after it.',
+        c => this.verdict(c, verdict)
+      );
     const { claim, error } = await this.find(holon, args[0]);
     if (error) return ctx.reply(error);
     const reason = args.slice(1).join(' ').trim() || undefined;
@@ -581,6 +786,14 @@ export default class FundClaims {
     const holon = getholonId(ctx);
     const userId = String(getUserId(ctx));
     const args = (ctx.message?.text || '').split(/\s+/).slice(1);
+    if (!args[0])
+      return this.askClaim(
+        ctx,
+        holon,
+        'ask_fundpaid_claim',
+        'Which claim was paid out? Send its id — add the amount after it if it differs from the claim.',
+        c => this.payout(c)
+      );
     const { claim, error } = await this.find(holon, args[0]);
     if (error) return ctx.reply(error);
     const amount = args[1]
@@ -649,17 +862,69 @@ export default class FundClaims {
     if (!args.length) return show();
     const next = normalizePolicy(rule);
     const [what, value] = args;
+    const again = c => this.policy(c);
     if (what === 'quorum') {
+      if (value === undefined)
+        return askArgs(
+          ctx,
+          [
+            {
+              key: 'quorum',
+              ask: 'ask_fundpolicy_quorum',
+              question:
+                'How many attestations should a claim need? Send a whole number, 0 or more.',
+              validate: s => /^\d+$/.test(s),
+              error: 'ask_err_fundpolicy_quorum',
+              errorText: 'Please send a whole number, e.g. 2.',
+            },
+          ],
+          again,
+          { prefix: what, usage: 'Usage: /fundpolicy quorum <0-9>' }
+        );
       const n = Number(value);
       if (!Number.isInteger(n) || n < 0)
         return ctx.reply('Usage: /fundpolicy quorum <0-9>');
       next.quorum = n;
     } else if (what === 'conflict') {
+      if (value === undefined)
+        return askMissing(
+          ctx,
+          [
+            {
+              key: 'conflict',
+              ask: 'ask_fundpolicy_conflict',
+              question:
+                'When two claims stand on the same basis, which one wins? Send "earliest" (the first wins) or "quorum" (a human decides).',
+              validate: s => ['earliest', 'quorum'].includes(s.toLowerCase()),
+              error: 'ask_err_fundpolicy_conflict',
+              errorText: 'Please answer earliest or quorum.',
+            },
+          ],
+          (values, original) =>
+            again(withArgs(original, what, values.conflict.toLowerCase())),
+          { usage: 'Usage: /fundpolicy conflict earliest|quorum' }
+        );
       if (value !== 'earliest' && value !== 'quorum')
         return ctx.reply('Usage: /fundpolicy conflict earliest|quorum');
       next.conflict = value;
     } else if (what === 'pin') {
-      if (!value) return ctx.reply('Usage: /fundpolicy pin <partner holon id>');
+      if (!value)
+        return askArgs(
+          ctx,
+          [
+            {
+              key: 'holon',
+              ask: 'ask_fundpolicy_pin',
+              question:
+                'Which partner holon do you want to pin? Send its holon id.',
+              validate: s => !/\s/.test(s),
+              error: 'ask_err_fundpolicy_pin',
+              errorText: 'Please send just the holon id, without spaces.',
+            },
+          ],
+          again,
+          { prefix: what, usage: 'Usage: /fundpolicy pin <partner holon id>' }
+        );
       let doc = null;
       try {
         doc = await this.db.get(String(value), 'settings', String(value));
@@ -669,10 +934,29 @@ export default class FundClaims {
       const key = String(doc?.holonPubkey || '');
       if (!HEX64.test(key))
         return ctx.reply(
-          `${value} has not published a holon key, so there is nothing to pin.`
+          `${value} has not published ${holonText('{@a_holon}')} key, so there is nothing to pin.`
         );
       next.partners = { ...next.partners, [String(value)]: key.toLowerCase() };
     } else if (what === 'unpin') {
+      const pinned = Object.keys(next.partners);
+      if (!value && pinned.length)
+        return askArgs(
+          ctx,
+          [
+            {
+              key: 'holon',
+              ask: 'ask_fundpolicy_unpin',
+              question:
+                'Which partner do you want to unpin? Send its holon id.\n\nPinned: {{pinned}}',
+              vars: { pinned: pinned.join(', ') },
+              validate: s => pinned.includes(s),
+              error: 'ask_err_fundpolicy_unpin',
+              errorText: 'That one is not pinned. Pinned: {{pinned}}',
+            },
+          ],
+          again,
+          { prefix: what, usage: 'Usage: /fundpolicy unpin <partner holon id>' }
+        );
       if (!value || !next.partners[String(value)])
         return ctx.reply(`${value || '?'} is not pinned.`);
       const { [String(value)]: _gone, ...rest } = next.partners;
@@ -695,7 +979,9 @@ export default class FundClaims {
       return ctx.reply(
         role === 'admin'
           ? `Rule set: ${what} ${value}.`
-          : `Recorded, but your key is not an admin of this holon, so the rule does not change.`
+          : holonText(
+              'Recorded, but your key is not an admin of this {@holon}, so the rule does not change.'
+            )
       );
     } catch (err) {
       return ctx.reply(`Could not set the rule: ${err?.message || err}`);

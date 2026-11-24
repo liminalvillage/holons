@@ -2,6 +2,11 @@ import 'dotenv/config';
 import fs from 'fs';
 import { Telegraf, Scenes, session } from 'telegraf';
 import i18next from 'i18next';
+import {
+  fillHolonNoun,
+  holonWords,
+  resolveHolonNoun,
+} from '@holons/core/vocabulary';
 
 // Import all modules
 import Server from '../src/Server.js';
@@ -42,6 +47,7 @@ import { log } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 import { setupGlobalErrorHandlers } from '../utils/errorHandler.js';
 import InputScene from '../utils/InputScene.js';
+import { registerAskMissing, setAskLanguage } from '../src/AskMissing.js';
 
 /**
  * Service factory definitions for the dependency injection container
@@ -103,7 +109,27 @@ export const serviceDefinitions = {
         }
       }
 
+      // What this bot calls a holon ("hub" for @HubsNetwork_bot, …):
+      // VITE_HOLON_NOUN from its .env. Locale copy writes {@holon},
+      // {@a_holon}, … and this post-processor fills them per language.
+      const noun = resolveHolonNoun({ setting: process.env.VITE_HOLON_NOUN });
+      i18next.use({
+        type: 'postProcessor',
+        name: 'holonNoun',
+        // Fill in the language the text came from: a key missing in the
+        // reader's locale falls back to English, and English copy must get
+        // the English noun, not "edit this holón".
+        process: (value, key, options, translator) => {
+          if (typeof value !== 'string') return value;
+          const lng = options?.lng ?? translator?.language ?? 'en';
+          const k = Array.isArray(key) ? key[0] : key;
+          const own = i18next.exists(k, { lng, fallbackLng: false });
+          return fillHolonNoun(value, holonWords(noun, own ? lng : 'en'));
+        },
+      });
+
       await i18next.init({
+        postProcess: ['holonNoun'],
         resources,
         fallbackLng: 'en',
         debug:
@@ -131,6 +157,11 @@ export const serviceDefinitions = {
       // Add session and stage middleware
       telebot.use(session());
       telebot.use(telebot.stage.middleware());
+
+      // A command sent without its parameters asks for them (src/AskMissing.js).
+      // Installed here, before any module registers a handler, so the answer
+      // is taken before other text handlers and the AI see it.
+      registerAskMissing(telebot);
 
       // Don't launch immediately - let the bot launch later
       // await telebot.launch({ handlerTimeout: Infinity });
@@ -273,6 +304,8 @@ export const serviceDefinitions = {
   settings: {
     factory: ({ telebot, database, signalManager }) => {
       const settings = new Settings(telebot, database);
+      // Dialogue questions (src/AskMissing.js) speak the holon's language.
+      setAskLanguage(holonId => settings.getLanguage(holonId));
       // Register with signal manager for debugging
       if (signalManager && process.env.SIGNAL_DEBUG === 'true') {
         log.debug('Settings module registered with SignalManager');

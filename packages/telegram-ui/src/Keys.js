@@ -39,6 +39,8 @@ import {
   KEY_LINK_TTL_SEC,
 } from '@holons/core/users';
 import { shiftRelaysFromEnv } from './Shifts.js';
+import { askArgs } from './AskMissing.js';
+import { holonText } from '../utils/holonNoun.js';
 
 const ACTION = {
   export: 'key_export',
@@ -185,6 +187,30 @@ export default class Keys {
     const [, verb, arg] = text.trim().split(/\s+/);
     if (verb === 'link' && arg) return this.startLink(ctx, arg);
     if (verb === 'unlink' && arg) return this.unlink(ctx, arg);
+    if (verb === 'link' || verb === 'unlink') {
+      // The verb without its key: ask for it, then run the command again.
+      // Where no dialogue can be held, the overview (with its buttons) stands.
+      const asked = await askArgs(
+        ctx,
+        [
+          {
+            key: 'key',
+            ask: verb === 'link' ? 'ask_key_link_key' : 'ask_key_unlink_key',
+            question:
+              verb === 'link'
+                ? 'Which public key do you want to link? Send an npub1… or a 64-hex pubkey.'
+                : 'Which public key do you want to unlink? Send an npub1… or a 64-hex pubkey.',
+            validate: s => Boolean(normalizePubkey(s)),
+            error: 'ask_err_key_link_key',
+            errorText:
+              "That doesn't look like a public key — send an npub1… or a 64-hex pubkey.",
+          },
+        ],
+        ctx => this.command(ctx),
+        { prefix: verb }
+      );
+      if (asked) return;
+    }
     return this.overview(ctx);
   }
 
@@ -373,7 +399,7 @@ export default class Keys {
     const keys = await linkUserKey(this.db, user, pk);
     this.onLinkedKeysChanged(user.id);
     await ctx.reply(
-      `🔗 Linked <code>${toNpub(pk)}</code>. ${keys.length} linked key${keys.length === 1 ? '' : 's'} now count as you on every board — your hubs will seat it on their next refresh.`,
+      `🔗 Linked <code>${toNpub(pk)}</code>. ${keys.length} linked key${keys.length === 1 ? '' : 's'} now count as you on every board — ${holonText('your {@holons}')} will seat it on their next refresh.`,
       { parse_mode: 'HTML' }
     );
     return this.overview(ctx);

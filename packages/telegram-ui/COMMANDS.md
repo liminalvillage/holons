@@ -1,5 +1,15 @@
 # HolonsBot Commands Documentation
 
+## Commands without their parameters
+A command sent without a parameter it needs is not answered with a usage line: the bot asks for what is missing, one question at a time, with a ❌ Cancel button underneath (and ⏭ Skip where the parameter is optional).
+- Example: `/task` → "What is the title of the task?" → your answer creates the task, as if you had typed `/task do the dishes`.
+- Only the person who sent the command can answer or cancel, in the same chat (and topic). Everybody else's messages are left alone.
+- In a group, answer by replying to the question: a bot in privacy mode is not sent other messages (the question says so when that applies).
+- Once answered, the bot removes its question and your answer (and any retries after an answer it could not use). Where it may not delete messages they simply stay.
+- A question waits five minutes. Sending another command closes it.
+- Anonymous admins and members posting as a channel cannot be told apart, so they still get the usage line.
+- Commands whose parameters are all optional behave as before.
+
 ## Task Management
 - `/task [description]` - Creates a new task
   - Example: `/task do the dishes`

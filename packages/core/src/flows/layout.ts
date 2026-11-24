@@ -22,6 +22,14 @@ export interface SankeyOptions {
   nodeGap?: number;
   /** Keep at most this many nodes per column; the rest roll into one "other". */
   topN?: number;
+  /**
+   * For a track whose links carry units (every unit together): give each
+   * unit its own lane along every bar, in one order on every bar, and attach
+   * both the ribbons arriving in that unit and those leaving in it inside the
+   * lane — so a unit leaves a bar where it came in. A lane is as long as the
+   * bigger of its two sides; the shorter side leaves the rest empty.
+   */
+  unitLanes?: boolean;
 }
 
 export interface SankeyLayoutNode {
@@ -89,6 +97,8 @@ interface Placed {
   node: SankeyLayoutNode;
   inCursor: number;
   outCursor: number;
+  /** Per-unit cursors, when the bar is laid out in unit lanes. */
+  lanes?: Map<string, { in: number; out: number }>;
 }
 
 /**
@@ -196,6 +206,35 @@ export function layoutSankey(
   }
   const links = [...merged.values()];
 
+  // Unit lanes: what each bar takes in and sends out per unit, in the order
+  // the units are first seen. A bar's extent is the sum of its lanes, each as
+  // long as its bigger side; it replaces the value as the bar's length.
+  const laneUnits: string[] = [];
+  const laneSides = new Map<string, Map<string, { in: number; out: number }>>();
+  if (opts.unitLanes) {
+    for (const link of links) {
+      if (!link.unit) continue;
+      if (!laneUnits.includes(link.unit)) laneUnits.push(link.unit);
+      for (const [id, side] of [
+        [link.source, 'out'],
+        [link.target, 'in'],
+      ] as const) {
+        let byUnit = laneSides.get(id);
+        if (!byUnit) laneSides.set(id, (byUnit = new Map()));
+        const lane = byUnit.get(link.unit) ?? { in: 0, out: 0 };
+        lane[side] += link.value;
+        byUnit.set(link.unit, lane);
+      }
+    }
+  }
+  const extentOf = (node: SankeyLayoutNode): number => {
+    const byUnit = laneSides.get(node.id);
+    if (!byUnit) return node.value;
+    let sum = 0;
+    for (const lane of byUnit.values()) sum += Math.max(lane.in, lane.out);
+    return sum;
+  };
+
   const columnNodes = new Map<number, SankeyLayoutNode[]>();
   for (const node of kept.values()) {
     const bucket = columnNodes.get(node.depth);
@@ -211,7 +250,7 @@ export function layoutSankey(
   for (const group of columnNodes.values()) {
     total = Math.max(
       total,
-      group.reduce((s, n) => s + n.value, 0),
+      group.reduce((s, n) => s + extentOf(n), 0),
     );
   }
   if (total <= 0) return { nodes: [], links: [], columns: 0, empty: true };
@@ -265,8 +304,20 @@ export function layoutSankey(
     for (const node of group) {
       node.x = r(x);
       node.y = r(y);
-      node.h = r((node.value / total) * usable);
-      placed.set(node.id, { node, inCursor: node.y, outCursor: node.y });
+      node.h = r((extentOf(node) / total) * usable);
+      const byUnit = laneSides.get(node.id);
+      let lanes: Placed['lanes'];
+      if (byUnit) {
+        lanes = new Map();
+        let at = y;
+        for (const unit of laneUnits) {
+          const lane = byUnit.get(unit);
+          if (!lane) continue;
+          lanes.set(unit, { in: at, out: at });
+          at += (Math.max(lane.in, lane.out) / total) * usable;
+        }
+      }
+      placed.set(node.id, { node, inCursor: node.y, outCursor: node.y, lanes });
       y += node.h + gap;
     }
   }
@@ -292,12 +343,16 @@ export function layoutSankey(
     const sh = (link.value / total) * usableFor(from.node.depth);
     const th = (link.value / total) * usableFor(to.node.depth);
 
-    const y0t = from.outCursor;
+    const fromLane = link.unit ? from.lanes?.get(link.unit) : undefined;
+    const toLane = link.unit ? to.lanes?.get(link.unit) : undefined;
+    const y0t = fromLane ? fromLane.out : from.outCursor;
     const y0b = y0t + sh;
-    const y1t = to.inCursor;
+    const y1t = toLane ? toLane.in : to.inCursor;
     const y1b = y1t + th;
-    from.outCursor = y0b;
-    to.inCursor = y1b;
+    if (fromLane) fromLane.out = y0b;
+    else from.outCursor = y0b;
+    if (toLane) toLane.in = y1b;
+    else to.inCursor = y1b;
 
     const x0 = from.node.x + w;
     const x1 = to.node.x;

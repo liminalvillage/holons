@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
   // DNASequence component - DNA sequence display with drag-and-drop
   // Feature: 001-holon-dna-editor
 
@@ -98,7 +99,7 @@
         </svg>
         <h3 class="empty-title">No chromosomes in sequence</h3>
         <p class="empty-description">
-          Select chromosomes from the library to compose your holon's DNA
+          Select chromosomes from the library to compose your {words.holon}'s DNA
         </p>
       </div>
     {:else}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn, words } from '$lib/vocabulary';
 	import { shortId } from "@holons/core/identity";
     import { onMount, onDestroy, getContext } from "svelte";
     import { fade, fly, slide } from "svelte/transition";
@@ -301,7 +302,7 @@
 
     /** What happened on the partner's side, in words. */
     function outcomeMessage(outcome: FederationLinkOutcome, partnerName: string, done: string): { kind: 'success' | 'error'; message: string } {
-        if (outcome.self === 'held') return { kind: 'error', message: 'Only an admin of this holon can change its federation' };
+        if (outcome.self === 'held') return { kind: 'error', message: nn('Only an admin of this {@holon} can change its federation') };
         if (outcome.partner === 'requested') return { kind: 'success', message: `${done} — asked ${partnerName}'s admins to accept` };
         return { kind: 'success', message: done };
     }
@@ -384,7 +385,7 @@
         const target = newHolonId.trim();
         if (!target || !holosphere || !currentHolonId) return;
         if (target === currentHolonId) {
-            showToast('error', 'Cannot federate a holon with itself');
+            showToast('error', nn('Cannot federate {@a_holon} with itself'));
             return;
         }
         if (federatedHolons.some(h => h.id === target)) {
@@ -444,7 +445,7 @@
                 holonName: holonName || undefined,
             });
             if (outcome.self === 'held') {
-                showToast('error', 'Only an admin of this holon can change its federation');
+                showToast('error', nn('Only an admin of this {@holon} can change its federation'));
             } else {
                 await loadFederationData();
                 if (outcome.partner === 'requested') {
@@ -557,7 +558,7 @@
 
     {#if currentHolonId && viewMode === 'list' && !canEdit}
         <p class="admin-note" role="status">
-            Only an admin of this holon changes who it federates with and which lenses flow; your changes here would be recorded but not counted.
+            Only an admin of this {words.holon} changes who it federates with and which lenses flow; your changes here would be recorded but not counted.
         </p>
     {/if}
     {#if currentHolonId && viewMode === 'list'}
@@ -567,7 +568,7 @@
                 <span class="privacy-card__title">🔒 Private lenses</span>
                 <span class="privacy-card__hint">
                     {#if canOwn}
-                        Private seals every item of the lens, old and new, so only this holon's members and the holons you share it with read them (what was read before stays read); public rewrites them all in the clear. Send a lens to a partner with the arrow, then share it with the key button.
+                        Private seals every item of the lens, old and new, so only this {words.holon}'s members and the {words.holons} you share it with read them (what was read before stays read); public rewrites them all in the clear. Send a lens to a partner with the arrow, then share it with the key button.
                     {:else}
                         Log in with your key to make a lens private.
                     {/if}
@@ -608,7 +609,7 @@
                 <div class="request-row">
                     <div class="request-row__text">
                         {#if req.kind === 'unlink'}
-                            <strong>{name}</strong> ended its link with this holon. Drop this holon's side too?
+                            <strong>{name}</strong> ended its link with this {words.holon}. Drop this {words.holon}'s side too?
                         {:else}
                             <strong>{name}</strong> asks to federate.
                             {#if req.inbound.length}<span class="request-row__lenses">They send: {req.inbound.join(', ')}</span>{/if}
@@ -646,8 +647,8 @@
     {:else if !currentHolonId}
         <div class="empty-state">
             <Globe size="40" />
-            <h3>No holon selected</h3>
-            <p>Pick a holon to configure federation.</p>
+            <h3>No {words.holon} selected</h3>
+            <p>Pick {words.a_holon} to configure federation.</p>
         </div>
     {:else if totalFederations === 0}
         <div class="empty-state">
@@ -655,15 +656,15 @@
             <!-- Says "holon", not "federation": the home hex above is a
                  federation too, and a linked one made the old heading a
                  flat contradiction with the card right next to it. -->
-            <h3>No holon partners yet</h3>
-            <p>Federate with another holon to share data directly.</p>
+            <h3>No {words.holon} partners yet</h3>
+            <p>Federate with another {words.holon} to share data directly.</p>
             <button
                 type="button"
                 class="primary-btn"
                 on:click={() => (showAddDialog = true)}
                 disabled={!canEdit}
                 aria-label="Add Federation"
-                title={canEdit ? 'Add Federation' : 'Only an admin of this holon can federate it'}
+                title={canEdit ? 'Add Federation' : nn('Only an admin of this {@holon} can federate it')}
             >
                 Add Federation
             </button>
@@ -706,7 +707,7 @@
                                     {@const state = readerState(audiences, holon.id)}
                                     <div class="fed-card__key" class:fed-card__key--none={state === 'no-readers'}>
                                         {state === 'no-readers'
-                                            ? 'No readers yet — this holon must be founded (by its bot, or by a member\'s key) before it can read a private lens'
+                                            ? nn('No readers yet — this {@holon} must be founded (by its bot, or by a member\'s key) before it can read a private lens')
                                             : state === 'pending'
                                               ? '🔑 reads the shared lenses once the keys reach it'
                                               : state === 'synced'
@@ -719,7 +720,7 @@
                                 type="button"
                                 class="icon-btn icon-btn--danger"
                                 on:click={() => removeFederation(holon.id)}
-                                title={canEdit ? 'Remove federation' : 'Only an admin of this holon can unlink a partner'}
+                                title={canEdit ? 'Remove federation' : nn('Only an admin of this {@holon} can unlink a partner')}
                                 aria-label="Remove federation with {name}"
                                 disabled={saving || !canEdit}
                             >
@@ -730,10 +731,10 @@
                         <div class="lens-list">
                             <div class="lens-list__head">
                                 <span>Lens</span>
-                                <span class="lens-list__col" title="Inbound — receive from this holon">
+                                <span class="lens-list__col" title="Inbound — receive from this {words.holon}">
                                     <ArrowDown size="12" /> In
                                 </span>
-                                <span class="lens-list__col" title="Outbound — send to this holon">
+                                <span class="lens-list__col" title="Outbound — send to this {words.holon}">
                                     <ArrowUp size="12" /> Out
                                 </span>
                                 {#if ownedLenses.length}
@@ -903,7 +904,7 @@
 
             <form on:submit|preventDefault={addFederation} class="modal__body">
                 <label class="field">
-                    <span class="field__label">Holon ID</span>
+                    <span class="field__label">{words.Holon} ID</span>
                     <input
                         type="text"
                         bind:value={newHolonId}

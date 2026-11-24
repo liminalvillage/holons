@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it } from 'vitest';
-import { deleteRef, recordKey, sourceHolonId, sourceRef } from './provenance.js';
+import { deleteRef, questWriteTarget, recordKey, sourceHolonId, sourceRef } from './provenance.js';
 
 const federated = (origin: string, id: string) => ({ id, _federation: { origin } });
 const hologram = (sourceHolon: string, id: string, sourceKey?: string) => ({
@@ -96,5 +96,37 @@ describe('deleteRef', () => {
 		expect(deleteRef(h, '-100555', 'q1').holon).toBe('-100555');
 		const f = federated('-100294', 'q1');
 		expect(deleteRef(f, '-100555', 'q1').holon).toBe(sourceRef(f, 'q1')?.holon);
+	});
+});
+
+describe('questWriteTarget', () => {
+	it("writes the holon's own record in place", () => {
+		expect(questWriteTarget({ id: 'q1', title: 'Fix the gate' }, 'H')).toEqual({
+			holon: 'H',
+			record: { id: 'q1', title: 'Fix the gate' },
+			foreign: false
+		});
+	});
+
+	it('routes a federated record to its origin and strips provenance tags', () => {
+		const t = questWriteTarget(
+			{ id: 'q1', title: 'Shared', description: 'edited', _holon: 'P', _federation: { origin: 'P' } },
+			'H'
+		);
+		expect(t?.holon).toBe('P');
+		expect(t?.foreign).toBe(true);
+		expect(t?.record).toEqual({ id: 'q1', title: 'Shared', description: 'edited' });
+	});
+
+	it("uses a resolved hologram's source key", () => {
+		const t = questWriteTarget({ ...hologram('S', 'local-pointer', 'src-key'), title: 'Holo' }, 'H');
+		expect(t?.holon).toBe('S');
+		expect(t?.record.id).toBe('src-key');
+		expect((t?.record as Record<string, unknown>)._hologram).toBeUndefined();
+	});
+
+	it('falls back to the title as key, and is null without a holon', () => {
+		expect(questWriteTarget({ title: 'Untitled id' }, 'H')?.record).toEqual({ title: 'Untitled id' });
+		expect(questWriteTarget({ id: 'q1' }, null)).toBeNull();
 	});
 });

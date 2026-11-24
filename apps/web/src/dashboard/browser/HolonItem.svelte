@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn, words } from '$lib/vocabulary';
 	import { nameMap, resolvedName } from '$lib/stores/nameResolver';
 	import { shortId } from '@holons/core/identity';
 	import { createEventDispatcher } from 'svelte';
@@ -331,7 +332,7 @@
 				<button
 					class="holon-item__action-btn holon-item__action-btn--settings"
 					on:click={openSettings}
-					title="Holon Settings"
+					title="{words.Holon} Settings"
 				>
 					<Settings size="14" />
 				</button>
@@ -406,7 +407,7 @@
 						class="holon-item__action-btn"
 						class:holon-item__action-btn--active={isStarred}
 						on:click={handleStar}
-						title={isStarred ? 'Remove from My Holons' : 'Add to My Holons'}
+						title={isStarred ? nn('Remove from My {@Holons}') : nn('Add to My {@Holons}')}
 					>
 						<Star size="14" fill={isStarred ? 'currentColor' : 'none'} />
 					</button>
@@ -432,10 +433,10 @@
 			<div class="holon-item__lens-list">
 				<div class="holon-item__lens-head">
 					<span>Lens</span>
-					<span class="holon-item__lens-col" title="Inbound — receive from this holon">
+					<span class="holon-item__lens-col" title="Inbound — receive from this {words.holon}">
 						<ArrowDown size="12" /> In
 					</span>
-					<span class="holon-item__lens-col" title="Outbound — send to this holon">
+					<span class="holon-item__lens-col" title="Outbound — send to this {words.holon}">
 						<ArrowUp size="12" /> Out
 					</span>
 				</div>

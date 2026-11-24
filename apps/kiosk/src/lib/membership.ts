@@ -13,6 +13,7 @@ import {
   type QuestChatsInput,
   type QuestParticipant,
 } from "@holons/core/tasks";
+import { writeAcceptance } from "@holons/core/holosphere";
 import { getHolosphere, getWriter } from "./holosphere";
 
 // A Telegram user id (number) or a key user's pubkey hex — core stores
@@ -31,6 +32,61 @@ export type TgUser = {
  * pass `undefined` and are written in place.
  */
 export type SourceRef = { holon: string; key: string };
+
+// The signer's standing per (key, holon), briefly cached: an autosaving
+// editor asks on every keystroke batch, and core's `writeAcceptance` catches
+// the holon's member log up from the relays each time it is asked. Keyed by
+// the signing key too, so on a shared kiosk the next person to sign in never
+// inherits the previous one's answer. `null` = unknown (offline, error) and
+// is never kept.
+const STANDING_TTL_MS = 60_000;
+const standingCache = new Map<
+  string,
+  { at: number; ok: Promise<boolean | null> }
+>();
+
+/**
+ * Will a write by the signed-in key count in `holon`? Core's
+ * `writeAcceptance` — the rule every enforced read applies: `held` (the holon
+ * has an authority and this key is not seated there) means the write would be
+ * stored but never shown. `open` and `accepted` count. Unknown (offline,
+ * error) is treated as yes, so the write itself decides.
+ */
+export async function acceptedIn(holon: string): Promise<boolean> {
+  let hs: Awaited<ReturnType<typeof getHolosphere>>;
+  try {
+    hs = await getHolosphere();
+  } catch {
+    return true;
+  }
+  const pubkey = String(
+    (hs as { currentPubkey?: string | null }).currentPubkey ?? "",
+  ).toLowerCase();
+  const key = `${pubkey}|${holon}`;
+  const now = Date.now();
+  const hit = standingCache.get(key);
+  let ok: Promise<boolean | null>;
+  if (hit && now - hit.at < STANDING_TTL_MS) ok = hit.ok;
+  else {
+    ok = writeAcceptance(hs, holon, pubkey || undefined).then(
+      (st) => st.status !== "held",
+      () => null,
+    );
+    standingCache.set(key, { at: now, ok });
+  }
+  const answer = await ok;
+  if (answer === null) {
+    // Don't keep an offline/error answer — ask again next time.
+    if (standingCache.get(key)?.ok === ok) standingCache.delete(key);
+    return true;
+  }
+  return answer;
+}
+
+/** Forget cached standings (e.g. after a sign-in change). For tests too. */
+export function forgetStanding(): void {
+  standingCache.clear();
+}
 
 /** A participant record without undefined fields (Holosphere warns on those). */
 /** The participant record a Telegram user is stored as on a quest. */
@@ -121,18 +177,24 @@ export async function refreshQuestMessages(
 
 /**
  * Toggle the user's participation (removes them from appreciation). Returns
- * whether the write landed.
+ * whether the write landed, or — when the card's source holon does not accept
+ * the signer's key, so the write would be stored but never count there —
+ * nothing is written and `"held-join"` / `"held-leave"` says which way the
+ * toggle would have gone. Joining and leaving are refused alike: a join that
+ * could not be undone would be irreversible.
  */
 export async function toggleJoin(
   holonId: string,
   questId: string,
   user: TgUser,
   ref?: SourceRef,
-): Promise<boolean> {
+): Promise<boolean | "held-join" | "held-leave"> {
   const holon = ref?.holon ?? holonId;
   const key = ref?.key ?? questId;
   const q = await freshQuest(holon, key);
   if (!q) return false;
+  if (!(await acceptedIn(holon)))
+    return isParticipant(q, user.id) ? "held-leave" : "held-join";
   const updated = toggleParticipant(q, person(user));
   const writer = await getWriter(holon);
   const ok = await writer.put("quests", updated);
@@ -189,19 +251,22 @@ export async function addMember(
 /**
  * One-way membership for the swipe deck: a swipe must never *undo* anything, so
  * these check the freshest copy and become no-ops (`"already"`) instead of
- * toggling off. `"failed"` means the read or write didn't land.
+ * toggling off. `"held"` means the source holon doesn't accept the key (see
+ * {@link toggleJoin}); `"failed"` means the read or write didn't land.
  */
 export async function joinOnly(
   holonId: string,
   questId: string,
   user: TgUser,
   ref?: SourceRef,
-): Promise<"joined" | "already" | "failed"> {
+): Promise<"joined" | "already" | "held" | "failed"> {
   const holon = ref?.holon ?? holonId;
   const key = ref?.key ?? questId;
   const q = await freshQuest(holon, key);
   if (!q) return "failed";
   if (isParticipant(q, user.id)) return "already";
+  // Same rule as toggleJoin: a join the key could never undo isn't written.
+  if (!(await acceptedIn(holon))) return "held";
   try {
     const updated = toggleParticipant(q, person(user));
     const writer = await getWriter(holon);

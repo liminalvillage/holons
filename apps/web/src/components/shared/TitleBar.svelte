@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
 	import { createEventDispatcher, type ComponentType } from 'svelte';
 	import { ArrowLeft, Globe, Eye } from 'svelte-feathers';
 	import ToggleChip from './ToggleChip.svelte';
@@ -63,14 +64,14 @@
 				checked={$showHolograms}
 				label="Holograms"
 				icon={Eye}
-				tooltip="Holograms: show items this holon references from elsewhere (shared copies projected in), not just items created here. On by default."
+				tooltip="Holograms: show items this {words.holon} references from elsewhere (shared copies projected in), not just items created here. On by default."
 				on:change={(e) => showHolograms.set(e.detail)}
 			/>
 			<ToggleChip
 				checked={$showFederated}
 				label="Federated"
 				icon={Globe}
-				tooltip="Federated: also pull in items from the holons this one is federated with. Off by default — turn on to see the wider network's data alongside your own."
+				tooltip="Federated: also pull in items from the {words.holons} this one is federated with. Off by default — turn on to see the wider network's data alongside your own."
 				on:change={(e) => showFederated.set(e.detail)}
 			/>
 		{/if}

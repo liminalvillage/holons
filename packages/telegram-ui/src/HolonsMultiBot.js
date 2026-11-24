@@ -23,6 +23,7 @@ import Participation from './RSVP.js';
 import Roles from './Roles.js';
 import FundClaims from './FundClaims.js';
 import GovernanceVotes from './GovernanceVotes.js';
+import { registerAskMissing } from './AskMissing.js';
 
 // Delete lock file if it exists
 if (fs.existsSync('./orbitdb/repo.lock')) {
@@ -87,6 +88,11 @@ class HolonsBot {
       holosphere.holosphere = holosphere;
 
       this.db = holosphere;
+
+      // A command sent without its parameters asks for them
+      // (src/AskMissing.js); installed before any module's handlers so the
+      // answer is seen first.
+      registerAskMissing(this.bot);
 
       // Setup photo handler BEFORE modules so Library can use it
       this.setupPhotoHandler();

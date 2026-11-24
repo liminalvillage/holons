@@ -7,6 +7,7 @@
 
 import { describe, it as spec, expect } from "vitest";
 import type { Msg } from "./types";
+import { HOLON_NOUNS } from "@holons/core/vocabulary";
 import { en } from "./en";
 import { it } from "./it";
 import { es } from "./es";
@@ -115,5 +116,26 @@ describe("affirmativeLang (Whisper hint)", () => {
   });
   spec("a device-locale fallback is NOT — Whisper must auto-detect", () => {
     expect(affirmativeLang("auto", null)).toBeNull();
+  });
+});
+
+describe("holon noun tokens", () => {
+  spec("the deployment's noun reads in every message", () => {
+    expect(makeTranslator("en", "hub")("hub.newTitle")).toBe("Start a new hub");
+    expect(makeTranslator("en", "org")("dock.add")).toBe("Add an org");
+  });
+
+  spec("every {@token} in every catalog is one the vocabulary fills", () => {
+    for (const [name, cat] of Object.entries({ en, ...CATALOGS })) {
+      for (const noun of HOLON_NOUNS) {
+        const tr = makeTranslator(name as "en" | "it" | "es", noun);
+        for (const key of Object.keys(cat)) {
+          expect(
+            tr(key as never, { n: 2 }),
+            `${name}/${noun}/${key}`,
+          ).not.toContain("{@");
+        }
+      }
+    }
   });
 });

@@ -44,6 +44,7 @@ import { joinRequestRecords } from '@holons/core/holons';
 import { readHolonSettings } from '@holons/core/settings';
 import { applyTaskCompletion } from '@holons/core/tasks';
 import { miniAppUrl } from './MiniApps.js';
+import { holonText } from '../utils/holonNoun.js';
 
 const ACTION = { done: 'onbdone', confirm: 'onbok', fill: 'onbfill' };
 /** Callback data is capped at 64 bytes: a key prefix names the person. */
@@ -64,9 +65,12 @@ function translated(language, key, defaultValue, vars = {}) {
     interpolation: { escapeValue: false },
     ...vars,
   });
-  if (typeof text === 'string' && text.trim()) return text;
-  return defaultValue.replace(/\{\{(\w+)\}\}/g, (_, k) =>
-    String(vars[k] ?? '')
+  // Fill {@holon} tokens here too: the bot's i18next post-processor does it
+  // in production, but not every caller (tests, scripts) initialises it.
+  if (typeof text === 'string' && text.trim()) return holonText(text, language);
+  return holonText(
+    defaultValue.replace(/\{\{(\w+)\}\}/g, (_, k) => String(vars[k] ?? '')),
+    language
   );
 }
 
@@ -177,7 +181,7 @@ export default class HolonOnboarding {
       translated(
         language,
         'onbStarted',
-        '🌱 <b>{{name}}</b> asked to link their key and started this holon’s onboarding.',
+        '🌱 <b>{{name}}</b> asked to link their key and started this {@holon}’s onboarding.',
         { name: esc(result.view.name) }
       )
     );
@@ -244,7 +248,7 @@ export default class HolonOnboarding {
         translated(
           language,
           'onbLinkedGroup',
-          '✅ <b>{{name}}</b> finished the onboarding and is linked to this holon.',
+          '✅ <b>{{name}}</b> finished the onboarding and is linked to this {@holon}.',
           { name }
         )
       );
@@ -283,7 +287,7 @@ export default class HolonOnboarding {
               ? translated(
                   language,
                   'onbAdminTicks',
-                  '(someone from the holon ticks this)'
+                  '(someone from {@the_holon} ticks this)'
                 )
               : c.confirm === 'profile' && !c.done && missing.length
                 ? translated(

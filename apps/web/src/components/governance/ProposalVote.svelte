@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
 	import { nameMap, resolvedName } from "$lib/stores/nameResolver";
 	import { userName } from "@holons/core/identity";
   // SPDX-License-Identifier: AGPL-3.0-or-later
@@ -190,7 +191,7 @@
     </p>
   {/if}
   {#if provisional}
-    <p class="text-xs text-amber-300/90 mt-1">This holon is not founded yet: who counts is provisional until the bot signs its membership.</p>
+    <p class="text-xs text-amber-300/90 mt-1">This {words.holon} is not founded yet: who counts is provisional until the bot signs its membership.</p>
   {/if}
   {#if selfId}
     <div class="flex flex-wrap gap-2 mt-2" role="group" aria-label="Your vote">

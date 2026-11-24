@@ -76,3 +76,15 @@ export function taskWallPlacement(quest: Quest, now: Date): TaskWallPlacement | 
   const lastDay = localDayNumber(schedule.start) + schedule.days - 1;
   return lastDay >= localDayNumber(now) ? { due: schedule.start, occurrence: null } : null;
 }
+
+/**
+ * How many tasks and events are still open at `now` — what the task wall
+ * would show, counted. A recurring series counts once (its next open
+ * occurrence), a settled or past quest not at all. The badge on a holon's
+ * face and on its link reads this, so the number always matches the wall.
+ */
+export function countOpenQuests(quests: Iterable<Quest>, now: Date): number {
+  let n = 0;
+  for (const q of quests) if (q && taskWallPlacement(q, now)) n++;
+  return n;
+}

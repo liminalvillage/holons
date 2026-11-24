@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { nn, words } from '$lib/vocabulary';
 	import { createEventDispatcher, getContext } from 'svelte';
 	import { Copy, Check, Grid } from 'svelte-feathers';
 	import { ID } from '../store';
@@ -16,7 +17,7 @@
 
 	// Resolve holon name reactively
 	$: if (currentHolonId) resolveName(currentHolonId);
-	$: holonName = currentHolonId ? resolvedName(currentHolonId, $nameMap) : 'No Holon Selected';
+	$: holonName = currentHolonId ? resolvedName(currentHolonId, $nameMap) : nn('No {@Holon} Selected');
 
 	async function copyHolonId() {
 		if (currentHolonId) {
@@ -53,7 +54,7 @@
 					<button
 						class="sidebar-header__action-btn"
 						onclick={copyHolonId}
-						title="Copy Holon ID"
+						title="Copy {words.Holon} ID"
 					>
 						{#if idCopied}
 							<Check size="14" />
@@ -78,7 +79,7 @@
 					<circle cx="9" cy="12" r="6" fill="transparent" stroke="currentColor" stroke-width="2"/>
 					<circle cx="15" cy="12" r="6" fill="transparent" stroke="currentColor" stroke-width="2"/>
 				</svg>
-				<div class="sidebar-header__holon-name">Select a holon</div>
+				<div class="sidebar-header__holon-name">Select {words.a_holon}</div>
 			</div>
 			<div class="sidebar-header__holon-id">
 				<span class="sidebar-header__holon-id-text">Browse below to get started</span>
@@ -92,7 +93,7 @@
 	<div class="qr-modal-backdrop" onclick={toggleQRModal} onkeydown={(e) => e.key === 'Escape' && toggleQRModal()} role="button" tabindex="0">
 		<div class="qr-modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
 			<div class="qr-modal__header">
-				<h3>Holon QR Code</h3>
+				<h3>{words.Holon} QR Code</h3>
 				<button class="qr-modal__close" onclick={toggleQRModal} aria-label="Close">×</button>
 			</div>
 			<div class="qr-modal__content">

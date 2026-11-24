@@ -1,8 +1,17 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
     import { getContext, createEventDispatcher } from 'svelte';
     import type { HoloSphere } from "holosphere";
     import { ID } from '../dashboard/store';
     import { isValidICalUrl } from '$lib/services/icalParser';
+    import {
+        IMPORTED_CALENDARS_KEY,
+        applyCalendarEdit,
+        normalizeICalUrls,
+        readImportedCalendars,
+        type ImportedCalendar,
+        type ImportedCalendarEdit
+    } from '@holons/core/calendar';
     import { Plus } from 'svelte-feathers';
 
     const dispatch = createEventDispatcher();
@@ -11,7 +20,7 @@
     export let show = false;
 
     // State
-    let importedCalendars: Array<{ id: string; url: string; name: string; enabled: boolean }> = [];
+    let importedCalendars: ImportedCalendar[] = [];
     let newCalendarUrl = '';
     let newCalendarName = '';
     let loading = false;
@@ -29,29 +38,27 @@
         if (!$ID) return;
 
         try {
-            const calendarData = await holosphere.get($ID, 'settings', 'imported_calendars');
-            if (calendarData && Array.isArray(calendarData.calendars)) {
-                importedCalendars = calendarData.calendars;
-            }
+            const calendarData = await holosphere.get($ID, 'settings', IMPORTED_CALENDARS_KEY);
+            importedCalendars = readImportedCalendars(calendarData);
         } catch (err) {
             console.error('Error loading imported calendars:', err);
         }
     }
 
-    // Save imported calendars to holon data
-    async function saveImportedCalendars() {
+    // Apply ONE change to the freshly re-read list and save it (core
+    // `applyCalendarEdit`, the same path the kiosk takes): never save the list
+    // this sheet loaded earlier, or a feed removed on another device returns.
+    async function editImportedCalendars(edit: ImportedCalendarEdit | ImportedCalendarEdit[]) {
         if (!$ID) return;
-
-        try {
-            await holosphere.put($ID, 'settings', {
-                id: 'imported_calendars',
-                calendars: importedCalendars,
-                updated: new Date().toISOString()
-            });
-        } catch (err) {
-            console.error('Error saving imported calendars:', err);
-            throw err;
-        }
+        const holon = $ID;
+        const fresh = readImportedCalendars(await holosphere.get(holon, 'settings', IMPORTED_CALENDARS_KEY));
+        const calendars = applyCalendarEdit(fresh, edit);
+        await holosphere.put(holon, 'settings', {
+            id: IMPORTED_CALENDARS_KEY,
+            calendars,
+            updated: new Date().toISOString()
+        });
+        if ($ID === holon) importedCalendars = calendars;
     }
 
     // Add a new calendar
@@ -72,16 +79,22 @@
         loading = true;
 
         try {
-            const calendarId = `cal_${Date.now()}`;
-            const newCalendar = {
-                id: calendarId,
-                url: newCalendarUrl.trim(),
-                name: newCalendarName.trim() || 'Imported Calendar',
-                enabled: true
-            };
-
-            importedCalendars = [...importedCalendars, newCalendar];
-            await saveImportedCalendars();
+            // A Google share/embed link is stored as its iCal address — one
+            // entry per calendar when it shows several.
+            const feeds = normalizeICalUrls(newCalendarUrl).filter(isValidICalUrl);
+            const label = newCalendarName.trim() || 'Imported Calendar';
+            const stamp = Date.now();
+            await editImportedCalendars(
+                feeds.map((url, i) => ({
+                    type: 'add' as const,
+                    entry: {
+                        id: i ? `cal_${stamp}_${i}` : `cal_${stamp}`,
+                        url,
+                        name: feeds.length > 1 ? `${label} ${i + 1}` : label,
+                        enabled: true
+                    }
+                }))
+            );
 
             // Clear form
             newCalendarUrl = '';
@@ -112,8 +125,7 @@
         error = '';
 
         try {
-            importedCalendars = importedCalendars.filter(cal => cal.id !== calendarId);
-            await saveImportedCalendars();
+            await editImportedCalendars({ type: 'remove', id: calendarId });
             successMessage = 'Calendar removed successfully!';
 
             // Notify parent component to refresh
@@ -136,10 +148,7 @@
         error = '';
 
         try {
-            importedCalendars = importedCalendars.map(cal =>
-                cal.id === calendarId ? { ...cal, enabled: !cal.enabled } : cal
-            );
-            await saveImportedCalendars();
+            await editImportedCalendars({ type: 'toggle', id: calendarId });
 
             // Notify parent component to refresh
             dispatch('calendarsUpdated');
@@ -207,7 +216,7 @@
                         class="flex items-center justify-between w-full text-left"
                         on:click={() => showExportSection = !showExportSection}
                     >
-                        <h3 class="text-xl font-semibold text-white">Subscribe to This Holon's Calendar</h3>
+                        <h3 class="text-xl font-semibold text-white">Subscribe to This {words.Holon}'s Calendar</h3>
                         <svg
                             class="w-5 h-5 text-gray-400 transition-transform {showExportSection ? 'rotate-180' : ''}"
                             fill="none"
@@ -221,7 +230,7 @@
                     {#if showExportSection}
                         <div class="bg-gray-900 rounded-lg p-4 space-y-3">
                             <p class="text-gray-300 text-sm">
-                                Copy this link and add it to your calendar app (Google Calendar, Apple Calendar, Outlook, etc.) to subscribe to this holon's events:
+                                Copy this link and add it to your calendar app (Google Calendar, Apple Calendar, Outlook, etc.) to subscribe to this {words.holon}'s events:
                             </p>
                             <div class="flex gap-2">
                                 <input
@@ -238,7 +247,7 @@
                                 </button>
                             </div>
                             <p class="text-gray-400 text-xs">
-                                📝 This calendar updates automatically. Any changes to scheduled events in this holon will appear in your subscribed calendar.
+                                📝 This calendar updates automatically. Any changes to scheduled events in this {words.holon} will appear in your subscribed calendar.
                             </p>
                         </div>
                     {/if}
@@ -248,7 +257,7 @@
                 <div class="space-y-4">
                     <h3 class="text-xl font-semibold text-white">Import External Calendars</h3>
                     <p class="text-gray-300 text-sm">
-                        Import events from external calendars (Google Calendar, Apple Calendar, etc.) to display them in this holon's calendar.
+                        Import events from external calendars (Google Calendar, Apple Calendar, etc.) to display them in this {words.holon}'s calendar.
                     </p>
 
                     <!-- Add New Calendar Form -->

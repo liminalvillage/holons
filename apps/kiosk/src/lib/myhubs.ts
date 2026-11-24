@@ -12,6 +12,31 @@ import { myHolons, rememberHolon } from "@holons/core/holons";
 import { getHolosphere } from "./holosphere";
 import { dockEntries, isForgotten, rememberBoard } from "./dock";
 import { sessionKeyPub } from "./sessionKey";
+import { isShortName, resolveNames } from "./names";
+
+/**
+ * The name to keep for `id`: what the name resolver learned, when it learned
+ * anything — the label the caller holds may be a stale one (a federation
+ * partner's old label docked with the retinue), and this is written to the
+ * relays. Falls back to `given` while the resolver knows nothing.
+ */
+export async function nameToKeep(
+  id: string,
+  given: string,
+  resolve: (id: string) => Promise<string | undefined> = resolvedName,
+): Promise<string> {
+  try {
+    const learned = await resolve(id);
+    if (learned && !isShortName(learned, id)) return learned;
+  } catch {
+    /* resolver offline — keep what the caller had */
+  }
+  return given;
+}
+
+async function resolvedName(id: string): Promise<string | undefined> {
+  return (await resolveNames([id])).get(id);
+}
 
 /** Remember `id` in the signed-in person's own list (a no-op without a session key). */
 export async function recordMyHub(id: string, name = ""): Promise<void> {
@@ -19,7 +44,8 @@ export async function recordMyHub(id: string, name = ""): Promise<void> {
   if (!person || !id || id === person) return;
   try {
     const hs = await getHolosphere();
-    await rememberHolon(hs, person, { id, name });
+    const keep = await nameToKeep(id, name);
+    await rememberHolon(hs, person, { id, name: keep });
   } catch (err) {
     console.warn("[kiosk] could not remember the hub in your holon", err);
   }

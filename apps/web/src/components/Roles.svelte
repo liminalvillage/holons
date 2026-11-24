@@ -1,5 +1,6 @@
 <script lang="ts">
 	// @ts-nocheck
+	import { nn } from '$lib/vocabulary';
 
 	import { onMount, onDestroy, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
@@ -310,7 +311,7 @@
 		} catch (error: any) {
 			selectedRole = null;
 			if (error?.name === 'AuthorizationError') {
-				notifyWriteDenied('Unable to save - no write permission for this holon');
+				notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
 			} else {
 				console.error('Error adding new role:', error);
 			}
@@ -339,7 +340,7 @@
 			showImportModal = false;
 		} catch (error: any) {
 			if (error?.name === 'AuthorizationError') {
-				notifyWriteDenied('Unable to save - no write permission for this holon');
+				notifyWriteDenied(nn('Unable to save - no write permission for this {@holon}'));
 			} else {
 				console.error('Error importing roles:', error);
 			}

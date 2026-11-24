@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { words } from '$lib/vocabulary';
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
   // The holon's Pot on the dashboard: what the viewer may collect under the
@@ -344,7 +345,7 @@
       {#if pot}<a class="addr" href={explorer ? `${explorer}/address/${pot.address}` : undefined} target="_blank" rel="noreferrer">{short(pot.address)}</a>{/if}
     </h3>
     {#if !pot}
-      <p class="note">This holon holds no value on chain yet. A Pot holds it and divides it by a rights table committed at each new moon.</p>
+      <p class="note">This {words.holon} holds no value on chain yet. A Pot holds it and divides it by a rights table committed at each new moon.</p>
       {#if canAttest}<button type="button" disabled={busy !== ""} on:click={deploy}>{busy === "deploy" ? "Creating…" : "Create a Pot"}</button>{/if}
     {:else if !state}
       <p class="note">{reading ? "Reading the chain…" : "The Pot cannot be read from here."}</p>
