@@ -58,6 +58,19 @@ export function createPartyResolver(input: PartyResolverInput = {}): PartyResolv
 }
 
 /**
+ * The party a signer acts for at one moment: the resolver's answer, else the
+ * key itself when the holon seats that key then. A key-only member (signed in
+ * with their own key, seated by key, nothing linking it to a Telegram id) has
+ * their pubkey as their party id everywhere else — the roster, the split, the
+ * ceilings — so their own key must act for it too, or nothing they sign as
+ * themselves could ever count. A key the holon does not seat stays nobody.
+ */
+export function signerParty(resolved: string | null | undefined, pubkey: string, seated: boolean): string | null {
+  if (resolved != null && resolved !== '') return String(resolved);
+  return seated ? String(pubkey).toLowerCase() : null;
+}
+
+/**
  * Key → party from identity attestations: the attested identifier
  * (`telegram:<id>`) becomes the party id every domain already uses (`<id>`).
  * The coordinator's directory outranks other providers and the earliest link

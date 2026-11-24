@@ -53,6 +53,21 @@ describe('foldClaims', () => {
     ]);
   });
 
+  it('a key-only member acts for their own pubkey; a key the holon does not seat is still nobody', () => {
+    const kim = testKey(); // signed in with her own key: no attestation, no linkedKeys — her party id IS her pubkey
+    const members = bootstrapActors({ members: [ada.pk, bob.pk, kim.pk], admins: [treasurer.pk, holon.pk], genesis: holon.pk });
+    const own = entry(kim.sk, buildClaim({ party: kim.pk, amount: 10, unit: 'eur', at: T0 * 1000 }) as never, T0);
+    const forAda = entry(kim.sk, buildClaim({ party: 'ada', amount: 5, unit: 'eur', at: T0 * 1000 }) as never, T0 + 1);
+    const outsider = entry(stranger.sk, buildClaim({ party: stranger.pk, amount: 5, unit: 'eur', at: T0 * 1000 }) as never, T0 + 2);
+    const f = foldClaims({ entries: [own, forAda, outsider], actors: members, partyOf, rights: { ...rights, [kim.pk]: { EUR: 40 } } });
+    expect(f.claims.map((c) => [c.status, c.reason ?? null])).toEqual([
+      ['approved', null],
+      ['rejected', 'party-mismatch'],
+      ['rejected', 'unaccepted-signer'],
+    ]);
+    expect(claimTotalsOf(f, kim.pk, 'EUR').claimed).toBe(10);
+  });
+
   it('under a lookup, a party with no seat or a unit with no pot has a right of zero: nothing to claim, nothing to give', () => {
     const carl = testKey();
     const partyOfAll = (pk: string) => (pk === carl.pk ? 'carl' : partyOf(pk));

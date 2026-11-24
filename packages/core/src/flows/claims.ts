@@ -48,6 +48,7 @@ import {
   federatedActors,
   isAction,
   lensContext,
+  signerParty,
   normalizePolicy,
   type AcceptedActors,
   type Appendable,
@@ -342,8 +343,7 @@ export function foldClaims(input: FoldClaimsInput): FoldedClaims {
   const partyOf = (pubkey: string, at: number) => {
     const origin = actors.originOf(pubkey, at);
     if (origin) return origin;
-    const p = input.partyOf(pubkey);
-    return p == null ? null : String(p);
+    return signerParty(input.partyOf(pubkey), pubkey, input.actors.isAcceptedAt(pubkey, at));
   };
   const entries: LogEvent<unknown>[] = [...input.entries];
   for (const p of imports) entries.push(...p.accepted);

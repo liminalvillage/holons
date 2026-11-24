@@ -79,7 +79,7 @@ export {
   type FoundingAuthority,
 } from './founding.js';
 
-export { createPartyResolver, partiesFromAttestations, type PartyResolver, type PartyResolverInput } from './identity.js';
+export { createPartyResolver, partiesFromAttestations, signerParty, type PartyResolver, type PartyResolverInput } from './identity.js';
 
 export { DEFAULT_POLICY, LENS_DEFAULT_POLICIES, POLICY_ROLES, defaultPolicyFor, normalizePolicy, policyRecord, foldPolicies, policyFor, samePolicy } from './policy.js';
 

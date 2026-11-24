@@ -42,6 +42,7 @@ import {
   federatedActors,
   isAction,
   lensContext,
+  signerParty,
   type AcceptedActors,
   type Appendable,
   type AttestationRecord,
@@ -234,8 +235,7 @@ export function foldVotes(input: FoldVotesInput): FoldedVotes {
   const partyOf = (pubkey: string, at: number) => {
     const origin = actors.originOf(pubkey, at);
     if (origin) return origin;
-    const p = input.partyOf(pubkey);
-    return p == null ? null : String(p);
+    return signerParty(input.partyOf(pubkey), pubkey, input.actors.isAcceptedAt(pubkey, at));
   };
   const entries: LogEvent<unknown>[] = [...input.entries];
   for (const p of imports) entries.push(...p.accepted);
