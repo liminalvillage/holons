@@ -1,0 +1,5 @@
+dist/
+node_modules/
+kiosk-demo/dist/
+kiosk-demo/seeded.json
+kiosk-demo/*.mp4

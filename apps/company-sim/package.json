@@ -1,0 +1,22 @@
+{
+  "name": "company-sim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Meridian Works — a simulated company of nested holons: holograms travel between circles, each circle values work by its own equation, and money sent to any holon cascades down to claimable rights. Runs the real @holons/core engine in the browser.",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@holons/core": "workspace:*"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12",
+    "typescript": "^5.7.3",
+    "vitest": "^4.0.18"
+  }
+}

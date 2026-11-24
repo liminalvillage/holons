@@ -1,0 +1,256 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meridian Works</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f4f5f8; --card: #ffffff; --ink: #1c2330; --mute: #566174; --line: #dfe3ea;
+  --accent: #4340b8; --accent-ink: #ffffff; --soft: #eef0f6; --focus: #1a73e8;
+  --gold: #b7791f; --ok: #1d7a4d; --bad: #b3261e;
+  --k-task: #2f6fb5; --k-hologram: #6d4fc2; --k-complete: #1d7a4d; --k-article: #a15c12;
+  --k-views: #6b7686; --k-appreciation: #b83a74; --k-deposit: #96680f; --k-claim: #0f7c86;
+  --k-commit: #3b3f9e; --k-collect: #0f7c86;
+  --moon-dark: #9aa3b2; --moon-lit: #fdf3c4;
+  --shadow: 0 1px 2px rgba(20,30,50,.06), 0 4px 14px rgba(20,30,50,.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0e131a; --card: #161d27; --ink: #e8ecf2; --mute: #9aa7b8; --line: #283240;
+    --accent: #a5a2ff; --accent-ink: #11131f; --soft: #1d2633; --focus: #6aa9ff;
+    --gold: #f0b45a; --ok: #5ccf94; --bad: #ff8a80;
+    --k-task: #7db3ee; --k-hologram: #b79bff; --k-complete: #5ccf94; --k-article: #f0a85a;
+    --k-views: #98a4b5; --k-appreciation: #f08db8; --k-deposit: #f0b45a; --k-claim: #5fd0da;
+    --k-commit: #a5a2ff; --k-collect: #5fd0da;
+    --moon-dark: #3a4556; --moon-lit: #f6e9a8;
+    --shadow: 0 1px 2px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+    --bg: #0e131a; --card: #161d27; --ink: #e8ecf2; --mute: #9aa7b8; --line: #283240;
+    --accent: #a5a2ff; --accent-ink: #11131f; --soft: #1d2633; --focus: #6aa9ff;
+    --gold: #f0b45a; --ok: #5ccf94; --bad: #ff8a80;
+    --k-task: #7db3ee; --k-hologram: #b79bff; --k-complete: #5ccf94; --k-article: #f0a85a;
+    --k-views: #98a4b5; --k-appreciation: #f08db8; --k-deposit: #f0b45a; --k-claim: #5fd0da;
+    --k-commit: #a5a2ff; --k-collect: #5fd0da;
+    --moon-dark: #3a4556; --moon-lit: #f6e9a8;
+    --shadow: 0 1px 2px rgba(0,0,0,.3);
+}
+:root[data-theme="light"] { color-scheme: light; }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+button, select, input { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.wrap { max-width: 1480px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 1.45rem; margin: 0; letter-spacing: -.01em; }
+h2 { font-size: 1.05rem; margin: 0 0 4px; }
+h3 { font-size: .9rem; margin: 14px 0 6px; color: var(--mute); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+.sub { color: var(--mute); margin: 2px 0 0; }
+.muted { color: var(--mute); }
+.small { font-size: .85rem; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow); min-width: 0; }
+
+header.top { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn {
+  border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 7px 12px; cursor: pointer; min-height: 36px;
+}
+.btn:hover { background: var(--soft); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.small { padding: 3px 9px; min-height: 28px; font-size: .85rem; }
+.btn:disabled { opacity: .45; cursor: default; }
+select, input[type=text], input[type=number] {
+  border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 7px 10px; min-height: 36px; max-width: 100%;
+}
+.clock { display: flex; align-items: center; gap: 10px; padding: 4px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); }
+.clock b { font-variant-numeric: tabular-nums; }
+
+.row { display: grid; gap: 14px; margin-bottom: 14px; }
+.r1 { grid-template-columns: minmax(0, 1.9fr) minmax(280px, 1fr); }
+.r2 { grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); }
+@media (max-width: 960px) { .r1, .r2 { grid-template-columns: minmax(0, 1fr); } }
+
+.mapcard { padding: 8px; }
+.mapscroll { overflow-x: auto; }
+#map { display: block; width: 100%; height: auto; min-width: 640px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 6px 8px 2px; }
+.circ { cursor: pointer; }
+.circ circle { transition: fill-opacity .15s, stroke-width .15s; }
+.circ:hover circle.shape { fill-opacity: .2; }
+.circ.sel circle.shape { stroke-width: 5; fill-opacity: .16; }
+.circ:focus-visible { outline: none; }
+.circ:focus-visible circle.shape { stroke: var(--focus); stroke-width: 5; }
+.mtext { fill: var(--ink); font-family: inherit; pointer-events: none; }
+.mlabel { font-size: 17px; font-weight: 650; }
+.mdot { font-size: 12.5px; }
+.msmall { font-size: 12.5px; fill: var(--mute); }
+.dot { stroke: var(--card); stroke-width: 2; }
+
+.feedcard { display: flex; flex-direction: column; min-height: 0; }
+.feedcard ol { list-style: none; padding: 0; margin: 8px 0 0; overflow-y: auto; flex: 1 1 0; min-height: 0; }
+.feedwrap { position: relative; flex: 1 1 0; min-height: 280px; display: flex; flex-direction: column; }
+.feedwrap ol { position: absolute; inset: 0; margin: 0; }
+@media (max-width: 960px) { .feedwrap { min-height: 0; height: 300px; flex: none; } }
+.ev { display: grid; grid-template-columns: 36px 1fr; gap: 8px; padding: 6px 0 6px 8px; border-left: 4px solid var(--k, var(--line)); border-bottom: 1px solid var(--line); font-size: .88rem; }
+.ev .d { color: var(--mute); font-variant-numeric: tabular-nums; font-size: .8rem; }
+.ev .k { color: var(--k); font-weight: 650; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; display: block; }
+.k-task { --k: var(--k-task); } .k-hologram { --k: var(--k-hologram); } .k-complete { --k: var(--k-complete); }
+.k-article { --k: var(--k-article); } .k-views { --k: var(--k-views); } .k-appreciation { --k: var(--k-appreciation); }
+.k-deposit { --k: var(--k-deposit); } .k-claim { --k: var(--k-claim); } .k-commit { --k: var(--k-commit); } .k-collect { --k: var(--k-collect); }
+
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--k); margin-right: 5px; vertical-align: baseline; }
+
+.pill { display: inline-block; padding: 1px 9px; border-radius: 999px; background: var(--soft); border: 1px solid var(--line); font-size: .8rem; }
+.pill.hl { background: color-mix(in srgb, var(--k-hologram) 16%, var(--card)); color: var(--k-hologram); border-color: color-mix(in srgb, var(--k-hologram) 40%, var(--line)); }
+.pill.done { color: var(--ok); } .pill.doing { color: var(--k-task); }
+
+.lb .who { line-height: 1.2; }
+.lb .who small { display: block; color: var(--mute); }
+.bar { background: var(--soft); border-radius: 6px; height: 14px; position: relative; overflow: hidden; }
+.bar i { position: absolute; inset: 0 auto 0 0; border-radius: 6px; }
+.lbrow { display: grid; grid-template-columns: minmax(100px, 160px) 1fr; gap: 4px 12px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+@media (max-width: 520px) { .lbrow { grid-template-columns: minmax(0, 1fr); } }
+.lbmeta { display: flex; justify-content: space-between; gap: 8px; font-size: .8rem; color: var(--mute); margin-top: 2px; flex-wrap: wrap; }
+.tasks { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; }
+.tasks li { padding: 6px 0; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 8px; padding: 2px 8px; background: var(--soft); font-size: .85rem; }
+
+form.send { display: grid; gap: 10px; }
+form.send label { display: grid; gap: 3px; font-size: .85rem; color: var(--mute); }
+form.send label > :not(span) { color: var(--ink); }
+.amt { display: flex; gap: 8px; align-items: center; }
+.amt input { flex: 1; min-width: 0; }
+.unit { font-weight: 650; min-width: 3.5em; }
+.addr { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; background: var(--soft); border-radius: 6px; padding: 4px 8px; word-break: break-all; }
+.note { font-size: .85rem; color: var(--mute); border-left: 3px solid var(--gold); padding: 2px 10px; margin: 0; }
+
+.units { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.units button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 4px 14px; cursor: pointer; min-height: 32px; }
+.units button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.skwrap { overflow-x: auto; }
+#sankey { display: block; width: 100%; height: auto; min-width: 720px; }
+.sk-label { font-size: 12.5px; fill: var(--ink); paint-order: stroke; stroke: var(--card); stroke-width: 4px; stroke-linejoin: round; }
+.sk-label tspan.m { fill: var(--mute); }
+.sk-link { transition: opacity .12s; }
+.sk-node { cursor: default; }
+#tip {
+  position: fixed; z-index: 10; pointer-events: none; background: var(--ink); color: var(--bg); padding: 7px 10px; border-radius: 8px;
+  font-size: .82rem; max-width: 280px; box-shadow: 0 4px 16px rgba(0,0,0,.25); display: none; line-height: 1.35;
+}
+
+.tblwrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .88rem; font-variant-numeric: tabular-nums; }
+th, td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--mute); font-weight: 600; font-size: .78rem; }
+th.l, td.l { text-align: left; }
+th.g { text-align: center; border-bottom: 2px solid var(--line); color: var(--ink); }
+td.avail { font-weight: 650; }
+tbody tr.hi { background: color-mix(in srgb, var(--accent) 12%, var(--card)); }
+tfoot td { font-weight: 650; border-top: 2px solid var(--line); border-bottom: 0; }
+tr.sep td { border-top: 2px solid var(--line); }
+.who-btn { background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline dotted; color: var(--ink); text-align: left; }
+.checks { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; }
+.ok { color: var(--ok); } .bad { color: var(--bad); }
+
+.how { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; counter-reset: s; padding: 0; margin: 0; list-style: none; }
+.how li { counter-increment: s; background: var(--soft); border-radius: 10px; padding: 12px 14px; }
+.how li::before { content: counter(s); display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: .85rem; margin-bottom: 6px; }
+.how b { display: block; }
+@media (max-width: 800px) { .how { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+@media (max-width: 520px) { .how { grid-template-columns: minmax(0, 1fr); } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Meridian Works — a company of holons</h1>
+      <p class="sub">Work, money and messages move through nested circles; everything you see is computed by the real Holons engine.</p>
+    </div>
+    <div class="controls" role="group" aria-label="Simulation controls">
+      <div class="clock" aria-live="polite"><svg id="moon" width="26" height="26" viewBox="-14 -14 28 28" aria-hidden="true"></svg><span id="clock"></span></div>
+      <button class="btn primary" id="play" type="button" aria-pressed="false">Play</button>
+      <button class="btn" id="next" type="button">Next day</button>
+      <button class="btn" id="moonrun" type="button">Run to new moon</button>
+      <label class="small muted" for="speed">Speed</label>
+      <select id="speed" aria-label="Playback speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="3">3×</option></select>
+      <button class="btn" id="reset" type="button">Reset</button>
+    </div>
+  </header>
+
+  <div class="row r1">
+    <section class="card mapcard" aria-labelledby="h-map">
+      <h2 id="h-map" style="padding:6px 8px 0">Org map</h2>
+      <div class="mapscroll"><svg id="map" viewBox="0 0 1000 680" role="group" aria-label="Circles of Meridian Works. Select a circle to see its details."></svg></div>
+      <div class="legend small muted">
+        <span><span class="swatch" style="--k:var(--k-hologram)"></span>hologram travelling between circles</span>
+        <span><span class="swatch" style="--k:var(--k-deposit)"></span>money arriving</span>
+        <span><span class="swatch" style="--k:var(--k-complete)"></span>work completed</span>
+        <span>Click a circle for details</span>
+      </div>
+    </section>
+    <section class="card feedcard" aria-labelledby="h-feed">
+      <h2 id="h-feed">Live feed</h2>
+      <div class="feedwrap"><ol id="feed" aria-live="off"></ol></div>
+    </section>
+  </div>
+
+  <div class="row r2">
+    <section class="card" id="panel" aria-labelledby="h-panel"></section>
+    <section class="card" aria-labelledby="h-send">
+      <h2 id="h-send">Send funds to any holon</h2>
+      <p class="sub" style="margin-bottom:10px">Every holon can have its own rails. What you send is split by that holon's own rules, then by the circles it passes through.</p>
+      <form class="send" id="sendform">
+        <label><span>Holon</span><select id="s-target"></select></label>
+        <label><span>Rail</span><select id="s-rail"></select></label>
+        <div class="addr" id="s-addr" aria-live="polite"></div>
+        <label><span>Amount</span><span class="amt"><input id="s-amount" type="number" min="0" step="any" inputmode="decimal" required><span class="unit" id="s-unit"></span></span></label>
+        <label><span>From</span><input id="s-from" type="text" value="A supporter" autocomplete="off"></label>
+        <p class="note" id="s-note" hidden>Pot funds are collected at the new moon, when the rights root is committed.</p>
+        <div><button class="btn primary" type="submit">Send</button> <span class="small muted" id="s-msg" role="status"></span></div>
+      </form>
+    </section>
+  </div>
+
+  <section class="card row" style="display:block" aria-labelledby="h-sk">
+    <h2 id="h-sk">Where the money goes</h2>
+    <p class="sub">Each unit has its own picture; units never mix. Hover a band for details, or choose a person in the table below to follow their money upstream.</p>
+    <div class="units" id="units" role="group" aria-label="Unit"></div>
+    <div class="skwrap"><svg id="sankey" role="img" aria-label="Sankey diagram of money flowing from rails through circles to people"></svg></div>
+  </section>
+
+  <section class="card row" style="display:block" aria-labelledby="h-claims">
+    <h2 id="h-claims">Claimable by each person</h2>
+    <p class="sub">A right is each party's share of what arrived. Claim what is available; Pot units are collected after the new moon commit.</p>
+    <div class="tblwrap" id="claims"></div>
+    <div class="checks small" id="checks"></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-how">
+    <h2 id="h-how" style="margin-bottom:10px">How it works</h2>
+    <ol class="how">
+      <li><b>Work</b>People finish tasks, publish articles and thank each other. Tasks can travel to other circles as holograms — live pointers, never copies.</li>
+      <li><b>Equation</b>Every circle scores its members by its own value equation: what the circle chooses to reward.</li>
+      <li><b>Cascade</b>Money sent to a holon is split: part to its own members by score, the rest to circles on its rings, which split it again.</li>
+      <li><b>Claim</b>Each person's share becomes a right they can claim. Pot funds are collected after the new moon commit.</li>
+    </ol>
+  </section>
+</div>
+<div id="tip" role="tooltip"></div>
+<!--APP-->
+</body>
+</html>
