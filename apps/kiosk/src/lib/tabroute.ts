@@ -26,8 +26,25 @@ const ONBOARDING = "onboarding";
  */
 export const CHOOSE = "choose";
 
+/**
+ * Other words a link may use for a tab: `/lists` opens Checklists, `/quests`
+ * opens Tasks, `/need` (or `/needs`) opens Needs & Offers. Read on the way
+ * in only — the address bar always shows the tab's own id.
+ */
+export const TAB_ALIASES: Readonly<Record<string, TabId>> = {
+  lists: "checklists",
+  quests: "tasks",
+  need: "offers",
+  needs: "offers",
+};
+
 /** Segments a view replaces when another view is reflected in the path. */
-const VIEW_SEGMENTS = new Set<string>([...TAB_IDS, ONBOARDING, CHOOSE]);
+const VIEW_SEGMENTS = new Set<string>([
+  ...TAB_IDS,
+  ...Object.keys(TAB_ALIASES),
+  ONBOARDING,
+  CHOOSE,
+]);
 
 /** A pathname's segments, decoded, without empty entries. */
 function segmentsOf(pathname: string): string[] {
@@ -46,6 +63,7 @@ export function tabForPath(pathname: string): TabId | null {
   const segs = segmentsOf(pathname);
   const last = (segs[segs.length - 1] ?? "").toLowerCase();
   if (last === CHOOSE) return "tasks";
+  if (Object.hasOwn(TAB_ALIASES, last)) return TAB_ALIASES[last];
   return TAB_IDS.has(last) ? (last as TabId) : null;
 }
 

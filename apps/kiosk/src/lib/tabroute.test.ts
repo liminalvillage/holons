@@ -81,3 +81,19 @@ describe("the Choose deck link", () => {
     expect(pathForTab("/liminal/choose", "tasks")).toBe("/liminal/tasks");
   });
 });
+
+describe("tab aliases", () => {
+  it("opens the tab an alias names", () => {
+    expect(tabForPath("/lists")).toBe("checklists");
+    expect(tabForPath("/liminal/quests")).toBe("tasks");
+    expect(tabForPath("/liminal/need")).toBe("offers");
+    expect(tabForPath("/liminal/Needs")).toBe("offers");
+  });
+
+  it("is replaced by the tab's own id when a tab is reflected", () => {
+    expect(pathForTab("/liminal/lists", "checklists")).toBe(
+      "/liminal/checklists",
+    );
+    expect(pathForTab("/quests", "calendar")).toBe("/calendar");
+  });
+});
