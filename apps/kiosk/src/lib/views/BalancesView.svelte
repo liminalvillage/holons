@@ -114,8 +114,12 @@
   $: me = selfId
     ? credit.balances.find((b) => String(b.userId) === selfId)
     : null;
+  // The viewer's lines come from the same settle-up plan "All balances"
+  // shows (core's fewest transfers), so both views give one instruction and
+  // the lines add up to the position above them. The pairwise debts stay on
+  // each person's sheet.
   $: myPairs = selfId
-    ? credit.pairs.filter(
+    ? credit.plan.filter(
         (p) => String(p.from) === selfId || String(p.to) === selfId,
       )
     : [];
