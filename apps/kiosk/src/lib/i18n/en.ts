@@ -22,9 +22,10 @@ export const en = {
 
   // People pickers: the federation beyond the holon (FederationSearch)
   "people.searchMembers": "Search members…",
-  "people.searchAnyone": "Search members and partner holons…",
+  "people.searchAnyone": "Search members and partner {@holons}…",
   "people.noMatch": "No one by that name.",
-  "people.typeToSearchFederation": "Type a name to search partner holons too.",
+  "people.typeToSearchFederation":
+    "Type a name to search partner {@holons} too.",
   "people.noOneLeft": "Everyone is already on it.",
   "people.via": "in {name}",
 
@@ -65,13 +66,13 @@ export const en = {
   "tasks.linked": "“{task}” now waits on “{dep}”",
   "tasks.linkCycle": "That link would loop the plan back on itself.",
   "tasks.linkForeign":
-    "This card belongs to another holon — link it where it lives.",
+    "This card belongs to another {@holon} — link it where it lives.",
   "tasks.linkFailed": "Couldn't link — {reason}",
   "tasks.appreciate": "Appreciate",
   "tasks.addTask": "Add task",
   "tasks.appreciateInstead": "Appreciate instead?",
   "tasks.appreciateLead":
-    "You're a participant on “{title}”. Appreciating it removes you from the participants.",
+    "You're in on “{title}”. Appreciating it takes you off the participants.",
   "tasks.deleteTitle": "Delete task?",
   "tasks.deleteLead": "“{title}” will be removed for everyone.",
   "tasks.deleting": "Deleting…",
@@ -85,23 +86,23 @@ export const en = {
   "tasks.loadingBacklog": "Reading the backlog…",
 
   // Swipe deck
-  "swipe.participating": "You're participating — that outranks a like ♥",
+  "swipe.participating": "You're in — that outranks appreciating ♥",
   "swipe.alreadyIn": "Already in ✓",
   "swipe.joinFailed": "Couldn't join — try again.",
   "swipe.alreadyAppreciated": "Already appreciated ♥",
   "swipe.appreciateFailed": "Couldn't save that ♥ — try again.",
-  "swipe.join": "JOIN",
+  "swipe.join": "I'M IN",
   "swipe.skip": "SKIP",
-  "swipe.joined": "JOINED",
-  "swipe.joinedRibbonAria": "You participate in this task",
+  "swipe.joined": "IN",
+  "swipe.joinedRibbonAria": "You're in on this task",
   "swipe.allCaughtUp": "All caught up",
-  "swipe.roundSummary": "{joins} joined · {likes} liked this round",
+  "swipe.roundSummary": "{joins} in · {likes} appreciated this round",
   "swipe.startOver": "Start over",
   "swipe.skipAria": "Skip this task",
   "swipe.skipTitle": "Skip",
   "swipe.appreciateAria": "Appreciate this task",
-  "swipe.joinAria": "Join this task",
-  "swipe.joinTitle": "Join",
+  "swipe.joinAria": "I'm in — take part in this task",
+  "swipe.joinTitle": "I'm in",
 
   // Choose deck (the backlog one card at a time, full screen)
   "choose.open": "Choose",
@@ -114,12 +115,12 @@ export const en = {
   "choose.circle": "Circle {n}",
   "choose.position": "Card {n} of {total}: {title}",
   "choose.openCard": "{title} — open the card",
-  "choose.hint": "Swipe right to join, up to like, left to skip",
+  "choose.hint": "→ I'm in · ↑ Appreciate · ← Skip",
   "choose.answers": "Your answer",
-  "choose.like": "Like",
+  "choose.like": "Appreciate",
   "choose.undo": "Undo",
-  "choose.saidJoin": "Joined “{title}”",
-  "choose.saidLike": "Liked “{title}”",
+  "choose.saidJoin": "In on “{title}”",
+  "choose.saidLike": "Appreciated “{title}”",
   "choose.saidSkip": "Skipped “{title}”",
   "choose.circleDone": "Circle complete",
   "choose.next": "Next {n}",
@@ -211,10 +212,10 @@ export const en = {
   "cal.set.subscribeHead": "Subscribe to this calendar",
   "cal.set.subscribeBody":
     "Add {name}'s live calendar to Google, Apple or any other calendar app. It keeps itself up to date.",
-  "cal.set.thisHolon": "this holon",
-  "cal.set.federated": "Include federated holons",
+  "cal.set.thisHolon": "this {@holon}",
+  "cal.set.federated": "Include federated {@holons}",
   "cal.set.federatedSub":
-    "Also carry the events of the holons this one federates with",
+    "Also carry the events of {@the_holons} this one federates with",
   "cal.set.feedUrl": "Calendar link",
   "cal.set.copy": "Copy link",
   "cal.set.copied": "Copied ✓",
@@ -236,6 +237,8 @@ export const en = {
   "cal.set.colorCustom": "Custom colour",
   "cal.set.colorAuto": "Automatic",
   "cal.set.saveFailed": "Couldn't save — log in as a caretaker and try again.",
+  "cal.set.feedFailed":
+    "Couldn't read this calendar. From Google Calendar, use the \"Public address in iCal format\" (or the secret one) from the calendar's settings.",
   "cal.newEvent": "New event",
 
   // Roles
@@ -349,7 +352,7 @@ export const en = {
   },
   "shifts.publishFailed": "Couldn't publish — {reason}",
   "shifts.retractFailed": "Couldn't remove — {reason}",
-  "shifts.errDenied": "You're not allowed to change this holon's plan.",
+  "shifts.errDenied": "You're not allowed to change this {@holon}'s plan.",
   "shifts.errSave": "Couldn't save the plan. Try again.",
   "shifts.noCoordinator":
     "This kiosk can't publish shifts (no signing key configured on the server). You can still save the plan.",
@@ -411,7 +414,7 @@ export const en = {
   "pills.yearShape": "Year shape",
   "pills.yearLinear": "Lines",
   "pills.yearRadial": "Dial",
-  "pills.loved": "Loved",
+  "pills.loved": "Most appreciated",
   "pills.new": "New",
   "pills.manual": "Manual",
   "pills.view": "View",
@@ -429,13 +432,14 @@ export const en = {
 
   // Show (scope) pill
   "scope.federated": "Federated",
-  "scope.aria": "Show the federated holons' items too",
+  "scope.aria":
+    "Show the federated {@holons}' items too — holograms have their own switch",
 
   // Filters sheet (pills band)
   "filters.title": "Filters",
   "filters.show": "Show",
   "filters.holograms": "Holograms",
-  "filters.hologramsSub": "Cards other holons placed here",
+  "filters.hologramsSub": "Cards other {@holons} placed here",
   "filters.sortBy": "Sort by",
   "filters.aria": {
     one: "Filters — {n} filter on",
@@ -449,10 +453,9 @@ export const en = {
   "tabbar.suggestions": "Search suggestions",
   "tabbar.categories": "Categories",
   "tabbar.people": "People",
-  "tabbar.holons": "Holons",
+  "tabbar.holons": "{@Holons}",
   "tabbar.removeFilter": "Remove filter {name}",
   "tabbar.menu": "Menu",
-  "tabbar.holonSettings": "Holon settings",
   "tabbar.login": "Log in",
   "tabbar.views": "Views",
   "tabbar.pinnedHint": "Pinned — hold to edit the tabs, drag to reorder",
@@ -468,21 +471,22 @@ export const en = {
   "tabbar.pinView": "Pin this view",
 
   // Dock (the hub's window closed into a circle per visited hub)
-  "dock.close": "Close this hub",
-  "dock.boards": "Your hubs",
+  "dock.close": "Close this {@holon}",
+  "dock.boards": "Your {@holons}",
   "dock.open": "Open {name}",
   "dock.flows": "Flows between {a} and {b}",
   "dock.flowsTo": "{a} → {b}: {lenses}",
   "dock.noFlows": "Linked — no flows open yet",
+  "dock.tapToTune": "Tap to tune what flows",
   "dock.delete": "Remove {name}",
-  "dock.add": "Add a hub",
-  "dock.addPlaceholder": "Holon id, name, npub, address, or link",
-  "dock.addInvalid": "That doesn't name a holon.",
+  "dock.add": "Add {@a_holon}",
+  "dock.addPlaceholder": "{@Holon} id, name, npub, address, or link",
+  "dock.addInvalid": "That doesn't name {@a_holon}.",
   // The map's search box: hubs — the dock's own, this deploy's labels, the
   // registry, or anything pasted whole — and places by name. A hub already
   // docked is flown to, not re-added; a place is flown to.
-  "dock.searchPlaceholder": "Find a hub or a place…",
-  "dock.searchHubs": "Hubs",
+  "dock.searchPlaceholder": "Find {@a_holon} or a place…",
+  "dock.searchHubs": "{@Holons}",
   "dock.searchPlaces": "Places",
   "dock.searchDocked": "on your dock",
   "dock.searchNone": "Nothing by that name.",
@@ -493,31 +497,31 @@ export const en = {
   "dock.addToFailed": "That couldn't be added to this cell.",
   "dock.addToSave": "Add it",
   "dock.addToTagHint": "Type a tag, then Enter",
-  "dock.addHere": "Add a hub here",
-  "dock.addHereTaken": "That hub already has a place — it stays where it is.",
+  "dock.addHere": "Add {@a_holon} here",
+  "dock.addHereTaken":
+    "That {@holon} already has a place — it stays where it is.",
   "dock.hint":
-    "Tap a circle to open its hub, hold one to remove it — drag one onto another to open their flows.",
+    "Tap a circle to open its {@holon}, hold one to remove it — drag one onto another to open their flows.",
   "dock.deck": "Holosphere",
   "dock.map": "Geosphere",
-  "dock.drawer": "Hubs",
-  "dock.drawerSearch": "Search your hubs…",
-  "dock.drawerEmpty": "Every hub you have is in the sky.",
-  "dock.drawerNone": "No hub by that name.",
-  "dock.drawerDrag": "Drag {name} onto a place or a hub",
+  "dock.drawer": "{@Holons}",
+  "dock.drawerSearch": "Search your {@holons}…",
+  "dock.drawerEmpty": "Every {@holon} you have is in the sky.",
+  "dock.drawerNone": "No {@holon} by that name.",
+  "dock.drawerDrag": "Drag {name} onto a place or {@a_holon}",
+  "dock.placeOnMap": "Place {name} on the map",
   "dock.skyEmptyHint":
-    "Your hubs are in the drawer. Drag one onto a place, or onto a hub that has one, to bring it up here.",
-  // The front door is the map: a bare sky says so and points at /about.
-  "dock.about": "About hubs",
-  "dock.emptyTitle": "No hubs here yet",
+    "Your {@holons} are in the drawer. Drag one onto a place, or onto {@a_holon} that has one, to bring it up here.",
+  // The front door is the map: a bare sky says so.
+  "dock.emptyTitle": "No {@holons} here yet",
   "dock.emptyBody":
-    "This is the hubs network. Add a hub with the + below, or start one.",
-  "dock.emptyStart": "What is a hub? Start one",
+    "This is the {@holons} network. Add {@a_holon} with the + below, or start one.",
   // Removing a hub that brought its federation partners onto this dock.
   "dock.removeTitle": "Remove {name}?",
   "dock.removeBody":
-    "It brought {n} partner hubs onto this screen that you never opened. Nothing changes on the network either way.",
+    "It brought {n} partner {@holons} onto this screen that you never opened. Nothing changes on the network either way.",
   "dock.removeWith": "Remove it and its {n} partners",
-  "dock.removeOnly": "Remove only this hub",
+  "dock.removeOnly": "Remove only this {@holon}",
   "dock.mapUnavailable":
     "Showing the earth needs a Mapbox token — set VITE_MAPBOX_TOKEN to turn it on.",
 
@@ -532,13 +536,62 @@ export const en = {
   "map.detailEmpty": "No further details.",
   // The map read as a list: the dock's hubs, then the lens's records in view.
   "dock.people": "People",
-  "dock.personOpen": "{name}, hubs: {n}",
-  "dock.personHubs": "Hubs: {n}",
+  "dock.personOpen": "{name}, {@holons}: {n}",
+  "dock.personHubs": "{@Holons}: {n}",
   "dock.peopleCapped": "Showing the {n} most connected of {total} people",
-  "dock.peopleLoading": "Looking up who is in these hubs…",
-  "dock.peopleEmpty": "Nobody is listed in these hubs yet.",
-  "dock.searchPeople": "Find a person or a hub…",
-  "dock.peopleNoMatch": "No one and no hub by that name.",
+  "dock.peopleLoading": "Looking up who is in these {@holons}…",
+  "dock.peopleEmpty": "Nobody is listed in these {@holons} yet.",
+  "dock.searchPeople": "Find a person or {@a_holon}…",
+  "dock.peopleNoMatch": "No one and no {@holon} by that name.",
+  // The noosphere: federation as circles within circles (NoosphereView).
+  "dock.noosphere": "Noosphere",
+  "noo.root": "Noosphere",
+  "noo.trail": "Where you are",
+  "noo.up": "Back out to {name}",
+  "noo.open": "Open board",
+  "noo.reaching": "Reaching {name}",
+  "noo.sending": "{name} sends",
+  "noo.nothingReaches": "Nothing flows in yet.",
+  "noo.inFrom": "from {names}",
+  "noo.outTo": "to {names}",
+  "noo.nothingSent": "Nothing is sent yet.",
+  "noo.partners": { one: "{n} partner", other: "{n} partners" },
+  "noo.lonely": "No federation partners yet.",
+  "noo.loading": "Reading the federation…",
+  "noo.cameFrom": "where you came from",
+  "noo.in": "in",
+  "noo.out": "out",
+  "noo.enter": "Travel into {name}",
+  "noo.tapBack": "Tap to go back out",
+  "noo.place": "A place",
+  "noo.wayBack": "the way back",
+  "noo.hubs": { one: "{n} {@holon}", other: "{n} {@holons}" },
+  "noo.loadingShort": "reading…",
+  "noo.quietLink": "quiet link",
+  "noo.nIn": "{n} in",
+  "noo.nOut": "{n} out",
+  "noo.manage": "Tune what flows with {name}",
+  "noo.pair": "{a} & {b}",
+  "noo.nothing": "nothing",
+  "noo.tapTune": "Tap to tune what flows",
+  "noo.tapEnter": "Tap to travel into it",
+  "noo.tiesLegend": "gold lines: partners of each other",
+  "noo.hint":
+    "Tap a circle to travel in · double-click or hold it to open its board · tap a channel to tune what flows · tap outside to rise",
+  "noo.hintRoot":
+    "Each circle is one of your {@holons}, holding its own federation — tap to travel in, double-click or hold to open its board",
+  "noo.sheetOpen": "Show the details",
+  "noo.sheetClose": "Hide the details",
+  "noo.legendInShort": "reaching it",
+  "noo.legendOutShort": "sent from it",
+  "noo.lensesIn": { one: "{n} lens reaching", other: "{n} lenses reaching" },
+  "noo.lensesOut": "{n} sent",
+  "noo.onlyWith": "{name} federates only with {other}.",
+  "noo.ties": "Gold lines join {@holons} federated with each other.",
+  "noo.circles": "Partners",
+  "noo.openHint": "Double-click or hold to open its board",
+  "noo.holoHint":
+    "In the Holosphere, tap the glow between two {@holons} to tune what flows between them.",
   "map.field.status": "Status",
   // `id` is only ever asked for by the library, where the id IS the name.
   "map.field.id": "Name",
@@ -559,10 +612,10 @@ export const en = {
   "map.field.borrower": "Borrowed by",
   "map.field.tags": "Tags",
   "map.field.link": "Link",
-  "map.field.origin": "From holon",
+  "map.field.origin": "From {@holon}",
   "source.open": "Open {name}",
   // Confirmation before a provenance badge leaves the shown board.
-  "switch.title": "Go to another hub?",
+  "switch.title": "Go to another {@holon}?",
   "switch.lead": "This came from {to}.",
   "switch.body":
     "{from} closes back into the map, then {to} opens in its place. Nothing here changes.",
@@ -577,7 +630,7 @@ export const en = {
   "lens.projects": "Projects",
   "lens.currencies": "Currencies",
   "lens.people": "People",
-  "lens.holons": "Holons",
+  "lens.holons": "{@Holons}",
   "lens.events": "Events",
   "lens.library": "Library",
   "lens.roles": "Roles",
@@ -624,14 +677,14 @@ export const en = {
   "tglink.group": "A group chat",
   "tglink.groupHint": "Add the bot to the group, or pick a group it is in",
   "tglink.personal": "My chat with the bot",
-  "tglink.personalHint": "Your personal hub",
+  "tglink.personalHint": "Your personal {@holon}",
   "tglink.waiting": "Waiting for the bot…",
   "tglink.waitingBody": "Tap the link in Telegram as an admin of the chat.",
   "tglink.confirmTitle": "Link “{title}”?",
   "tglink.confirm": "Link it",
   "tglink.cancel": "Cancel",
   "tglink.failed": "Could not link — {reason}",
-  "hub.hereTitleKey": "New hub",
+  "hub.hereTitleKey": "New {@holon}",
   "hub.hereBodyKey": "Made with your key, right now — no Telegram needed.",
   "login.nostrLead": "Sign in with your key",
   "login.orOther": "or sign in another way",
@@ -660,13 +713,37 @@ export const en = {
   "menu.notSignedIn": "Not signed in",
   "menu.dashboard": "Open full dashboard",
   "menu.settings": "Settings",
-  "menu.myHolon": "Open my holon",
-  "menu.homePage": "Show the home page",
+  "menu.myHolon": "My {@holon}",
   "menu.logout": "Log out",
-  "menu.signingAs": "Signing as {key}",
   "menu.loginTelegram": "Log in with Telegram",
   "menu.login": "Sign in",
   "menu.install": "Add to Home Screen",
+  "menu.myHolonOpen": {
+    one: "{n} open task or event",
+    other: "{n} open tasks and events",
+  },
+  "menu.myHolonClear": "Nothing open — all clear",
+  "menu.youAreHere": "You are here",
+  "menu.keyTitle": "Your key",
+  "menu.keyFromTelegram": "Comes with your Telegram login",
+  "menu.keyRemembered": "Remembered on this device with your PIN",
+  "menu.keyThisSession": "For this visit only — gone when you close",
+  "menu.copyNpub": "Copy your public key (npub)",
+  "menu.copied": "Public key copied",
+  "menu.copyFailed": "Couldn’t copy — this browser blocked the clipboard",
+  "menu.backupKey": "Back up secret key",
+  "menu.backupConfirm": "Tap again to copy your secret key. Never share it.",
+  "menu.backupCopied": "Secret key copied — keep it somewhere safe and private",
+  "menu.linkTelegram": "Link to my Telegram",
+  "menu.linkTelegramOpen": "Open Telegram to finish linking",
+  "menu.forgetKey": "Forget on this device",
+  "menu.forgot": "This device no longer remembers your key",
+  "menu.thisBoard": "This board",
+  "menu.star": "Star this {@holon}",
+  "menu.starred": "Starred",
+  "menu.starHint": "Opens by itself when you open Holons",
+  "menu.starDone": "{name} now opens by itself",
+  "menu.starRemoved": "Star removed — Holons opens on the map",
   "install.hint": "Open {name} like an app — one tap, full screen.",
   "install.iosShare": "Tap the Share button in the browser’s toolbar",
   "install.iosAdd": "Scroll down and choose “Add to Home Screen”",
@@ -680,7 +757,7 @@ export const en = {
   "complete.leadHosts":
     "This event names its hosts, so they get the credit. Untick anyone who did not host.",
   "complete.lead":
-    "Confirm who took part — they'll be credited in the holon's accounting.",
+    "Confirm who took part — they'll be credited in {@the_holon}'s accounting.",
   "complete.addMemberAria": "Add a member",
   "complete.addMember": "Add a member…",
   "complete.confirm": "Complete",
@@ -689,10 +766,11 @@ export const en = {
   "settings.title": "Kiosk settings",
   "settings.groupScreen": "This screen",
   "settings.groupLook": "Look",
-  "settings.groupHub": "This hub",
-  "settings.holon": "Holon",
-  "settings.holonPlaceholder": "holon id",
-  "settings.unpinHolon": "Clear — show the home page",
+  "settings.groupHub": "This {@holon}",
+  "settings.holonName": "Name",
+  "settings.holonId": "{@Holon} id",
+  "settings.holonNameInvalid": "That is not a name — nothing changed",
+  "settings.holonNameFailed": "Couldn’t rename {@the_holon} — try again",
   "settings.logo": "Logo",
   "settings.logoSub": "— optional; the name shows as text otherwise",
   "settings.logoPreview": "Logo preview",
@@ -710,7 +788,7 @@ export const en = {
   "settings.light": "Light",
   "settings.dark": "Dark",
   "settings.language": "Language",
-  "settings.languageSub": "— Auto follows the holon's language",
+  "settings.languageSub": "— Auto follows {@the_holon}'s language",
   "settings.statusConfirmTitle": "Turn on the Status board?",
   "settings.statusConfirmAccept": "We understand — turn it on",
   "settings.valueEquation": "Value equation",
@@ -721,10 +799,10 @@ export const en = {
   "settings.eqReset": "Reset to defaults",
   "settings.eqZero": "Zero every weight",
   "settings.eqProposeHint":
-    "Tap + or − to propose new weights. Nothing changes until the holon votes. Votes close at the new moon, {date}.",
+    "Tap + or − to propose new weights. Nothing changes until {@the_holon} votes. Votes close at the new moon, {date}.",
   "settings.eqWhyMoon": "Why wait for the moon?",
   "settings.eqWhyMoonBody":
-    "So everyone gets a chance to vote, not just whoever is around. One change at a time, together, in a rhythm the whole holon shares. Nobody holds the switch: the votes decide, and every screen counts them the same way.",
+    "So everyone gets a chance to vote, not just whoever is around. One change at a time, together, in a rhythm the whole {@holon} shares. Nobody holds the switch: the votes decide, and every screen counts them the same way.",
   "settings.eqStanding": "{yes} yes, {no} no",
   "settings.eqClosesIn": {
     one: "closes in {n} day",
@@ -739,7 +817,7 @@ export const en = {
   "settings.eqDiscard": "Discard",
   "settings.eqOnTheTable": "On the table",
   "settings.eqProposed":
-    "On the table. The holon has until the new moon ({date}) to vote.",
+    "On the table. {@The_holon} has until the new moon ({date}) to vote.",
   "settings.eqProposeFailed": "Could not propose the change: {reason}",
   "settings.eqLoading": "Loading the equation…",
   "settings.eqLess": "Lower the weight for {metric}",
@@ -754,11 +832,12 @@ export const en = {
   "settings.eqCurrencyStartsAtZero":
     "New currencies start at 0 — nothing changes until the group raises the weight.",
   "settings.location": "Location",
-  "settings.locationSub": "— the H3 cell this holon claims on the shared map",
-  "settings.holonColor": "Hub colour",
+  "settings.locationSub":
+    "— the H3 cell this {@holon} claims on the shared map",
+  "settings.holonColor": "{@Holon} colour",
   "settings.holonColorSub":
-    "— the colour of this hub, its circle in the holosphere, its hexagon on the geosphere",
-  "settings.holonColorPick": "Choose the hub colour",
+    "— the colour of this {@holon}, its circle in the holosphere, its hexagon on the geosphere",
+  "settings.holonColorPick": "Choose {@the_holon} colour",
   "settings.holonColorAuto": "Automatic",
   "settings.holonColorIsAuto": "automatic",
   "settings.holonColorFailed": "Could not save the colour.",
@@ -768,22 +847,22 @@ export const en = {
   // The home hex as a federation partner: which lenses reach the map, and
   // how far up the scalespace they travel.
   "members.title": "Members",
-  "members.sub": "— who is linked to this hub",
+  "members.sub": "— who is linked to this {@holon}",
   "members.youLinked":
-    "Your key {key} is linked to this hub: your changes count for everyone.",
+    "Your key {key} is linked to this {@holon}: your changes count for everyone.",
   "members.youNotLinked":
-    "Your key {key} isn’t linked to this hub yet, so only this screen sees your changes. Ask below — the ask is signed by your key, nothing else is needed.",
+    "Your key {key} isn’t linked to this {@holon} yet, so only this screen sees your changes. Ask below — the ask is signed by your key, nothing else is needed.",
   "members.youNotLinkedTelegram":
     "Or link this key to your Telegram account, so the bot links it in every chat you are in.",
   "members.linkTelegram": "Link via Telegram",
   "members.linkTelegramOpen": "Open Telegram and tap Start",
   "members.linkTelegramHint":
-    "The proof is published from this device; the bot checks it and links the key to your account. Your hubs link it on their next refresh.",
+    "The proof is published from this device; the bot checks it and links the key to your account. Your {@holons} link it on their next refresh.",
   "members.linkTelegramFailed": "Couldn't publish the proof: {reason}",
   "members.youNoKey":
-    "You are signed in without a key, so nothing links you to this hub. Sign in with your key (nsec, passkey or wallet).",
+    "You are signed in without a key, so nothing links you to this {@holon}. Sign in with your key (nsec, passkey or wallet).",
   "members.youNoKeyTelegram":
-    "Your Telegram login did not bring a key, so nothing links you to this hub. Whoever runs this screen has to set up key derivation (NOSTR_DERIVATION_SECRET).",
+    "Your Telegram login did not bring a key, so nothing links you to this {@holon}. Whoever runs this screen has to set up key derivation (NOSTR_DERIVATION_SECRET).",
   "members.linkMe": "Link my key",
   "members.asked":
     "Asked — an admin links your key; this page updates when they do.",
@@ -792,7 +871,7 @@ export const en = {
   "members.signIn": "Sign in with a key",
   "members.chat": "Telegram chat",
   "members.chatBorn":
-    "This hub started in a Telegram chat and stays linked to it: the chat’s members are linked here.",
+    "This {@holon} started in a Telegram chat and stays linked to it: the chat’s members are linked here.",
   "members.chatLinkedHint":
     "A linked chat’s members are linked here, and its boards show here.",
   "members.chatLink": "Link a Telegram chat",
@@ -810,30 +889,31 @@ export const en = {
   "members.addAdmin": "Link as admin",
   "members.remove": "Unlink {key}",
   "members.failed": "Could not change that link — {reason}",
-  "members.invite": "Invite people with this hub’s link:",
+  "members.invite": "Invite people with this {@holon}’s link:",
   "members.inviteCopy": "Copy link",
   "members.noKey":
-    "This hub has no key of its own yet, so nothing can be linked to it and every write counts.",
+    "This {@holon} has no key of its own yet, so nothing can be linked to it and every write counts.",
   "members.noKeyBot":
-    "This hub started in Telegram; its bot gives it a key the first time it runs with signing on. Until then nothing can be linked to it.",
+    "This {@holon} started in Telegram; its bot gives it a key the first time it runs with signing on. Until then nothing can be linked to it.",
   "members.noKeyOpen":
-    "This hub has no key of its own yet. Start it with yours: you become its first admin.",
+    "This {@holon} has no key of its own yet. Start it with yours: you become its first admin.",
   "members.noKeyNeedsKey":
-    "This hub has no key of its own yet. Sign in with your own key (nsec, passkey or wallet) to start it.",
-  "members.start": "Start this hub with my key",
-  "members.started": "Started: your key now signs for this hub.",
-  "members.startFailed": "Could not start this hub — {reason}",
-  "menu.linked": "Your key is linked to this hub",
+    "This {@holon} has no key of its own yet. Sign in with your own key (nsec, passkey or wallet) to start it.",
+  "members.start": "Start this {@holon} with my key",
+  "members.started": "Started: your key now signs for this {@holon}.",
+  "members.startFailed": "Could not start this {@holon} — {reason}",
+  "menu.linked": "Your key is linked to this {@holon}",
   "menu.notLinked":
-    "Not linked — your key isn’t linked to this hub yet, so only this screen sees your changes",
-  "menu.linkMe": "Link my key to this hub",
-  "menu.linkAsked": "Asked. An admin of the hub links your key.",
-  "menu.unlinkMe": "Unlink my key from this hub",
-  "menu.unlinked": "Told the hub you are leaving. An admin unlinks your key.",
+    "Not linked — your key isn’t linked to this {@holon} yet, so only this screen sees your changes",
+  "menu.linkMe": "Link my key to this {@holon}",
+  "menu.linkAsked": "Asked. An admin of {@the_holon} links your key.",
+  "menu.unlinkMe": "Unlink my key from this {@holon}",
+  "menu.unlinked":
+    "Told {@the_holon} you are leaving. An admin unlinks your key.",
   "layout.notLinked":
-    "Your key isn’t linked to this hub yet — your changes stay on this screen until an admin links it (Settings → Members).",
+    "Your key isn’t linked to this {@holon} yet — your changes stay on this screen until an admin links it (Settings → Members).",
   "tglink.confirmBody":
-    "The chat’s members are linked here, the bot’s key becomes an admin of this hub, and both boards show each other’s items.",
+    "The chat’s members are linked here, the bot’s key becomes an admin of this {@holon}, and both boards show each other’s items.",
   "tglink.done": "Linked. The chat’s members appear as the bot syncs them.",
   "audience.locked": "Private",
   "audience.open": "Public",
@@ -843,10 +923,10 @@ export const en = {
   "audience.pending": "{n} readers, on its way to them",
   "audience.noReaders": "no readers yet — nothing signed says who is in it",
   "audience.add": "Share with…",
-  "audience.federated": "Federated holons",
-  "audience.search": "Any holon",
-  "audience.searchPlaceholder": "Name or holon id",
-  "audience.noHits": "No holon by that name.",
+  "audience.federated": "Federated {@holons}",
+  "audience.search": "Any {@holon}",
+  "audience.searchPlaceholder": "Name or {@holon} id",
+  "audience.noHits": "No {@holon} by that name.",
   "audience.remove": "Stop sharing with {name}",
   "audience.adminCanUnlock":
     "Locked by another key. As an admin you can make it public, or take it over and share it yourself.",
@@ -857,11 +937,11 @@ export const en = {
     "The whole board is locked; its cards follow it. Change that from the board settings.",
   "audience.failed": "Could not change that — try again.",
   "audience.whenLockLens":
-    "Making it private seals every card on this board — the ones already here and every new one — so only this hub's members and the holons you share it with can read them. What was read before stays read.",
+    "Making it private seals every card on this board — the ones already here and every new one — so only this {@holon}'s members and {@the_holons} you share it with can read them. What was read before stays read.",
   "audience.whenUnlockLens":
     "Making it public rewrites every card on this board in the clear, old and new, for anyone to read.",
   "audience.whenLockCard":
-    "Making it private seals this card and every change to it, so only this hub's members and the holons you share it with can read it. What was read before stays read.",
+    "Making it private seals this card and every change to it, so only this {@holon}'s members and {@the_holons} you share it with can read it. What was read before stays read.",
   "audience.whenUnlockCard":
     "Making it public rewrites this card in the clear, and its changes stay public, for anyone to read.",
   "audience.makePrivate": "Make private",
@@ -869,8 +949,8 @@ export const en = {
   "privacy.who": "Who can read {lens}",
   "settings.onMap": "On the map",
   "settings.onMapSub":
-    "— what this holon puts on the shared map, and how far out it can be seen",
-  "settings.onMapLink": "Put this holon on the map",
+    "— what this {@holon} puts on the shared map, and how far out it can be seen",
+  "settings.onMapLink": "Put this {@holon} on the map",
   "settings.onMapUnlink": "Stop placing on the map",
   "settings.onMapNeedsHex": "Set a location first to place items on the map.",
   "settings.onMapReach": "Visible from",
@@ -893,9 +973,9 @@ export const en = {
   "fed.loading": "Loading…",
   "fed.loadError": "Could not load federation — try again.",
   "fed.adminOnly":
-    "Only an admin of this holon changes who it federates with and which lenses flow; your taps here would not count.",
+    "Only an admin of this {@holon} changes who it federates with and which lenses flow; your taps here would not count.",
   "fed.arrowHint":
-    "Tap the arrow toward the holon items should travel to. Tap it again to close that way.",
+    "Tap the arrow toward {@the_holon} items should travel to. Tap it again to close that way.",
   "fed.notLinked": "Not federated — tap an arrow to open the first flow.",
   "fed.flowsOpen": { one: "{n} flow open", other: "{n} flows open" },
   "fed.all": "All",
@@ -903,7 +983,7 @@ export const en = {
   "fed.receiveAria": "{lens}: receive from {b} into {a}",
   "fed.tapAgainUnlink": "Tap again to unlink",
   "fed.unlink": "Unlink {name}",
-  "fed.linkError": "Could not link that holon — try again.",
+  "fed.linkError": "Could not link that {@holon} — try again.",
   "fed.changeError": "Change didn't save — try again.",
   "fed.keyShare": "Share {lens} with {name}",
   "fed.keyRevoke": "Stop sharing {lens} with {name}",
@@ -931,8 +1011,8 @@ export const en = {
     one: "{name} offers {n} flow you have not taken — the faint arrow.",
     other: "{name} offers {n} flows you have not taken — the faint arrows.",
   },
-  "fed.askLink": "{name} asks to federate with this holon.",
-  "fed.askUnlink": "{name} ended its link. Drop this holon's side too?",
+  "fed.askLink": "{name} asks to federate with this {@holon}.",
+  "fed.askUnlink": "{name} ended its link. Drop this {@holon}'s side too?",
   "fed.askUnlinkShort": "ended its link — drop ours too?",
   "fed.askReceive": "You would receive: {lenses}",
   "fed.askSend": "You would send: {lenses}",
@@ -945,7 +1025,7 @@ export const en = {
   "fed.openPair": "Open the flows",
   "fed.requestsTitle": "Federation requests",
   "fed.requestsSub":
-    "Other holons asking to link. Accepting sets this holon's side; each side's admins decide their own.",
+    "Other {@holons} asking to link. Accepting sets this {@holon}'s side; each side's admins decide their own.",
   "fed.requestsBadge": {
     one: "{n} federation request",
     other: "{n} federation requests",
@@ -954,9 +1034,9 @@ export const en = {
   // Location (hex) picker
   "hex.aria": "Pick a location",
   "hex.kicker": "Claim your cell",
-  "hex.title": "Where does this holon stand?",
+  "hex.title": "Where does this {@holon} stand?",
   "hex.hint":
-    "Tap the hex your holon lives in — zoom out for a wider, more private cell.",
+    "Tap the hex your {@holon} lives in — zoom out for a wider, more private cell.",
   "hex.searchPlaceholder": "Search an address or place…",
   "hex.searching": "searching…",
   "hex.locating": "Locating…",
@@ -983,7 +1063,7 @@ export const en = {
   "hex.moveBody":
     "This hexagon becomes its home, and its beacon lands here from now on.",
   "hex.moveConfirm": "Move home here",
-  "hex.claimed": "Location claimed — this holon is on the map.",
+  "hex.claimed": "Location claimed — this {@holon} is on the map.",
   "hex.saveError": "Could not save the location — try again.",
 
   // Detail modal (task / event / library thing)
@@ -1000,11 +1080,18 @@ export const en = {
   "detail.completeFailed": "Could not complete.",
   "detail.deleteConfirm": 'Delete "{title}"? This can\'t be undone.',
   "detail.hideConfirm":
-    'Hide "{title}" from this hub? It belongs to another holon and stays there — this only removes it from your view.',
+    'Hide "{title}" from this {@holon}? It belongs to another {@holon} and stays there — this only removes it from your view.',
   "detail.thisTask": "this task",
   "detail.deleteFailed": "Could not delete — try again.",
   "detail.hideFailed": "Could not hide — try again.",
   "detail.joinFailed": "Could not join.",
+  "detail.joinHeld":
+    "Your key isn't linked in {holon} yet — your join wouldn't count. Link your key or ask a member to add you.",
+  "detail.leaveHeld": "Ask a member of {holon} to take you off.",
+  "detail.editHeld":
+    "This card lives in {holon}, which doesn't accept your key — ask a member there to change it.",
+  "detail.added": "Added {date}",
+  "detail.addedBy": "Added {date} · by {name}",
   "detail.overlaps": "Overlaps {who}'s booking ({start} → {end}).",
   "detail.someone": "someone",
   "detail.invalidRange": "The end can't be before the start.",
@@ -1019,7 +1106,7 @@ export const en = {
   "detail.overdueWith": "Overdue · {who}",
   "detail.untilWhen": "until {when}",
   "detail.dueWhen": "due back {when}",
-  "detail.viaHolonTitle": "Booked from a federated holon",
+  "detail.viaHolonTitle": "Booked from a federated {@holon}",
   "detail.availableCap": "Available",
   "detail.value": "Value",
   "detail.booked": "Booked",
@@ -1058,7 +1145,7 @@ export const en = {
   "detail.chatPlaceholder": "Write a message",
   "detail.chatSend": "Send",
   "detail.chatLogin": "Log in to write",
-  "detail.chatMembersOnly": "Only members of this holon can write here",
+  "detail.chatMembersOnly": "Only members of this {@holon} can write here",
   "detail.chatPrivate": "Private cards have no chat yet",
   "detail.chatFailed": "Could not send",
   "detail.board": "Whiteboard",
@@ -1145,7 +1232,7 @@ export const en = {
   "detail.suggestSteps": "Suggest",
   "detail.addStep": "Add a step",
   "detail.addOwnStepPlaceholder": "Add your own step…",
-  "detail.joined": "Joined",
+  "detail.joined": "In",
   "detail.done": "Done",
   "detail.completed": "Completed",
   "detail.details": "Details",
@@ -1275,115 +1362,37 @@ export const en = {
   "voice.plan.failed": "Failed",
 
   // ── Add a hub — the sheet behind the dock's "+" ─────────────────────────
-  "hub.addTitle": "Add a hub",
-  "hub.addHereTitle": "Add a hub here",
-  "hub.haveTitle": "I already have a hub",
+  "hub.addTitle": "Add {@a_holon}",
+  "hub.addHereTitle": "Add {@a_holon} here",
+  "hub.haveTitle": "I already have {@a_holon}",
   "hub.haveBody": "Paste its link or its id.",
-  "hub.newTitle": "Start a new hub",
+  "hub.newTitle": "Start a new {@holon}",
   "hub.newBody": "For yourself, or for a group — through Telegram.",
   "hub.newLead":
-    "A hub is a Telegram chat. Pick which: Telegram opens, the bot answers there, and the hub appears here by itself.",
-  "hub.personal": "A hub for me",
+    "{@A_holon} is a Telegram chat. Pick which: Telegram opens, the bot answers there, and {@the_holon} appears here by itself.",
+  "hub.personal": "{@A_holon} for me",
   "hub.personalHint": "A private chat with the bot",
-  "hub.group": "A hub for a group",
+  "hub.group": "{@A_holon} for a Telegram group",
   "hub.groupHint": "Add the bot to a group, or create one",
   "hub.waiting": "Waiting for the bot…",
   "hub.waitingBody":
-    "Once the bot has answered in Telegram, come back to this tab: the hub opens on its own.",
+    "Once the bot has answered in Telegram, come back to this tab: {@the_holon} opens on its own.",
   "hub.orPaste": "Or paste what the bot answered",
-  "hub.pasteHint": "Run /id in the hub's chat if you need it again.",
+  "hub.pasteHint": "Run /id in {@the_holon}'s chat if you need it again.",
   "hub.open": "Add it",
   "hub.back": "Back",
 
-  "hub.hereTitle": "Start a hub here",
+  "hub.hereTitle": "Start {@a_holon} here",
   "hub.hereBody": "No Telegram: your key starts it, right now.",
   "hub.hereLead":
-    "A hub of your own, started with your key: you are its first admin, and you link others by their public key.",
+    "{@A_holon} of your own, started with your key: you are its first admin, and you link others by their public key.",
   "hub.hereName": "Name",
-  "hub.hereNamePlaceholder": "What is this hub called?",
+  "hub.hereNamePlaceholder": "What is this {@holon} called?",
   "hub.hereCreate": "Start it",
   "hub.hereNeedsKey":
     "Founding needs a key of your own. Sign in with an nsec, a passkey or a wallet first.",
   "hub.hereSignIn": "Sign in with a key",
-  "hub.hereFailed": "Could not found the hub — {reason}",
-  // Home / landing page — the front door. Short on purpose: what a hub is, the
-  // two ways to start one, and how hubs connect. The long read lives at
-  // docs.holons.io. The bot is never named here — a fork points
-  // VITE_TELEGRAM_BOT_USERNAME elsewhere and every deep link follows.
-  "home.metaTitle": "Hubs Network — a hub for every group",
-  "home.metaDescription":
-    "Every group is a hub: its own tools, on its own terms, connected to the hubs it trusts. Start one in Telegram.",
-
-  "home.artNetAlt":
-    "Five hubs drawn as circles of members, linked to each other, one at the centre.",
-  "home.artConnectAlt":
-    "Two hubs side by side, with things crossing the boundary in both directions.",
-
-  "home.heroTitle": "You are not just visiting. You become a part of it.",
-  "home.heroLead":
-    "Hubs are spaces where people build in the open, across disciplines, for the commons. This is the layer they coordinate on: every group is a hub, with its own tools, on its own terms, connected to the hubs it trusts.",
-
-  "home.personalKicker": "For a person",
-  "home.personalTitle": "Your personal hub",
-  "home.personalBody":
-    "A private chat is a hub of your own: what you are making, what you have, what you need — and everything you take on across the network, in one place.",
-  "home.personalButton": "Open your personal hub",
-  "home.groupKicker": "For a group",
-  "home.groupTitle": "Every group is a hub",
-  "home.groupBody":
-    "Add the bot to any chat group — the one you already use, or a new one. The group itself becomes the hub: nothing to sign up for, nobody to invite twice, nothing to move.",
-  "home.groupButton": "Add the bot to a group",
-  "home.pathsNote":
-    "Both are real hubs, and either can connect to the rest of the network.",
-
-  "home.toolsKicker": "Every hub",
-  "home.toolsTitle": "Its own tools, on its own terms.",
-  "home.toolsLead":
-    "Every hub gets the same set and decides what to use, who can see it, and what counts as a contribution. Not a single app or value system — a constellation of hubs in development with each other.",
-  "home.tool1": "Tasks",
-  "home.tool2": "Calendar",
-  "home.tool3": "Library of things",
-  "home.tool4": "Roles and rotas",
-  "home.tool5": "Lists",
-  "home.tool6": "Offers and needs",
-  "home.tool7": "Expenses and flows",
-  "home.tool8": "A memory of contributions",
-  "home.toolsNote":
-    "This screen is one of them: point it at a hub and it becomes that hub, on the wall by the door.",
-
-  "home.fedKicker": "Connectors",
-  "home.fedTitle": "How hubs connect.",
-  "home.fedP1":
-    "A hub declares trust with another hub, and things cross the boundary: work that needs hands, tools and spaces that could circulate, people moving from hub to hub, needs someone nearby can meet, appreciations that travel with the person who earned them.",
-  "home.fedP2":
-    "Only what each side publishes, in either direction, revocable at any time. No hub gives up governing itself in order to be part of something larger — privacy, self-sovereignty and decentralised power are how the software is built, not a promise about intentions.",
-  "home.fedP3":
-    "We cannot depend on the system we disrupt. We choose to depend on each other instead. As a network.",
-
-  "home.backToMap": "Back to the map",
-  "home.backTitle": "Welcome back.",
-  "home.backLead":
-    "Once the bot is in your chat it posts a link straight to this hub. If you missed it, run the command below in that chat and paste its answer here.",
-  "home.openTitle": "Already have a hub?",
-  "home.openLead": "Paste its link or its id, and this screen becomes its hub.",
-  "home.openHint":
-    "Type this in your hub's chat. The bot answers with the id — paste the whole reply, it will find it.",
-  "home.openPlaceholder": "-1001234567890, or a link to your group",
-  "home.openButton": "Open the hub",
-  "home.openInvalid":
-    "No hub id in there. Run /id in your hub's chat and paste what the bot answers.",
-  "home.openAria": "Hub id or link",
-
-  "home.footerDocs": "Documentation",
-  "home.footerDashboard": "Web dashboard",
-  "home.footerCommunity": "Community chat",
-  "home.footerSource": "Source code",
-  "home.footerSetup": "Set up this screen",
-  "home.footerLicense":
-    "Open source under AGPL-3.0-or-later — local-first, peer-to-peer, no hub depending on anyone else's server.",
-  "home.caretakerNote":
-    "Mounting this on a wall? Settings points the screen at a hub and remembers it on this device — or open the kiosk at /<holon id> to skip the setup entirely.",
-
+  "hub.hereFailed": "Could not found {@the_holon} — {reason}",
   // Shell
   "layout.resync": "Live view stalled — resyncing…",
 
@@ -1402,11 +1411,11 @@ export const en = {
   "draft.unavailable":
     "Drafting needs an AI key on the deploy (ANTHROPIC_API_KEY).",
   // Flows board
-  "flows.loading": "Reading the ledger\u2026",
+  "flows.loading": "Reading the ledger…",
   "flows.empty": "Nothing has moved here yet.",
   "flows.emptyTrack": "Nothing moved in this window.",
   "flows.emptyAllocation": "No members or partners to share with yet.",
-  "flows.hub": "Holon",
+  "flows.hub": "{@Holon}",
   "flows.movementTitle": "Movement",
   "flows.movementAbout": "Where value came from, and where it went.",
   "flows.allocationTitle": "Fund allocation rights",
@@ -1436,7 +1445,6 @@ export const en = {
   "flows.window90": "90 days",
   "flows.windowAll": "All time",
   "flows.settings": "Flows settings",
-  "flows.tabView": "View",
   "flows.unitAbout":
     "One unit for the movement and the people charts. A money currency also sets the balances.",
   "flows.windowWeek": "This week",
@@ -1471,7 +1479,7 @@ export const en = {
   "flows.passed": "Passed on",
   "flows.retained": "Kept",
   "flows.tipRetainedAbout":
-    "Nobody is named for this part, so it stays with the holon.",
+    "Nobody is named for this part, so it stays with {@the_holon}.",
   "flows.cascadeKeeps": "Keeps",
   "flows.cascadePassesTo": "Passes on to",
   "flows.cascadeFrom": "Received through",
@@ -1496,6 +1504,11 @@ export const en = {
   "flows.accountRight": "Your access",
   "flows.accountShare": "{pct}% of the fund",
   "flows.accountOverBy": "Over by",
+  "flows.oneYours": "Yours to direct",
+  "flows.oneOf": "of {right}, your access to the fund",
+  "flows.oneStatement": "Statement",
+  "flows.oneTotal": "Still yours",
+  "flows.oneSource": "See where it comes from",
   "flows.accountVia": "Through",
   "flows.accountNoPot": "Amounts appear once a collective is connected.",
   "flows.claimAction": "Claim",
@@ -1523,7 +1536,7 @@ export const en = {
   "flows.claimNoSigner":
     "Signing is not set up for this login, so a claim cannot be recorded here.",
   "flows.claimsProvisional":
-    "This holon's membership isn't signed yet: who counts is provisional until the bot signs it.",
+    "This {@holon}'s membership isn't signed yet: who counts is provisional until the bot signs it.",
   "flows.claimsReview": "Claims to review",
   "flows.claimAttest": "Attest",
   "flows.claimDispute": "Dispute",
@@ -1629,7 +1642,7 @@ export const en = {
   "balances.add": "Add expense",
   "balances.addLabel": "Add an expense",
   "balances.errAmount": "Enter an amount above zero.",
-  "balances.errDenied": "You can't write to this holon.",
+  "balances.errDenied": "You can't write to this {@holon}.",
   "balances.errSave": "Couldn't save that. Try again.",
   "balances.loginToAdd": "Log in to add an expense or settle up",
   "balances.currency": "Currency",
@@ -1637,6 +1650,40 @@ export const en = {
   "balances.currencyHint": "e.g. eur, chf, hours, credits",
   "balances.allCurrencies":
     "Every currency has its own sheet — there are no exchange rates here.",
+  "flows.tabFlows": "Flows",
+  "flows.walletNoneInUnit":
+    "Nothing of yours in {unit} here — pick another unit above, or All.",
+  "flows.balancesMoneyOnly":
+    "The shared tab is kept in currencies — {unit} has no balance sheet. Pick a currency above.",
+  "balances.periodNote":
+    "Balances count every record; Spent and Recent cover the period picked above.",
+  "balances.noneInPeriod": "Nothing recorded in this period.",
+  "balances.kind": "What this is",
+  "balances.kindExpense": "Expense",
+  "balances.kindFund": "Into the fund",
+  "balances.newFunding": "Fund {@the_holon}",
+  "balances.fundFrom": "From",
+  "balances.fundHint":
+    "Adds this to {holon}’s fund — divided by its split, signed by you as attester.",
+  "balances.fundRecord": "Add to fund",
+  "alloc.mintFromSheet":
+    "To add to the fund, tap + on the Flows board and choose “Into the fund”.",
+  "currencies.title": "Currencies",
+  "currencies.about":
+    "The units this {@holon} keeps accounts in. Listed ones are offered before anyone uses them; ones on recorded expenses stay while a record carries them.",
+  "currencies.edit": "Edit currencies",
+  "currencies.usedIn": "on {n} records",
+  "currencies.usedInOne": "on 1 record",
+  "currencies.unused": "not used yet",
+  "currencies.notListed": "not listed",
+  "currencies.list": "List it",
+  "currencies.remove": "Remove {code}",
+  "currencies.removeUsed": "Take off the list — it stays while records use it",
+  "currencies.add": "Add",
+  "currencies.addHint": "e.g. eur, hour, kg",
+  "currencies.signIn": "Sign in to change the currencies.",
+  "balances.sheetIn":
+    "In {currency} — every currency has its own sheet; pick another in the unit row above.",
   "alloc.settings": "Fund allocation rights settings",
   "alloc.collective": "OpenCollective collective",
   "alloc.collectiveHint": "Slug or a pasted collective URL — empty to unlink",
@@ -1655,15 +1702,15 @@ export const en = {
   "alloc.noPartners": "No federation partners yet — find one below.",
   "alloc.people": "People by zone",
   "alloc.peopleAbout":
-    "Anyone the holon shares with in relationship rather than for tasks. A member placed here counts on both sides.",
+    "Anyone {@the_holon} shares with in relationship rather than for tasks. A member placed here counts on both sides.",
   "alloc.addPerson": "Add a person…",
   "alloc.removePerson": "Remove {name}",
   "alloc.noPeople": "Nobody to place yet.",
-  "alloc.findParty": "Add a partner holon or a person — name or id",
+  "alloc.findParty": "Add a partner {@holon} or a person — name or id",
   "alloc.findNoHits": "Nothing found. A full id works too.",
   "alloc.newPartner": "New partner — linked on save",
   "alloc.kindPerson": "person",
-  "alloc.kindHolon": "holon",
+  "alloc.kindHolon": "{@holon}",
   "alloc.unplaced": "Not placed",
   "alloc.zoneShare": "{pct}%",
   "alloc.zoneShareFund": "{pct}% of the fund",
@@ -1671,7 +1718,7 @@ export const en = {
     "What each zone actually receives, as a share of the whole fund.",
   "alloc.zonesPreview": "Nobody placed yet — the shape the zones would take.",
   "alloc.errSave": "Couldn't save the split. Try again.",
-  "alloc.errDenied": "You can't change this holon's settings.",
+  "alloc.errDenied": "You can't change this {@holon}'s settings.",
   "alloc.split": "Contributors share divided",
   "alloc.splitEquation": "By value equation",
   "alloc.splitCustom": "Custom split",
@@ -1718,13 +1765,7 @@ export const en = {
   "alloc.mintTitle": "What the fund holds",
   "alloc.mintAbout":
     "A harvest, a stock, a grant: what is here to divide, in its own unit. An attester records it; the split divides it and every right is drawn in that unit.",
-  "alloc.mintAmount": "Amount",
-  "alloc.mintUnit": "Unit",
-  "alloc.mintMemo": "What it is",
-  "alloc.mintSource": "From",
   "alloc.mintSourceNone": "—",
-  "alloc.mintRecord": "Add to the fund",
-  "alloc.mintRecorded": "Added {amount} {unit} to the fund.",
   "alloc.mintNotAttester": "Only an attester of this fund can add to it.",
   "alloc.mintNoSigner": "Sign in to add to the fund.",
   "alloc.mintNone": "Nothing has been brought into the fund yet.",
@@ -1734,13 +1775,13 @@ export const en = {
   "alloc.mintStatus.conflict": "Conflict",
   "alloc.mintStatus.rejected": "Not counted",
   "alloc.inboundFrom": "Reaching here from {name}",
-  "alloc.partnerHolonName": "{name} (holon)",
+  "alloc.partnerHolonName": "{name} ({@holon})",
   "vote.title": "Vote",
   "vote.tally": "Yes {yes} · No {no} · Abstain {abstain} · of {total}",
   "vote.passing": "passing",
   "vote.notPassing": "not passing",
   "vote.provisional":
-    "This holon's membership isn't signed yet: who counts is provisional until the bot signs it.",
+    "This {@holon}'s membership isn't signed yet: who counts is provisional until the bot signs it.",
   "vote.yours": "Your vote",
   "vote.signIn": "Sign in to vote",
   "vote.noSigner":
@@ -1762,7 +1803,7 @@ export const en = {
   "alloc.tabRules": "Rules",
   "alloc.tabRulesSummary": "quorum {quorum}",
   "alloc.rulesAbout":
-    "How claims on the fund are judged: who may raise one, who attests, how many attestations count, and what happens when two draw on the same thing. An admin's signed word, kept in the holon's policy log.",
+    "How claims on the fund are judged: who may raise one, who attests, how many attestations count, and what happens when two draw on the same thing. An admin's signed word, kept in {@the_holon}'s policy log.",
   "alloc.rulesAuthors": "Who may claim",
   "alloc.rulesAttesters": "Who attests",
   "alloc.rulesQuorum": "Attestations needed",
@@ -1787,7 +1828,7 @@ export const en = {
     "Signing is not set up for this login, so the rules cannot be set here.",
   "alloc.rulesUnchanged": "These are the rules already in force.",
   "alloc.splitAbout":
-    "Contributors are the people who did the work. Reciprocity zones are the groups and people this holon shares with in relationship.",
+    "Contributors are the people who did the work. Reciprocity zones are the groups and people this {@holon} shares with in relationship.",
   // Stock board (the `stock` lens + REA stock events)
   "tabs.stock": "Stock",
   "pills.shelf": "Shelf",
@@ -1817,7 +1858,7 @@ export const en = {
   "stock.saving": "Saving…",
   "stock.saveFailed": "Couldn't save the item.",
   "stock.nameTaken": "An item with that name is already on the shelf.",
-  "stock.denied": "You can't change this holon's stock.",
+  "stock.denied": "You can't change this {@holon}'s stock.",
   "stock.status.empty": "Empty",
   "stock.status.low": "Low",
   "stock.status.ok": "OK",
@@ -1847,7 +1888,7 @@ export const en = {
   "pills.offersLayout": "Offers layout",
   "offers.reading": "Reading the market…",
   "offers.scale": "Scale",
-  "offers.scale.holon": "This holon",
+  "offers.scale.holon": "This {@holon}",
   "offers.scale.partners": "Federation",
   "offers.cellReading": "reading the cell…",
   "offers.here": "here",
@@ -1931,7 +1972,7 @@ export const en = {
   "offers.share": "Share nearby",
   "offers.shareLead": "Where should this offer travel?",
   "offers.sharePartners": "Federation partners",
-  "offers.sharePartnersHint": "Visible to {n} federated holons",
+  "offers.sharePartnersHint": "Visible to {n} federated {@holons}",
   "offers.sharePartnersNone": "No partners federated yet",
   "offers.shareMap": "Public map (your hex)",
   "offers.shareMapHint": "Lights the Offers layer at your cell and above",
@@ -1992,7 +2033,7 @@ export const en = {
   "offers.acceptFailed": "Couldn't accept.",
   "offers.respond": "Respond",
   "offers.respondLead":
-    "Promise it: an offer for exactly this is listed on your holon and held for them until they choose.",
+    "Promise it: an offer for exactly this is listed on your {@holon} and held for them until they choose.",
   "offers.respondPlaceholder": "Message (optional)",
   "offers.responded": "Response sent.",
   "offers.respondFailed": "Couldn't respond.",
@@ -2079,7 +2120,7 @@ export const en = {
   // ── The Pot: rights committed at each new moon ──────────────────────
   "pot.title": "Pot",
   "pot.none":
-    "This holon holds no value on chain yet. A Pot holds it and divides it by a rights table committed at each new moon.",
+    "This {@holon} holds no value on chain yet. A Pot holds it and divides it by a rights table committed at each new moon.",
   "pot.deploy": "Create a Pot",
   "pot.deploying": "Creating…",
   "pot.reading": "Reading the chain…",
@@ -2153,13 +2194,13 @@ export const en = {
   "onb.ask": "Start the onboarding",
   "onb.asked": "Asked. Your first cards arrive in a moment.",
   "onb.off":
-    "{holon} lets keys in on request: ask, and someone from the holon links yours.",
+    "{holon} lets keys in on request: ask, and someone from {@the_holon} links yours.",
   "onb.offAsk": "Ask to join",
   "onb.offAsked": "Asked.",
   "onb.linked": "Your key is linked to {holon}. Welcome in!",
   "onb.tick": "Done",
   "onb.tickFailed": "Couldn't save that: {reason}",
-  "onb.adminTicks": "Someone from the holon ticks this once it happened.",
+  "onb.adminTicks": "Someone from {@the_holon} ticks this once it happened.",
   "onb.tickInTelegram": "Tick it in your chat with the bot.",
   "onb.profileSave": "Save profile",
   "onb.profileSaved": "Profile saved.",

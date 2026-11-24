@@ -15,6 +15,11 @@
 // by `+layout.svelte`, which owns the holosphere lifecycle.
 
 import { writable, derived, get, type Readable } from "svelte/store";
+import {
+  fillHolonNoun,
+  holonWords,
+  resolveHolonNoun,
+} from "@holons/core/vocabulary";
 import { setResolvedLang, type LangMode } from "../config";
 import type { Msg } from "./types";
 import { en, type MessageKey } from "./en";
@@ -87,14 +92,29 @@ export function formatMsg(msg: Msg, params?: Params): string {
   );
 }
 
+/**
+ * What this deployment calls a holon ("hub" on hubs.network, "holon" on
+ * holons.io, …): `VITE_HOLON_NOUN` in the root `.env`, else the serving host.
+ * Catalog copy writes `{@holon}`, `{@a_holon}`, … and the translator fills
+ * them (see @holons/core/vocabulary).
+ */
+export const HOLON_NOUN = resolveHolonNoun({
+  setting: import.meta.env.VITE_HOLON_NOUN as string | undefined,
+  host: typeof location !== "undefined" ? location.hostname : null,
+});
+
 /** Pure translator factory — exported for tests; falls back to English per key. */
-export function makeTranslator(l: Lang): Translator {
+export function makeTranslator(l: Lang, noun: string = HOLON_NOUN): Translator {
   const cat = CATALOGS[l];
-  return (key, params) => formatMsg(cat[key] ?? en[key], params);
+  const words = holonWords(noun, l);
+  return (key, params) =>
+    fillHolonNoun(formatMsg(cat[key] ?? en[key], params), words);
 }
 
 /** Reactive translator: `{$t("tabs.tasks")}` in markup re-renders on switch. */
-export const t: Readable<Translator> = derived(lang, makeTranslator);
+// Not `derived(lang, makeTranslator)`: derived hands its callback `set` as a
+// second argument, which would land in `noun`.
+export const t: Readable<Translator> = derived(lang, (l) => makeTranslator(l));
 
 /**
  * Imperative snapshot for .ts call sites (toasts, errors) — call at event

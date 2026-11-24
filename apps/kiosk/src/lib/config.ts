@@ -5,7 +5,7 @@
 // here, in priority order so a caretaker can re-point the screen without a
 // rebuild — or from the in-app Settings panel, which writes the same keys:
 //
-//   holon : ?holon=<id>  →  URL path /<id|label>  →  subdomain map (holons.ts)  →  Settings / localStorage  →  VITE_KIOSK_HOLON  →  (unset → setup)
+//   holon : ?holon=<id>  →  URL path /<id|label>  →  subdomain map (holons.ts)  →  the starred holon (localStorage)  →  VITE_KIOSK_HOLON  →  (unset → setup)
 //   app   : ?app=<name>  →  Settings / localStorage  →  VITE_KIOSK_APP    →  "Holons"
 //
 // The kiosk reads PRODUCTION by default: the app namespace falls back to
@@ -240,14 +240,14 @@ export function resolveRelays(): string[] {
 /** Resolve the holon id this kiosk displays, or null if not configured. */
 export function resolveHolonId(): string | null {
   const fromParam = readParam("holon");
-  if (fromParam) persist(HOLON_KEY, fromParam);
   // Opened as a Telegram Mini App: the holon its button named (`startapp`),
   // else the launching person's own. Never persisted, like the path.
   const fromLaunch = holonForLaunch(miniAppLaunch());
   // The URL path (`site.com/<id>` or a registered label) and a registered
   // subdomain (liminal.hubs.network → liminal) are authoritative for that URL —
-  // one deploy serves every holon. Neither is persisted: visiting another
-  // holon's link must not re-point this device. `?holon=` still overrides.
+  // one deploy serves every holon. No link is ever remembered: visiting a
+  // holon must not re-point this device — only its star does (below), and
+  // the starred holon is what a bare visit opens. `?holon=` still overrides.
   const fromPath =
     typeof window !== "undefined"
       ? holonForPath(window.location.pathname)
@@ -267,18 +267,21 @@ export function resolveHolonId(): string | null {
   );
 }
 
-/** Persist the holon id chosen from the in-app Settings panel. */
-export function setHolonId(id: string): void {
+/**
+ * The starred holon: the one this device opens when no link names another.
+ * One star per device (`lib/star.ts` is the store the UI reads).
+ */
+export function resolveStarredHolon(): string | null {
+  return persisted(HOLON_KEY) || null;
+}
+
+/** Star a holon: a bare visit opens it from now on. */
+export function starHolon(id: string): void {
   persist(HOLON_KEY, id.trim());
 }
 
-/**
- * Unpin the screen: forget the remembered holon so the kiosk falls back to
- * whatever the URL says, and — at the bare root — to the home page. Note that
- * a holon named by the PATH or the HOST still wins on the next load; clearing
- * is paired with a trip back to `/` in the Settings panel.
- */
-export function clearHolonId(): void {
+/** Take the star off: a bare visit shows the map again. */
+export function unstarHolon(): void {
   forget(HOLON_KEY);
 }
 

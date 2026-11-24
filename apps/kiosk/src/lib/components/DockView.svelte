@@ -23,7 +23,6 @@
   // (npub, Ethereum address), a pasted link, or any bare name
   // (parseHolonAdd accepts anything people actually copy or type).
   import { onMount, tick } from "svelte";
-  import { goto } from "$app/navigation";
   import {
     holonColor,
     holonColors,
@@ -33,6 +32,7 @@
   } from "$lib/palette";
   import {
     anchoredIds,
+    geoAnchoredIds,
     beaconPath,
     beaconTangents,
     boundsPath,
@@ -81,11 +81,13 @@
   import FederationLens from "./FederationLens.svelte";
   import DockMap from "./DockMap.svelte";
   import PeopleView from "./PeopleView.svelte";
+  import NoosphereView from "./NoosphereView.svelte";
   import HolonDrawer from "./HolonDrawer.svelte";
+  import HexPicker from "./HexPicker.svelte";
   import MapSearch from "./MapSearch.svelte";
   import { loadDockPeople } from "$lib/dockpeople";
   import type { PlaceHit } from "$lib/placesearch";
-  import { showHomePage } from "$lib/home";
+  import { leaveBoard } from "$lib/leave";
   import { holonId } from "$lib/stores";
 
   /**
@@ -109,6 +111,11 @@
   // The people have a view of their own: no earth, and the sky's orbs stand
   // aside for it (PeopleView draws the hubs its own way).
   $: peopleOn = $dockView === "people";
+  // The noosphere is a view of its own too: federation as circles within
+  // circles (NoosphereView), the orbs standing aside like for the people.
+  $: nooOn = $dockView === "noosphere";
+  /** A view that draws the hubs its own way: the sky's orbs stand aside. */
+  $: ownView = peopleOn || nooOn;
 
   /**
    * What the earth has selected, when it is showing: the tapped cell and the
@@ -204,9 +211,17 @@
   let fieldEl: HTMLDivElement;
 
   /** The two boards being federated by a drop — drives the config popup. */
-  let fedPair: { home: string; partner: string } | null = null;
+  let fedPair: {
+    home: string;
+    partner: string;
+    /** Names the opener already resolved (the noosphere's one resolver). */
+    homeName?: string;
+    partnerName?: string;
+  } | null = null;
   /** A drop on a hexagon, waiting to be confirmed as that board's new home. */
   let homeDrop: { holon: string; hex: string } | null = null;
+  /** The board on screen, docked but with no place: the map offers to place it. */
+  let placingCurrent = false;
   /**
    * The ✕ tapped in edit mode on a hub whose federation brought other hubs
    * onto this dock: the sheet asks whether those go too. A hub that brought
@@ -235,7 +250,7 @@
    */
   function forget(id: string, withDependents: boolean) {
     forgetBoard(id, { withDependents });
-    if (id === $holonId) void showHomePage();
+    if (id === $holonId) void leaveBoard();
   }
 
   /**
@@ -384,6 +399,7 @@
         }),
       );
     if (lines.length === 1) lines.push($t("dock.noFlows"));
+    lines.push($t("dock.tapToTune"));
     return lines;
   }
   /** A gradient id the SVG will accept, unique per pair. */
@@ -572,14 +588,25 @@
   // where a drag gives them a place or a partner and so brings them up. A
   // constellation is anchored whole or not at all, so the sky's links are
   // exactly its own.
-  $: anchored = anchoredIds(
-    ids,
-    allLinks,
-    (id) => !!$dockHexes.get(id) || (partnerMap.get(id)?.length ?? 0) > 0,
-  );
+  //
+  // The geosphere is stricter (`geoAnchoredIds`): only hubs with a place —
+  // a partner is no place on the earth — plus the board on screen, kept up
+  // even without one so it can be placed ("Place on map" in the tray, or a
+  // drag onto a hexagon). A link is drawn only when both its ends are up.
+  $: anchored = mapOn
+    ? geoAnchoredIds(ids, (id) => !!$dockHexes.get(id), $holonId)
+    : anchoredIds(
+        ids,
+        allLinks,
+        (id) => !!$dockHexes.get(id) || (partnerMap.get(id)?.length ?? 0) > 0,
+      );
   $: skyEntries = $dockEntries.filter((e) => anchored.has(e.id));
   $: skyIds = skyEntries.map((e) => e.id);
-  $: links = allLinks.filter(([a]) => anchored.has(a));
+  $: links = allLinks.filter(([a, b]) => anchored.has(a) && anchored.has(b));
+  $: unplacedCurrent =
+    mapOn && $holonId && anchored.has($holonId) && !$dockHexes.get($holonId)
+      ? $holonId
+      : null;
   $: drawerEntries = $dockEntries.filter((e) => !anchored.has(e.id));
 
   // ── People ──────────────────────────────────────────────────────────────--
@@ -718,6 +745,10 @@
   function skyFrame() {
     skyRaf = 0;
     if (!fieldEl || !fieldW || !fieldH || !skyIds.length) return;
+    // Hidden behind a view of its own (People, Noosphere): the sky holds
+    // still — no physics nor redraw per frame for orbs no one sees. Its
+    // budget is kept; the way back wakes it where it stood.
+    if (ownView && !dragging) return;
     // Re-seat the sim when the cast or the field changes; retained orbs
     // keep their place and momentum, newcomers glide in from the ring.
     const key = `${skyIds.join("\n")}|${fieldW}x${fieldH}`;
@@ -765,6 +796,7 @@
     void fieldH,
     void ORB,
     void mapOn,
+    void ownView,
     skyKick());
   $: (void dragging, void dragPos, skyKick());
 
@@ -1020,7 +1052,7 @@
     <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
     <div
       class="field"
-      class:away={peopleOn}
+      class:away={ownView}
       role="list"
       aria-label={$t("dock.boards")}
       bind:this={fieldEl}
@@ -1232,22 +1264,31 @@
         onopen={requestOpen}
       />
     {/if}
+    {#if nooOn}
+      <NoosphereView
+        hubs={$dockEntries}
+        query={searchQuery}
+        onopen={requestOpen}
+        paused={!!fedPair}
+        ontend={(home, partner, homeName, partnerName) =>
+          (fedPair = { home, partner, homeName, partnerName })}
+      />
+    {/if}
     {#if $dockEntries.length === 0 && !adding}
       <!-- A bare sky: nothing docked yet. Say what this is and where to
            start; the "+" in the tray is the other way in. -->
       <div class="empty" role="note">
         <h2>{$t("dock.emptyTitle")}</h2>
         <p>{$t("dock.emptyBody")}</p>
-        <a class="start" href="/about">{$t("dock.emptyStart")}</a>
       </div>
-    {:else if skyEntries.length === 0 && !peopleOn && !adding}
+    {:else if skyEntries.length === 0 && !ownView && !adding}
       <!-- Hubs, but none anchored: they are all in the drawer. Say how one
            comes up into the sky. -->
       <div class="empty" role="note">
         <p>{$t("dock.skyEmptyHint")}</p>
       </div>
     {/if}
-    {#if !peopleOn && $dockEntries.length > 0}
+    {#if !ownView && $dockEntries.length > 0}
       <HolonDrawer
         entries={drawerEntries}
         {editing}
@@ -1292,7 +1333,9 @@
         aria-checked={$dockView === "deck"}
         on:click={() => setDockView("deck")}
       >
-        <span aria-hidden="true"><Icon name="disc" /></span>{$t("dock.deck")}
+        <span aria-hidden="true"><Icon name="disc" /></span><span class="lbl"
+          >{$t("dock.deck")}</span
+        >
       </button>
       <button
         type="button"
@@ -1302,7 +1345,9 @@
         aria-checked={$dockView === "map"}
         on:click={() => setDockView("map")}
       >
-        <span aria-hidden="true"><Icon name="hexagon" /></span>{$t("dock.map")}
+        <span aria-hidden="true"><Icon name="hexagon" /></span><span class="lbl"
+          >{$t("dock.map")}</span
+        >
       </button>
       <button
         type="button"
@@ -1312,7 +1357,21 @@
         aria-checked={$dockView === "people"}
         on:click={() => setDockView("people")}
       >
-        <span aria-hidden="true"><Icon name="users" /></span>{$t("dock.people")}
+        <span aria-hidden="true"><Icon name="users" /></span><span class="lbl"
+          >{$t("dock.people")}</span
+        >
+      </button>
+      <button
+        type="button"
+        class="viewopt"
+        class:on={nooOn}
+        role="radio"
+        aria-checked={nooOn}
+        on:click={() => setDockView("noosphere")}
+      >
+        <span aria-hidden="true"><Icon name="metatron" /></span><span
+          class="lbl">{$t("dock.noosphere")}</span
+        >
       </button>
     </div>
     <div class="topbar__right">
@@ -1329,16 +1388,6 @@
           <Icon name="locate" />
         </button>
       {/if}
-      <!-- The reading page: what a hub is and how to start one. -->
-      <button
-        type="button"
-        class="locate about"
-        on:click={() => goto("/about")}
-        aria-label={$t("dock.about")}
-        title={$t("dock.about")}
-      >
-        <Icon name="info" />
-      </button>
     </div>
   </div>
 
@@ -1346,8 +1395,21 @@
     <button class="plus" class:here={!!addCell} on:click={startAdd}>
       <span class="plus__sign">+</span>{addLabel}
     </button>
-    {#if !mapOn && !peopleOn}
+    {#if !mapOn && !ownView}
       <p class="hint">{$t("dock.hint")}</p>
+    {/if}
+    {#if unplacedCurrent}
+      <!-- The board on screen has no place: the one hexless orb the earth
+           keeps up. Offer the picker (a drag onto a hexagon works too). -->
+      <button
+        type="button"
+        class="place"
+        on:click={() => (placingCurrent = true)}
+      >
+        <Icon name="pin" />{$t("dock.placeOnMap", {
+          name: nameOf(unplacedCurrent),
+        })}
+      </button>
     {/if}
   </div>
 </div>
@@ -1362,6 +1424,13 @@
      brought up that lens's own form (its schema's fields, with everything the
      moment already knows filled in). Saving lands the record in the cell and
      the panel listing it reloads. -->
+{#if placingCurrent && unplacedCurrent}
+  <HexPicker
+    holonId={unplacedCurrent}
+    on:close={() => (placingCurrent = false)}
+  />
+{/if}
+
 {#if formFor}
   <Modal on:close={() => (formFor = null)}>
     <LensForm
@@ -1392,8 +1461,8 @@
     <FederationLens
       holon={fedPair.home}
       partner={fedPair.partner}
-      holonName={nameOf(fedPair.home)}
-      partnerName={partnerLabel(fedPair.partner)}
+      holonName={fedPair.homeName ?? nameOf(fedPair.home)}
+      partnerName={fedPair.partnerName ?? partnerLabel(fedPair.partner)}
       on:unlinked={(e) => {
         fedPair = null;
         if (e.detail?.notice) showNotice(e.detail.notice, 6000);
@@ -1545,6 +1614,10 @@
      are where they were on the way back) and nothing of them takes a tap. */
   .field.away {
     visibility: hidden;
+  }
+  /* Hidden behind a view of its own: the bounds hold still (no work per frame). */
+  .field.away .bound {
+    animation: none;
   }
   .beacons {
     width: 100%;
@@ -1875,19 +1948,6 @@
     font-weight: 500;
     color: var(--ink-soft);
   }
-  .empty .start {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 46px;
-    padding: 0 1.2rem;
-    border-radius: 12px;
-    background: var(--teal);
-    color: var(--on-teal);
-    font-weight: 700;
-    font-size: 0.95rem;
-    text-decoration: none;
-  }
 
   @keyframes dock-pop {
     from {
@@ -2065,10 +2125,6 @@
   .locate:active {
     transform: scale(0.92);
   }
-  .locate.about {
-    margin-left: 0.5rem;
-    font-size: 1.15rem;
-  }
   .locate:disabled {
     opacity: 0.6;
   }
@@ -2120,6 +2176,21 @@
   }
   .viewopt:active {
     transform: scale(0.96);
+  }
+  /* Four views don't fit a phone's width with every name spelled out: there
+     the switch shows icons, and only the chosen view keeps its name. */
+  @media (max-width: 34rem) {
+    .viewopt {
+      padding: 0.4rem 0.7rem;
+    }
+    .viewopt:not(.on) .lbl {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
   }
   /* The add pill. A solid card-coloured lozenge with a shadow, because it
      floats over whatever is beneath it — satellite imagery, at any
@@ -2180,6 +2251,26 @@
   .plus.here .plus__sign {
     background: color-mix(in srgb, var(--paper) 22%, transparent);
     border-color: color-mix(in srgb, var(--paper) 55%, transparent);
+  }
+
+  /* The board on screen has no place yet: a quiet pill under the add one. */
+  .place {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 44px;
+    padding: 0 1rem 0 0.8rem;
+    border-radius: 999px;
+    border: 1.5px solid var(--line);
+    color: var(--ink);
+    background: var(--card);
+    box-shadow: var(--shadow-note);
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+  .place:hover,
+  .place:focus-visible {
+    border-color: var(--teal-deep);
   }
 
   .hint {

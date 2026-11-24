@@ -19,6 +19,14 @@ export {
 // doc comment for why position is never a valid way to find the settings doc.
 export { readHolonSettings } from './persistence.js';
 
+// The holon's currency list: read, normalized, counted in use, written.
+export {
+  currencyUsage,
+  normalizeCurrencyList,
+  readHolonCurrencies,
+  saveHolonCurrencies,
+} from './currencies.js';
+
 // The one colour algorithm (hash a seed into a palette, caretaker `color`
 // override) that every surface tints a holon with — card glow, board wash,
 // dock orb, map hexagon — and that the kiosk colours its post-it cards with.
@@ -31,6 +39,9 @@ export {
   readHolonColor,
   saveHolonColor,
 } from './color.js';
+
+// The holon's name: the one writer behind every surface's rename.
+export { NAME_KEY, normalizeHolonName, saveHolonName } from './name.js';
 
 export type {
   FederationPartnerView,

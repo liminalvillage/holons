@@ -12,7 +12,6 @@
     holonName,
     brandLogo,
     userMenuOpen,
-    settingsOpen,
     searchQuery,
     searchFacets,
     searchSuggestions,
@@ -34,6 +33,7 @@
   import { noteColor } from "$lib/palette";
   import { currentUser, displayName } from "$lib/auth";
   import { fedRequests } from "$lib/fedrequests";
+  import { myHolonOpen } from "$lib/myholon";
   import { requestClose } from "$lib/dock";
   import { resolveAddTipSeen, markAddTipSeen } from "$lib/config";
   import { t, locale } from "$lib/i18n";
@@ -69,6 +69,44 @@
   // it. Status passes through its framing modal first, like in Settings.
   let addOpen = false;
   let statusConfirmOpen = false;
+
+  // ── The holon's name, behind its mark ────────────────────────────────────
+  // Where the header has no room for the name (a phone drops the wordmark;
+  // a caretaker's logo replaces it), the mark alone stands for the holon. A
+  // tap on it — or a mouse resting on it — says which holon this is, in a
+  // small bubble under the mark. It goes on the next press anywhere, or by
+  // itself after a moment. Where the name is already on screen there is
+  // nothing to add, so the mark stays quiet.
+  const NAME_TIP_MS = 4000;
+  let brandEl: HTMLElement;
+  let wordEl: HTMLElement | undefined;
+  let nameTip = false;
+  let nameTipTimer: ReturnType<typeof setTimeout> | null = null;
+  function nameHidden(): boolean {
+    return !!$holonName && (!wordEl || wordEl.offsetWidth === 0);
+  }
+  function hideNameTip() {
+    if (nameTipTimer) clearTimeout(nameTipTimer);
+    nameTipTimer = null;
+    nameTip = false;
+  }
+  function showNameTip(linger: boolean) {
+    hideNameTip();
+    if (!nameHidden()) return;
+    nameTip = true;
+    if (linger) nameTipTimer = setTimeout(hideNameTip, NAME_TIP_MS);
+  }
+  function onBrandEnter(e: PointerEvent) {
+    if (e.pointerType === "mouse") showNameTip(false);
+  }
+  function onBrandLeave(e: PointerEvent) {
+    if (e.pointerType === "mouse") hideNameTip();
+  }
+  // A tap toggles; a mouse click on a mark already showing its name keeps it.
+  function onBrandClick() {
+    if (nameTip && nameTipTimer) hideNameTip();
+    else showNameTip(true);
+  }
 
   // ── First-visit callout for the "+" ──────────────────────────────────────
   // Nothing on the board says what the "+" is for, so the first board a
@@ -223,6 +261,7 @@
   // Any press at all retires the first-visit callout.
   function onWindowDown(e: PointerEvent) {
     dismissAddTip();
+    if (nameTip && !brandEl?.contains(e.target as Node)) hideNameTip();
     if (!editing && !addOpen) return;
     if (strip?.contains(e.target as Node)) return;
     editing = false;
@@ -234,6 +273,7 @@
     // A callout nobody was there to read is not spent: it waits for the
     // next visit rather than being marked seen.
     addTip = false;
+    hideNameTip();
   }
 
   // ── Fit: names when they fit, glyphs alone when they don't, then scroll ──
@@ -313,6 +353,7 @@
       ro.disconnect();
       wide.removeEventListener("change", onWide);
       if (addTipTimer) clearTimeout(addTipTimer);
+      if (nameTipTimer) clearTimeout(nameTipTimer);
     };
   });
 
@@ -427,15 +468,25 @@
   class:merged
   class:solo={$appService != null}
   class:gated={$onboardingGate}
-  class:suggest-open={suggestOpen || addOpen || addTip}
+  class:suggest-open={suggestOpen || addOpen || addTip || nameTip}
 >
   <div class="top">
-    <div class="brand">
+    <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+    <div
+      class="brand"
+      bind:this={brandEl}
+      on:pointerenter={onBrandEnter}
+      on:pointerleave={onBrandLeave}
+      on:click={onBrandClick}
+    >
       {#if $brandLogo}
         <img class="logo" src={$brandLogo} alt={$holonName || "Kiosk"} />
       {:else}
         {#if $holonId}<Identicon class="mark" seed={$holonId} />{/if}
-        <span class="wordmark">{$holonName || "kiosk"}</span>
+        <span class="wordmark" bind:this={wordEl}>{$holonName || "kiosk"}</span>
+      {/if}
+      {#if nameTip && $holonName}
+        <span class="nametip" role="tooltip">{$holonName}</span>
       {/if}
     </div>
 
@@ -584,12 +635,24 @@
         class="account"
         class:in={$currentUser != null}
         on:click={() => userMenuOpen.set(true)}
-        aria-label={$fedRequests.length
-          ? `${$t("tabbar.menu")} — ${$t("fed.requestsBadge", { n: $fedRequests.length })}`
-          : $t("tabbar.menu")}
+        aria-label={[
+          $t("tabbar.menu"),
+          $currentUser && $myHolonOpen
+            ? $t("menu.myHolonOpen", { n: $myHolonOpen })
+            : "",
+          $fedRequests.length
+            ? $t("fed.requestsBadge", { n: $fedRequests.length })
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" — ")}
       >
         {#if $fedRequests.length}<span class="badge" aria-hidden="true"
           ></span>{/if}
+        <!-- What is still open in your own holon, on your face. -->
+        {#if $currentUser && $myHolonOpen}<span class="alert" aria-hidden="true"
+            >{$myHolonOpen > 99 ? "99+" : $myHolonOpen}</span
+          >{/if}
         {#if $currentUser}
           {#if $currentUser.photo_url}
             <img src={$currentUser.photo_url} alt="" />
@@ -604,21 +667,6 @@
             >{$t("tabbar.login")}</span
           >
         {/if}
-      </button>
-      <!-- The holon's general settings (name, logo, accent, federation…) —
-           apart from a view's own settings, which are the sliders in the
-           pills band. Dotted while a federation request waits in it. -->
-      <button
-        class="holonset"
-        on:click={() => settingsOpen.set(true)}
-        aria-label={$fedRequests.length
-          ? `${$t("tabbar.holonSettings")} — ${$t("fed.requestsBadge", { n: $fedRequests.length })}`
-          : $t("tabbar.holonSettings")}
-        title={$t("tabbar.holonSettings")}
-      >
-        <Icon name="gear" />
-        {#if $fedRequests.length}<span class="dot" aria-hidden="true"
-          ></span>{/if}
       </button>
       <div class="clock">
         <span class="time">{timeLabel}</span>
@@ -815,8 +863,7 @@
   /* The board is the onboarding (onboardingGate): the holon's name and you,
      nothing to search, switch to or set up yet. */
   .bar.gated .strip,
-  .bar.gated .search,
-  .bar.gated .holonset {
+  .bar.gated .search {
     display: none;
   }
   .bar.solo .strip,
@@ -849,6 +896,31 @@
     display: flex;
     align-items: center;
     min-height: 2.6rem; /* matches the account chip so the row is balanced */
+    position: relative;
+  }
+  /* The holon's name, under its mark, where the header itself has no room
+     for it. Click-through, like the "+" callout: it never eats a press. */
+  .nametip {
+    position: absolute;
+    top: calc(100% + 0.55rem);
+    left: 0;
+    z-index: 40;
+    max-width: min(18rem, calc(100vw - 2rem));
+    padding: 0.5rem 0.8rem;
+    border-radius: 12px;
+    background: var(--teal-deep);
+    color: var(--on-teal);
+    font-size: 0.92rem;
+    font-weight: 700;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-shadow:
+      var(--shadow-soft),
+      0 12px 32px rgba(0, 0, 0, 0.18);
+    animation: kiosk-rise 0.2s ease both;
+    pointer-events: none;
   }
   .right {
     display: flex;
@@ -1082,13 +1154,34 @@
   /* Something waits for this key's answer (a federation request). */
   .account .badge {
     position: absolute;
-    top: 0.15rem;
+    bottom: 0.15rem;
     left: 1.75rem;
     width: 0.7rem;
     height: 0.7rem;
     border-radius: 50%;
     background: var(--caution);
     border: 2px solid var(--paper);
+  }
+  /* Open tasks + events in your own holon: the red count on your face. */
+  .account .alert {
+    position: absolute;
+    top: -0.3rem;
+    left: 1.4rem;
+    min-width: 1.15rem;
+    height: 1.15rem;
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    font-size: 0.68rem;
+    font-weight: 800;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    background: var(--alert);
+    color: var(--on-alert);
+    border: 2px solid var(--paper);
+    box-sizing: content-box;
+    pointer-events: none;
   }
   .account:active {
     transform: scale(0.96);
@@ -1143,45 +1236,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 48vw;
-  }
-  .holonset {
-    position: relative;
-    flex: 0 0 auto;
-    width: 2.6rem;
-    height: 2.6rem;
-    border-radius: 50%;
-    display: grid;
-    place-items: center;
-    font-size: 1.15rem;
-    color: var(--ink-soft);
-    background: var(--paper);
-    transition:
-      color 0.15s ease,
-      background 0.15s ease,
-      transform 0.25s ease;
-  }
-  .holonset:hover {
-    color: var(--ink);
-    background: var(--line);
-  }
-  .holonset:hover :global(svg) {
-    transform: rotate(45deg);
-  }
-  .holonset :global(svg) {
-    transition: transform 0.35s ease;
-  }
-  .holonset:active {
-    transform: scale(0.92);
-  }
-  .holonset .dot {
-    position: absolute;
-    top: 0.1rem;
-    right: 0.1rem;
-    width: 0.65rem;
-    height: 0.65rem;
-    border-radius: 50%;
-    background: var(--caution);
-    border: 2px solid var(--paper);
   }
   .winclose {
     flex: 0 0 auto;
@@ -1246,11 +1300,18 @@
     .brand .wordmark {
       display: none;
     }
+    /* The mark is the way to the name here (tap → `.nametip`), so it keeps
+       a finger-sized target. */
     .brand {
-      min-height: 0;
+      min-height: 2.7rem;
+      min-width: 2.2rem;
+      justify-content: center;
     }
     .brand :global(.mark) {
       margin-right: 0;
+    }
+    .nametip {
+      left: 0;
     }
     .brand:not(:has(.logo)):not(:has(.mark)) {
       display: none;

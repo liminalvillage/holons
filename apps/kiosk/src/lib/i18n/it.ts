@@ -19,10 +19,10 @@ export const it: Record<MessageKey, Msg> = {
 
   // People pickers: the federation beyond the holon (FederationSearch)
   "people.searchMembers": "Cerca membri…",
-  "people.searchAnyone": "Cerca membri e holon partner…",
+  "people.searchAnyone": "Cerca membri e {@holons} partner…",
   "people.noMatch": "Nessuno con quel nome.",
   "people.typeToSearchFederation":
-    "Scrivi un nome per cercare anche negli holon partner.",
+    "Scrivi un nome per cercare anche tra {@the_holons} partner.",
   "people.noOneLeft": "Ci sono già tutti.",
   "people.via": "in {name}",
 
@@ -63,13 +63,13 @@ export const it: Record<MessageKey, Msg> = {
   "tasks.linked": "“{task}” ora aspetta “{dep}”",
   "tasks.linkCycle": "Questo collegamento chiuderebbe il piano ad anello.",
   "tasks.linkForeign":
-    "Questa scheda appartiene a un altro holon — collegala dove vive.",
+    "Questa scheda appartiene a {@g:un altro|un'altra} {@holon} — collegala dove vive.",
   "tasks.linkFailed": "Collegamento non riuscito — {reason}",
   "tasks.appreciate": "Apprezza",
   "tasks.addTask": "Aggiungi un'attività",
   "tasks.appreciateInstead": "Preferisci apprezzare?",
   "tasks.appreciateLead":
-    "Partecipi a “{title}”. Apprezzandola verrai rimosso dai partecipanti.",
+    "Ci sei in “{title}”. Apprezzandola verrai rimosso dai partecipanti.",
   "tasks.deleteTitle": "Eliminare l'attività?",
   "tasks.deleteLead": "“{title}” verrà rimossa per tutti.",
   "tasks.deleting": "Eliminazione…",
@@ -84,23 +84,23 @@ export const it: Record<MessageKey, Msg> = {
   "tasks.loadingBacklog": "Sto leggendo il backlog…",
 
   // Swipe deck
-  "swipe.participating": "Partecipi già — vale più di un mi piace ♥",
+  "swipe.participating": "Ci sei già — vale più di apprezzare ♥",
   "swipe.alreadyIn": "Già dentro ✓",
   "swipe.joinFailed": "Impossibile unirsi — riprova.",
   "swipe.alreadyAppreciated": "Già apprezzata ♥",
   "swipe.appreciateFailed": "Impossibile salvare il ♥ — riprova.",
-  "swipe.join": "UNISCITI",
+  "swipe.join": "CI STO",
   "swipe.skip": "SALTA",
-  "swipe.joined": "UNITO",
-  "swipe.joinedRibbonAria": "Partecipi a questa attività",
+  "swipe.joined": "DENTRO",
+  "swipe.joinedRibbonAria": "Ci sei in questa attività",
   "swipe.allCaughtUp": "Tutto fatto",
-  "swipe.roundSummary": "{joins} adesioni · {likes} mi piace in questo giro",
+  "swipe.roundSummary": "{joins} dentro · {likes} apprezzate in questo giro",
   "swipe.startOver": "Ricomincia",
   "swipe.skipAria": "Salta questa attività",
   "swipe.skipTitle": "Salta",
   "swipe.appreciateAria": "Apprezza questa attività",
-  "swipe.joinAria": "Unisciti a questa attività",
-  "swipe.joinTitle": "Unisciti",
+  "swipe.joinAria": "Ci sto — partecipa a questa attività",
+  "swipe.joinTitle": "Ci sto",
 
   // Choose deck (le attività una scheda alla volta, a schermo intero)
   "choose.open": "Scegli",
@@ -113,12 +113,11 @@ export const it: Record<MessageKey, Msg> = {
   "choose.circle": "Cerchio {n}",
   "choose.position": "Scheda {n} di {total}: {title}",
   "choose.openCard": "{title} — apri la scheda",
-  "choose.hint":
-    "Scorri a destra per unirti, in alto per apprezzare, a sinistra per saltare",
+  "choose.hint": "→ Ci sto · ↑ Apprezza · ← Salta",
   "choose.answers": "La tua risposta",
-  "choose.like": "Mi piace",
+  "choose.like": "Apprezza",
   "choose.undo": "Annulla",
-  "choose.saidJoin": "Ti sei unito a “{title}”",
+  "choose.saidJoin": "Dentro “{title}”",
   "choose.saidLike": "Apprezzato “{title}”",
   "choose.saidSkip": "Saltato “{title}”",
   "choose.circleDone": "Cerchio completato",
@@ -221,10 +220,10 @@ export const it: Record<MessageKey, Msg> = {
   "cal.set.subscribeHead": "Iscriviti a questo calendario",
   "cal.set.subscribeBody":
     "Aggiungi il calendario dal vivo di {name} a Google, Apple o a qualsiasi app calendario. Si aggiorna da solo.",
-  "cal.set.thisHolon": "questo holon",
-  "cal.set.federated": "Includi gli holon federati",
+  "cal.set.thisHolon": "quest{@g:o|a} {@holon}",
+  "cal.set.federated": "Includi {@the_holons} federat{@g:i|e}",
   "cal.set.federatedSub":
-    "Porta con sé anche gli eventi degli holon con cui questo è federato",
+    "Porta con sé anche gli eventi di ogni {@holon} con cui quest{@g:o|a} è federat{@g:o|a}",
   "cal.set.feedUrl": "Link del calendario",
   "cal.set.copy": "Copia il link",
   "cal.set.copied": "Copiato ✓",
@@ -247,6 +246,8 @@ export const it: Record<MessageKey, Msg> = {
   "cal.set.colorAuto": "Automatico",
   "cal.set.saveFailed":
     "Non è stato possibile salvare — accedi come custode e riprova.",
+  "cal.set.feedFailed":
+    'Impossibile leggere questo calendario. Da Google Calendar, usa l\'"Indirizzo pubblico in formato iCal" (o quello segreto) dalle impostazioni del calendario.',
   "cal.newEvent": "Nuovo evento",
 
   // Roles
@@ -360,7 +361,7 @@ export const it: Record<MessageKey, Msg> = {
   },
   "shifts.publishFailed": "Impossibile pubblicare — {reason}",
   "shifts.retractFailed": "Impossibile rimuovere — {reason}",
-  "shifts.errDenied": "Non puoi modificare il piano di questo holon.",
+  "shifts.errDenied": "Non puoi modificare il piano di quest{@g:o|a} {@holon}.",
   "shifts.errSave": "Impossibile salvare il piano. Riprova.",
   "shifts.noCoordinator":
     "Questo chiosco non può pubblicare turni (nessuna chiave di firma configurata sul server). Puoi comunque salvare il piano.",
@@ -422,7 +423,7 @@ export const it: Record<MessageKey, Msg> = {
   "pills.yearShape": "Forma dell'anno",
   "pills.yearLinear": "Linee",
   "pills.yearRadial": "Quadrante",
-  "pills.loved": "Preferite",
+  "pills.loved": "Più apprezzate",
   "pills.new": "Nuove",
   "pills.manual": "Manuale",
   "pills.view": "Vista",
@@ -440,13 +441,15 @@ export const it: Record<MessageKey, Msg> = {
 
   // Show (scope) pill
   "scope.federated": "Federati",
-  "scope.aria": "Mostra anche gli elementi degli holon federati",
+  "scope.aria":
+    "Mostra anche gli elementi di ogni {@holon} federat{@g:o|a} — gli ologrammi hanno il loro interruttore",
 
   // Filters sheet (pills band)
   "filters.title": "Filtri",
   "filters.show": "Mostra",
   "filters.holograms": "Ologrammi",
-  "filters.hologramsSub": "Schede che altri holon hanno messo qui",
+  "filters.hologramsSub":
+    "Schede che {@g:altri|altre} {@holons} hanno messo qui",
   "filters.sortBy": "Ordina per",
   "filters.aria": {
     one: "Filtri — {n} filtro attivo",
@@ -460,10 +463,9 @@ export const it: Record<MessageKey, Msg> = {
   "tabbar.suggestions": "Suggerimenti di ricerca",
   "tabbar.categories": "Categorie",
   "tabbar.people": "Persone",
-  "tabbar.holons": "Holon",
+  "tabbar.holons": "{@Holons}",
   "tabbar.removeFilter": "Togli il filtro {name}",
   "tabbar.menu": "Menu",
-  "tabbar.holonSettings": "Impostazioni dell'holon",
   "tabbar.login": "Accedi",
   "tabbar.views": "Viste",
   "tabbar.pinnedHint":
@@ -481,18 +483,19 @@ export const it: Record<MessageKey, Msg> = {
   "tabbar.pinView": "Fissa questa vista",
 
   // Dock (the hub's window closed into a circle per visited hub)
-  "dock.close": "Chiudi questo hub",
-  "dock.boards": "I tuoi hub",
+  "dock.close": "Chiudi quest{@g:o|a} {@holon}",
+  "dock.boards": "{@g:I tuoi|Le tue} {@holons}",
   "dock.open": "Apri {name}",
   "dock.flows": "Flussi tra {a} e {b}",
   "dock.flowsTo": "{a} → {b}: {lenses}",
   "dock.noFlows": "Collegati — nessun flusso aperto ancora",
+  "dock.tapToTune": "Tocca per regolare cosa scorre",
   "dock.delete": "Rimuovi {name}",
-  "dock.add": "Aggiungi un hub",
-  "dock.addPlaceholder": "Id dell'holon, nome, npub, indirizzo o link",
-  "dock.addInvalid": "Questo non identifica un holon.",
-  "dock.searchPlaceholder": "Cerca un hub o un luogo…",
-  "dock.searchHubs": "Hub",
+  "dock.add": "Aggiungi {@a_holon}",
+  "dock.addPlaceholder": "Id {@of_the_holon}, nome, npub, indirizzo o link",
+  "dock.addInvalid": "Questo non identifica {@a_holon}.",
+  "dock.searchPlaceholder": "Cerca {@a_holon} o un luogo…",
+  "dock.searchHubs": "{@Holons}",
   "dock.searchPlaces": "Luoghi",
   "dock.searchDocked": "già qui",
   "dock.searchNone": "Niente con questo nome.",
@@ -501,29 +504,29 @@ export const it: Record<MessageKey, Msg> = {
   "dock.addToFailed": "Non è stato possibile aggiungerlo a questa cella.",
   "dock.addToSave": "Aggiungi",
   "dock.addToTagHint": "Scrivi un tag, poi Invio",
-  "dock.addHere": "Aggiungi un hub qui",
-  "dock.addHereTaken": "Questo hub ha già un luogo — resta dov'è.",
+  "dock.addHere": "Aggiungi {@a_holon} qui",
+  "dock.addHereTaken": "Quest{@g:o|a} {@holon} ha già un luogo — resta dov'è.",
   "dock.hint":
-    "Tocca un cerchio per aprire il suo hub, tienilo premuto per rimuoverlo — trascinane uno su un altro per aprire i loro flussi.",
+    "Tocca un cerchio per aprire {@g:il suo|la sua} {@holon}, tienilo premuto per rimuoverlo — trascinane uno su un altro per aprire i loro flussi.",
   "dock.deck": "Olosfera",
   "dock.map": "Geosfera",
-  "dock.drawer": "Hub",
-  "dock.drawerSearch": "Cerca i tuoi hub…",
-  "dock.drawerEmpty": "Tutti i tuoi hub sono nel cielo.",
-  "dock.drawerNone": "Nessun hub con questo nome.",
-  "dock.drawerDrag": "Trascina {name} su un luogo o su un hub",
+  "dock.drawer": "{@Holons}",
+  "dock.drawerSearch": "Cerca {@g:i tuoi|le tue} {@holons}…",
+  "dock.drawerEmpty":
+    "{@g:Tutti i tuoi|Tutte le tue} {@holons} sono nel cielo.",
+  "dock.drawerNone": "Nessun{@g:|a} {@holon} con questo nome.",
+  "dock.drawerDrag": "Trascina {name} su un luogo o su {@a_holon}",
+  "dock.placeOnMap": "Metti {name} sulla mappa",
   "dock.skyEmptyHint":
-    "I tuoi hub sono nel cassetto. Trascinane uno su un luogo, o su un hub che ne ha uno, per portarlo qui.",
-  "dock.about": "Cosa sono gli hub",
-  "dock.emptyTitle": "Ancora nessun hub qui",
+    "{@g:I tuoi|Le tue} {@holons} sono nel cassetto. Trascinane {@g:uno|una} su un luogo, o su {@a_holon} che ne ha uno, per portarl{@g:o|a} qui.",
+  "dock.emptyTitle": "Ancora nessun{@g:|a} {@holon} qui",
   "dock.emptyBody":
-    "Questa è la rete degli hub. Aggiungi un hub con il + qui sotto, o avviane uno.",
-  "dock.emptyStart": "Cos'è un hub? Avviane uno",
+    "Questa è la tua rete. Aggiungi {@a_holon} con il + qui sotto, o avviane {@g:uno|una}.",
   "dock.removeTitle": "Rimuovere {name}?",
   "dock.removeBody":
-    "Ha portato su questo schermo {n} hub partner che non hai mai aperto. In rete non cambia nulla in ogni caso.",
+    "Ha portato su questo schermo {n} {@holons} partner che non hai mai aperto. In rete non cambia nulla in ogni caso.",
   "dock.removeWith": "Rimuovi con i suoi {n} partner",
-  "dock.removeOnly": "Rimuovi solo questo hub",
+  "dock.removeOnly": "Rimuovi solo quest{@g:o|a} {@holon}",
   "dock.mapUnavailable":
     "Per mostrare la terra serve un token Mapbox — imposta VITE_MAPBOX_TOKEN per attivarla.",
 
@@ -538,13 +541,62 @@ export const it: Record<MessageKey, Msg> = {
   "map.back": "Indietro",
   "map.detailEmpty": "Nessun altro dettaglio.",
   "dock.people": "Persone",
-  "dock.personOpen": "{name}, hub: {n}",
-  "dock.personHubs": "Hub: {n}",
+  "dock.personOpen": "{name}, {@holons}: {n}",
+  "dock.personHubs": "{@Holons}: {n}",
   "dock.peopleCapped": "Ecco le {n} persone più collegate su {total}",
-  "dock.peopleLoading": "Cerco chi fa parte di questi hub…",
-  "dock.peopleEmpty": "Nessuno risulta ancora in questi hub.",
-  "dock.searchPeople": "Cerca una persona o un hub…",
-  "dock.peopleNoMatch": "Nessuna persona né hub con questo nome.",
+  "dock.peopleLoading": "Cerco chi fa parte di quest{@g:i|e} {@holons}…",
+  "dock.peopleEmpty": "Nessuno risulta ancora in quest{@g:i|e} {@holons}.",
+  "dock.searchPeople": "Cerca una persona o {@a_holon}…",
+  "dock.peopleNoMatch": "Nessuna persona né {@holon} con questo nome.",
+  // The noosphere: federation as circles within circles (NoosphereView).
+  "dock.noosphere": "Noosfera",
+  "noo.root": "Noosfera",
+  "noo.trail": "Dove sei",
+  "noo.up": "Torna a {name}",
+  "noo.open": "Apri la bacheca",
+  "noo.reaching": "Arriva a {name}",
+  "noo.sending": "{name} invia",
+  "noo.nothingReaches": "Ancora non arriva niente.",
+  "noo.inFrom": "da {names}",
+  "noo.outTo": "a {names}",
+  "noo.nothingSent": "Ancora non invia nulla.",
+  "noo.partners": { one: "{n} partner", other: "{n} partner" },
+  "noo.lonely": "Nessun partner di federazione per ora.",
+  "noo.loading": "Leggo la federazione…",
+  "noo.cameFrom": "da dove vieni",
+  "noo.in": "entra",
+  "noo.out": "esce",
+  "noo.enter": "Entra in {name}",
+  "noo.tapBack": "Tocca per tornare indietro",
+  "noo.place": "Un luogo",
+  "noo.wayBack": "la via del ritorno",
+  "noo.hubs": { one: "{n} {@holon}", other: "{n} {@holons}" },
+  "noo.loadingShort": "lettura…",
+  "noo.quietLink": "legame silenzioso",
+  "noo.nIn": "{n} in entrata",
+  "noo.nOut": "{n} in uscita",
+  "noo.manage": "Regola cosa scorre con {name}",
+  "noo.pair": "{a} e {b}",
+  "noo.nothing": "niente",
+  "noo.tapTune": "Tocca per regolare cosa scorre",
+  "noo.tapEnter": "Tocca per entrarci",
+  "noo.tiesLegend": "linee d'oro: partner tra loro",
+  "noo.hint":
+    "Tocca un cerchio per entrarci · doppio clic o tienilo premuto per aprirne la bacheca · tocca un canale per regolare cosa scorre · tocca fuori per risalire",
+  "noo.hintRoot":
+    "Ogni cerchio è {@g:uno dei tuoi|una delle tue} {@holons}, con la sua federazione — tocca per entrarci, doppio clic o tieni premuto per aprirne la bacheca",
+  "noo.sheetOpen": "Mostra i dettagli",
+  "noo.sheetClose": "Nascondi i dettagli",
+  "noo.legendInShort": "ciò che arriva",
+  "noo.legendOutShort": "ciò che invia",
+  "noo.lensesIn": { one: "{n} lente in arrivo", other: "{n} lenti in arrivo" },
+  "noo.lensesOut": "{n} inviate",
+  "noo.onlyWith": "{name} è federat{@g:o|a} solo con {other}.",
+  "noo.ties": "Le linee d'oro uniscono {@the_holons} federat{@g:i|e} tra loro.",
+  "noo.circles": "Partner",
+  "noo.openHint": "Doppio clic o tieni premuto per aprirne la bacheca",
+  "noo.holoHint":
+    "Nell'Olosfera, tocca il bagliore tra due {@holons} per regolare cosa scorre tra loro.",
   "map.field.status": "Stato",
   "map.field.id": "Nome",
   "map.field.title": "Titolo",
@@ -564,9 +616,9 @@ export const it: Record<MessageKey, Msg> = {
   "map.field.borrower": "In prestito a",
   "map.field.tags": "Tag",
   "map.field.link": "Link",
-  "map.field.origin": "Dall'holon",
+  "map.field.origin": "{@Holon} d'origine",
   "source.open": "Apri {name}",
-  "switch.title": "Andare a un altro hub?",
+  "switch.title": "Andare a {@g:un altro|un'altra} {@holon}?",
   "switch.lead": "Questo arriva da {to}.",
   "switch.body":
     "{from} si chiude nella mappa, poi al suo posto si apre {to}. Qui non cambia nulla.",
@@ -581,7 +633,7 @@ export const it: Record<MessageKey, Msg> = {
   "lens.projects": "Progetti",
   "lens.currencies": "Valute",
   "lens.people": "Persone",
-  "lens.holons": "Holon",
+  "lens.holons": "{@Holons}",
   "lens.events": "Eventi",
   "lens.library": "Biblioteca",
   "lens.roles": "Ruoli",
@@ -630,15 +682,16 @@ export const it: Record<MessageKey, Msg> = {
   "tglink.groupHint":
     "Aggiungi il bot al gruppo, o scegli un gruppo in cui è già",
   "tglink.personal": "La mia chat con il bot",
-  "tglink.personalHint": "Il tuo hub personale",
+  "tglink.personalHint": "{@g:Il tuo|La tua} {@holon} personale",
   "tglink.waiting": "In attesa del bot…",
   "tglink.waitingBody": "Tocca il link in Telegram come admin della chat.",
   "tglink.confirmTitle": "Collegare “{title}”?",
   "tglink.confirm": "Collega",
   "tglink.cancel": "Annulla",
   "tglink.failed": "Non riesco a collegare — {reason}",
-  "hub.hereTitleKey": "Nuovo hub",
-  "hub.hereBodyKey": "Creato con la tua chiave, adesso — senza Telegram.",
+  "hub.hereTitleKey": "{@g:Nuovo|Nuova} {@holon}",
+  "hub.hereBodyKey":
+    "Creat{@g:o|a} con la tua chiave, adesso — senza Telegram.",
   "login.nostrLead": "Accedi con la tua chiave",
   "login.orOther": "oppure accedi in un altro modo",
   "login.telegramTile": "Telegram",
@@ -666,13 +719,39 @@ export const it: Record<MessageKey, Msg> = {
   "menu.notSignedIn": "Accesso non effettuato",
   "menu.dashboard": "Apri la dashboard completa",
   "menu.settings": "Impostazioni",
-  "menu.myHolon": "Apri il mio holon",
-  "menu.homePage": "Mostra la pagina iniziale",
+  "menu.myHolon": "{@g:Il mio|La mia} {@holon}",
   "menu.logout": "Esci",
-  "menu.signingAs": "Firmi come {key}",
   "menu.loginTelegram": "Accedi con Telegram",
   "menu.login": "Accedi",
   "menu.install": "Aggiungi alla schermata Home",
+  "menu.myHolonOpen": {
+    one: "{n} compito o evento aperto",
+    other: "{n} compiti ed eventi aperti",
+  },
+  "menu.myHolonClear": "Niente di aperto — tutto fatto",
+  "menu.youAreHere": "Sei qui",
+  "menu.keyTitle": "La tua chiave",
+  "menu.keyFromTelegram": "Arriva con il tuo accesso Telegram",
+  "menu.keyRemembered": "Ricordata su questo dispositivo con il tuo PIN",
+  "menu.keyThisSession": "Solo per questa visita — sparisce quando chiudi",
+  "menu.copyNpub": "Copia la tua chiave pubblica (npub)",
+  "menu.copied": "Chiave pubblica copiata",
+  "menu.copyFailed": "Impossibile copiare — il browser ha bloccato gli appunti",
+  "menu.backupKey": "Salva la chiave segreta",
+  "menu.backupConfirm":
+    "Tocca di nuovo per copiare la chiave segreta. Non condividerla mai.",
+  "menu.backupCopied":
+    "Chiave segreta copiata — conservala in un posto sicuro e privato",
+  "menu.linkTelegram": "Collega al mio Telegram",
+  "menu.linkTelegramOpen": "Apri Telegram per completare",
+  "menu.forgetKey": "Dimentica su questo dispositivo",
+  "menu.forgot": "Questo dispositivo non ricorda più la tua chiave",
+  "menu.thisBoard": "Questa bacheca",
+  "menu.star": "Aggiungi la stella",
+  "menu.starred": "Con la stella",
+  "menu.starHint": "Si apre da solo quando apri Holons",
+  "menu.starDone": "{name} ora si apre da solo",
+  "menu.starRemoved": "Stella rimossa — Holons si apre sulla mappa",
   "install.hint": "Apri {name} come un’app — un tocco, a schermo intero.",
   "install.iosShare": "Tocca il pulsante Condividi nella barra del browser",
   "install.iosAdd": "Scorri e scegli “Aggiungi alla schermata Home”",
@@ -686,7 +765,7 @@ export const it: Record<MessageKey, Msg> = {
   "complete.leadHosts":
     "Questo evento ha degli host: il credito va a loro. Togli la spunta a chi non ha ospitato.",
   "complete.lead":
-    "Conferma chi ha partecipato — verrà accreditato nella contabilità dell'holon.",
+    "Conferma chi ha partecipato — verrà accreditato nella contabilità {@of_the_holon}.",
   "complete.addMemberAria": "Aggiungi un membro",
   "complete.addMember": "Aggiungi un membro…",
   "complete.confirm": "Completa",
@@ -695,10 +774,11 @@ export const it: Record<MessageKey, Msg> = {
   "settings.title": "Impostazioni del kiosk",
   "settings.groupScreen": "Questo schermo",
   "settings.groupLook": "Aspetto",
-  "settings.groupHub": "Questo hub",
-  "settings.holon": "Holon",
-  "settings.holonPlaceholder": "id dell'holon",
-  "settings.unpinHolon": "Cancella — mostra la pagina iniziale",
+  "settings.groupHub": "Quest{@g:o|a} {@holon}",
+  "settings.holonName": "Nome",
+  "settings.holonId": "Id {@of_the_holon}",
+  "settings.holonNameInvalid": "Questo non è un nome — non è cambiato nulla",
+  "settings.holonNameFailed": "Impossibile rinominare {@the_holon} — riprova",
   "settings.logo": "Logo",
   "settings.logoSub": "— facoltativo; altrimenti il nome appare come testo",
   "settings.logoPreview": "Anteprima del logo",
@@ -717,7 +797,7 @@ export const it: Record<MessageKey, Msg> = {
   "settings.light": "Chiaro",
   "settings.dark": "Scuro",
   "settings.language": "Lingua",
-  "settings.languageSub": "— Auto segue la lingua dell'holon",
+  "settings.languageSub": "— Auto segue la lingua {@of_the_holon}",
   "settings.statusConfirmTitle": "Attivare la scheda Stato?",
   "settings.statusConfirmAccept": "Abbiamo capito — attivala",
   "settings.valueEquation": "Equazione del valore",
@@ -728,10 +808,10 @@ export const it: Record<MessageKey, Msg> = {
   "settings.eqReset": "Ripristina i valori predefiniti",
   "settings.eqZero": "Azzera tutti i pesi",
   "settings.eqProposeHint":
-    "Tocca + o − per proporre nuovi pesi. Non cambia nulla finché l'holon non vota. Il voto si chiude alla luna nuova, il {date}.",
+    "Tocca + o − per proporre nuovi pesi. Non cambia nulla finché {@the_holon} non vota. Il voto si chiude alla luna nuova, il {date}.",
   "settings.eqWhyMoon": "Perché aspettare la luna?",
   "settings.eqWhyMoonBody":
-    "Perché tutti abbiano modo di votare, non solo chi c'è in quel momento. Un cambiamento alla volta, insieme, a un ritmo che tutto l'holon condivide. Nessuno ha l'interruttore: decidono i voti, e ogni schermo li conta allo stesso modo.",
+    "Perché tutti abbiano modo di votare, non solo chi c'è in quel momento. Un cambiamento alla volta, insieme, a un ritmo che {@g:tutto|tutta} {@the_holon} condivide. Nessuno ha l'interruttore: decidono i voti, e ogni schermo li conta allo stesso modo.",
   "settings.eqStanding": "{yes} sì, {no} no",
   "settings.eqClosesIn": {
     one: "si chiude tra {n} giorno",
@@ -746,7 +826,7 @@ export const it: Record<MessageKey, Msg> = {
   "settings.eqDiscard": "Scarta",
   "settings.eqOnTheTable": "Sul tavolo",
   "settings.eqProposed":
-    "Sul tavolo. L'holon ha tempo fino alla luna nuova ({date}) per votare.",
+    "Sul tavolo. {@The_holon} ha tempo fino alla luna nuova ({date}) per votare.",
   "settings.eqProposeFailed": "Impossibile proporre la modifica: {reason}",
   "settings.eqLoading": "Carico l'equazione…",
   "settings.eqLess": "Abbassa il peso di {metric}",
@@ -762,11 +842,11 @@ export const it: Record<MessageKey, Msg> = {
     "Le nuove valute partono da 0 — non cambia nulla finché il gruppo non alza il peso.",
   "settings.location": "Posizione",
   "settings.locationSub":
-    "— la cella H3 che questo holon rivendica sulla mappa condivisa",
-  "settings.holonColor": "Colore dell'hub",
+    "— la cella H3 che quest{@g:o|a} {@holon} rivendica sulla mappa condivisa",
+  "settings.holonColor": "Colore {@of_the_holon}",
   "settings.holonColorSub":
-    "— il colore di questo hub, del suo cerchio nell'olosfera, del suo esagono sulla geosfera",
-  "settings.holonColorPick": "Scegli il colore dell'hub",
+    "— il colore di quest{@g:o|a} {@holon}, del suo cerchio nell'olosfera, del suo esagono sulla geosfera",
+  "settings.holonColorPick": "Scegli il colore {@of_the_holon}",
   "settings.holonColorAuto": "Automatico",
   "settings.holonColorIsAuto": "automatico",
   "settings.holonColorFailed": "Impossibile salvare il colore.",
@@ -774,22 +854,22 @@ export const it: Record<MessageKey, Msg> = {
   "settings.change": "Cambia…",
   "settings.setLocation": "Imposta la posizione…",
   "members.title": "Membri",
-  "members.sub": "— chi è collegato a questo hub",
+  "members.sub": "— chi è collegato a quest{@g:o|a} {@holon}",
   "members.youLinked":
-    "La tua chiave {key} è collegata a questo hub: le tue modifiche contano per tutti.",
+    "La tua chiave {key} è collegata a quest{@g:o|a} {@holon}: le tue modifiche contano per tutti.",
   "members.youNotLinked":
-    "La tua chiave {key} non è ancora collegata a questo hub, quindi solo questo schermo vede le tue modifiche. Chiedilo qui sotto — la richiesta è firmata dalla tua chiave, non serve altro.",
+    "La tua chiave {key} non è ancora collegata a quest{@g:o|a} {@holon}, quindi solo questo schermo vede le tue modifiche. Chiedilo qui sotto — la richiesta è firmata dalla tua chiave, non serve altro.",
   "members.youNotLinkedTelegram":
     "Oppure collega questa chiave al tuo account Telegram, così il bot la collega in ogni chat in cui sei.",
   "members.linkTelegram": "Collega via Telegram",
   "members.linkTelegramOpen": "Apri Telegram e tocca Avvia",
   "members.linkTelegramHint":
-    "La prova è pubblicata da questo dispositivo; il bot la verifica e collega la chiave al tuo account. I tuoi hub la collegano al prossimo aggiornamento.",
+    "La prova è pubblicata da questo dispositivo; il bot la verifica e collega la chiave al tuo account. {@g:I tuoi|Le tue} {@holons} la collegano al prossimo aggiornamento.",
   "members.linkTelegramFailed": "Impossibile pubblicare la prova: {reason}",
   "members.youNoKey":
-    "Sei entrato senza chiave, quindi nulla ti collega a questo hub. Entra con la tua chiave (nsec, passkey o wallet).",
+    "Sei entrato senza chiave, quindi nulla ti collega a quest{@g:o|a} {@holon}. Entra con la tua chiave (nsec, passkey o wallet).",
   "members.youNoKeyTelegram":
-    "Il tuo accesso Telegram non ha portato una chiave, quindi nulla ti collega a questo hub. Chi gestisce questo schermo deve configurare la derivazione delle chiavi (NOSTR_DERIVATION_SECRET).",
+    "Il tuo accesso Telegram non ha portato una chiave, quindi nulla ti collega a quest{@g:o|a} {@holon}. Chi gestisce questo schermo deve configurare la derivazione delle chiavi (NOSTR_DERIVATION_SECRET).",
   "members.linkMe": "Collega la mia chiave",
   "members.asked":
     "Richiesta inviata — un admin collega la tua chiave; questa pagina si aggiorna quando lo fa.",
@@ -798,7 +878,7 @@ export const it: Record<MessageKey, Msg> = {
   "members.signIn": "Entra con una chiave",
   "members.chat": "Chat Telegram",
   "members.chatBorn":
-    "Questo hub è nato in una chat Telegram e resta collegato ad essa: i membri della chat sono collegati qui.",
+    "Quest{@g:o|a} {@holon} è nat{@g:o|a} in una chat Telegram e resta collegat{@g:o|a} ad essa: i membri della chat sono collegati qui.",
   "members.chatLinkedHint":
     "I membri di una chat collegata sono collegati qui, e le sue bacheche compaiono qui.",
   "members.chatLink": "Collega una chat Telegram",
@@ -816,32 +896,34 @@ export const it: Record<MessageKey, Msg> = {
   "members.addAdmin": "Collega come admin",
   "members.remove": "Scollega {key}",
   "members.failed": "Impossibile cambiare quel collegamento — {reason}",
-  "members.invite": "Invita persone con il link di questo hub:",
+  "members.invite": "Invita persone con il link di quest{@g:o|a} {@holon}:",
   "members.inviteCopy": "Copia link",
   "members.noKey":
-    "Questo hub non ha ancora una chiave propria, quindi nulla può esservi collegato e ogni scrittura conta.",
+    "Quest{@g:o|a} {@holon} non ha ancora una chiave propria, quindi nulla può esservi collegato e ogni scrittura conta.",
   "members.noKeyBot":
-    "Questo hub è nato in Telegram; il suo bot gli dà una chiave la prima volta che gira con la firma attiva. Fino ad allora nulla può esservi collegato.",
+    "Quest{@g:o|a} {@holon} è nat{@g:o|a} in Telegram; il suo bot {@g:gli|le} dà una chiave la prima volta che gira con la firma attiva. Fino ad allora nulla può esservi collegato.",
   "members.noKeyOpen":
-    "Questo hub non ha ancora una chiave propria. Avvialo con la tua: diventi il primo admin.",
+    "Quest{@g:o|a} {@holon} non ha ancora una chiave propria. Avvial{@g:o|a} con la tua: diventi il primo admin.",
   "members.noKeyNeedsKey":
-    "Questo hub non ha ancora una chiave propria. Entra con la tua chiave (nsec, passkey o wallet) per avviarlo.",
-  "members.start": "Avvia questo hub con la mia chiave",
-  "members.started": "Avviato: la tua chiave ora firma per questo hub.",
-  "members.startFailed": "Impossibile avviare questo hub — {reason}",
-  "menu.linked": "La tua chiave è collegata a questo hub",
+    "Quest{@g:o|a} {@holon} non ha ancora una chiave propria. Entra con la tua chiave (nsec, passkey o wallet) per avviarl{@g:o|a}.",
+  "members.start": "Avvia quest{@g:o|a} {@holon} con la mia chiave",
+  "members.started":
+    "Avviat{@g:o|a}: la tua chiave ora firma per quest{@g:o|a} {@holon}.",
+  "members.startFailed":
+    "Impossibile avviare quest{@g:o|a} {@holon} — {reason}",
+  "menu.linked": "La tua chiave è collegata a quest{@g:o|a} {@holon}",
   "menu.notLinked":
-    "Non collegata — la tua chiave non è ancora collegata a questo hub, quindi solo questo schermo vede le tue modifiche",
-  "menu.linkMe": "Collega la mia chiave a questo hub",
+    "Non collegata — la tua chiave non è ancora collegata a quest{@g:o|a} {@holon}, quindi solo questo schermo vede le tue modifiche",
+  "menu.linkMe": "Collega la mia chiave a quest{@g:o|a} {@holon}",
   "menu.linkAsked":
-    "Richiesta inviata. Un admin dell’hub collega la tua chiave.",
-  "menu.unlinkMe": "Scollega la mia chiave da questo hub",
+    "Richiesta inviata. Un admin {@of_the_holon} collega la tua chiave.",
+  "menu.unlinkMe": "Scollega la mia chiave da quest{@g:o|a} {@holon}",
   "menu.unlinked":
-    "Hai detto all’hub che te ne vai. Un admin scollega la tua chiave.",
+    "Hai detto {@to_the_holon} che te ne vai. Un admin scollega la tua chiave.",
   "layout.notLinked":
-    "La tua chiave non è ancora collegata a questo hub — le tue modifiche restano su questo schermo finché un admin non la collega (Impostazioni → Membri).",
+    "La tua chiave non è ancora collegata a quest{@g:o|a} {@holon} — le tue modifiche restano su questo schermo finché un admin non la collega (Impostazioni → Membri).",
   "tglink.confirmBody":
-    "I membri della chat vengono collegati qui, la chiave del bot diventa admin di questo hub, ed entrambe le bacheche mostrano gli elementi dell’altra.",
+    "I membri della chat vengono collegati qui, la chiave del bot diventa admin di quest{@g:o|a} {@holon}, ed entrambe le bacheche mostrano gli elementi dell’altra.",
   "tglink.done":
     "Collegata. I membri della chat compaiono man mano che il bot li sincronizza.",
   "audience.locked": "Privata",
@@ -853,10 +935,10 @@ export const it: Record<MessageKey, Msg> = {
   "audience.noReaders":
     "ancora nessun lettore — nulla di firmato dice chi ne fa parte",
   "audience.add": "Condividi con…",
-  "audience.federated": "Holon federati",
-  "audience.search": "Qualsiasi holon",
-  "audience.searchPlaceholder": "Nome o id dell'holon",
-  "audience.noHits": "Nessun holon con quel nome.",
+  "audience.federated": "{@Holons} federat{@g:i|e}",
+  "audience.search": "Qualsiasi {@holon}",
+  "audience.searchPlaceholder": "Nome o id {@of_the_holon}",
+  "audience.noHits": "Nessun{@g:|a} {@holon} con quel nome.",
   "audience.remove": "Smetti di condividere con {name}",
   "audience.adminCanUnlock":
     "Bloccato da un'altra chiave. Come admin puoi renderlo pubblico, oppure prenderlo in carico e condividerlo tu.",
@@ -867,11 +949,11 @@ export const it: Record<MessageKey, Msg> = {
     "L'intera bacheca è bloccata; le schede la seguono. Cambialo dalle impostazioni della bacheca.",
   "audience.failed": "Impossibile cambiarlo — riprova.",
   "audience.whenLockLens":
-    "Renderla privata sigilla ogni scheda di questa bacheca — quelle già presenti e ogni nuova — così solo i membri di questo hub e gli holon con cui la condividi possono leggerle. Ciò che è già stato letto resta letto.",
+    "Renderla privata sigilla ogni scheda di questa bacheca — quelle già presenti e ogni nuova — così solo i membri di quest{@g:o|a} {@holon} e {@the_holons} con cui la condividi possono leggerle. Ciò che è già stato letto resta letto.",
   "audience.whenUnlockLens":
     "Renderla pubblica riscrive ogni scheda di questa bacheca in chiaro, vecchie e nuove, leggibile da chiunque.",
   "audience.whenLockCard":
-    "Renderla privata sigilla questa scheda e ogni sua modifica, così solo i membri di questo hub e gli holon con cui la condividi possono leggerla. Ciò che è già stato letto resta letto.",
+    "Renderla privata sigilla questa scheda e ogni sua modifica, così solo i membri di quest{@g:o|a} {@holon} e {@the_holons} con cui la condividi possono leggerla. Ciò che è già stato letto resta letto.",
   "audience.whenUnlockCard":
     "Renderla pubblica riscrive questa scheda in chiaro, e le sue modifiche restano pubbliche, leggibile da chiunque.",
   "audience.makePrivate": "Rendi privata",
@@ -879,8 +961,8 @@ export const it: Record<MessageKey, Msg> = {
   "privacy.who": "Chi può leggere {lens}",
   "settings.onMap": "Sulla mappa",
   "settings.onMapSub":
-    "— ciò che questo holon mette sulla mappa condivisa, e da quanto lontano si vede",
-  "settings.onMapLink": "Metti questo holon sulla mappa",
+    "— ciò che quest{@g:o|a} {@holon} mette sulla mappa condivisa, e da quanto lontano si vede",
+  "settings.onMapLink": "Metti quest{@g:o|a} {@holon} sulla mappa",
   "settings.onMapUnlink": "Non mettere più sulla mappa",
   "settings.onMapNeedsHex":
     "Imposta prima una posizione per mettere gli elementi sulla mappa.",
@@ -908,18 +990,18 @@ export const it: Record<MessageKey, Msg> = {
   "fed.loading": "Caricamento…",
   "fed.loadError": "Impossibile caricare la federazione — riprova.",
   "fed.adminOnly":
-    "Solo un admin di questo holon cambia con chi federa e quali lenti scorrono; i tuoi tocchi qui non conterebbero.",
+    "Solo un admin di quest{@g:o|a} {@holon} cambia con chi federa e quali lenti scorrono; i tuoi tocchi qui non conterebbero.",
   "fed.arrowHint":
-    "Tocca la freccia verso l'holon in cui devono viaggiare gli elementi. Toccala di nuovo per chiudere quella direzione.",
+    "Tocca la freccia verso {@the_holon} in cui devono viaggiare gli elementi. Toccala di nuovo per chiudere quella direzione.",
   "fed.notLinked":
-    "Non federati — tocca una freccia per aprire il primo flusso.",
+    "Non federat{@g:i|e} — tocca una freccia per aprire il primo flusso.",
   "fed.flowsOpen": { one: "{n} flusso aperto", other: "{n} flussi aperti" },
   "fed.all": "Tutti",
   "fed.sendAria": "{lens}: invia da {a} a {b}",
   "fed.receiveAria": "{lens}: ricevi da {b} in {a}",
   "fed.tapAgainUnlink": "Tocca di nuovo per scollegare",
   "fed.unlink": "Scollega {name}",
-  "fed.linkError": "Impossibile collegare quell'holon — riprova.",
+  "fed.linkError": "Impossibile collegare {@the_holon} — riprova.",
   "fed.changeError": "La modifica non è stata salvata — riprova.",
   "fed.keyShare": "Condividi la chiave di {lens} con {name}",
   "fed.keyRevoke": "Ritira la chiave di {lens} da {name}",
@@ -951,22 +1033,22 @@ export const it: Record<MessageKey, Msg> = {
     one: "{name} offre {n} flusso che non hai preso — la freccia tenue.",
     other: "{name} offre {n} flussi che non hai preso — le frecce tenui.",
   },
-  "fed.askLink": "{name} chiede di federarsi con questo holon.",
+  "fed.askLink": "{name} chiede di federarsi con quest{@g:o|a} {@holon}.",
   "fed.askUnlink":
-    "{name} ha chiuso il collegamento. Togliere anche il lato di questo holon?",
+    "{name} ha chiuso il collegamento. Togliere anche il lato di quest{@g:o|a} {@holon}?",
   "fed.askUnlinkShort": "ha chiuso il collegamento — togliere anche il nostro?",
   "fed.askReceive": "Riceveresti: {lenses}",
   "fed.askSend": "Invieresti: {lenses}",
   "fed.askNoFlows": "un collegamento ancora senza flussi",
   "fed.accept": "Accetta",
   "fed.decline": "Rifiuta",
-  "fed.accepted": "Accettato — {name} è federato da questo lato.",
+  "fed.accepted": "Accettato — {name} è federat{@g:o|a} da questo lato.",
   "fed.declined": "Richiesta di {name} rifiutata.",
   "fed.answerError": "La risposta non è stata salvata — riprova.",
   "fed.openPair": "Apri i flussi",
   "fed.requestsTitle": "Richieste di federazione",
   "fed.requestsSub":
-    "Altri holon chiedono di collegarsi. Accettare imposta il lato di questo holon; gli admin di ogni lato decidono il proprio.",
+    "{@g:Altri|Altre} {@holons} chiedono di collegarsi. Accettare imposta il lato di quest{@g:o|a} {@holon}; gli admin di ogni lato decidono il proprio.",
   "fed.requestsBadge": {
     one: "{n} richiesta di federazione",
     other: "{n} richieste di federazione",
@@ -975,9 +1057,9 @@ export const it: Record<MessageKey, Msg> = {
   // Location (hex) picker
   "hex.aria": "Scegli una posizione",
   "hex.kicker": "Rivendica la tua cella",
-  "hex.title": "Dove si trova questo holon?",
+  "hex.title": "Dove si trova quest{@g:o|a} {@holon}?",
   "hex.hint":
-    "Tocca l'esagono in cui vive il tuo holon — riduci lo zoom per una cella più ampia e riservata.",
+    "Tocca l'esagono in cui vive {@g:il tuo|la tua} {@holon} — riduci lo zoom per una cella più ampia e riservata.",
   "hex.searchPlaceholder": "Cerca un indirizzo o un luogo…",
   "hex.searching": "ricerca…",
   "hex.locating": "Localizzazione…",
@@ -1004,7 +1086,8 @@ export const it: Record<MessageKey, Msg> = {
   "hex.moveBody":
     "Questo esagono diventa la sua casa, e da adesso il suo faro atterra qui.",
   "hex.moveConfirm": "Sposta la casa qui",
-  "hex.claimed": "Posizione rivendicata — questo holon è sulla mappa.",
+  "hex.claimed":
+    "Posizione rivendicata — quest{@g:o|a} {@holon} è sulla mappa.",
   "hex.saveError": "Impossibile salvare la posizione — riprova.",
 
   // Detail modal
@@ -1021,11 +1104,18 @@ export const it: Record<MessageKey, Msg> = {
   "detail.completeFailed": "Impossibile completare.",
   "detail.deleteConfirm": 'Eliminare "{title}"? Non si può annullare.',
   "detail.hideConfirm":
-    'Nascondere "{title}" da questo hub? Appartiene a un altro holon e vi rimane — sparisce solo dalla tua vista.',
+    'Nascondere "{title}" da quest{@g:o|a} {@holon}? Appartiene a {@g:un altro|un\'altra} {@holon} e vi rimane — sparisce solo dalla tua vista.',
   "detail.thisTask": "questa attività",
   "detail.deleteFailed": "Impossibile eliminare — riprova.",
   "detail.hideFailed": "Impossibile nascondere — riprova.",
   "detail.joinFailed": "Impossibile unirsi.",
+  "detail.joinHeld":
+    "La tua chiave non è ancora collegata in {holon} — la tua adesione non conterebbe. Collega la tua chiave o chiedi a un membro di aggiungerti.",
+  "detail.leaveHeld": "Chiedi a un membro di {holon} di toglierti.",
+  "detail.editHeld":
+    "Questa scheda vive in {holon}, che non accetta la tua chiave — chiedi a un membro di lì di modificarla.",
+  "detail.added": "Aggiunta il {date}",
+  "detail.addedBy": "Aggiunta il {date} · da {name}",
   "detail.overlaps":
     "Si sovrappone alla prenotazione di {who} ({start} → {end}).",
   "detail.someone": "qualcuno",
@@ -1041,7 +1131,7 @@ export const it: Record<MessageKey, Msg> = {
   "detail.overdueWith": "In ritardo · {who}",
   "detail.untilWhen": "fino a {when}",
   "detail.dueWhen": "doveva rientrare {when}",
-  "detail.viaHolonTitle": "Prenotato da un holon federato",
+  "detail.viaHolonTitle": "Prenotato da {@a_holon} federat{@g:o|a}",
   "detail.availableCap": "Disponibile",
   "detail.value": "Valore",
   "detail.booked": "Prenotato",
@@ -1081,7 +1171,7 @@ export const it: Record<MessageKey, Msg> = {
   "detail.chatSend": "Invia",
   "detail.chatLogin": "Accedi per scrivere",
   "detail.chatMembersOnly":
-    "Solo i membri di questo holon possono scrivere qui",
+    "Solo i membri di quest{@g:o|a} {@holon} possono scrivere qui",
   "detail.chatPrivate": "Le schede private non hanno ancora una chat",
   "detail.chatFailed": "Invio non riuscito",
   "detail.board": "Lavagna",
@@ -1172,7 +1262,7 @@ export const it: Record<MessageKey, Msg> = {
   "detail.suggestSteps": "Suggerisci",
   "detail.addStep": "Aggiungi un passo",
   "detail.addOwnStepPlaceholder": "Aggiungi un passo tuo…",
-  "detail.joined": "Partecipo",
+  "detail.joined": "Dentro",
   "detail.done": "Fatto",
   "detail.completed": "Completato",
   "detail.details": "Dettagli",
@@ -1302,113 +1392,38 @@ export const it: Record<MessageKey, Msg> = {
   "voice.plan.failed": "Non riuscita",
 
   // ── Aggiungi un hub — la scheda dietro il "+" del dock ─────────────────
-  "hub.addTitle": "Aggiungi un hub",
-  "hub.addHereTitle": "Aggiungi un hub qui",
-  "hub.haveTitle": "Ho già un hub",
+  "hub.addTitle": "Aggiungi {@a_holon}",
+  "hub.addHereTitle": "Aggiungi {@a_holon} qui",
+  "hub.haveTitle": "Ho già {@a_holon}",
   "hub.haveBody": "Incolla il suo link o il suo id.",
-  "hub.newTitle": "Avvia un nuovo hub",
+  "hub.newTitle": "Avvia {@a_holon} {@g:nuovo|nuova}",
   "hub.newBody": "Per te, o per un gruppo — tramite Telegram.",
   "hub.newLead":
-    "Un hub è una chat Telegram. Scegli quale: si apre Telegram, il bot risponde lì e l'hub compare qui da solo.",
-  "hub.personal": "Un hub per me",
+    "{@A_holon} è una chat Telegram. Scegli quale: si apre Telegram, il bot risponde lì e {@the_holon} compare qui da sol{@g:o|a}.",
+  "hub.personal": "{@A_holon} per me",
   "hub.personalHint": "Una chat privata con il bot",
-  "hub.group": "Un hub per un gruppo",
+  "hub.group": "{@A_holon} per un gruppo Telegram",
   "hub.groupHint": "Aggiungi il bot a un gruppo, o creane uno",
   "hub.waiting": "In attesa del bot…",
   "hub.waitingBody":
-    "Quando il bot ha risposto su Telegram, torna in questa scheda: l'hub si apre da solo.",
+    "Quando il bot ha risposto su Telegram, torna in questa scheda: {@the_holon} si apre da sol{@g:o|a}.",
   "hub.orPaste": "Oppure incolla quello che ha risposto il bot",
-  "hub.pasteHint": "Scrivi /id nella chat dell'hub se ti serve di nuovo.",
-  "hub.open": "Aggiungilo",
+  "hub.pasteHint":
+    "Scrivi /id nella chat {@of_the_holon} se ti serve di nuovo.",
+  "hub.open": "Aggiungil{@g:o|a}",
   "hub.back": "Indietro",
 
-  "hub.hereTitle": "Avvia un hub qui",
-  "hub.hereBody": "Senza Telegram: lo avvia la tua chiave, adesso.",
+  "hub.hereTitle": "Avvia {@a_holon} qui",
+  "hub.hereBody": "Senza Telegram: {@g:lo|la} avvia la tua chiave, adesso.",
   "hub.hereLead":
-    "Un hub tutto tuo, avviato con la tua chiave: sei il primo admin, e colleghi gli altri con la loro chiave pubblica.",
+    "{@A_holon} tutt{@g:o|a} tu{@g:o|a}, avviat{@g:o|a} con la tua chiave: sei il primo admin, e colleghi gli altri con la loro chiave pubblica.",
   "hub.hereName": "Nome",
-  "hub.hereNamePlaceholder": "Come si chiama questo hub?",
-  "hub.hereCreate": "Avvialo",
+  "hub.hereNamePlaceholder": "Come si chiama quest{@g:o|a} {@holon}?",
+  "hub.hereCreate": "Avvial{@g:o|a}",
   "hub.hereNeedsKey":
     "Per fondare serve una chiave tua. Accedi prima con un nsec, una passkey o un wallet.",
   "hub.hereSignIn": "Accedi con una chiave",
-  "hub.hereFailed": "Impossibile fondare l'hub — {reason}",
-  // Home / landing page
-  "home.metaTitle": "Hubs Network — un hub per ogni gruppo",
-  "home.metaDescription":
-    "Ogni gruppo è un hub: i suoi strumenti, alle sue condizioni, connesso agli hub di cui si fida. Avviane uno su Telegram.",
-
-  "home.artNetAlt":
-    "Cinque hub disegnati come cerchi di membri, collegati fra loro, uno al centro.",
-  "home.artConnectAlt":
-    "Due hub affiancati, con cose che attraversano il confine in entrambe le direzioni.",
-
-  "home.heroTitle": "Non sei solo di passaggio. Ne diventi parte.",
-  "home.heroLead":
-    "Gli hub sono spazi dove si costruisce allo scoperto, tra discipline diverse, per i beni comuni. Questo è il livello su cui si coordinano: ogni gruppo è un hub, con i propri strumenti, alle proprie condizioni, connesso agli hub di cui si fida.",
-
-  "home.personalKicker": "Per una persona",
-  "home.personalTitle": "Il tuo hub personale",
-  "home.personalBody":
-    "Una chat privata è un hub tutto tuo: cosa stai costruendo, cosa hai, cosa ti serve — e tutto ciò che prendi in carico nella rete, in un unico posto.",
-  "home.personalButton": "Apri il tuo hub personale",
-  "home.groupKicker": "Per un gruppo",
-  "home.groupTitle": "Ogni gruppo è un hub",
-  "home.groupBody":
-    "Aggiungi il bot a un qualsiasi gruppo di chat — quello che usate già, o uno nuovo. Il gruppo stesso diventa l'hub: non c'è nulla da registrare, nessuno da invitare due volte, niente da spostare.",
-  "home.groupButton": "Aggiungi il bot a un gruppo",
-  "home.pathsNote":
-    "Sono entrambi hub veri, e ciascuno dei due può connettersi al resto della rete.",
-
-  "home.toolsKicker": "Ogni hub",
-  "home.toolsTitle": "I suoi strumenti, alle sue condizioni.",
-  "home.toolsLead":
-    "Ogni hub riceve lo stesso set e decide cosa usare, chi può vederlo e cosa conta come contributo. Non una singola app o un unico sistema di valori — una costellazione di hub che si sviluppano l'uno con l'altro.",
-  "home.tool1": "Compiti",
-  "home.tool2": "Calendario",
-  "home.tool3": "Biblioteca delle cose",
-  "home.tool4": "Ruoli e turni",
-  "home.tool5": "Liste",
-  "home.tool6": "Bisogni e offerte",
-  "home.tool7": "Spese e flussi",
-  "home.tool8": "Una memoria dei contributi",
-  "home.toolsNote":
-    "Questo schermo è uno di loro: puntalo su un hub e diventa quell'hub, appeso al muro accanto alla porta.",
-
-  "home.fedKicker": "Connettori",
-  "home.fedTitle": "Come si connettono gli hub.",
-  "home.fedP1":
-    "Un hub dichiara fiducia verso un altro hub e le cose attraversano il confine: lavoro che cerca mani, strumenti e spazi che potrebbero circolare, persone che si spostano da un hub all'altro, bisogni che qualcuno lì vicino può soddisfare, apprezzamenti che viaggiano con chi se li è guadagnati.",
-  "home.fedP2":
-    "Solo ciò che ciascuna parte pubblica, in entrambe le direzioni, revocabile in qualsiasi momento. Nessun hub rinuncia a governarsi per far parte di qualcosa di più grande — privacy, autosovranità e potere decentralizzato sono il modo in cui il software è costruito, non una promessa sulle intenzioni.",
-  "home.fedP3":
-    "Non possiamo dipendere dal sistema che mettiamo in discussione. Scegliamo invece di dipendere gli uni dagli altri. Come rete.",
-
-  "home.backToMap": "Torna alla mappa",
-  "home.backTitle": "Bentornatə.",
-  "home.backLead":
-    "Appena il bot entra nella tua chat, pubblica un link diretto a questo hub. Se te lo sei perso, lancia il comando qui sotto in quella chat e incolla qui la risposta.",
-  "home.openTitle": "Hai già un hub?",
-  "home.openLead":
-    "Incolla il suo link o il suo id e questo schermo diventa il suo hub.",
-  "home.openHint":
-    "Scrivilo nella chat del tuo hub. Il bot risponde con l'id — incolla pure tutta la risposta, lo troverà.",
-  "home.openPlaceholder": "-1001234567890, oppure un link al tuo gruppo",
-  "home.openButton": "Apri l'hub",
-  "home.openInvalid":
-    "Qui dentro non c'è nessun id. Lancia /id nella chat del tuo hub e incolla la risposta del bot.",
-  "home.openAria": "Id o link dell'hub",
-
-  "home.footerDocs": "Documentazione",
-  "home.footerDashboard": "Dashboard web",
-  "home.footerCommunity": "Chat della comunità",
-  "home.footerSource": "Codice sorgente",
-  "home.footerSetup": "Configura questo schermo",
-  "home.footerLicense":
-    "Open source con licenza AGPL-3.0-or-later — local-first, peer-to-peer, nessun hub che dipende dal server di qualcun altro.",
-  "home.caretakerNote":
-    "Lo stai montando a parete? Le Impostazioni puntano lo schermo su un hub e lo ricordano su questo dispositivo — oppure apri il kiosk su /<id holon> e salti del tutto la configurazione.",
-
+  "hub.hereFailed": "Impossibile fondare {@the_holon} — {reason}",
   // Shell
   "layout.resync": "Vista live in stallo — risincronizzazione…",
 
@@ -1426,12 +1441,12 @@ export const it: Record<MessageKey, Msg> = {
   "draft.unavailable":
     "Per compilare serve una chiave AI sul deploy (ANTHROPIC_API_KEY).",
   // Flows board
-  "flows.loading": "Lettura del registro\u2026",
-  "flows.empty": "Qui non si \u00e8 ancora mosso nulla.",
-  "flows.emptyTrack": "Nulla si \u00e8 mosso in questo periodo.",
+  "flows.loading": "Lettura del registro…",
+  "flows.empty": "Qui non si è ancora mosso nulla.",
+  "flows.emptyTrack": "Nulla si è mosso in questo periodo.",
   "flows.emptyAllocation":
     "Non ci sono ancora membri o partner con cui condividere.",
-  "flows.hub": "Holon",
+  "flows.hub": "{@Holon}",
   "flows.movementTitle": "Movimento",
   "flows.movementAbout":
     "Da dove \u00e8 arrivato il valore e dove \u00e8 andato.",
@@ -1442,12 +1457,12 @@ export const it: Record<MessageKey, Msg> = {
     "Chi pu\u00f2 destinare il fondo, e per quanto.",
   "flows.allocationPot": "Totale",
   "flows.interior": "Quota contributori",
-  "flows.exterior": "Zone di reciprocit\u00e0",
+  "flows.exterior": "Zone di reciprocità",
   "flows.zones": "Zone",
   "flows.in": "Entrate",
   "flows.out": "Uscite",
   "flows.balance": "Saldo",
-  "flows.trackLabel": "Quale unit\u00e0 mostrare",
+  "flows.trackLabel": "Quale unità mostrare",
   "flows.trackAll": "Tutto",
   "flows.shareOfUnit": "{pct}% di tutti i {unit} che si sono mossi",
   "flows.unitsLegend": "Unità in questo diagramma",
@@ -1463,7 +1478,6 @@ export const it: Record<MessageKey, Msg> = {
   "flows.window90": "90 giorni",
   "flows.windowAll": "Sempre",
   "flows.settings": "Impostazioni dei flussi",
-  "flows.tabView": "Vista",
   "flows.unitAbout":
     "Un'unica unità per il movimento e le persone. Una valuta fissa anche i saldi.",
   "flows.windowWeek": "Questa settimana",
@@ -1498,7 +1512,7 @@ export const it: Record<MessageKey, Msg> = {
   "flows.passed": "Trasmesso",
   "flows.retained": "Trattenuto",
   "flows.tipRetainedAbout":
-    "Nessuno è indicato per questa parte, quindi resta all'holon.",
+    "Nessuno è indicato per questa parte, quindi resta {@to_the_holon}.",
   "flows.cascadeKeeps": "Trattiene",
   "flows.cascadePassesTo": "Trasmette a",
   "flows.cascadeFrom": "Ricevuto tramite",
@@ -1523,6 +1537,11 @@ export const it: Record<MessageKey, Msg> = {
   "flows.accountRight": "Il tuo accesso",
   "flows.accountShare": "{pct}% del fondo",
   "flows.accountOverBy": "Oltre di",
+  "flows.oneYours": "Tuo da destinare",
+  "flows.oneOf": "di {right}, il tuo accesso al fondo",
+  "flows.oneStatement": "Estratto",
+  "flows.oneTotal": "Ancora tuo",
+  "flows.oneSource": "Guarda da dove arriva",
   "flows.accountVia": "Tramite",
   "flows.accountNoPot":
     "Gli importi compaiono quando un collettivo è collegato.",
@@ -1551,7 +1570,7 @@ export const it: Record<MessageKey, Msg> = {
   "flows.claimNoSigner":
     "La firma non è configurata per questo accesso: qui non si può registrare una richiesta.",
   "flows.claimsProvisional":
-    "I membri di questo holon non sono ancora firmati: chi conta è provvisorio finché il bot non li firma.",
+    "I membri di quest{@g:o|a} {@holon} non sono ancora firmati: chi conta è provvisorio finché il bot non li firma.",
   "flows.claimsReview": "Richieste da esaminare",
   "flows.claimAttest": "Attesta",
   "flows.claimDispute": "Contesta",
@@ -1658,7 +1677,7 @@ export const it: Record<MessageKey, Msg> = {
   "balances.add": "Aggiungi spesa",
   "balances.addLabel": "Aggiungi una spesa",
   "balances.errAmount": "Inserisci un importo maggiore di zero.",
-  "balances.errDenied": "Non puoi scrivere in questo holon.",
+  "balances.errDenied": "Non puoi scrivere in quest{@g:o|a} {@holon}.",
   "balances.errSave": "Salvataggio non riuscito. Riprova.",
   "balances.loginToAdd": "Accedi per aggiungere una spesa o pareggiare",
   "balances.currency": "Valuta",
@@ -1666,16 +1685,51 @@ export const it: Record<MessageKey, Msg> = {
   "balances.currencyHint": "es. eur, chf, ore, crediti",
   "balances.allCurrencies":
     "Ogni valuta ha il suo bilancio — qui non ci sono tassi di cambio.",
+  "flows.tabFlows": "Flussi",
+  "flows.walletNoneInUnit":
+    "Niente di tuo in {unit} qui — scegli un'altra unità sopra, o Tutto.",
+  "flows.balancesMoneyOnly":
+    "Il conto condiviso è tenuto in valute — {unit} non ha un bilancio. Scegli una valuta sopra.",
+  "balances.periodNote":
+    "I saldi contano ogni registrazione; Speso e Recenti coprono il periodo scelto sopra.",
+  "balances.noneInPeriod": "Niente registrato in questo periodo.",
+  "balances.kind": "Che cos’è",
+  "balances.kindExpense": "Spesa",
+  "balances.kindFund": "Nel fondo",
+  "balances.newFunding": "Finanzia {@the_holon}",
+  "balances.fundFrom": "Da",
+  "balances.fundHint":
+    "Lo aggiunge al fondo di {holon} — diviso secondo la sua ripartizione, firmato da te come attestatore.",
+  "balances.fundRecord": "Aggiungi al fondo",
+  "alloc.mintFromSheet":
+    "Per aggiungere al fondo, tocca + sulla bacheca Flussi e scegli «Nel fondo».",
+  "currencies.title": "Valute",
+  "currencies.about":
+    "Le unità in cui quest{@g:o|a} {@holon} tiene i conti. Quelle in elenco sono offerte prima che qualcuno le usi; quelle sulle spese registrate restano finché un record le usa.",
+  "currencies.edit": "Modifica valute",
+  "currencies.usedIn": "su {n} registrazioni",
+  "currencies.usedInOne": "su 1 registrazione",
+  "currencies.unused": "non ancora usata",
+  "currencies.notListed": "non in elenco",
+  "currencies.list": "Mettila in elenco",
+  "currencies.remove": "Rimuovi {code}",
+  "currencies.removeUsed":
+    "Togli dall’elenco — resta finché le registrazioni la usano",
+  "currencies.add": "Aggiungi",
+  "currencies.addHint": "es. eur, ora, kg",
+  "currencies.signIn": "Accedi per cambiare le valute.",
+  "balances.sheetIn":
+    "In {currency} — ogni valuta ha il suo bilancio; scegline un'altra nella riga delle unità qui sopra.",
   "alloc.settings": "Impostazioni dei diritti di allocazione",
   "alloc.collective": "Collettivo OpenCollective",
   "alloc.collectiveHint": "Slug o URL del collettivo — vuoto per scollegare",
-  "alloc.interior": "Quota contributori / zone di reciprocit\u00e0",
-  "alloc.allExterior": "Tutto alle zone di reciprocit\u00e0",
+  "alloc.interior": "Quota contributori / zone di reciprocità",
+  "alloc.allExterior": "Tutto alle zone di reciprocità",
   "alloc.allInterior": "Tutto ai contributori",
-  "alloc.sharing": "Portata della reciprocit\u00e0",
+  "alloc.sharing": "Portata della reciprocità",
   "alloc.steep": "Prima le zone vicine",
   "alloc.even": "Distribuita uniformemente",
-  "alloc.zones": "Zone di reciprocit\u00e0",
+  "alloc.zones": "Zone di reciprocità",
   "alloc.fewer": "Una zona in meno",
   "alloc.more": "Una zona in più",
   "alloc.partners": "Partner per zona",
@@ -1684,15 +1738,15 @@ export const it: Record<MessageKey, Msg> = {
   "alloc.noPartners": "Nessun partner federato ancora — trovane uno qui sotto.",
   "alloc.people": "Persone per zona",
   "alloc.peopleAbout":
-    "Chi condivide con l'holon per relazione, non per compiti. Un membro messo qui conta da entrambe le parti.",
+    "Chi condivide con {@the_holon} per relazione, non per compiti. Un membro messo qui conta da entrambe le parti.",
   "alloc.addPerson": "Aggiungi una persona…",
   "alloc.removePerson": "Rimuovi {name}",
   "alloc.noPeople": "Nessuno da collocare ancora.",
-  "alloc.findParty": "Aggiungi un holon partner o una persona — nome o id",
+  "alloc.findParty": "Aggiungi {@a_holon} partner o una persona — nome o id",
   "alloc.findNoHits": "Nessun risultato. Funziona anche un id completo.",
   "alloc.newPartner": "Nuovo partner — collegato al salvataggio",
   "alloc.kindPerson": "persona",
-  "alloc.kindHolon": "holon",
+  "alloc.kindHolon": "{@holon}",
   "alloc.unplaced": "Non collocato",
   "alloc.zoneShare": "{pct}%",
   "alloc.zoneShareFund": "{pct}% del fondo",
@@ -1701,7 +1755,8 @@ export const it: Record<MessageKey, Msg> = {
   "alloc.zonesPreview":
     "Nessuno collocato \u2014 la forma che le zone avrebbero.",
   "alloc.errSave": "Salvataggio della ripartizione non riuscito. Riprova.",
-  "alloc.errDenied": "Non puoi cambiare le impostazioni di questo holon.",
+  "alloc.errDenied":
+    "Non puoi cambiare le impostazioni di quest{@g:o|a} {@holon}.",
   "alloc.split": "Quota dei contributori divisa",
   "alloc.splitEquation": "Per equazione del valore",
   "alloc.splitCustom": "Divisione personalizzata",
@@ -1748,13 +1803,7 @@ export const it: Record<MessageKey, Msg> = {
   "alloc.mintTitle": "Cosa contiene il fondo",
   "alloc.mintAbout":
     "Un raccolto, una scorta, un contributo: ciò che c’è da dividere, nella sua unità. Un attestatore lo registra; la ripartizione lo divide e ogni diritto si riscuote in quella unità.",
-  "alloc.mintAmount": "Quantità",
-  "alloc.mintUnit": "Unità",
-  "alloc.mintMemo": "Che cos’è",
-  "alloc.mintSource": "Da",
   "alloc.mintSourceNone": "—",
-  "alloc.mintRecord": "Aggiungi al fondo",
-  "alloc.mintRecorded": "Aggiunti {amount} {unit} al fondo.",
   "alloc.mintNotAttester":
     "Solo un attestatore di questo fondo può aggiungervi.",
   "alloc.mintNoSigner": "Accedi per aggiungere al fondo.",
@@ -1765,13 +1814,13 @@ export const it: Record<MessageKey, Msg> = {
   "alloc.mintStatus.conflict": "Conflitto",
   "alloc.mintStatus.rejected": "Non conteggiato",
   "alloc.inboundFrom": "Arriva qui da {name}",
-  "alloc.partnerHolonName": "{name} (holon)",
+  "alloc.partnerHolonName": "{name} ({@holon})",
   "vote.title": "Voto",
   "vote.tally": "Sì {yes} · No {no} · Astenuti {abstain} · su {total}",
   "vote.passing": "approvata",
   "vote.notPassing": "non approvata",
   "vote.provisional":
-    "I membri di questo holon non sono ancora firmati: chi conta è provvisorio finché il bot non li firma.",
+    "I membri di quest{@g:o|a} {@holon} non sono ancora firmati: chi conta è provvisorio finché il bot non li firma.",
   "vote.yours": "Il tuo voto",
   "vote.signIn": "Accedi per votare",
   "vote.noSigner":
@@ -1792,7 +1841,7 @@ export const it: Record<MessageKey, Msg> = {
   "alloc.tabRules": "Regole",
   "alloc.tabRulesSummary": "quorum {quorum}",
   "alloc.rulesAbout":
-    "Come si giudicano le richieste sul fondo: chi può farne una, chi attesta, quante attestazioni contano e cosa succede se due attingono alla stessa cosa. La parola firmata di un admin, conservata nel registro delle regole dell'holon.",
+    "Come si giudicano le richieste sul fondo: chi può farne una, chi attesta, quante attestazioni contano e cosa succede se due attingono alla stessa cosa. La parola firmata di un admin, conservata nel registro delle regole {@of_the_holon}.",
   "alloc.rulesAuthors": "Chi può richiedere",
   "alloc.rulesAttesters": "Chi attesta",
   "alloc.rulesQuorum": "Attestazioni necessarie",
@@ -1817,7 +1866,7 @@ export const it: Record<MessageKey, Msg> = {
     "La firma non è configurata per questo accesso, quindi qui non si possono impostare le regole.",
   "alloc.rulesUnchanged": "Queste sono già le regole in vigore.",
   "alloc.splitAbout":
-    "I contributori sono le persone che hanno fatto il lavoro. Le zone di reciprocità sono i gruppi e le persone con cui questo holon condivide in relazione.",
+    "I contributori sono le persone che hanno fatto il lavoro. Le zone di reciprocità sono i gruppi e le persone con cui quest{@g:o|a} {@holon} condivide in relazione.",
   // Stock board (the `stock` lens + REA stock events)
   "tabs.stock": "Scorte",
   "pills.shelf": "Scaffale",
@@ -1847,7 +1896,7 @@ export const it: Record<MessageKey, Msg> = {
   "stock.saving": "Salvataggio…",
   "stock.saveFailed": "Impossibile salvare l'articolo.",
   "stock.nameTaken": "C'è già un articolo con quel nome sullo scaffale.",
-  "stock.denied": "Non puoi modificare le scorte di questo holon.",
+  "stock.denied": "Non puoi modificare le scorte di quest{@g:o|a} {@holon}.",
   "stock.status.empty": "Vuoto",
   "stock.status.low": "Scarso",
   "stock.status.ok": "OK",
@@ -1877,7 +1926,7 @@ export const it: Record<MessageKey, Msg> = {
   "pills.offersLayout": "Vista offerte",
   "offers.reading": "Leggo il mercato…",
   "offers.scale": "Scala",
-  "offers.scale.holon": "Questo holon",
+  "offers.scale.holon": "Quest{@g:o|a} {@holon}",
   "offers.scale.partners": "Federazione",
   "offers.cellReading": "leggo la cella…",
   "offers.here": "qui",
@@ -1962,7 +2011,7 @@ export const it: Record<MessageKey, Msg> = {
   "offers.share": "Condividi vicino",
   "offers.shareLead": "Fin dove deve arrivare questa offerta?",
   "offers.sharePartners": "Partner della federazione",
-  "offers.sharePartnersHint": "Visibile a {n} holon federati",
+  "offers.sharePartnersHint": "Visibile a {n} {@holons} federat{@g:i|e}",
   "offers.sharePartnersNone": "Nessun partner federato ancora",
   "offers.shareMap": "Mappa pubblica (il tuo esagono)",
   "offers.shareMapHint": "Accende il livello Offerte nella tua cella e sopra",
@@ -2025,7 +2074,7 @@ export const it: Record<MessageKey, Msg> = {
   "offers.acceptFailed": "Impossibile accettare.",
   "offers.respond": "Rispondi",
   "offers.respondLead":
-    "Promettilo: sul tuo holon viene pubblicata un'offerta proprio per questo, riservata finché non scelgono.",
+    "Promettilo: {@g:sul tuo|sulla tua} {@holon} viene pubblicata un'offerta proprio per questo, riservata finché non scelgono.",
   "offers.respondPlaceholder": "Messaggio (facoltativo)",
   "offers.responded": "Risposta inviata.",
   "offers.respondFailed": "Impossibile rispondere.",
@@ -2116,7 +2165,7 @@ export const it: Record<MessageKey, Msg> = {
   // ── The Pot: rights committed at each new moon ──────────────────────
   "pot.title": "Pot",
   "pot.none":
-    "Questo holon non custodisce ancora valore on chain. Un Pot lo custodisce e lo divide con una tabella di diritti impegnata a ogni luna nuova.",
+    "Quest{@g:o|a} {@holon} non custodisce ancora valore on chain. Un Pot lo custodisce e lo divide con una tabella di diritti impegnata a ogni luna nuova.",
   "pot.deploy": "Crea un Pot",
   "pot.deploying": "Creazione…",
   "pot.reading": "Lettura della chain…",
@@ -2193,13 +2242,13 @@ export const it: Record<MessageKey, Msg> = {
   "onb.ask": "Inizia l'accoglienza",
   "onb.asked": "Richiesta inviata. Le prime carte arrivano tra un momento.",
   "onb.off":
-    "{holon} accoglie le chiavi su richiesta: chiedi, e qualcuno dell'holon collegherà la tua.",
+    "{holon} accoglie le chiavi su richiesta: chiedi, e qualcuno {@of_the_holon} collegherà la tua.",
   "onb.offAsk": "Chiedi di entrare",
   "onb.offAsked": "Richiesta inviata.",
   "onb.linked": "La tua chiave è collegata a {holon}. Ti diamo il benvenuto!",
   "onb.tick": "Fatto",
   "onb.tickFailed": "Impossibile salvare: {reason}",
-  "onb.adminTicks": "Qualcuno dell'holon la spunta quando è avvenuta.",
+  "onb.adminTicks": "Qualcuno {@of_the_holon} la spunta quando è avvenuta.",
   "onb.tickInTelegram": "Spuntala nella chat con il bot.",
   "onb.profileSave": "Salva profilo",
   "onb.profileSaved": "Profilo salvato.",

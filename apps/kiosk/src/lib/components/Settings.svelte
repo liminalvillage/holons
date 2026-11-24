@@ -27,9 +27,7 @@
     writeStanding,
     standing,
   } from "$lib/stores";
-  import { showHomePage } from "$lib/home";
   import {
-    setHolonId,
     setBrandLogo,
     setAccent,
     setThemeMode,
@@ -54,6 +52,7 @@
     loadSettings,
     readHolonColor,
     saveHolonColor,
+    saveHolonName,
   } from "@holons/core/settings";
   import {
     holonColor,
@@ -63,7 +62,7 @@
   } from "$lib/palette";
   import { currentUser, displayName, isLoggedIn, loginOpen } from "$lib/auth";
   import { sessionKeyPub } from "$lib/sessionKey";
-  import { nameOf } from "$lib/names";
+  import { invalidateName, nameOf, primeNames } from "$lib/names";
   import { shortId } from "@holons/core/identity";
   import {
     askToJoin,
@@ -73,7 +72,7 @@
     watchRequests,
     type JoinRequest,
   } from "$lib/hubmembers";
-  import { segmentFor } from "$lib/dock";
+  import { nameBoard, segmentFor } from "$lib/dock";
   import {
     answerFedRequest,
     fedLensLabel,
@@ -117,7 +116,13 @@
 
   // Drafts for the free-text fields only — every other control writes through
   // on touch and renders its store.
-  let draftHolon = $holonId ?? "";
+  // The name is the holon's to change; its id is not (it is shown, never
+  // edited). The draft follows the name as it is learned or changed
+  // elsewhere, except while the field is being typed in.
+  let draftName = $holonName;
+  let nameFocused = false;
+  let nameSaving = false;
+  $: if (!nameFocused && !nameSaving) draftName = $holonName;
   let draftAccent = $accent || DEFAULT_ACCENT;
   let logoError = "";
 
@@ -664,22 +669,35 @@
 
   // -- write-through commits -------------------------------------------------
 
-  /** Point the screen at another holon. Emptying the field unpins it. */
-  function commitHolon() {
-    const id = draftHolon.trim();
-    if (!id) {
-      void clearHolon();
+  /** Rename the holon ('' or an unchanged name writes nothing). */
+  async function commitName() {
+    const holon = $holonId;
+    const wanted = draftName.trim();
+    if (!holon || nameSaving) return;
+    if (!wanted || wanted === $holonName) {
+      draftName = $holonName;
       return;
     }
-    if (id === $holonId) return;
-    setHolonId(id);
-    holonId.set(id);
-  }
-
-  /** Unpin the screen and go back to the home page (see lib/home.ts). */
-  async function clearHolon() {
-    draftHolon = "";
-    await showHomePage();
+    nameSaving = true;
+    try {
+      const hs = await getHolosphere();
+      const stored = await saveHolonName(hs, holon, wanted);
+      if (!stored) {
+        showNotice(tr("settings.holonNameInvalid"));
+        return;
+      }
+      if ($holonId !== holon) return; // travelled away while saving
+      holonName.set(stored);
+      nameBoard(holon, stored);
+      // The resolver re-reads settings the next time anyone asks.
+      invalidateName(holon);
+      primeNames([[holon, stored]]);
+    } catch (err) {
+      console.error("[kiosk] settings: holon name save failed", err);
+      showNotice(tr("settings.holonNameFailed"));
+    } finally {
+      nameSaving = false;
+    }
   }
 
   function commitLogo(value: string) {
@@ -774,23 +792,28 @@
   <h3>{$t("settings.title")}</h3>
 
   <h4 class="group">{$t("settings.groupScreen")}</h4>
-  <label class="field"
-    >{$t("settings.holon")}
-    <input
-      type="text"
-      bind:value={draftHolon}
-      placeholder={$t("settings.holonPlaceholder")}
-      inputmode="numeric"
-      on:change={commitHolon}
-      on:keydown={blurOnEnter}
-    />
-  </label>
-  <!-- Emptying the field above does this too, but a blank field is nobody's
-       idea of a button: say plainly how a screen gets unpinned. -->
   {#if $holonId}
-    <button class="unpin" on:click={clearHolon}>
-      {$t("settings.unpinHolon")}
-    </button>
+    <label class="field"
+      >{$t("settings.holonName")}
+      <input
+        type="text"
+        bind:value={draftName}
+        placeholder={$t("settings.namePlaceholder")}
+        maxlength="64"
+        autocomplete="off"
+        disabled={nameSaving}
+        on:focus={() => (nameFocused = true)}
+        on:blur={() => {
+          nameFocused = false;
+          void commitName();
+        }}
+        on:keydown={blurOnEnter}
+      />
+    </label>
+    <!-- The id is what the holon IS: shown for reference, never edited. -->
+    <p class="holon-id">
+      {$t("settings.holonId")} <span class="mono">{$holonId}</span>
+    </p>
   {/if}
 
   <h4 class="group">{$t("settings.groupLook")}</h4>
@@ -1519,17 +1542,15 @@
     font-size: 1.3rem;
     color: var(--ink);
   }
-  .unpin {
-    display: block;
-    margin-top: 0.5rem;
-    padding: 0.4rem 0;
-    font-size: 0.9rem;
-    font-weight: 700;
-    color: var(--teal-ink);
-    text-align: left;
+  .holon-id {
+    margin: 0.5rem 0 0;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    overflow-wrap: anywhere;
   }
-  .unpin:active {
-    opacity: 0.6;
+  .holon-id .mono {
+    font-variant-numeric: tabular-nums;
+    user-select: all;
   }
   /* Group headings: the sheet reads as three short lists, not one long one. */
   .group {

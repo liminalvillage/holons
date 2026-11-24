@@ -51,9 +51,18 @@
     resolveLibraryCalendarView,
   } from "$lib/config";
   import { activeTheme, themeMode, startTheme } from "$lib/theme";
-  import { langMode, holonLang, startI18n, tr, type Lang } from "$lib/i18n";
+  import {
+    langMode,
+    holonLang,
+    startI18n,
+    tr,
+    HOLON_NOUN,
+    type Lang,
+  } from "$lib/i18n";
+  import { holonWords } from "@holons/core/vocabulary";
   import { may, writeAcceptance } from "@holons/core/holosphere";
   import { bindFedRequests } from "$lib/fedrequests";
+  import { bindMyHolonOpen } from "$lib/myholon";
   import { sessionKeyPub } from "$lib/sessionKey";
   import { loadSettings } from "@holons/core/settings";
   import { get } from "svelte/store";
@@ -846,37 +855,29 @@
     };
   });
 
-  // The about page (routes/about): what a hub is and how to start one — the
-  // reading page the map links to. It is a page, not a board: no dock, no
-  // tab chrome, though the Settings/login sheets stay reachable from it.
-  $: isAbout = $page.url.pathname.replace(/\/+$/, "") === "/about";
-
   // No holon resolved and nothing left to wait for → this isn't a board, it's
   // the front door: the dock (the map, by default) with this device's hubs
   // on it, and the board-only overlays stood down.
-  $: isHome = !isAbout && !booting && !$holonIdStore;
+  $: isHome = !booting && !$holonIdStore;
 
   // The home screen icon belongs to the board on show: named for the hub and
   // opening on it (lib/manifest.ts), so "Add to Home Screen" — ours in the
   // user menu or the browser's own — installs THIS hub, not the front door.
   // The static manifest in app.html stands until a holon is known.
-  $: appName = isHome || isAbout ? "" : $holonName || "";
+  $: appName = isHome ? "" : $holonName || "";
   $: if (mounted) {
-    const start = isAbout
-      ? "/"
-      : startPathFor($holonIdStore, {
-          hostname: $page.url.hostname,
-          pathname: $page.url.pathname,
-        });
+    const start = startPathFor($holonIdStore, {
+      hostname: $page.url.hostname,
+      pathname: $page.url.pathname,
+    });
     document
       .querySelector('link[rel="manifest"]')
       ?.setAttribute("href", manifestHref(start, appName));
   }
 
   // The dock/window state follows a CHANGE of holon made outside the morphs:
-  // a board named without one (the about page's paste field, Settings)
-  // brings the window up; losing the holon (unpinning, "show the home page")
-  // drops back to the dock. Keyed on the change, not the value — a docked
+  // a board named without one brings the window up; losing the holon
+  // (removing its circle from the dock) drops back to the dock. Keyed on the change, not the value — a docked
   // board keeps its holon while its circle sits on the dock, and an orb tap
   // switches the holon mid-"opening", which is the morph's own business.
   let followedHolon: string | null | undefined;
@@ -1132,6 +1133,10 @@
       $holonIdStore ?? null,
       !!$standing && may($standing, "federation"),
     );
+  // The signed-in person's own holon, followed from any board: the red
+  // count on their face and on the menu's "My holon" link.
+  $: if (mounted)
+    bindMyHolonOpen($currentUser ? String($currentUser.id) : null);
 
   $: if (mounted && $holonIdStore) {
     rememberBoard($holonIdStore, "");
@@ -1233,12 +1238,10 @@
   <!-- Browser-tab / PWA title: the holon's name (caretaker override first,
        then the settings name); until one is known — or when the holon has
        none — its id. Never a label guessed from the host: a deploy on
-       kiosk.hubs.network is not a holon called "Kiosk". The landing page
-       titles itself (HomeView), so stand aside there rather than racing it
-       for the same tag. -->
+       kiosk.hubs.network is not a holon called "Kiosk". -->
   {#if isHome}
-    <title>hubs network</title>
-  {:else if !isAbout}
+    <title>{holonWords(HOLON_NOUN, "en").holons} network</title>
+  {:else}
     <title>{$holonName || $holonIdStore || "Holons"}</title>
   {/if}
   <!-- iOS labels the home screen icon from this, ahead of the manifest. -->
@@ -1254,44 +1257,39 @@
   on:pointermove|capture={onMove}
 />
 
-{#if isAbout}
-  <!-- The reading page: what a hub is, and the buttons that start one. -->
-  <slot />
-{:else}
-  <!-- The dock sits beneath the board window during the morph frames and
+<!-- The dock sits beneath the board window during the morph frames and
        alone once the window has fully closed into its circle — and it IS
        the front door: with no holon named, the map with this device's
        hubs is what a bare visit shows. -->
-  {#if $dockState !== "window"}
-    <DockView />
-  {/if}
+{#if $dockState !== "window"}
+  <DockView />
+{/if}
 
-  {#if $dockState !== "dock" && $holonIdStore}
-    <div class="kiosk" class:full={$boardFullscreen} bind:this={windowEl}>
-      <!-- The whole tab interface is one card floating in the space — the
+{#if $dockState !== "dock" && $holonIdStore}
+  <div class="kiosk" class:full={$boardFullscreen} bind:this={windowEl}>
+    <!-- The whole tab interface is one card floating in the space — the
            same sky the dock shows — so closing it into a circle reads as
            the card shrinking into its place among the others. -->
-      <div class="card">
-        <!-- Full screen folds the header away (lib/fullscreen.ts); it is
+    <div class="card">
+      <!-- Full screen folds the header away (lib/fullscreen.ts); it is
              clipped only while folded or moving, so its suggestions can
              hang below it the rest of the time. -->
-        <div
-          class="chrome"
-          class:clip={$boardFullscreen || $fullscreenMotion}
-          inert={$boardFullscreen}
-        >
-          <div class="chrome__in"><TabBar /></div>
-        </div>
-        <main class="stage">
-          <slot />
-        </main>
+      <div
+        class="chrome"
+        class:clip={$boardFullscreen || $fullscreenMotion}
+        inert={$boardFullscreen}
+      >
+        <div class="chrome__in"><TabBar /></div>
       </div>
+      <main class="stage">
+        <slot />
+      </main>
     </div>
+  </div>
 
-    <!-- Zoomed detail / edit overlay for the tapped post-it or card — none
+  <!-- Zoomed detail / edit overlay for the tapped post-it or card — none
          while the board is the onboarding. -->
-    {#if !$onboardingGate}<DetailModal />{/if}
-  {/if}
+  {#if !$onboardingGate}<DetailModal />{/if}
 {/if}
 
 <!-- Login overlay, raised from the header chip or an "edit" prompt. -->
@@ -1316,8 +1314,8 @@
 {/if}
 
 <!-- Board-only companions: they all act on the displayed holon, and the
-     front door and the about page have none. -->
-{#if !isHome && !isAbout}
+     front door has none. -->
+{#if !isHome}
   <!-- Participant confirmation before a completion records REA. -->
   <CompleteConfirm />
   <!-- "Leave this hub for that one?" before a provenance badge travels. -->

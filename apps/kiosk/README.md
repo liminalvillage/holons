@@ -84,27 +84,25 @@ matter.
   and it resumes after 30s of stillness. A thin bar under the active tab shows
   time to the next flip. Rotation freezes while a detail card is open.
 - **PWA:** installable, fullscreen, portrait-locked, with an offline app shell.
-- **Home page:** a screen with no holon (the bare domain, an unboxed display)
+- **Front door:** a screen with no holon (the bare domain, an unboxed display)
   shows the map — the dock with the earth beneath it and every hub this
   device has opened on it — instead of a board. A hub brings its federation
   partners onto the dock with it (tagged `via` in `kiosk_dock`); removing it
-  asks whether they go too. The reading page (what Holons is, how to start a
-  hub) lives at `/about`, linked from the map. See below.
+  asks whether they go too. There is no separate landing page. See below.
 
-## The home page
+## The front door
 
 The map is the front door: with no holon resolved the layout renders the dock
 (`DockView`, map mode by default) in place of the board. A `/<id>` link from
-the bot, or a display pinned in Settings, opens that board directly and
-docks it; closing the board lands on the map. `src/lib/views/HomeView.svelte`
-is the `/about` page. It closes a round trip that leaves the web entirely:
+the bot, or a pinned display, opens that board directly and
+docks it; closing the board lands on the map. Starting a hub from the dock's
+**+** is a round trip that leaves the web entirely:
 
-1. **Out.** "Start a hub" deep-links to `t.me/<bot>?startgroup=claim_<token>`
+1. **Out.** **Start a new hub** deep-links to `t.me/<bot>?startgroup=claim_<token>`
    (Telegram's own group chooser, with "create a new group" right there) or
    `t.me/<bot>?start=claim_<token>` (a private chat: a personal hub). The
    group _is_ the holon, so there is nothing to sign up for. The token is a
-   one-time claim minted by the screen (`@holons/core/claims`); the same
-   two links sit behind the dock's **+** → **Start a new hub**.
+   one-time claim minted by the screen (`@holons/core/claims`).
 2. **Over.** Telegram delivers the payload to the bot as the chat's first
    `/start claim_<token>`. The bot records `<token> → this chat` on the relay
    (namespace `hubclaims`, lens `claims`) and posts its welcome, carrying an
@@ -119,9 +117,9 @@ is the `/about` page. It closes a round trip that leaves the web entirely:
    link, a `/dashboard` link, a hub address (`parseHolonRef` in
    `src/lib/holons.ts`, spec'd in `holons.test.ts`).
 
-Opening a board from that field navigates to `/<holon id>` and is deliberately
+Opening a board from that paste line navigates to `/<holon id>` and is deliberately
 **not** remembered on the device — the URL is the shareable thing, and only
-**Settings** pins a screen for good.
+the **star** makes a screen open a holon by itself.
 
 ## Configuration
 
@@ -140,15 +138,16 @@ via a URL query param or the in-app **Settings** panel and then remembered in
 The kiosk-scoped vars win; the shared `VITE_HOLOSPHERE_RELAYS` /
 `VITE_HOLOSPHERE_PROJECTIONS` are the fallback.
 
-To pin a screen the first time, open it once at `https://…/?holon=<holon-id>`,
-or open **Settings** and type the id. To _visit_ a holon without re-pointing the
-device, open `https://…/<holon-id>` (or `/<registered label>`, e.g. `/liminal`)
-— the path wins for that page load but is not remembered. The kiosk reads
-production data by default.
-
-To **unpin** a screen, open **Settings** and use _Clear — show the home page_
-(emptying the holon field does the same). That forgets the stored id and
-returns to `/`, so the screen lands back on the home page.
+A device opens one holon by itself: the **starred** one (`src/lib/star.ts`).
+Open the holon, then the account menu → **Star this holon**; from then on a
+bare visit (`https://…/`) opens it directly. A direct link — `/<holon-id>`,
+`/<registered label>` (e.g. `/liminal`), a hub's own address, `?holon=<id>` —
+always wins for that visit and never moves the star. There is one star per
+device: starring another holon takes it from the last, and tapping the row
+again (or removing the hub's circle from the dock) takes it off, so a bare
+visit shows the map. **Settings** shows the holon's id but never edits it;
+what it edits is the holon's **name** (`saveHolonName` in
+`@holons/core/settings`). The kiosk reads production data by default.
 
 Every holon is reachable by **subdomain without a code change**: an undeclared
 label is read as the holon id itself. Because a hostname can't start with `-`,
@@ -156,7 +155,7 @@ a Telegram group id is written without it and the sign is restored —
 `1003864542239.hubs.network` shows holon `-1003864542239`. A label declared in
 `SUBDOMAIN_HOLONS` (`src/lib/holons.ts`) takes precedence, which is how a hub
 gets a name (`liminal.hubs.network`) instead of a number; `www`, `api`,
-`staging` and friends are reserved and always serve the home page.
+`staging` and friends are reserved and always serve the map.
 
 **Editing** is optional and off until configured. Set
 `VITE_TELEGRAM_BOT_USERNAME` to the hub's bot to enable the Telegram Login
@@ -230,7 +229,7 @@ export const SUBDOMAIN_HOLONS: Record<string, string> = {
 ```
 
 Resolution order is `?holon=<id>` → URL path `/<id|label>` → subdomain →
-Settings/localStorage → `VITE_KIOSK_HOLON`, so a registered subdomain is
+the starred holon → `VITE_KIOSK_HOLON`, so a registered subdomain is
 authoritative for its host while `/<id>` deep-links any holon and `?holon=`
 still works for testing.
 
