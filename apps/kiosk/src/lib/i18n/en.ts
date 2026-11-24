@@ -1518,6 +1518,7 @@ export const en = {
   "flows.claimMemo": "What for",
   "flows.claimMax": "Up to {amount}",
   "flows.claimOverMax": "That is more than what is left of your right ({max}).",
+  "flows.inboundClaim": "Claim there",
   "flows.inboundTitle": "Reaching you",
   "flows.claimNoSigner":
     "Signing is not set up for this login, so a claim cannot be recorded here.",

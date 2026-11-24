@@ -1538,6 +1538,7 @@ export const es: Record<MessageKey, Msg> = {
   "flows.claimMemo": "Para qué",
   "flows.claimMax": "Hasta {amount}",
   "flows.claimOverMax": "Es más de lo que queda de tu derecho ({max}).",
+  "flows.inboundClaim": "Reclamar allí",
   "flows.inboundTitle": "Lo que te llega",
   "flows.claimNoSigner":
     "La firma no está configurada para este acceso: aquí no se puede registrar una reclamación.",

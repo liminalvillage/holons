@@ -1,3 +1,10 @@
+<script context="module" lang="ts">
+  // The unit a "Claim there" on a person's own board asked for: carried to
+  // the hub's board, which opens My balance on it (whether this component is
+  // kept across the holon switch or mounted anew).
+  let carryUnit = "";
+</script>
+
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
@@ -43,6 +50,7 @@
   // `expenses` is small enough to subscribe to normally.
 
   import { onDestroy, onMount } from "svelte";
+  import { goto } from "$app/navigation";
   import { nameOf as resolvedName, names } from "$lib/names";
   import {
     holonId,
@@ -353,7 +361,10 @@
   // What there is to divide, per unit: the collective's money, what was
   // minted here, what reaches here. One unit is drawn at a time; a pill row
   // offers the others when a holon holds more than one.
-  let potUnitPick = "";
+  // A unit carried from a person's own board ("Claim there") is kept as the
+  // pick even before this hub's units have loaded; `potUnit` falls back
+  // while it is not (yet) one of them.
+  let potUnitPick = carryUnit;
   // The holon's Pot, when it has one: what it received on chain is the pot
   // in those units (a mint in the same unit is the same lot), and a right
   // in them is collected from the Pot by its table, never claimed in the
@@ -919,7 +930,8 @@
   // core from the same shapes the card and the diagram read. Tapping a line
   // picks the unit the statement below is in; a fund unit also moves the
   // board's unit pill.
-  let walletPick = "";
+  let walletPick = carryUnit;
+  carryUnit = "";
   $: creditByUnit = currencies.map((c) =>
     computeMutualCredit(expenses, people, c),
   );
@@ -951,8 +963,26 @@
   );
   function pickWalletUnit(unit: string) {
     walletPick = unit;
-    if (potUnitList.includes(unit)) potUnitPick = unit;
+    potUnitPick = unit;
   }
+  /** A person's own board → the hub a right comes from, on that unit's balance. */
+  async function claimThere(r: InboundRight) {
+    const unit = normalizeCurrency(r.unit).toLowerCase();
+    carryUnit = unit;
+    flowsViewMode.set("mine");
+    await goto(`/${encodeURIComponent(r.from)}/flows`);
+    holonId.set(r.from);
+    pickWalletUnit(unit);
+  }
+  /** Who a unit reaches this holon from, by name: "Meridian Works". */
+  $: upstreamNames = (unit: string) =>
+    [
+      ...new Set(
+        inbound
+          .filter((r) => normalizeCurrency(r.unit).toLowerCase() === unit)
+          .map((r) => nameFor(r.from) ?? r.from),
+      ),
+    ].join(", ");
   function openBalances(unit: string) {
     pickUnit(`money:${unit}`);
     flowsViewMode.set("balances");
@@ -2015,7 +2045,13 @@
                               : $t("flows.walletSquare")}
                         {:else}
                           {l.sources
-                            .map((src) => $t(`flows.walletSource.${src}`))
+                            .map((src) =>
+                              src === "inbound" && upstreamNames(l.unit)
+                                ? $t("flows.tipInboundFrom", {
+                                    name: upstreamNames(l.unit),
+                                  })
+                                : $t(`flows.walletSource.${src}`),
+                            )
                             .join(" · ")}
                         {/if}
                       </span>
@@ -2040,6 +2076,12 @@
                       >{$t("flows.tipInboundFrom", {
                         name: nameFor(r.from) ?? r.from,
                       })}</span
+                    >
+                    <button
+                      type="button"
+                      class="claim-there"
+                      on:click={() => claimThere(r)}
+                      >{$t("flows.inboundClaim")}</button
                     >
                   </li>
                 {/each}
@@ -3396,6 +3438,17 @@
   .claim-row .amt {
     font-variant-numeric: tabular-nums;
     font-weight: 600;
+  }
+  /* "Claim there": from a person's own board to the hub the right is in. */
+  .claim-row .claim-there {
+    min-height: 44px;
+    padding: 0.35rem 0.9rem;
+    border: 1px solid var(--teal);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--teal-ink);
+    font-size: 0.85rem;
+    touch-action: manipulation;
   }
   .claim-row .who {
     font-weight: 600;
