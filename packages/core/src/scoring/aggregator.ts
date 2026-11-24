@@ -7,6 +7,7 @@
  * mutable state.
  */
 
+import { normalizeCurrency } from '../expenses/balance.js';
 import { calculateUserScore } from './score.js';
 import type { ScoreEquation } from './equation.js';
 
@@ -284,12 +285,16 @@ export class REAAggregator {
     options: { excludeTimeTracking?: boolean } = {},
   ): Promise<number> {
     const events = await this.eventStore.query(holonId, { resourceType: 'money' });
-    const currencyLower = currency.toLowerCase();
+    // Units are compared the way expenses store them (`normalizeCurrency`:
+    // lower-case, a trailing "s" dropped) — an equation weighing `views` must
+    // count the `view` the expense was saved in, or it silently scores 0.
+    const want = normalizeCurrency(currency);
     const userIdStr = String(userId);
 
     const currencyEvents = events.filter(
       (e) =>
-        e.resource?.unit?.toLowerCase() === currencyLower &&
+        !!want &&
+        normalizeCurrency(e.resource?.unit) === want &&
         !(options.excludeTimeTracking && isTimeTrackingExpense(e)),
     );
 

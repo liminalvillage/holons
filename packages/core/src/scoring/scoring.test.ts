@@ -589,6 +589,14 @@ describe('REAAggregator', () => {
       expect(await aggregator.calculateUserScore(HOLON, 'funder', TIME_AND_MONEY)).toBe(100);
     });
 
+    it('matches a currency however the equation spells it (hours, euros, Hour)', async () => {
+      const aggregator = new REAAggregator(buildStore(events));
+      expect(await aggregator.getCurrencyBalance(HOLON, 'picker', 'hours')).toBe(12);
+      expect(await aggregator.getCurrencyBalance(HOLON, 'funder', 'euros')).toBe(100);
+      expect(await aggregator.getCurrencyBalance(HOLON, 'funder', 'Euro')).toBe(100);
+      expect(await aggregator.getCurrencyBalance(HOLON, 'funder', '')).toBe(0);
+    });
+
     it('keeps completion hours in the plain hour balance', async () => {
       const aggregator = new REAAggregator(buildStore(events));
       expect(await aggregator.getCurrencyBalance(HOLON, 'picker', 'hour')).toBe(12);
