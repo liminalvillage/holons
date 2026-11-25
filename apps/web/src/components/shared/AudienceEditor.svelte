@@ -99,7 +99,7 @@
     // One click does it; the line under the state says what that click does
     // to what is already in the scope and to what comes after.
     const toggleLock = () => run("lock", () => (aud?.locked ? unlock(holosphere, scope) : lock(holosphere, scope)));
-    // The lock is the owner's — or an admin's, who may make it public or take it over (core's `canManage`).
+    // The lock is the owner's — or an ambassador's, who may make it public or take it over (core's `canManage`).
     $: frozen = loading || !!busy || !canChange || (!!aud?.locked && !aud.canManage) || (!!scope.item && lensLocked);
     const takeOverScope = () => run("takeover", () => takeOver(holosphere, scope));
     $: why = aud?.locked
@@ -152,7 +152,7 @@
     {#if scope.item && lensLocked}
         <p class="aud__hint">The whole lens is locked; this item follows it.</p>
     {:else if aud?.locked && !aud.owned && aud.canManage && canChange}
-        <p class="aud__hint">Locked by another key. As an admin you can make it public, or take it over and share it yourself.</p>
+        <p class="aud__hint">Locked by another key. As an ambassador you can make it public, or take it over and share it yourself.</p>
         <button type="button" class="aud__act" disabled={!!busy} on:click={takeOverScope}>Take over</button>
     {:else if aud?.locked && !aud.owned && canChange}
         <p class="aud__hint">Locked by another key — only its owner changes who reads it.</p>

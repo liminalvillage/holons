@@ -463,7 +463,7 @@ export function registerFlowsTools(server: McpServer, deps: ToolDeps): void {
     'flow_mint_record',
     {
       description:
-        'Bring value into the fund: append a MINT to the holon\'s signed mints log (lens "flow_mints", kind 1808) — a harvest in L, a grant in EUR, anything the allocation should divide. Attesters only (the lens policy; admins by default): signed with this MCP instance key, it counts only if the holon accepts that key as an attester. Wraps @holons/core/flows buildMint.',
+        'Bring value into the fund: append a MINT to the holon\'s signed mints log (lens "flow_mints", kind 1808) — a harvest in L, a grant in EUR, anything the allocation should divide. Attesters only (the lens policy; ambassadors by default): signed with this MCP instance key, it counts only if the holon accepts that key as an attester. Wraps @holons/core/flows buildMint.',
       inputSchema: {
         holon: z.string(),
         amount: z.number().positive(),

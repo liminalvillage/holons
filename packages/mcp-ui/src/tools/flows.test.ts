@@ -118,7 +118,7 @@ describe('mint tools', () => {
     return { deps: { ...deps, getHoloSphere: async () => hs } as ToolDeps, db, hs };
   }
 
-  it('records a mint and reads the fund back, with the MCP key as the bootstrap admin', async () => {
+  it('records a mint and reads the fund back, with the MCP key as the bootstrap ambassador', async () => {
     const { server, tools } = capture();
     const { deps, hs } = logDeps({ 'olive/settings': { olive: { id: 'olive', holonPubkey: 'a'.repeat(64) } } });
     registerFlowsTools(server, deps);
@@ -168,7 +168,7 @@ describe('claim tools under the ceiling', () => {
 
   it('refuses a claim past the headroom, records one within it, and reports ceilings and headroom', async () => {
     const { server, tools } = capture();
-    // The MCP key is the holon's own key here: admin, attester, and the one
+    // The MCP key is the holon's own key here: ambassador, attester, and the one
     // that claims `onBehalfOf` a member.
     const { deps } = logDeps({
       'olive/settings': {

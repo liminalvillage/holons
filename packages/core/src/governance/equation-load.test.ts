@@ -69,7 +69,7 @@ describe('the equation once a vote has passed', () => {
     put: async (_h: string, _l: string, item: unknown) => void puts.push(item),
   } as unknown as HoloSphere;
 
-  it('ignores an admin editing settings, and refuses the editor', async () => {
+  it('ignores an ambassador editing settings, and refuses the editor', async () => {
     vi.useFakeTimers({ now: equationClosesAt(created) + 1000 });
     try {
       settings = { ...settings, valueEquation: { completed: 9, sent: 7 } };
@@ -85,7 +85,7 @@ describe('the equation once a vote has passed', () => {
     }
   });
 
-  it('lets admins set the starting equation until then', async () => {
+  it('lets ambassadors set the starting equation until then', async () => {
     vi.useFakeTimers({ now: created + 1000 });
     try {
       await expect(assertEquationEditable(hs, 'h')).resolves.toBeUndefined();

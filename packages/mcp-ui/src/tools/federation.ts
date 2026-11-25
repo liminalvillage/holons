@@ -177,7 +177,7 @@ export function registerFederationTools(server: McpServer, deps: ToolDeps): void
     'federation_requests',
     {
       description:
-        "Federation requests waiting for a holon's admins: partners that linked their half and ask this holon to match it (kind 'link', with the inbound/outbound lenses THIS holon is asked to receive/send) or to drop its half (kind 'unlink'). With `partner`, also returns where that one link stands: each side's counted half, the requests between them, and per lens and direction whether the flow is agreed, waiting for the partner, offered by the partner, or off.",
+        "Federation requests waiting for a holon's ambassadors: partners that linked their half and ask this holon to match it (kind 'link', with the inbound/outbound lenses THIS holon is asked to receive/send) or to drop its half (kind 'unlink'). With `partner`, also returns where that one link stands: each side's counted half, the requests between them, and per lens and direction whether the flow is agreed, waiting for the partner, offered by the partner, or off.",
       inputSchema: {
         holon: z.string().describe('The holon whose incoming requests to list.'),
         partner: z.string().optional().describe('A partner holon id: also report the state of this one link.'),
@@ -212,9 +212,9 @@ export function registerFederationTools(server: McpServer, deps: ToolDeps): void
     'federation_request_answer',
     {
       description:
-        "Accept or decline a partner's federation request as an admin of `holon`. Accepting writes this holon's own half of the link (or drops it, for an unlink request); pass `inbound`/`outbound` to accept with fewer or different lenses than asked. Declining leaves this holon's record unchanged.",
+        "Accept or decline a partner's federation request as an ambassador of `holon`. Accepting writes this holon's own half of the link (or drops it, for an unlink request); pass `inbound`/`outbound` to accept with fewer or different lenses than asked. Declining leaves this holon's record unchanged.",
       inputSchema: {
-        holon: z.string().describe('The asked holon (you must be its admin).'),
+        holon: z.string().describe('The asked holon (you must be its ambassador).'),
         from: z.string().describe('The asking partner holon id.'),
         decision: z.enum(['accept', 'decline']),
         inbound: z.array(z.string()).optional().describe('Override: lenses this holon receives from the partner.'),

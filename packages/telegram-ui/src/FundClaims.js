@@ -26,7 +26,7 @@
 //   /fundmints                          what the fund holds, judged
 //   /fundpolicy                         the rules in force for the claims log
 //   /fundpolicy quorum N | conflict earliest|quorum | pin <holon> | unpin <holon>
-//                                       an admin sets one rule (a signed _policy entry)
+//                                       an ambassador sets one rule (a signed _policy entry)
 //
 // Every reader folds the same log the same way; the bot adds nothing a
 // kiosk or the web would not derive. What the bot alone can do is sign the
@@ -463,7 +463,7 @@ export default class FundClaims {
   /**
    * /fundmint <amount> [UNIT] [memo] — bring value into the fund. Signed as
    * the member; it counts only if they are an attester of the mints log
-   * (admins by default), and the reply says so.
+   * (ambassadors by default), and the reply says so.
    */
   async mint(ctx) {
     const holon = getholonId(ctx);
@@ -830,8 +830,8 @@ export default class FundClaims {
 
   /**
    * /fundpolicy — the rules in force for the claims log; with arguments, an
-   * admin's change of one rule, appended to `_policy` signed as them (it
-   * counts only if their key is an admin as of now — said in the reply).
+   * ambassador's change of one rule, appended to `_policy` signed as them (it
+   * counts only if their key is an ambassador as of now — said in the reply).
    */
   async policy(ctx) {
     const holon = getholonId(ctx);
@@ -980,7 +980,7 @@ export default class FundClaims {
         role === 'admin'
           ? `Rule set: ${what} ${value}.`
           : holonText(
-              'Recorded, but your key is not an admin of this {@holon}, so the rule does not change.'
+              'Recorded, but your key is not an ambassador of this {@holon}, so the rule does not change.'
             )
       );
     } catch (err) {

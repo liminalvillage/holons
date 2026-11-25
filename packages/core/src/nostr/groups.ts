@@ -5,7 +5,7 @@
 // holon id (the `h` tag HoloSphere already stamps). relay.holons.io (strfry)
 // does not implement NIP-29, so the HOLON KEY publishes the state events a
 // NIP-29 relay would sign — 39000 metadata, 39001 admins, 39002 members —
-// and the moderation events an admin would send (9000 put-user, 9001
+// and the moderation events an ambassador would send (9000 put-user, 9001
 // remove-user); members publish their own 9021 join / 9022 leave requests.
 // Consumers trust these from the holon's pubkey, which is the same trust root
 // the reverse sync uses. A real NIP-29 relay can take over later unchanged.
@@ -14,7 +14,8 @@ import type { EventTemplate, ProjectionCtx } from './types.js';
 import { HOLONS_ORIGIN_TAG, nowOf } from './tags.js';
 
 export const GROUP_METADATA_KIND = 39000;
-export const GROUP_ADMINS_KIND = 39001;
+/** NIP-29 kind 39001 (the spec calls it "group admins"): the holon's ambassadors. */
+export const GROUP_AMBASSADORS_KIND = 39001;
 export const GROUP_MEMBERS_KIND = 39002;
 export const GROUP_PUT_USER_KIND = 9000;
 export const GROUP_REMOVE_USER_KIND = 9001;
@@ -52,25 +53,25 @@ export function groupMetadataTemplate(ctx: ProjectionCtx, holon: string, setting
 }
 
 /**
- * 39001 — the holon key, the settings admin (when their key resolves), and
- * `admins`: keys seated as admins in the holon's signed `_members` log (a
- * key-founded holon has no settings admin — its admins ARE the log).
+ * 39001 — the holon key, the settings ambassador (`settings.admin`, when their key resolves), and
+ * `ambassadors`: keys seated as ambassadors in the holon's signed `_members` log (a
+ * key-founded holon has no settings ambassador — its ambassadors ARE the log).
  */
-export function groupAdminsTemplate(ctx: ProjectionCtx, holon: string, settings: GroupSettingsLike, admins: Iterable<string> = []): EventTemplate {
+export function groupAmbassadorsTemplate(ctx: ProjectionCtx, holon: string, settings: GroupSettingsLike, ambassadors: Iterable<string> = []): EventTemplate {
   const tags: string[][] = [['d', holon], ...base(ctx, holon), ['p', ctx.holonPubkey, 'admin']];
   const seen = new Set<string>([ctx.holonPubkey]);
-  const admin = typeof settings.admin === 'string' ? settings.admin.replace(/^@/, '') : '';
-  const pk = admin ? ctx.pubkeyFor?.(admin) : undefined;
+  const ambassador = typeof settings.admin === 'string' ? settings.admin.replace(/^@/, '') : '';
+  const pk = ambassador ? ctx.pubkeyFor?.(ambassador) : undefined;
   if (pk && !seen.has(pk)) {
     seen.add(pk);
     tags.push(['p', pk, 'admin']);
   }
-  for (const a of [...new Set([...admins].map((k) => String(k).toLowerCase()))].sort()) {
+  for (const a of [...new Set([...ambassadors].map((k) => String(k).toLowerCase()))].sort()) {
     if (!/^[0-9a-f]{64}$/.test(a) || seen.has(a)) continue;
     seen.add(a);
     tags.push(['p', a, 'admin']);
   }
-  return { kind: GROUP_ADMINS_KIND, created_at: nowOf(ctx), tags, content: '' };
+  return { kind: GROUP_AMBASSADORS_KIND, created_at: nowOf(ctx), tags, content: '' };
 }
 
 /** 39002 — every member whose key resolves, sorted for a stable state hash. */
@@ -118,15 +119,15 @@ export function groupLeaveRequestTemplate(ctx: ProjectionCtx, holon: string): Ev
 
 /**
  * The full holon-authored group state for one holon. `members` = ids from the
- * `users` lens (or member pubkeys, with an identity `pubkeyFor`); `admins` =
- * extra admin keys from the signed `_members` log. Hosts publish these
+ * `users` lens (or member pubkeys, with an identity `pubkeyFor`); `ambassadors` =
+ * extra ambassador keys from the signed `_members` log. Hosts publish these
  * (signed with the holon key) whenever the hash changes — see the bot's group
  * publisher and `@holons/core/holons` `publishGroupState`.
  */
-export function buildGroupState(ctx: ProjectionCtx, holon: string, settings: GroupSettingsLike, memberIds: Array<string | number>, admins: Iterable<string> = []): EventTemplate[] {
+export function buildGroupState(ctx: ProjectionCtx, holon: string, settings: GroupSettingsLike, memberIds: Array<string | number>, ambassadors: Iterable<string> = []): EventTemplate[] {
   return [
     groupMetadataTemplate(ctx, holon, settings),
-    groupAdminsTemplate(ctx, holon, settings, admins),
+    groupAmbassadorsTemplate(ctx, holon, settings, ambassadors),
     groupMembersTemplate(ctx, holon, memberIds),
   ];
 }

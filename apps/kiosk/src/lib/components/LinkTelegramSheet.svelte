@@ -23,7 +23,7 @@
     type PendingLink,
   } from "$lib/tglink";
 
-  /** The hub being linked (a key-founded holon whose admin key is adopted). */
+  /** The hub being linked (a key-founded holon whose ambassador key is adopted). */
   export let hub: string;
 
   const dispatch = createEventDispatcher<{ linked: LinkAccept; close: void }>();

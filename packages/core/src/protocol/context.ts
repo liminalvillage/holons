@@ -38,7 +38,7 @@ export interface LensContextInput {
 export interface LensContext {
   actors: AcceptedActors;
   parties: PartyResolver;
-  /** Every lens's rule the admins have set. */
+  /** Every lens's rule the ambassadors have set. */
   policies: Map<string, Policy>;
   /** The rule for a lens, or the default. */
   policyFor(lens: string): Policy;

@@ -31,7 +31,7 @@ import {
 import { createLinkedKeysResolver, linkedKeysOf } from '@holons/core/users';
 import { syncMembersLog } from '@holons/core/protocol';
 import { approvedJoinKeys } from '@holons/core/holons';
-import { bridgeTelegramRoster, linkedAdmins } from '@holons/core/linking';
+import { bridgeTelegramRoster, linkedAmbassadors } from '@holons/core/linking';
 import { sync as syncPrivacy } from '@holons/core/privacy';
 import KeyManager from './KeyManager.js';
 
@@ -391,7 +391,7 @@ export function createTrustCache(
     } catch {
       /* no settings yet */
     }
-    // Keys an admin let in from the group (JoinRequests.js): nobody in the
+    // Keys a chat admin let in from the group (JoinRequests.js): nobody in the
     // `users` lens derives to them, so without this the prune below would
     // unseat them at the next sync.
     try {
@@ -401,10 +401,10 @@ export function createTrustCache(
     }
     publishGroupState(holon, settings, memberIds);
     // A dashboard hub linked to this chat (@holons/core/linking) seats its
-    // admin here; the signed log must keep that seat through every sync.
+    // ambassador here; the signed log must keep that seat through every sync.
     let linked = new Map();
     try {
-      linked = await linkedAdmins(hs, String(holon));
+      linked = await linkedAmbassadors(hs, String(holon));
     } catch {
       /* no links readable */
     }
@@ -418,8 +418,8 @@ export function createTrustCache(
 
   /**
    * The same roster, signed: the holon key founds its `_members` log once
-   * and keeps it in line with the keys trusted here (members; the admin's
-   * key as admin). This is what turns "who is in the users lens" into a
+   * and keeps it in line with the keys trusted here (members; the
+   * ambassador's key in the ambassador seat, stored as role 'admin'). This is what turns "who is in the users lens" into a
    * signed, as-of-time fact every reader folds the same way (see
    * @holons/core/protocol membership). Readers without the derivation
    * secret pin the trust anchor from `settings.holonPubkey`, written once.
@@ -441,22 +441,25 @@ export function createTrustCache(
     if (!secret || !hs || !hs.signingEnabled) return;
     const desired = new Map();
     for (const k of keys) if (k !== holonPubkey) desired.set(k, 'member');
-    const adminId =
+    const ambassadorId =
       settings?.admin != null ? String(settings.admin).trim() : '';
-    if (adminId) {
+    if (ambassadorId) {
       try {
-        desired.set(deriveTelegramNostrKey(adminId, secret).publicKey, 'admin');
+        desired.set(
+          deriveTelegramNostrKey(ambassadorId, secret).publicKey,
+          'admin'
+        );
       } catch {
-        /* no admin key */
+        /* no ambassador key */
       }
-      // The keys the admin linked to themselves admin too (the same rule the
-      // bootstrap applies): an admin on their own Nostr key seats people from
-      // a screen without passing through Telegram.
+      // The keys the ambassador linked to themselves are ambassador too (the
+      // same rule the bootstrap applies): an ambassador on their own Nostr
+      // key seats people from a screen without passing through Telegram.
       for (const k of keys)
-        if (k !== holonPubkey && String(byPubkey.get(k)) === adminId)
+        if (k !== holonPubkey && String(byPubkey.get(k)) === ambassadorId)
           desired.set(k, 'admin');
     }
-    // Admins of linked dashboard hubs keep their seat (a prune would
+    // Ambassadors of linked dashboard hubs keep their seat (a prune would
     // otherwise unseat them: they are not in the `users` lens).
     for (const [k, role] of linked) desired.set(k, role);
     syncMembersLog(hs, String(holon), desired, { prune: rosterKnown })
@@ -466,7 +469,7 @@ export function createTrustCache(
             `[holosphere] founded ${holon}: membership log signed by the holon key`
           );
         // The roster bridge: this chat's members count in the hubs it is
-        // linked to — only where the bot key is already seated as admin
+        // linked to — only where the bot key is already seated as ambassador
         // there, adding only, never founding or pruning.
         if (linked.size && memberKeys.length)
           return bridgeTelegramRoster(hs, String(holon), memberKeys).then(b => {
@@ -486,9 +489,9 @@ export function createTrustCache(
       console.warn('[holosphere] privacy sync failed:', e?.message)
     );
     // The trust anchor and the identity provider readers may believe:
-    // written once by the holon key (an admin), so a browser folding the
+    // written once by the holon key (an ambassador), so a browser folding the
     // claims log counts this bot's kind-31926 attestations and nobody
-    // else's. (Readers take these fields from an admin's envelope only.)
+    // else's. (Readers take these fields from an ambassador's envelope only.)
     const providers = Array.isArray(settings?.identityProviders)
       ? settings.identityProviders
       : [];

@@ -865,9 +865,9 @@ export const en = {
     "Your Telegram login did not bring a key, so nothing links you to this {@holon}. Whoever runs this screen has to set up key derivation (NOSTR_DERIVATION_SECRET).",
   "members.linkMe": "Link my key",
   "members.asked":
-    "Asked — an admin links your key; this page updates when they do.",
+    "Asked — an ambassador links your key; this page updates when they do.",
   "members.askedTelegram":
-    "Asked — the admins were told in the Telegram group; this page updates when your key is linked.",
+    "Asked — the ambassadors were told in the Telegram group; this page updates when your key is linked.",
   "members.signIn": "Sign in with a key",
   "members.chat": "Telegram chat",
   "members.chatBorn":
@@ -881,12 +881,12 @@ export const en = {
   "members.pending": "{n} asking to be linked",
   "members.approve": "Link",
   "members.decline": "Dismiss",
-  "members.roleAdmin": "admin",
+  "members.roleAmbassador": "ambassador",
   "members.roleMember": "member",
   "members.you": "you",
   "members.addPlaceholder": "npub or hex public key",
   "members.add": "Link a key",
-  "members.addAdmin": "Link as admin",
+  "members.addAmbassador": "Link as ambassador",
   "members.remove": "Unlink {key}",
   "members.failed": "Could not change that link — {reason}",
   "members.invite": "Invite people with this {@holon}’s link:",
@@ -896,7 +896,7 @@ export const en = {
   "members.noKeyBot":
     "This {@holon} started in Telegram; its bot gives it a key the first time it runs with signing on. Until then nothing can be linked to it.",
   "members.noKeyOpen":
-    "This {@holon} has no key of its own yet. Start it with yours: you become its first admin.",
+    "This {@holon} has no key of its own yet. Start it with yours: you become its first ambassador.",
   "members.noKeyNeedsKey":
     "This {@holon} has no key of its own yet. Sign in with your own key (nsec, passkey or wallet) to start it.",
   "members.start": "Start this {@holon} with my key",
@@ -906,14 +906,14 @@ export const en = {
   "menu.notLinked":
     "Not linked — your key isn’t linked to this {@holon} yet, so only this screen sees your changes",
   "menu.linkMe": "Link my key to this {@holon}",
-  "menu.linkAsked": "Asked. An admin of {@the_holon} links your key.",
+  "menu.linkAsked": "Asked. An ambassador of {@the_holon} links your key.",
   "menu.unlinkMe": "Unlink my key from this {@holon}",
   "menu.unlinked":
-    "Told {@the_holon} you are leaving. An admin unlinks your key.",
+    "Told {@the_holon} you are leaving. An ambassador unlinks your key.",
   "layout.notLinked":
-    "Your key isn’t linked to this {@holon} yet — your changes stay on this screen until an admin links it (Settings → Members).",
+    "Your key isn’t linked to this {@holon} yet — your changes stay on this screen until an ambassador links it (Settings → Members).",
   "tglink.confirmBody":
-    "The chat’s members are linked here, the bot’s key becomes an admin of this {@holon}, and both boards show each other’s items.",
+    "The chat’s members are linked here, the bot’s key becomes an ambassador of this {@holon}, and both boards show each other’s items.",
   "tglink.done": "Linked. The chat’s members appear as the bot syncs them.",
   "audience.locked": "Private",
   "audience.open": "Public",
@@ -928,8 +928,8 @@ export const en = {
   "audience.searchPlaceholder": "Name or {@holon} id",
   "audience.noHits": "No {@holon} by that name.",
   "audience.remove": "Stop sharing with {name}",
-  "audience.adminCanUnlock":
-    "Locked by another key. As an admin you can make it public, or take it over and share it yourself.",
+  "audience.ambassadorCanUnlock":
+    "Locked by another key. As an ambassador you can make it public, or take it over and share it yourself.",
   "audience.takeOver": "Take over",
   "audience.notOwner":
     "Locked by another key — only its owner changes who reads it.",
@@ -972,8 +972,8 @@ export const en = {
   // Federation lens editor (the dock's intersection popup)
   "fed.loading": "Loading…",
   "fed.loadError": "Could not load federation — try again.",
-  "fed.adminOnly":
-    "Only an admin of this {@holon} changes who it federates with and which lenses flow; your taps here would not count.",
+  "fed.ambassadorOnly":
+    "Only an ambassador of this {@holon} changes who it federates with and which lenses flow; your taps here would not count.",
   "fed.arrowHint":
     "Tap the arrow toward {@the_holon} items should travel to. Tap it again to close that way.",
   "fed.notLinked": "Not federated — tap an arrow to open the first flow.",
@@ -998,14 +998,14 @@ export const en = {
     "A locked lens is private: the arrow opens the flow, the key lets the partner read what is inside.",
   "fed.unlinkError": "Unlink didn't save — try again.",
   "fed.askedPartner":
-    "Asked {name}'s admins — these flows count on their side once they accept.",
+    "Asked {name}'s ambassadors — these flows count on their side once they accept.",
   "fed.askedUnlink":
-    "Unlinked here. {name}'s admins were asked to drop their side too.",
+    "Unlinked here. {name}'s ambassadors were asked to drop their side too.",
   "fed.laneWaiting": "waiting for {name} to accept",
   "fed.laneOffered": "{name} offers this — tap to take it",
   "fed.waitingFor": {
-    one: "{n} flow waits for {name}'s admins to accept.",
-    other: "{n} flows wait for {name}'s admins to accept.",
+    one: "{n} flow waits for {name}'s ambassadors to accept.",
+    other: "{n} flows wait for {name}'s ambassadors to accept.",
   },
   "fed.offeredBy": {
     one: "{name} offers {n} flow you have not taken — the faint arrow.",
@@ -1025,7 +1025,7 @@ export const en = {
   "fed.openPair": "Open the flows",
   "fed.requestsTitle": "Federation requests",
   "fed.requestsSub":
-    "Other {@holons} asking to link. Accepting sets this {@holon}'s side; each side's admins decide their own.",
+    "Other {@holons} asking to link. Accepting sets this {@holon}'s side; each side's ambassadors decide their own.",
   "fed.requestsBadge": {
     one: "{n} federation request",
     other: "{n} federation requests",
@@ -1131,7 +1131,7 @@ export const en = {
   "detail.changeDates": "Change dates",
   "detail.saveDates": "Save dates",
   "detail.onlyBorrowerChange":
-    "Only the borrower or an admin can change these dates.",
+    "Only the borrower or an ambassador can change these dates.",
   "detail.onLoanTo": "On loan to {who}",
   "detail.bookAhead": "Book ahead",
   "detail.edit": "Edit",
@@ -1385,7 +1385,7 @@ export const en = {
   "hub.hereTitle": "Start {@a_holon} here",
   "hub.hereBody": "No Telegram: your key starts it, right now.",
   "hub.hereLead":
-    "{@A_holon} of your own, started with your key: you are its first admin, and you link others by their public key.",
+    "{@A_holon} of your own, started with your key: you are its first ambassador, and you link others by their public key.",
   "hub.hereName": "Name",
   "hub.hereNamePlaceholder": "What is this {@holon} called?",
   "hub.hereCreate": "Start it",
@@ -1802,14 +1802,14 @@ export const en = {
   "alloc.tabRules": "Rules",
   "alloc.tabRulesSummary": "quorum {quorum}",
   "alloc.rulesAbout":
-    "How claims on the fund are judged: who may raise one, who attests, how many attestations count, and what happens when two draw on the same thing. An admin's signed word, kept in {@the_holon}'s policy log.",
+    "How claims on the fund are judged: who may raise one, who attests, how many attestations count, and what happens when two draw on the same thing. An ambassador's signed word, kept in {@the_holon}'s policy log.",
   "alloc.rulesAuthors": "Who may claim",
   "alloc.rulesAttesters": "Who attests",
   "alloc.rulesQuorum": "Attestations needed",
   "alloc.rulesConflict": "Two on one basis",
   "alloc.rulesConflictEarliest": "the first wins",
   "alloc.rulesConflictQuorum": "a human decides",
-  "alloc.rulesRole.admin": "admins",
+  "alloc.rulesRole.admin": "ambassadors",
   "alloc.rulesRole.member": "members",
   "alloc.rulesPartners": "Partners whose claims count",
   "alloc.rulesPartnersAbout":
@@ -1819,10 +1819,10 @@ export const en = {
   "alloc.rulesPartnerNoKey": "no key published",
   "alloc.rulesSave": "Set the rules",
   "alloc.rulesSaved": "Rules recorded.",
-  "alloc.splitNotAdmin":
-    "Only an admin can change the split. You can read it here.",
-  "alloc.rulesNotAdmin":
-    "Only an admin's signature sets the rules; yours would be recorded but not counted.",
+  "alloc.splitNotAmbassador":
+    "Only an ambassador can change the split. You can read it here.",
+  "alloc.rulesNotAmbassador":
+    "Only an ambassador's signature sets the rules; yours would be recorded but not counted.",
   "alloc.rulesNoSigner":
     "Signing is not set up for this login, so the rules cannot be set here.",
   "alloc.rulesUnchanged": "These are the rules already in force.",
@@ -2199,7 +2199,8 @@ export const en = {
   "onb.linked": "Your key is linked to {holon}. Welcome in!",
   "onb.tick": "Done",
   "onb.tickFailed": "Couldn't save that: {reason}",
-  "onb.adminTicks": "Someone from {@the_holon} ticks this once it happened.",
+  "onb.ambassadorTicks":
+    "Someone from {@the_holon} ticks this once it happened.",
   "onb.tickInTelegram": "Tick it in your chat with the bot.",
   "onb.profileSave": "Save profile",
   "onb.profileSaved": "Profile saved.",
@@ -2227,11 +2228,11 @@ export const en = {
   "onb.link": "Link",
   "onb.who": "Who ticks it",
   "onb.whoSelf": "Newcomer",
-  "onb.whoAdmin": "An admin",
+  "onb.whoAmbassador": "An ambassador",
   "onb.whoProfile": "Profile",
   "onb.whoSelfHint": "The newcomer ticks it themselves.",
-  "onb.whoAdminHint":
-    "An admin ticks it once it happened, like a call or meeting a buddy.",
+  "onb.whoAmbassadorHint":
+    "An ambassador ticks it once it happened, like a call or meeting a buddy.",
   "onb.moveUp": "Move up",
   "onb.moveDown": "Move down",
   "onb.removeStep": "Remove step",

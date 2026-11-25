@@ -183,8 +183,8 @@ export async function audience(hs: HoloSphere, scope: Scope): Promise<Audience> 
 }
 
 /**
- * An admin takes a scope another key locked: it goes public under the
- * admin's tombstone and private again under the admin's own vault, with the
+ * An ambassador takes a scope another key locked: it goes public under the
+ * ambassador's tombstone and private again under the ambassador's own vault, with the
  * owner holon as its audience (the previous shares are the old owner's to
  * know; share again). Needs the key — a member of the holon holds it.
  */

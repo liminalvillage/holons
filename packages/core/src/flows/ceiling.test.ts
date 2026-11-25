@@ -19,7 +19,7 @@ const HOLON = '-100';
 
 const parties = new Map<string, string>([[ada.pk, 'ada'], [bob.pk, 'bob'], [treasurer.pk, 'tre']]);
 const partyOf = (pk: string) => parties.get(pk) ?? null;
-const actors = () => bootstrapActors({ members: [ada.pk, bob.pk], admins: [treasurer.pk, holon.pk], genesis: holon.pk });
+const actors = () => bootstrapActors({ members: [ada.pk, bob.pk], ambassadors: [treasurer.pk, holon.pk], genesis: holon.pk });
 const entry = <T extends Record<string, unknown>>(sk: Uint8Array, a: { item: T; refs?: Record<string, string | string[]> }, at: number) =>
   signedEntry<T>({ sk, item: a.item, refs: a.refs as never, created_at: at, lens: 'flow_claims' });
 

@@ -13,16 +13,16 @@ import type { LogEvent } from './types.js';
 const T0 = 1_760_000_000;
 const partnerKey = testKey(); // the partner holon's key (its genesis)
 const pam = testKey(); // a partner member
-const pat = testKey(); // a partner admin
+const pat = testKey(); // a partner ambassador
 const outsider = testKey();
-const ourAdmin = testKey();
+const ourAmbassador = testKey();
 const ourMember = testKey();
 
 type Body = { t: 'action'; kind: string; [k: string]: unknown };
 const entry = (sk: Uint8Array, a: { item: unknown; refs?: Record<string, string | string[]> }, at: number) =>
   signedEntry<Body>({ sk, item: a.item as Body, refs: a.refs as never, created_at: at, holon: 'P', lens: 'flow_claims' });
 
-/** The partner's membership log: founded by its key, pam a member, pat an admin. */
+/** The partner's membership log: founded by its key, pam a member, pat an ambassador. */
 const partnerMembers = () => [
   membershipOp({ sk: partnerKey.sk, op: 'genesis', created_at: T0 - 100, holon: 'P' }),
   membershipOp({ sk: partnerKey.sk, op: 'add', pubkey: pam.pk, role: 'member', created_at: T0 - 90, holon: 'P' }),
@@ -62,16 +62,16 @@ describe('importPartnerLog', () => {
 });
 
 describe('federatedActors', () => {
-  const own = () => bootstrapActors({ members: [ourMember.pk], admins: [ourAdmin.pk] });
+  const own = () => bootstrapActors({ members: [ourMember.pk], ambassadors: [ourAmbassador.pk] });
   const partner = () =>
     importPartnerLog({ holon: 'P', genesis: partnerKey.pk, entries: [], membersLog: partnerMembers() }, 'flow_claims');
 
   it('accepts partner keys as members acting for the partner; own keys keep their role', () => {
     const fed = federatedActors(own(), [partner()]);
     expect(fed.partners).toEqual(['P']);
-    expect(fed.roleAt(ourAdmin.pk, T0)).toBe('admin');
-    expect(fed.originOf(ourAdmin.pk, T0)).toBeNull();
-    expect(fed.roleAt(pat.pk, T0)).toBe('member'); // a partner admin does not attest here
+    expect(fed.roleAt(ourAmbassador.pk, T0)).toBe('admin');
+    expect(fed.originOf(ourAmbassador.pk, T0)).toBeNull();
+    expect(fed.roleAt(pat.pk, T0)).toBe('member'); // a partner ambassador does not attest here
     expect(fed.originOf(pat.pk, T0)).toBe('P');
     expect(fed.isAcceptedAt(pam.pk, T0)).toBe(true);
     expect(fed.isAcceptedAt(pam.pk, T0 - 95)).toBe(false); // as of time: before the partner added them
@@ -83,7 +83,7 @@ describe('federatedActors', () => {
     const imported = partner();
     const claim = entry(pam.sk, action('claim', { party: 'P', amount: 5 }), T0);
     const partnerAttest = entry(pat.sk, attestation(claim.id, 'attest'), T0 + 1);
-    const ourAttest = entry(ourAdmin.sk, attestation(claim.id, 'attest'), T0 + 2);
+    const ourAttest = entry(ourAmbassador.sk, attestation(claim.id, 'attest'), T0 + 2);
     const fed = federatedActors(own(), [imported]);
     const run = (entries: LogEvent<unknown>[]) =>
       collapse<unknown, number>({ entries, actors: fed, policy: { quorum: 1 }, initial: 0, fold: (n) => n + 1 });

@@ -111,7 +111,7 @@ describe('foundHolon', () => {
 });
 
 describe('members by key', () => {
-  it('lets an admin seat and unseat keys, and nobody else', async () => {
+  it('lets an ambassador seat and unseat keys, and nobody else', async () => {
     const hs = instance();
     const H = newHolonId();
     await foundHolon(hs, H, { members: [[alice.pk, 'member']] });
@@ -124,10 +124,10 @@ describe('members by key', () => {
     expect(await removeHolonMember(hs, H, bob.pk)).toBe(bob.pk);
     expect((await holonMembers(hs, H)).has(bob.pk)).toBe(false);
 
-    // alice is a member, not an admin: her additions are refused up front.
+    // alice is a member, not an ambassador: her additions are refused up front.
     await hs.login(bytesToHex(alice.sk));
     expect(await myHolonRole(hs, H)).toBe('member');
-    await expect(addHolonMember(hs, H, bob.pk)).rejects.toThrow(/admin/);
+    await expect(addHolonMember(hs, H, bob.pk)).rejects.toThrow(/ambassador/);
     await hs.close();
   });
 });

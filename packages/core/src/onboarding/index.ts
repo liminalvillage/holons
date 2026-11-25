@@ -8,17 +8,17 @@
 // config.ts). From then on a request to link a key (a kind-9021,
 // `@holons/core/holons` requestToJoin) is not answered at once. Instead:
 //
-//   1. Whoever answers for the holon (its bot, or an admin's screen) starts
+//   1. Whoever answers for the holon (its bot, or an ambassador's screen) starts
 //      the person's onboarding on the request's record — `startOnboarding`.
 //   2. The current step's cards are dealt into the person's OWN holon
 //      (`home`): their Telegram id when the request proved one, else their
 //      key. They are ordinary cards, so the person ticks them like any card.
 //   3. `refreshOnboarding` reads what they did, moves them on (the reducer),
 //      deals the next step, and once every step is done links the key
-//      (`approveJoin`). An admin card counts only by `confirmCard`.
+//      (`approveJoin`). An ambassador card counts only by `confirmCard`.
 //
 // Progress lives on the holon's `joinrequests` record, which counts only
-// from an admin's key — the person's ticks are facts read from their holon,
+// from an ambassador's key — the person's ticks are facts read from their holon,
 // never a claim they make about themselves to the holon.
 
 import type { HoloSphere } from 'holosphere';
@@ -102,7 +102,7 @@ export function viewOf(holon: string, config: OnboardingConfig, record: JoinRequ
 
 /**
  * The steps as a newcomer would see them standing on step `at` (an index):
- * what an admin previews while editing. Saved as it is — untitled cards and
+ * what an ambassador previews while editing. Saved as it is — untitled cards and
  * empty steps left out, as a save would.
  */
 export function previewSteps(holon: string, config: OnboardingConfig, at = 0): OnboardingStepView[] {
@@ -139,7 +139,7 @@ export async function listOnboarding(hs: HoloSphere, holon: string): Promise<Onb
 }
 
 export interface OnboardingRunOptions {
-  /** The holon's admin signer: without it a finished onboarding waits to be linked. */
+  /** The holon's ambassador signer: without it a finished onboarding waits to be linked. */
   signer?: NostrSigner | null;
   appName?: string;
   /** Deal the current step's cards when this instance's key counts in the person's holon (default true). */
@@ -212,7 +212,7 @@ export interface StartOnboardingOptions extends OnboardingRunOptions {
 /**
  * Start a person's onboarding: the holon notes their request at the first
  * step with where their cards live, moves them past anything already done
- * (a profile they brought) and deals the cards. Admin key only.
+ * (a profile they brought) and deals the cards. Ambassador key only.
  */
 export async function startOnboarding(hs: HoloSphere, holon: string, request: JoinRequest, opts: StartOnboardingOptions): Promise<OnboardingResult> {
   const config = await readOnboarding(hs, holon);
@@ -249,9 +249,9 @@ export async function refreshOnboarding(hs: HoloSphere, holon: string, pubkey: s
 }
 
 /**
- * An admin vouches for an admin card (the call happened, the buddy met
+ * An ambassador vouches for an ambassador card (the call happened, the buddy met
  * them), then the onboarding moves on. Null when they are not onboarding
- * there or the card is not one an admin confirms.
+ * there or the card is not one an ambassador confirms.
  */
 export async function confirmCard(
   hs: HoloSphere,

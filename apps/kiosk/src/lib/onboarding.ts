@@ -2,7 +2,7 @@
 //
 // The kiosk's side of onboarding into a holon (@holons/core/onboarding owns
 // the meaning). A newcomer sees their steps and ticks their cards here; an
-// admin switches the onboarding on, sees who is walking it and vouches for
+// ambassador switches the onboarding on, sees who is walking it and vouches for
 // the cards a person can't tick alone.
 //
 // Who moves people on is whoever answers for the holon — its bot, for a
@@ -152,9 +152,9 @@ export async function saveMyProfile(
   await nudge(view.holon);
 }
 
-// ── The admin's side ───────────────────────────────────────────────────────
+// ── The ambassador's side ──────────────────────────────────────────────────
 
-export async function loadOnboardingAdmin(
+export async function loadOnboardingAmbassador(
   holon: string,
 ): Promise<{ config: OnboardingConfig; people: OnboardingView[] }> {
   const hs = await getHolosphere();
@@ -175,7 +175,7 @@ export async function setOnboardingEnabled(
   return saveOnboarding(hs, holon, { ...config, enabled });
 }
 
-/** Save the holon's steps as an admin edited them, keeping on/off as is. */
+/** Save the holon's steps as an ambassador edited them, keeping on/off as is. */
 export async function saveOnboardingSteps(
   holon: string,
   steps: OnboardingStep[],
@@ -185,7 +185,7 @@ export async function saveOnboardingSteps(
   return saveOnboarding(hs, holon, { ...config, steps });
 }
 
-/** Vouch for an admin card; the key is linked when that was the last one. */
+/** Vouch for an ambassador card; the key is linked when that was the last one. */
 export async function confirmOnboardingCard(
   holon: string,
   view: OnboardingView,

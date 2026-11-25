@@ -162,7 +162,7 @@ describe('foldEquation', () => {
     const passed = [proposal('p1', { participation: 2 }, created, base)];
     const ballots = { p1: { a: 'yes' as const, b: 'yes' as const } };
     const before = foldEquation({ base, proposals: passed, ballots, memberIds: members, now: close });
-    // An admin rewrites the base afterwards — a weight nobody voted on.
+    // An ambassador rewrites the base afterwards — a weight nobody voted on.
     const edited = { ...base, completed: 9, sent: 7 };
     const after = foldEquation({ base: edited, proposals: passed, ballots, memberIds: members, now: close });
     expect(after.equation).toEqual(before.equation);

@@ -960,7 +960,7 @@
 				|| pubKey
 				|| (quest.initiator?.id ? String(quest.initiator.id) : '');
 
-			const result = applyTaskCompletion(quest as any, completerId, { isAdmin: true });
+			const result = applyTaskCompletion(quest as any, completerId, { isAmbassador: true });
 			if (!result.ok) {
 				console.warn('[Tasks] applyTaskCompletion blocked:', result.reason);
 				return;

@@ -7,7 +7,7 @@
   //   existing  paste a hub you already have — its id, its link, its name.
   //   here      start one right here, no Telegram: the adopted session key
   //             founds it (`@holons/core/protocol` foundHolon) — it signs the
-  //             genesis of the hub's member log and becomes its first admin.
+  //             genesis of the hub's member log and becomes its first ambassador.
   //             A Telegram login on this shared screen has no key of its own
   //             here, so that step asks for a key sign-in first.
   //   new       start one through Telegram: a chat with the bot (a hub for

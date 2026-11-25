@@ -81,7 +81,7 @@
   } from "$lib/fedrequests";
   import {
     confirmOnboardingCard,
-    loadOnboardingAdmin,
+    loadOnboardingAmbassador,
     setOnboardingEnabled,
     type OnboardingCardView,
     type OnboardingConfig,
@@ -157,14 +157,14 @@
   // here — but only a person's adopted key, never this device's throwaway one.
   let founding: FoundingAuthority | null = null;
   let foundBusy = false;
-  // The hub's signed roster, when the adopted key is one of its admins: the
+  // The hub's signed roster, when the adopted key is one of its ambassadors: the
   // Telegram-free way in is being seated here by public key.
   let hubKeys: Map<string, "admin" | "member"> = new Map();
   let hubRole: "admin" | "member" | null = null;
   let keyDraft = "";
   let keyBusy = false;
   // Keys asking to be seated (NIP-29 join requests), watched while this
-  // panel is open and the adopted key admins a key-founded hub.
+  // panel is open and the adopted key is an ambassador of a key-founded hub.
   let joinRequests: JoinRequest[] = [];
   let stopRequests: (() => void) | null = null;
   let inviteCopied = false;
@@ -320,7 +320,7 @@
     }
   }
 
-  // The holon's onboarding (@holons/core/onboarding), for its admins: on or
+  // The holon's onboarding (@holons/core/onboarding), for its ambassadors: on or
   // off, who is walking it, and the cards only someone from the holon ticks.
   let onbConfig: OnboardingConfig | null = null;
   let onbPeople: OnboardingView[] = [];
@@ -328,7 +328,7 @@
   let onbEditing = false;
   async function loadOnb(id: string) {
     try {
-      const { config, people } = await loadOnboardingAdmin(id);
+      const { config, people } = await loadOnboardingAmbassador(id);
       if (id !== $holonId) return;
       onbConfig = config;
       onbPeople = people;
@@ -360,7 +360,7 @@
       onbBusy = false;
     }
   }
-  const openAdminCards = (v: OnboardingView) =>
+  const openAmbassadorCards = (v: OnboardingView) =>
     (v.steps.find((s) => s.id === v.step)?.cards ?? []).filter(
       (c) => c.confirm === "admin" && !c.done,
     );
@@ -379,7 +379,7 @@
     });
   }
 
-  // Federation requests other holons' admins made of this one (the store
+  // Federation requests other holons' ambassadors made of this one (the store
   // is bound by the layout, for keys that may answer). One open at a time:
   // "Open" shows the pair's flow editor inline.
   let fedBusy = false;
@@ -981,7 +981,7 @@
     </div>
 
     {#if $holonId && $fedRequests.length}
-      <!-- Other holons asking to federate with this one. Each holon's admins
+      <!-- Other holons asking to federate with this one. Each holon's ambassadors
            set only their own half of a link; accepting writes ours. -->
       <div class="field">
         {$t("fed.requestsTitle")}
@@ -1045,7 +1045,7 @@
       <!-- Members: who is linked to this hub. One word for the whole story —
            a Telegram chat is linked to the hub (a hub born in a chat stays
            linked to it), a person's key is linked to the hub directly or
-           through that chat, admins link and unlink. Underneath: the signed
+           through that chat, ambassadors link and unlink. Underneath: the signed
            `_members` log and kind-9021 asks of @holons/core/holons. -->
       <div class="field">
         {$t("members.title")}
@@ -1158,7 +1158,7 @@
             <p class="hex-note warn">{$t("members.youNoKeyTelegram")}</p>
           {/if}
 
-          <!-- The Telegram chat: the one this hub was born in, or the ones an admin linked. -->
+          <!-- The Telegram chat: the one this hub was born in, or the ones an ambassador linked. -->
           {#if isTelegramChatId($holonId ?? "")}
             <p class="hex-note">
               <strong>{$t("members.chat")}</strong> · {$t("members.chatBorn")}
@@ -1208,7 +1208,7 @@
             {/if}
           {/if}
 
-          <!-- Admins: who asked, who is linked, link one more. -->
+          <!-- Ambassadors: who asked, who is linked, link one more. -->
           {#if hubRole === "admin"}
             {#if onbConfig}
               <div class="onb">
@@ -1270,7 +1270,7 @@
                       ></span
                     >
                     <div class="map-lanes">
-                      {#each openAdminCards(view) as card (card.id)}
+                      {#each openAmbassadorCards(view) as card (card.id)}
                         <button
                           type="button"
                           class="lane"
@@ -1326,7 +1326,7 @@
                   >{$nameOf(pub)}<span class="shared"
                     >{$t(
                       role === "admin"
-                        ? "members.roleAdmin"
+                        ? "members.roleAmbassador"
                         : "members.roleMember",
                     )}{#if pub === $sessionKeyPub}{" · "}{$t(
                         "members.you",
@@ -1372,7 +1372,7 @@
                   class="found ghost"
                   disabled={keyBusy || !keyDraft}
                   on:click={() => addKey("admin")}
-                  >{$t("members.addAdmin")}</button
+                  >{$t("members.addAmbassador")}</button
                 >
               </div>
             </form>

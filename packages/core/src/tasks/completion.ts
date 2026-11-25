@@ -1,7 +1,7 @@
 // Pure task-completion transform shared by all UIs and the MCP server.
 //
 // What this owns:
-//   - Permission check (initiator OR host OR participant OR caller-supplied isAdmin).
+//   - Permission check (initiator OR host OR participant OR caller-supplied isAmbassador).
 //   - Status guard (cannot complete a 'stopped' quest).
 //   - Stamping `status: 'completed'` + `completed_at` + clearing `activeHolograms`.
 //
@@ -23,8 +23,8 @@ export interface CompleteTaskOptions {
   /** ISO timestamp for `completed_at`. Defaults to new Date().toISOString(). */
   now?: string;
   /** Set true to bypass initiator/participant check (e.g. when caller has
-   *  resolved holon-admin rights elsewhere). */
-  isAdmin?: boolean;
+   *  resolved holon-ambassador rights elsewhere). */
+  isAmbassador?: boolean;
 }
 
 export type CompleteTaskResult =
@@ -48,7 +48,7 @@ export function applyTaskCompletion(
   if (task.status === 'completed') return { ok: false, reason: 'already-completed' };
   if (task.status === 'stopped') return { ok: false, reason: 'stopped' };
 
-  const allowed = options.isAdmin === true
+  const allowed = options.isAmbassador === true
     || isInitiator(task, completerId)
     || isHost(task, completerId)
     || isParticipant(task, completerId);
@@ -89,7 +89,7 @@ export function applyOccurrenceCompletion(
   if (isOccurrenceCompleted(task, occurrence)) {
     return { ok: false, reason: 'already-completed' };
   }
-  const allowed = options.isAdmin === true
+  const allowed = options.isAmbassador === true
     || isInitiator(task, completerId)
     || isHost(task, completerId)
     || isParticipant(task, completerId);

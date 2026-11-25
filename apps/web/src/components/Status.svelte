@@ -68,7 +68,7 @@
     // Add state for editing
     let isEditingEquation = false;
     // The equation is a guarded settings field (`may(standing, 'settings.guarded')`):
-    // an admin's signature counts, anyone else's is recorded and ignored.
+    // an ambassador's signature counts, anyone else's is recorded and ignored.
     let eqStanding: WriteStanding | null = null;
     // Once a proposal on the equation has passed, only the holon's votes
     // change it: every reader ignores the settings field, so nobody edits it.
@@ -446,7 +446,7 @@
 
     // Apply a settings-derived currency list, augmenting it with 'hour'
     // whenever any time-tracking expense OR any declared hours exist (so
-    // the hour column shows up in the table even before an admin adds it
+    // the hour column shows up in the table even before an ambassador adds it
     // to settings).
     function applyCurrencyList(stored: string[]) {
         const set = new Set(stored.map(c => c.toLowerCase()));
@@ -1132,7 +1132,7 @@
                             {#if eqGoverned}
                                 <p class="text-amber-300 text-xs mt-1">{EQUATION_GOVERNED_MESSAGE}</p>
                             {:else if !canEditEquation}
-                                <p class="text-amber-300 text-xs mt-1">Only an admin's signature changes the value equation; yours would be recorded but not counted.</p>
+                                <p class="text-amber-300 text-xs mt-1">Only an ambassador's signature changes the value equation; yours would be recorded but not counted.</p>
                             {/if}
                         </div>
                         {#if isEditingEquation}
@@ -1149,7 +1149,7 @@
                                 <button 
                                     onclick={saveEquation}
                                     disabled={!canEditEquation}
-                                    title={canEditEquation ? 'Save the equation' : "Only an admin's signature changes the value equation"}
+                                    title={canEditEquation ? 'Save the equation' : "Only an ambassador's signature changes the value equation"}
                                     class="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm font-medium"
                                 >
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -8,7 +8,7 @@
  *
  * The bot knows every member's derived key (it holds the secret); a browser
  * does not. What it does have: the holon's `settings` (the holon key, the
- * admin, explicitly trusted pubkeys), the `users` lens (each member's
+ * ambassador, explicitly trusted pubkeys), the `users` lens (each member's
  * `linkedKeys`) and the kind-31926 identity directory (`shift_identity`,
  * attested key → person). This assembles those into the same shape the
  * bot's trust cache produces, so both fold the same log the same way — up
@@ -98,19 +98,19 @@ export function bootstrapFromLenses(input: LensBootstrapInput): LensBootstrap {
     const key = hexKey(k);
     if (key) members.add(key);
   }
-  const admins = new Set<string>();
+  const ambassadors = new Set<string>();
   if (holonPubkey) {
     members.add(holonPubkey);
-    admins.add(holonPubkey);
+    ambassadors.add(holonPubkey);
     keyToParty.set(holonPubkey, String(input.holonId));
   }
-  const adminId = settings.admin != null && String(settings.admin) !== '' ? String(settings.admin) : null;
-  if (adminId) {
-    for (const k of linkedKeys.get(adminId) ?? []) admins.add(k.toLowerCase());
-    for (const [k, party] of keyToParty) if (party === adminId) admins.add(k.toLowerCase());
+  const ambassadorId = settings.admin != null && String(settings.admin) !== '' ? String(settings.admin) : null;
+  if (ambassadorId) {
+    for (const k of linkedKeys.get(ambassadorId) ?? []) ambassadors.add(k.toLowerCase());
+    for (const [k, party] of keyToParty) if (party === ambassadorId) ambassadors.add(k.toLowerCase());
   }
   return {
-    actors: { members: [...members], admins: [...admins], genesis: holonPubkey },
+    actors: { members: [...members], ambassadors: [...ambassadors], genesis: holonPubkey },
     keyToParty,
     linkedKeys,
     holonPubkey,

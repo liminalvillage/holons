@@ -10,10 +10,10 @@
  * `governance_votes` log (votes.ts) —
  *
  *   before anything has passed: the holon's base equation
- *   (`settings.valueEquation`, set by its admins, or the default);
+ *   (`settings.valueEquation`, set by its ambassadors, or the default);
  *   at the first pass: that proposal's `from` (the equation its proposer saw,
  *   which the ballot showed) with its patch laid on — from then on settings
- *   no longer move the equation, so an admin cannot edit around the vote;
+ *   no longer move the equation, so an ambassador cannot edit around the vote;
  *   after: every later passed patch laid on, in the order they closed.
  *
  * A proposal is an `equation` entry in the log, never a record anyone can

@@ -5,7 +5,7 @@
 // join requests), the onboarding a holon walks newcomers through
 // (@holons/core/onboarding), the holons this key keeps, and the
 // challenge–response link to a Telegram chat. Every write is signed by the MCP key; it counts
-// where that key is seated (an admin, for seating and linking).
+// where that key is seated (an ambassador, for seating and linking).
 
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -60,7 +60,7 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
   server.registerTool(
     'holon_create',
     {
-      description: 'Found a new holon with this MCP key: mints a holon_… id, signs the genesis of its member log (this key is the first admin), writes its settings, publishes its NIP-29 state. Not a Telegram chat: nothing leaves the relays.',
+      description: 'Found a new holon with this MCP key: mints a holon_… id, signs the genesis of its member log (this key is the first ambassador), writes its settings, publishes its NIP-29 state. Not a Telegram chat: nothing leaves the relays.',
       inputSchema: { name: z.string().optional(), first_name: z.string().optional().describe('A profile for the founder, when given.'), username: z.string().optional() },
     },
     async (args) => {
@@ -80,7 +80,7 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
   server.registerTool(
     'holon_members',
     {
-      description: 'The seated keys of a holon (pubkey → admin|member) from its signed member log, who founds it, and this MCP key\'s own role.',
+      description: 'The seated keys of a holon (pubkey → admin|member; `admin` is the stored value of the ambassador role) from its signed member log, who founds it, and this MCP key\'s own role.',
       inputSchema: { holon: z.string() },
     },
     async (args) => {
@@ -105,7 +105,7 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
   };
   server.registerTool(
     'holon_member_add',
-    { description: 'Seat a key (npub or hex) in a holon as member or admin. Counts only when this MCP key is an admin of the holon. Publishes the NIP-29 put-user and refreshed group state.', inputSchema: { holon: z.string(), key: z.string(), role: roleEnum.optional() } },
+    { description: 'Seat a key (npub or hex) in a holon as member or ambassador (role value `admin`). Counts only when this MCP key is an ambassador of the holon. Publishes the NIP-29 put-user and refreshed group state.', inputSchema: { holon: z.string(), key: z.string(), role: roleEnum.optional() } },
     async (args) => {
       try {
         return await seat(args as never);
@@ -127,7 +127,7 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
   );
   server.registerTool(
     'holon_member_remove',
-    { description: 'Unseat a key from a holon (admins only; never this key itself). Publishes the NIP-29 remove-user and refreshed state.', inputSchema: { holon: z.string(), key: z.string() } },
+    { description: 'Unseat a key from a holon (ambassadors only; never this key itself). Publishes the NIP-29 remove-user and refreshed state.', inputSchema: { holon: z.string(), key: z.string() } },
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
@@ -142,7 +142,7 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
 
   server.registerTool(
     'holon_join_request',
-    { description: 'Ask to join a holon as this MCP key: a NIP-29 kind-9021 request carrying a display name. An admin seats the key with holon_join_approve; the bot of a Telegram group announces it there. `telegramId` claims a Telegram identity, which counts only when this key is the one that id derives.', inputSchema: { holon: z.string(), name: z.string().optional(), telegramId: z.string().regex(/^\d{1,20}$/).optional() } },
+    { description: 'Ask to join a holon as this MCP key: a NIP-29 kind-9021 request carrying a display name. An ambassador seats the key with holon_join_approve; the bot of a Telegram group announces it there. `telegramId` claims a Telegram identity, which counts only when this key is the one that id derives.', inputSchema: { holon: z.string(), name: z.string().optional(), telegramId: z.string().regex(/^\d{1,20}$/).optional() } },
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
@@ -193,7 +193,7 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
     'onboarding_config_save',
     {
       description:
-        "Set a holon's onboarding (admins only — a guarded settings field). Steps in order, each a list of cards; a card's `confirm` says who ticks it: `self` (the person), `admin` (someone from the holon vouches, e.g. the call) or `profile` (done once the person's profile holds every required one of the card's `fields`; without `fields` it asks a name and what they offer). `enabled: false` answers join requests at once again.",
+        "Set a holon's onboarding (ambassadors only — a guarded settings field). Steps in order, each a list of cards; a card's `confirm` says who ticks it: `self` (the person), `admin` (an ambassador of the holon vouches, e.g. the call) or `profile` (done once the person's profile holds every required one of the card's `fields`; without `fields` it asks a name and what they offer). `enabled: false` answers join requests at once again.",
       inputSchema: {
         holon: z.string(),
         enabled: z.boolean(),
@@ -242,7 +242,7 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
     'onboarding_confirm',
     {
       description:
-        "Vouch for an `admin` card of someone's onboarding (the call happened, the buddy met them), as an admin of the holon; they move on, and once every step is done their key is linked. Without `step`/`card`, only re-reads where they stand (and links them when they are through).",
+        "Vouch for an `admin` card of someone's onboarding (the call happened, the buddy met them), as an ambassador of the holon; they move on, and once every step is done their key is linked. Without `step`/`card`, only re-reads where they stand (and links them when they are through).",
       inputSchema: { holon: z.string(), pubkey: z.string(), step: z.string().optional(), card: z.string().optional() },
     },
     async (args) => {
@@ -253,7 +253,7 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
           args.step && args.card
             ? await confirmCard(hs, args.holon, args.pubkey, args.step, args.card, run)
             : await refreshOnboarding(hs, args.holon, args.pubkey, run);
-        if (!result) return fail('Nothing to confirm: not onboarding here, or not a card an admin ticks.');
+        if (!result) return fail('Nothing to confirm: not onboarding here, or not a card an ambassador ticks.');
         return ok({ success: true, linked: result.linked, passed: result.passed, view: result.view });
       } catch (err) {
         return fail((err as Error).message);
@@ -262,7 +262,7 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
   );
   server.registerTool(
     'holon_leave',
-    { description: 'Leave a holon as this MCP key: a NIP-29 kind-9022. An admin removes the seat.', inputSchema: { holon: z.string() } },
+    { description: 'Leave a holon as this MCP key: a NIP-29 kind-9022. An ambassador removes the seat.', inputSchema: { holon: z.string() } },
     async (args) => {
       try {
         const hs = await deps.getHoloSphere();
@@ -308,7 +308,7 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
   server.registerTool(
     'holon_telegram_link_offer',
     {
-      description: 'Offer to link a Telegram chat to a holon this key admins. Returns the one-time token, the record id, and the Telegram deep links (`?startgroup=` for a group, `?start=` for a private chat) a chat ADMIN must tap. Then poll holon_telegram_link_status and complete with holon_telegram_link_complete.',
+      description: 'Offer to link a Telegram chat to a holon this key is an ambassador of. Returns the one-time token, the record id, and the Telegram deep links (`?startgroup=` for a group, `?start=` for a private chat) a chat ADMIN must tap. Then poll holon_telegram_link_status and complete with holon_telegram_link_complete.',
       inputSchema: { holon: z.string(), botUsername: z.string().optional().describe(`The bot the deep links point at (default ${DEFAULT_BOT}).`) },
     },
     async (args) => {
@@ -342,7 +342,7 @@ export function registerHolonsTools(server: McpServer, deps: ToolDeps): void {
   );
   server.registerTool(
     'holon_telegram_link_complete',
-    { description: 'Complete an accepted link: mark it linked, seat the chat\'s key (the bot) as an admin of the holon, and federate every board lens both ways. Check the chat title with holon_telegram_link_status first.', inputSchema: { holon: z.string(), id: z.string() } },
+    { description: 'Complete an accepted link: mark it linked, seat the chat\'s key (the bot) as an ambassador of the holon, and federate every board lens both ways. Check the chat title with holon_telegram_link_status first.', inputSchema: { holon: z.string(), id: z.string() } },
     async (args) => {
       try {
         const st = await status(args.holon, args.id);

@@ -46,6 +46,7 @@ export function byLogOrder(a: { created_at: number; id: string }, b: { created_a
   return a.created_at - b.created_at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 
+/** A key's role in a holon. The stored value 'admin' is the ambassador role (kept on the wire for existing signed logs). */
 export type Role = 'admin' | 'member';
 
 /**
@@ -78,7 +79,7 @@ export interface Policy {
   conflict: 'earliest' | 'quorum';
   /**
    * Partner holons whose accepted entries this lens imports, each pinned to
-   * its genesis pubkey — cross-holon trust as data an admin signed, never
+   * its genesis pubkey — cross-holon trust as data an ambassador signed, never
    * trust on first use. Empty by default: a holon imports nothing.
    */
   partners: Record<string, string>;

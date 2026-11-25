@@ -179,8 +179,8 @@ export function registerLibraryTools(server: McpServer, deps: ToolDeps): void {
   server.tool(
     'library_return',
     'Return a borrowed library item: ends the returner\'s booking that is running now, or their last one whose time is already up (a late return). Defaults the returner to the configured actor. ' +
-      'An admin of the holon may return SOMEONE ELSE\'S booking (e.g. a late item never returned) with `onBehalf: true` — the booking holding the item, or `bookingId`. ' +
-      'For the refund, pass the result\'s `borrower` (whose booking it was, not the admin) as `returner` to library_return_accounting_record.',
+      'An ambassador of the holon may return SOMEONE ELSE\'S booking (e.g. a late item never returned) with `onBehalf: true` — the booking holding the item, or `bookingId`. ' +
+      'For the refund, pass the result\'s `borrower` (whose booking it was, not the ambassador) as `returner` to library_return_accounting_record.',
     {
       holon: z.string(),
       itemId: z.string(),
@@ -192,7 +192,7 @@ export function registerLibraryTools(server: McpServer, deps: ToolDeps): void {
       onBehalf: z
         .boolean()
         .optional()
-        .describe("Act as the holon's admin on another member's booking (capability library.manage). Refused when this key is not an admin."),
+        .describe("Act as the holon's ambassador on another member's booking (capability library.manage). Refused when this key is not an ambassador."),
     },
     async ({ holon, itemId, actor, bookingId, onBehalf }) => {
       const returner = buildBorrowActor(deps, parseJson<ActorOverride>(actor, {}));

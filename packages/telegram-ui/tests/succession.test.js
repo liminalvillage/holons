@@ -155,7 +155,7 @@ describe('the upgrade itself', () => {
   it('stays quiet when the old chat never had a holon', async () => {
     const { hs, telegram, service } = await setup();
     const r = await service.migrated(OTHER, NEW);
-    expect(r).toEqual({ ok: false, refused: 'not-admin' });
+    expect(r).toEqual({ ok: false, refused: 'not-ambassador' });
     expect(telegram.sendMessage).not.toHaveBeenCalled();
     expect(await readSuccessor(hs, OTHER)).toBeNull();
   });
@@ -164,7 +164,7 @@ describe('the upgrade itself', () => {
 describe('/adopt', () => {
   it("is for the chat's admins, in a group, with an old id", async () => {
     const member = await setup({ admin: false });
-    expect(await member.adopt(`/adopt ${OLD}`)).toBe('not-admin');
+    expect(await member.adopt(`/adopt ${OLD}`)).toBe('not-ambassador');
     expect(await readSuccessor(member.hs, OLD)).toBeNull();
 
     const { hs, adopt, handlers, telegram } = await setup();
@@ -193,7 +193,7 @@ describe('/adopt', () => {
         throw upgraded(NEW);
       },
     });
-    // Not the old holon's admin: Telegram's word is enough.
+    // Not the old holon's ambassador: Telegram's word is enough.
     expect(await adopt(`/adopt ${OLD}`, { id: 99 })).toBe('moved');
     expect(telegram.sendChatAction).toHaveBeenCalledWith(OLD, 'typing');
     expect(await readSuccessor(hs, OLD)).toBe(NEW);
@@ -209,7 +209,7 @@ describe('/adopt', () => {
     expect(await readSuccessor(hs, OLD)).toBeNull();
   });
 
-  it("without Telegram's word, only the old holon's admin may", async () => {
+  it("without Telegram's word, only the old holon's ambassador may", async () => {
     const { hs, adopt } = await setup({
       probe: async () => {
         throw new Error('chat not found');

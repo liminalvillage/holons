@@ -86,9 +86,9 @@
     saving = true; error='';
     try {
       await ensureSdgHolon();
-      // Core writes the SDG holon's half and asks the partner's admins for theirs.
+      // Core writes the SDG holon's half and asks the partner's ambassadors for theirs.
       const outcome = await setFederationPartner(holosphere, sdgHolonId, newHolonId.trim(), { inbound: [], outbound: [] });
-      if (outcome.self === 'held') throw new Error(nn('Only an admin of this SDG {@holon} can federate it'));
+      if (outcome.self === 'held') throw new Error(nn('Only an ambassador of this SDG {@holon} can federate it'));
       showAddDialog = false;
       newHolonName = '';
       newHolonId = '';
@@ -111,7 +111,7 @@
     try {
       await holosphere.put(id, 'settings', { id, name: newHolonName.trim() });
       const outcome = await setFederationPartner(holosphere, sdgHolonId, id, { inbound: [], outbound: [], partnerName: newHolonName.trim() });
-      if (outcome.self === 'held') throw new Error(nn('Only an admin of this SDG {@holon} can federate it'));
+      if (outcome.self === 'held') throw new Error(nn('Only an ambassador of this SDG {@holon} can federate it'));
       showAddDialog = false; newHolonId = ''; newHolonName = '';
       await loadFederated();
     } catch (e) {

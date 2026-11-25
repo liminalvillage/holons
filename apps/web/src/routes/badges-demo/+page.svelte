@@ -13,7 +13,7 @@
 			icon: "🌟",
 			rarity: "common",
 			created: "2024-01-15T10:30:00Z",
-			created_by: "Community Admin",
+			created_by: "Community Ambassador",
 			awarded_to: [
 				{
 					id: "user1",
@@ -39,7 +39,7 @@
 			icon: "👑",
 			rarity: "rare",
 			created: "2024-01-10T08:00:00Z",
-			created_by: "Community Admin",
+			created_by: "Community Ambassador",
 			awarded_to: [
 				{
 					id: "user3",
@@ -57,7 +57,7 @@
 			icon: "🚀",
 			rarity: "epic",
 			created: "2024-01-05T12:00:00Z",
-			created_by: "Community Admin",
+			created_by: "Community Ambassador",
 			awarded_to: [
 				{
 					id: "user4",
@@ -75,7 +75,7 @@
 			icon: "🎓",
 			rarity: "uncommon",
 			created: "2024-01-12T15:30:00Z",
-			created_by: "Community Admin",
+			created_by: "Community Ambassador",
 			awarded_to: [
 				{
 					id: "user5",
@@ -93,7 +93,7 @@
 			icon: "🌱",
 			rarity: "rare",
 			created: "2024-01-08T09:15:00Z",
-			created_by: "Community Admin",
+			created_by: "Community Ambassador",
 			awarded_to: [
 				{
 					id: "user6",
@@ -111,7 +111,7 @@
 			icon: "🤝",
 			rarity: "common",
 			created: "2024-01-18T14:45:00Z",
-			created_by: "Community Admin",
+			created_by: "Community Ambassador",
 			awarded_to: [
 				{
 					id: "user7",

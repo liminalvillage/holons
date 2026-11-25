@@ -358,7 +358,7 @@ describe('cancelBooking / updateBookingDates', () => {
     expect(again.reason).toBe('no_such_booking');
   });
 
-  it('an admin may cancel or move someone else\'s booking', async () => {
+  it('an ambassador may cancel or move someone else\'s booking', async () => {
     const { db, bookingId } = await seed();
     const moved = await updateBookingDates(
       db, 'h', 'drill', bookingId, { start: '2099-02-01', end: '2099-02-09' }, { id: 1 }, { manage: true }
@@ -529,7 +529,7 @@ describe('late returns', () => {
     expect(back.item?.bookings).toEqual([]);
   });
 
-  it('lets an admin return a late booking for the borrower, refunding the borrower', async () => {
+  it('lets an ambassador return a late booking for the borrower, refunding the borrower', async () => {
     const item: LibraryItem = {
       ...createLibraryItem('drill', LIBRARY_TYPES.TOOL, { createdBy: 10, value: 2 }),
       bookings: [
@@ -538,11 +538,11 @@ describe('late returns', () => {
       ]
     };
     const { db } = mockDb({ drill: item });
-    const admin = { id: 1, username: 'ada' };
+    const ambassador = { id: 1, username: 'ada' };
 
-    expect(await returnItem(db, 'h', 'drill', admin)).toMatchObject({ ok: false, reason: 'forbidden' });
+    expect(await returnItem(db, 'h', 'drill', ambassador)).toMatchObject({ ok: false, reason: 'forbidden' });
 
-    const back = await returnItem(db, 'h', 'drill', admin, { manage: true });
+    const back = await returnItem(db, 'h', 'drill', ambassador, { manage: true });
     expect(back).toMatchObject({ ok: true, onBehalf: true, isOwner: false, borrower: { id: '20', username: 'bob' } });
     expect(back.booking?.id).toBe('b-old');
     expect(bookingStatus(back.item!).state).toBe('available');
@@ -550,7 +550,7 @@ describe('late returns', () => {
     expect(getDisplayBookings(back.item!).map((b) => b.id)).toEqual(['b-next']);
   });
 
-  it('an admin may name the booking to return; a member may not return someone else\'s by id', async () => {
+  it('an ambassador may name the booking to return; a member may not return someone else\'s by id', async () => {
     const item: LibraryItem = {
       ...createLibraryItem('saw', LIBRARY_TYPES.TOOL, { createdBy: 10 }),
       bookings: [

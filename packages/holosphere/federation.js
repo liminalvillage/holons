@@ -376,7 +376,7 @@ export async function getFederation(holosphere, spaceId, password = null) {
 
 /**
  * A holon's federation record, resolved like everything else the holon
- * owns: under an authorized read it is the newest record an ADMIN of that
+ * owns: under an authorized read it is the newest record an AMBASSADOR of that
  * holon signed (see capabilities.js — the global `federation` table is keyed
  * by the holon it describes, so whoever wrote last could otherwise decide
  * its partners and open its lenses). A holon nobody speaks for, a private
@@ -384,10 +384,10 @@ export async function getFederation(holosphere, spaceId, password = null) {
  *
  * Returns `{ record, raw, endorsed }`: `record` is what counts (null when
  * nothing does), `raw` the plain last-writer-wins record, `endorsed` whether
- * `record` is an admin's. A raw record no admin ever signed — written before
- * the rule existed, or by a stranger — is not counted, but the first admin
+ * `record` is an ambassador's. A raw record no ambassador ever signed — written before
+ * the rule existed, or by a stranger — is not counted, but the first ambassador
  * write starts from it (`federationBase`), so a legacy link survives the
- * day its admin touches federation.
+ * day its ambassador touches federation.
  */
 export async function federationStanding(holosphere, spaceId, password = null) {
     const id = String(spaceId);
@@ -396,7 +396,7 @@ export async function federationStanding(holosphere, spaceId, password = null) {
     if (!signer?.enforce || password || typeof signer.resolveOwned !== 'function') {
         return { record: raw ?? null, raw: raw ?? null, endorsed: false };
     }
-    // The owner's log decides who its admins are: catch it up first, as an
+    // The owner's log decides who its ambassadors are: catch it up first, as an
     // enforced read of the holon itself would.
     try { await holosphere._relaySync?.(id, '_members', { await: true }); } catch { /* local view */ }
     const owned = await signer.resolveOwned(holosphere, id, 'federation', id);
@@ -499,7 +499,7 @@ export async function unfederate(holosphere, spaceId1, spaceId2, password1 = nul
         // space2's record is password-protected and we don't hold the
         // password, the local removal above still stands. One-sided
         // (`bidirectional: false`) leaves the partner's record to its own
-        // admins — the federation-request path asks them instead.
+        // ambassadors — the federation-request path asks them instead.
         if (bidirectional) {
             let fedInfo2 = null;
             try {

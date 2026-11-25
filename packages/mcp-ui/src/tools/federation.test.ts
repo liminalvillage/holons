@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Federation link tools over two real local instances — one per admin, the
-// events copied between them as a shared relay would: A's admin links and B
-// is asked; B's admin sees the request and accepts.
+// Federation link tools over two real local instances — one per ambassador, the
+// events copied between them as a shared relay would: A's ambassador links and B
+// is asked; B's ambassador sees the request and accepts.
 import { describe, expect, it } from 'vitest';
 import type { ZodTypeAny } from 'zod';
 import { createHoloSphere, signerFromSecretKey } from '@holons/core/holosphere';

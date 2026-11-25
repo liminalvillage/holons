@@ -7,7 +7,7 @@ import { EMPTY_ROOT, buildCheckpoint, epochOf, foldCheckpoints, merkleRoot, veri
 import { bootstrapActors } from './membership.js';
 import { shuffled, signedEntry, testKey } from './testing.js';
 
-const admin = testKey();
+const ambassador = testKey();
 const member = testKey();
 
 describe('merkleRoot', () => {
@@ -45,12 +45,12 @@ describe('checkpoints', () => {
   });
 
   it('folds the latest checkpoint per lens and epoch from recognized signers only', () => {
-    const actors = bootstrapActors({ members: [member.pk], admins: [admin.pk] });
+    const actors = bootstrapActors({ members: [member.pk], ambassadors: [ambassador.pk] });
     const cp1 = buildCheckpoint({ lens: 'l', epoch, accepted: entries.slice(0, 2) });
     const cp2 = buildCheckpoint({ lens: 'l', epoch, accepted: entries });
     const log = [
-      signedEntry({ sk: admin.sk, item: cp1.item as unknown as Record<string, unknown>, created_at: now + 1 }),
-      signedEntry({ sk: admin.sk, item: cp2.item as unknown as Record<string, unknown>, created_at: now + 2 }),
+      signedEntry({ sk: ambassador.sk, item: cp1.item as unknown as Record<string, unknown>, created_at: now + 1 }),
+      signedEntry({ sk: ambassador.sk, item: cp2.item as unknown as Record<string, unknown>, created_at: now + 2 }),
       signedEntry({ sk: member.sk, item: { ...cp2.item, root: 'ff' } as unknown as Record<string, unknown>, created_at: now + 3 }),
     ];
     const folded = foldCheckpoints(shuffled(log), actors);

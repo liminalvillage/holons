@@ -121,7 +121,7 @@ export const capitalize = string => {
  * This is the bot's side of the one capability table
  * (@holons/core/holosphere `CAPABILITIES`): the bot's key is the anchor of
  * every chat-founded holon and signs on the chat's behalf, so a chat admin is
- * who may do what the table reserves for admins — federation, the guarded
+ * who may do what the table reserves for ambassadors — federation, the guarded
  * settings fields, the rules, overriding a lock. ASYNC: always `await` it.
  * An un-awaited call is a Promise, which is truthy, and the gate is gone.
  */

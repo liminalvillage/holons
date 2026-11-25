@@ -4,7 +4,7 @@
   // A holon's onboarding steps as a newcomer sees them: the steps behind them
   // ticked, the one they are on open with its cards, the rest waiting. What
   // a card lets them do (Done, the profile form, a hint) is the slot's, so
-  // the newcomer's screen and an admin's preview draw the same list.
+  // the newcomer's screen and an ambassador's preview draw the same list.
   import type { OnboardingCardView, OnboardingStepView } from "$lib/onboarding";
   import Icon from "./Icon.svelte";
 

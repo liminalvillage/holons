@@ -163,7 +163,7 @@
 	let processingRequestId: string | null = null;
 
 	// Partners asking the home holon to link (core federation requests): a
-	// link has one half per holon, each its own admins' word, so a partner
+	// link has one half per holon, each its own ambassadors' word, so a partner
 	// that linked from its side waits here for ours.
 	let incoming: FederationRequest[] = [];
 	let requestsSub: { unsubscribe: () => void } | null = null;
@@ -222,7 +222,7 @@
 			const holonList: SidebarHolon[] = [];
 
 			// Load federated holons from holosphere using the HOME holon ID.
-			// A partner whose admins have not accepted our half yet is shown as
+			// A partner whose ambassadors have not accepted our half yet is shown as
 			// pending (core `federationLinkState`, resolved after the list renders).
 			if (holosphere && federationSourceId) {
 				try {
@@ -414,7 +414,7 @@
 		// Use home holon for federation operations
 		const myHolonId = $homeHolonId || currentHolonId;
 
-		// Revoke federation: our half goes; the partner's admins are asked to
+		// Revoke federation: our half goes; the partner's ambassadors are asked to
 		// drop theirs unless this key speaks for them too.
 		if ((holon?.federationStatus === 'accepted' || holon?.federationStatus === 'pending_outgoing') && holosphere && myHolonId) {
 			try {
@@ -422,7 +422,7 @@
 					holonName: homeHolonName || undefined
 				});
 				if (outcome.self === 'held') {
-					console.warn('[BrowserPanel] Not an admin of', myHolonId.slice(0, 12), '— federation unchanged');
+					console.warn('[BrowserPanel] Not an ambassador of', myHolonId.slice(0, 12), '— federation unchanged');
 					return;
 				}
 			} catch (err) {
@@ -463,14 +463,14 @@
 		// Update federation lens config in holosphere
 		if (holosphere && myHolonId) {
 			try {
-				// Our half; the partner's admins are asked for theirs (core).
+				// Our half; the partner's ambassadors are asked for theirs (core).
 				const outcome = await setFederationPartner(holosphere, myHolonId, holonId, {
 					inbound: newInbound,
 					outbound: newOutbound,
 					partnerName: index >= 0 ? holons[index].name : undefined,
 					holonName: homeHolonName || undefined
 				});
-				if (outcome.self === 'held') throw new Error(nn('Only an admin of this {@holon} can change its federation'));
+				if (outcome.self === 'held') throw new Error(nn('Only an ambassador of this {@holon} can change its federation'));
 				if (outcome.partner === 'requested' && index >= 0) {
 					holons[index] = { ...holons[index], federationStatus: 'pending_outgoing' };
 					holons = [...holons];
@@ -509,7 +509,7 @@
 
 	// Start a hub that is not a Telegram chat: mint its id and found it with
 	// this member's own key (@holons/core/protocol) — the key signs the genesis
-	// of the hub's member log and becomes its first admin; the settings page
+	// of the hub's member log and becomes its first ambassador; the settings page
 	// then seats others by public key.
 	let isFoundingHub = false;
 	async function startNewHub() {
@@ -669,7 +669,7 @@
 			const outbound = Array.from(selectedOutboundLenses);
 			const lensConfig = { lenses: [...new Set([...inbound, ...outbound])], inbound, outbound };
 
-			// Our half is written; the partner's admins are asked for theirs
+			// Our half is written; the partner's ambassadors are asked for theirs
 			// unless this key speaks for the partner too (core federation).
 			const outcome = await setFederationPartner(holosphere, myHolonId, holonId, {
 				inbound,
@@ -678,12 +678,12 @@
 				holonName: homeHolonName || undefined
 			});
 			if (outcome.self === 'held') {
-				addError = nn('Only an admin of your {@holon} can federate it.');
+				addError = nn('Only an ambassador of your {@holon} can federate it.');
 				return;
 			}
 			const federationStatus: FederationStatus = outcome.partner === 'requested' ? 'pending_outgoing' : 'accepted';
 
-			// Add to holons list as pending (their admins asked) or accepted.
+			// Add to holons list as pending (their ambassadors asked) or accepted.
 			if (!holons.some(h => h.id === holonId)) {
 				holons = [{
 					id: holonId,
@@ -693,7 +693,7 @@
 				}, ...holons];
 			}
 			addSuccess = federationStatus === 'pending_outgoing'
-				? `Linked — asked ${name}'s admins to accept.`
+				? `Linked — asked ${name}'s ambassadors to accept.`
 				: 'Federation created.';
 
 			// Navigate to the holon

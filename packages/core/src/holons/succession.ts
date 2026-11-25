@@ -14,12 +14,12 @@
 //   1. the new holon is founded with the old roster — every key that counted
 //      keeps counting;
 //   2. the old holon's records are copied in, re-signed by the key running
-//      this (an admin of both), keeping their ids;
+//      this (an ambassador of both), keeping their ids;
 //   3. the people a task or event names get their own-holon mirror pointed at
 //      the card's new address;
 //   4. a pair of signed records names each side from the other —
 //      `from/succession/successor` and `to/succession/predecessor:<from>` —
-//      and, as with a link, a successor counts only when an admin of EACH
+//      and, as with a link, a successor counts only when an ambassador of EACH
 //      holon signed its half (`readSuccessor`). `resolveHolon` follows them.
 //
 // The new holon's own records always win: a copy fills gaps, it never
@@ -100,12 +100,12 @@ type Host = HoloSphere & {
 const me = (hs: HoloSphere) => String(hs.currentPubkey ?? '').toLowerCase();
 
 /**
- * The succession record `id` in `holon`, as signed by a key that was an ADMIN
+ * The succession record `id` in `holon`, as signed by a key that was an AMBASSADOR
  * of the holon at that moment — the newest such envelope. A plain read would
- * hand back the newest claim by any accepted member; only an admin may say
+ * hand back the newest claim by any accepted member; only an ambassador may say
  * where a holon went or what it took in.
  */
-async function adminRecord(hs: HoloSphere, holon: string, id: string): Promise<SuccessionRecord | null> {
+async function ambassadorRecord(hs: HoloSphere, holon: string, id: string): Promise<SuccessionRecord | null> {
   const host = hs as Host;
   try {
     await hs.getMembers(holon);
@@ -132,16 +132,16 @@ async function adminRecord(hs: HoloSphere, holon: string, id: string): Promise<S
 }
 
 /**
- * The holon `holon` carries on as, or null: its admins' `successor` record,
- * confirmed by the named holon's admins' `predecessor` record. One half
+ * The holon `holon` carries on as, or null: its ambassadors' `successor` record,
+ * confirmed by the named holon's ambassadors' `predecessor` record. One half
  * alone is nothing — nobody can point a holon at one that did not take it in,
  * and nobody can claim to be the successor of one that did not say so.
  */
 export async function readSuccessor(hs: HoloSphere, holon: string): Promise<string | null> {
   if (!isMovableId(holon)) return null;
-  const own = await adminRecord(hs, holon, SUCCESSOR_ID);
+  const own = await ambassadorRecord(hs, holon, SUCCESSOR_ID);
   if (!own || own.holon === holon) return null;
-  const theirs = await adminRecord(hs, own.holon, `${PREDECESSOR_PREFIX}${holon}`);
+  const theirs = await ambassadorRecord(hs, own.holon, `${PREDECESSOR_PREFIX}${holon}`);
   return theirs ? own.holon : null;
 }
 
@@ -168,8 +168,8 @@ export type SuccessionRefusal =
   | 'same'
   /** One of them is not a holon id (an address, a person's key, a cell, empty). */
   | 'not-holon'
-  /** This key is not an admin of the old holon (or nobody founded it). */
-  | 'not-admin'
+  /** This key is not an ambassador of the old holon (or nobody founded it). */
+  | 'not-ambassador'
   /** The new id is already someone else's holon. */
   | 'taken'
   /** The old holon already carries on somewhere else. */
@@ -322,7 +322,7 @@ function carried(hs: HoloSphere, item: Item, from: string, to: string): Item {
 }
 
 /**
- * Carry `from` on as `to` (see the header). The caller must be an admin of
+ * Carry `from` on as `to` (see the header). The caller must be an ambassador of
  * the old holon; the new one is founded here when nobody has, and must be
  * this key's to administer when somebody did. Safe to run again — after a
  * crash, or later to bring across what was written to the old id meanwhile.
@@ -333,10 +333,10 @@ export async function succeedHolon(hs: HoloSphere, input: SuccessionInput): Prom
   if (!isMovableId(from) || !isMovableId(to)) return { ok: false, refused: 'not-holon' };
   if (from === to) return { ok: false, refused: 'same' };
   const key = me(hs);
-  if (!key || !hs.signingEnabled) return { ok: false, refused: 'not-admin' };
+  if (!key || !hs.signingEnabled) return { ok: false, refused: 'not-ambassador' };
   const host = hs as CopyHost & Host;
 
-  if ((await myHolonRole(hs, from)) !== 'admin') return { ok: false, refused: 'not-admin' };
+  if ((await myHolonRole(hs, from)) !== 'admin') return { ok: false, refused: 'not-ambassador' };
   const already = await readSuccessor(hs, from);
   if (already && already !== to) return { ok: false, refused: 'moved' };
   if ((await resolveHolon(hs, to)) === from) return { ok: false, refused: 'cycle' };
@@ -430,8 +430,8 @@ export async function succeedHolon(hs: HoloSphere, input: SuccessionInput): Prom
   // 3. The pair, last: the old id points here only once there is something to find.
   const at = input.now ?? Date.now();
   const predecessorId = `${PREDECESSOR_PREFIX}${from}`;
-  if (!(await adminRecord(hs, to, predecessorId))) await hs.put(to, SUCCESSION_LENS, { id: predecessorId, holon: from, by: key, at } satisfies SuccessionRecord);
-  if (!(await adminRecord(hs, from, SUCCESSOR_ID))) await hs.put(from, SUCCESSION_LENS, { id: SUCCESSOR_ID, holon: to, by: key, at } satisfies SuccessionRecord);
+  if (!(await ambassadorRecord(hs, to, predecessorId))) await hs.put(to, SUCCESSION_LENS, { id: predecessorId, holon: from, by: key, at } satisfies SuccessionRecord);
+  if (!(await ambassadorRecord(hs, from, SUCCESSOR_ID))) await hs.put(from, SUCCESSION_LENS, { id: SUCCESSOR_ID, holon: to, by: key, at } satisfies SuccessionRecord);
   host._readAuthority?.invalidate?.(from);
   host._readAuthority?.invalidate?.(to);
   return report;

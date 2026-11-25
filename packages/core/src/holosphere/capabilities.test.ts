@@ -37,7 +37,7 @@ describe('the capability table', () => {
     expect(may({ status: 'accepted', role: 'member', anchor: 'x', source: 'log' }, 'privacy.override')).toBe(false);
     expect(may('member', 'library.manage')).toBe(false);
     expect(may('admin', 'library.manage')).toBe(true);
-    expect(whyNot({ status: 'accepted', role: 'member', anchor: 'x', source: 'log' }, 'federation')).toMatch(/admin/);
+    expect(whyNot({ status: 'accepted', role: 'member', anchor: 'x', source: 'log' }, 'federation')).toMatch(/ambassador/);
     expect(whyNot({ status: 'accepted', role: 'admin', anchor: 'x', source: 'log' }, 'federation')).toBeNull();
     expect(whyNot(null, 'content')).toMatch(/Sign in/);
   });
@@ -64,7 +64,7 @@ describe('standing carries the role', () => {
     expect(may(await writeAcceptance(hs, '-810'), 'federation')).toBe(true);
   });
 
-  it('the federation snapshot says whether an admin signed it', async () => {
+  it('the federation snapshot says whether an ambassador signed it', async () => {
     const bot = testKey();
     const hs = sphere(bot.sk);
     await hs.ready();

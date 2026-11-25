@@ -3,12 +3,12 @@
 //
 // A holon's onboarding: the steps a newcomer walks before their key is
 // linked. It lives on the holon's settings (`settings.onboarding`), a
-// guarded field — only an admin's word counts, or a member could wave
+// guarded field — only an ambassador's word counts, or a member could wave
 // anyone in.
 //
 // Each step is a handful of cards. How a card counts as done:
 //   self     the person completes it themselves (watch the video)
-//   admin    someone who speaks for the holon vouches for it (the call)
+//   ambassador    someone who speaks for the holon vouches for it (the call)
 //   profile  the person's profile holds what the card asks (its `fields`:
 //            name, what they offer, arrival dates, any question the holon
 //            adds) — "you need a profile to apply" is just the first card
@@ -153,7 +153,7 @@ export async function readOnboarding(hs: HoloSphere, holon: string): Promise<Onb
 
 /**
  * Save the holon's onboarding, merged over its settings document. Counts
- * only from an admin's key. Returns what was stored.
+ * only from an ambassador's key. Returns what was stored.
  */
 export async function saveOnboarding(hs: HoloSphere, holon: string, config: unknown): Promise<OnboardingConfig> {
   const clean = normalizeOnboarding(config);
@@ -161,7 +161,7 @@ export async function saveOnboarding(hs: HoloSphere, holon: string, config: unkn
   try {
     existing = (await hs.get(String(holon), 'settings', String(holon))) as Record<string, unknown> | null;
   } catch {
-    // A failed read must not cost the admin their edit.
+    // A failed read must not cost the ambassador their edit.
   }
   await hs.put(String(holon), 'settings', { ...(existing ?? {}), id: String(holon), [ONBOARDING_KEY]: clean });
   return clean;

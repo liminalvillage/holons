@@ -18,7 +18,7 @@
  *     this existed. Only the chat's admins may, and only when the old id is
  *     provably this chat's past: Telegram still answers for an upgraded
  *     group by naming the chat it became, and failing that the caller must
- *     be the old holon's admin. Records the new holon already has stand;
+ *     be the old holon's ambassador. Records the new holon already has stand;
  *     `/adopt <old id> replace` lets the old ones win instead.
  *
  * @module src/Succession
@@ -249,8 +249,8 @@ export default class Succession {
             to,
             successionSummary(result, await this.language(to))
           );
-      } else if (result.refused !== 'not-admin') {
-        // `not-admin`: the old chat never had a holon — nothing to carry.
+      } else if (result.refused !== 'not-ambassador') {
+        // `not-ambassador`: the old chat never had a holon — nothing to carry.
         console.warn(`[succession] ${from} → ${to} refused: ${result.refused}`);
       }
       return result;
@@ -262,8 +262,8 @@ export default class Succession {
 
   /**
    * Is `from` this chat's own past? Telegram answers a call to an upgraded
-   * group with the id it became; otherwise the caller must be the admin the
-   * old holon names.
+   * group with the id it became; otherwise the caller must be the ambassador
+   * the old holon names.
    */
   private async proven(
     from: string,
@@ -281,8 +281,8 @@ export default class Succession {
       const settings = (await this.db.get(from, 'settings', from)) as {
         admin?: unknown;
       } | null;
-      const admin = String(settings?.admin ?? '').trim();
-      return !!admin && admin === String(userId);
+      const ambassador = String(settings?.admin ?? '').trim();
+      return !!ambassador && ambassador === String(userId);
     } catch {
       return false;
     }
@@ -309,7 +309,7 @@ export default class Succession {
     }
     if (!(await this.isAdmin(ctx))) {
       await reply('adminonly', 'Only admins can do that.');
-      return 'not-admin';
+      return 'not-ambassador';
     }
     const text = String(
       (ctx.message as { text?: string } | undefined)?.text ?? ''
@@ -369,7 +369,7 @@ export default class Succession {
       return 'moved';
     }
     const why: Record<string, string> = {
-      'not-admin': 'I do not hold that {@holon}, so I cannot bring it over.',
+      'not-ambassador': 'I do not hold that {@holon}, so I cannot bring it over.',
       moved: 'That {@holon} already carries on in another group.',
       taken:
         "This group's {@holon} is held by another key, so I cannot write into it.",

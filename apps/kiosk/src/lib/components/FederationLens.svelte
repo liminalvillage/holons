@@ -76,7 +76,7 @@
   let loading = true;
   let error = "";
   let busy = false;
-  // The federation record is an admin's word (`may(standing, 'federation')`,
+  // The federation record is an ambassador's word (`may(standing, 'federation')`,
   // the one table every surface reads): anyone else sees the flows and can
   // change nothing — their taps would be recorded and ignored.
   let canEdit = true;
@@ -88,7 +88,7 @@
   };
   /**
    * Both halves of the link and the requests between them. Each holon's
-   * admins set only their own half: a flow drawn here and not yet taken by
+   * ambassadors set only their own half: a flow drawn here and not yet taken by
    * the partner is WAITING (asked, not agreed); one the partner offers and
    * this side has not taken is OFFERED.
    */
@@ -240,7 +240,7 @@
 
   /** Say once what an edit did on the partner's side. */
   function noticeFor(out: FederationLinkOutcome, unlinking: boolean): string {
-    if (out.self === "held") return $t("fed.adminOnly");
+    if (out.self === "held") return $t("fed.ambassadorOnly");
     if (out.partner !== "requested") return "";
     return $t(unlinking ? "fed.askedUnlink" : "fed.askedPartner", {
       name: nameB(),
@@ -471,7 +471,7 @@
       {linked ? $t("fed.flowsOpen", { n: flowCount }) : $t("fed.notLinked")}
     </p>
     {#if incoming}
-      <!-- What the partner asked of this holon: its admins answer here. -->
+      <!-- What the partner asked of this holon: its ambassadors answer here. -->
       <div class="ask" role="status">
         <p class="ask-text">
           {#if incoming.kind === "unlink"}
@@ -589,7 +589,7 @@
     {/each}
 
     {#if !canEdit}
-      <p class="hint warn">{$t("fed.adminOnly")}</p>
+      <p class="hint warn">{$t("fed.ambassadorOnly")}</p>
     {:else}
       <p class="hint">{$t("fed.arrowHint")}</p>
     {/if}

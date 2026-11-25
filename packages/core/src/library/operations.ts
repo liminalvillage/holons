@@ -379,20 +379,20 @@ export interface ReturnItemResult {
   booking?: Booking;
   /**
    * Whose booking it was — hand THIS to `recordReturnAccounting`, so an
-   * admin returning for someone refunds the borrower, not themselves.
+   * ambassador returning for someone refunds the borrower, not themselves.
    */
   borrower?: BorrowActor;
-  /** True when an admin returned someone else's booking. */
+  /** True when an ambassador returned someone else's booking. */
   onBehalf?: boolean;
   reason?: 'not_found' | 'not_borrowed' | 'forbidden';
 }
 
 /**
  * Acting on a booking that is not your own. `manage` is true only for an
- * admin of the item's holon — surfaces resolve it with
+ * ambassador of the item's holon — surfaces resolve it with
  * `may(standing, 'library.manage')` (@holons/core/holosphere) — so a
  * borrower who forgot to press Return, or whose dates need moving, can be
- * helped by the holon's admins.
+ * helped by the holon's ambassadors.
  */
 export interface BookingAuthority {
   manage?: boolean;
@@ -407,7 +407,7 @@ function bookingBorrower(booking: Booking): BorrowActor {
  * Bring an item back: end the returner's booking that covers now, or — a late
  * return — their most recent one whose time is already up. Only the borrower
  * (matched by id, falling back to '@'-tolerant name comparison) may return,
- * or an admin (`opts.manage`): with nothing of their own to return they end
+ * or an ambassador (`opts.manage`): with nothing of their own to return they end
  * the booking holding the item (out or overdue), or `opts.bookingId`.
  * Other bookings on the item survive. The current item snapshot is always
  * returned (on success and on `not_borrowed`/`forbidden`) so callers can
@@ -461,14 +461,14 @@ export interface CancelBookingResult {
   booking?: Booking;
   /** Whose booking it was — the one to refund (`recordReturnAccounting`). */
   borrower?: BorrowActor;
-  /** True when an admin cancelled someone else's booking. */
+  /** True when an ambassador cancelled someone else's booking. */
   onBehalf?: boolean;
   reason?: 'not_found' | 'no_such_booking' | 'forbidden';
 }
 
 /**
  * Remove a booking (typically a future reservation) by id. Only its borrower
- * may cancel, or an admin (`opts.manage`). Cancelling the booking that covers today is equivalent to a
+ * may cancel, or an ambassador (`opts.manage`). Cancelling the booking that covers today is equivalent to a
  * return — callers wanting refund bookkeeping use `recordReturnAccounting`
  * either way.
  */
@@ -510,7 +510,7 @@ export interface UpdateBookingResult {
 /**
  * Reschedule an existing booking to a new [start, end] range (days or timed,
  * as in `bookItem`). Only
- * its borrower may edit, or an admin (`opts.manage`) — e.g. to extend a late
+ * its borrower may edit, or an ambassador (`opts.manage`) — e.g. to extend a late
  * one; the new range is checked against every *other*
  * booking on the item.
  */

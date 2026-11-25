@@ -1,7 +1,7 @@
 // Thin MCP wrappers around @holons/core/protocol rules — the holon's policy
-// per append-only lens (`_policy`, admin-signed, folded as-of-time) and the
+// per append-only lens (`_policy`, ambassador-signed, folded as-of-time) and the
 // partners it pins. A policy set with the MCP key counts only when that key
-// is an admin of the holon (the signed `_members` log, or the holon key /
+// is an ambassador of the holon (the signed `_members` log, or the holon key /
 // settings.admin before founding); otherwise the entry is recorded and
 // ignored, and `protocol_policy_get` keeps showing the rule in force.
 
@@ -54,7 +54,7 @@ export function registerProtocolTools(server: McpServer, deps: ToolDeps): void {
     'protocol_policy_get',
     {
       description:
-        'The rule in force for an append-only lens (flow_claims, governance_votes): who may author, who attests, the quorum, the conflict rule and the partners pinned (holon → genesis pubkey). Folded from the admin-signed _policy log; DEFAULT_POLICY when none. Also says whether this MCP key is an admin.',
+        'The rule in force for an append-only lens (flow_claims, governance_votes): who may author, who attests, the quorum, the conflict rule and the partners pinned (holon → genesis pubkey). Folded from the ambassador-signed _policy log; DEFAULT_POLICY when none. Also says whether this MCP key is an ambassador.',
       inputSchema: { holon: z.string(), lens: z.string().describe('The log lens the rule governs.') },
     },
     async (args) => {
@@ -82,7 +82,7 @@ export function registerProtocolTools(server: McpServer, deps: ToolDeps): void {
     'protocol_policy_set',
     {
       description:
-        'Append a policy record for a lens to the _policy log, signed with this MCP key — counts only when the key is an admin as of now. Fields left out keep the rule in force; `partners` replaces the pinned set (pass {} to unpin all). Refuses a no-op. Wraps @holons/core/protocol policyRecord.',
+        'Append a policy record for a lens to the _policy log, signed with this MCP key — counts only when the key is an ambassador as of now. Fields left out keep the rule in force; `partners` replaces the pinned set (pass {} to unpin all). Refuses a no-op. Wraps @holons/core/protocol policyRecord.',
       inputSchema: {
         holon: z.string(),
         lens: z.string(),
@@ -108,7 +108,7 @@ export function registerProtocolTools(server: McpServer, deps: ToolDeps): void {
         if (samePolicy(next, inForce)) return fail('These are the rules already in force.', { policy: inForce });
         const myRole = ctx.actors.roleAt(hs.currentPubkey, Math.floor(Date.now() / 1000));
         if (myRole !== 'admin') {
-          return fail('Only an admin of this holon sets its rules; this key\'s record would be kept but not counted.', { role: myRole, policy: inForce });
+          return fail('Only an ambassador of this holon sets its rules; this key\'s record would be kept but not counted.', { role: myRole, policy: inForce });
         }
         const a = policyRecord(args.lens, next);
         const event = await hs.append(args.holon, POLICY_LENS, a.item, { refs: a.refs });
@@ -118,7 +118,7 @@ export function registerProtocolTools(server: McpServer, deps: ToolDeps): void {
           pubkey: event.pubkey,
           policy: next,
           counts: myRole === 'admin',
-          ...(myRole === 'admin' ? {} : { warning: 'This key is not an admin of the holon: the record is kept but does not set the rule.' }),
+          ...(myRole === 'admin' ? {} : { warning: 'This key is not an ambassador of the holon: the record is kept but does not set the rule.' }),
         });
       } catch (err) {
         return fail((err as Error).message);

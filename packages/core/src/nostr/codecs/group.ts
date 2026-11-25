@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 //
-// `settings` → NIP-29 group metadata (39000) + admins (39001), holon-signed.
+// `settings` → NIP-29 group metadata (39000) + admins (39001: the ambassadors), holon-signed.
 // The members list (39002) needs the whole `users` lens, so hosts publish it
 // from `buildGroupState` (see groups.ts) rather than per record.
 // Reverse: a 39000 by a trusted key patches name / purpose / picture.
 
 import type { LensCodec, NostrEventLike, ProjectionCtx, Reversed } from '../types.js';
 import { tagValue } from '../tags.js';
-import { GROUP_ADMINS_KIND, GROUP_METADATA_KIND, groupAdminsTemplate, groupMetadataTemplate, type GroupSettingsLike } from '../groups.js';
+import { GROUP_AMBASSADORS_KIND, GROUP_METADATA_KIND, groupAmbassadorsTemplate, groupMetadataTemplate, type GroupSettingsLike } from '../groups.js';
 
 export interface SettingsRecord extends GroupSettingsLike {
   id?: string | number;
@@ -21,13 +21,13 @@ function isHolonSettings(holon: string, item: SettingsRecord): boolean {
 
 export const groupCodec: LensCodec<SettingsRecord> = {
   lens: 'settings',
-  kinds: [GROUP_METADATA_KIND, GROUP_ADMINS_KIND],
+  kinds: [GROUP_METADATA_KIND, GROUP_AMBASSADORS_KIND],
   primary: '30078',
   project(holon, item, ctx) {
     if (!isHolonSettings(holon, item)) return null;
     return {
       primary: groupMetadataTemplate(ctx, holon, item),
-      companions: [{ template: groupAdminsTemplate(ctx, holon, item) }],
+      companions: [{ template: groupAmbassadorsTemplate(ctx, holon, item) }],
     };
   },
   // A group is not retracted when its settings doc is; membership outlives metadata.

@@ -3,7 +3,7 @@
 //
 // The bot's leg of linking a Telegram chat to a dashboard holon
 // (@holons/core/linking): who may tap the link, and how the trust cache
-// keeps the linked admin seated and bridges the chat's members across.
+// keeps the linked ambassador seated and bridges the chat's members across.
 
 import { describe, it, expect, vi } from 'vitest';
 import { bytesToHex } from 'nostr-tools/utils';
@@ -88,7 +88,7 @@ describe('/start link_… (Settings._acceptHolonLink)', () => {
 });
 
 describe('createTrustCache with a linked dashboard holon', () => {
-  it('keeps the linked admin seated through a prune and bridges the members', async () => {
+  it('keeps the linked ambassador seated through a prune and bridges the members', async () => {
     const hs = createHoloSphere({
       appName: 'link-bot-test',
       privateKey: P.sk,
@@ -111,7 +111,7 @@ describe('createTrustCache with a linked dashboard holon', () => {
     expect((await holonMembers(hs, T)).get(P.pk)).toBe('admin');
 
     // The trust cache refreshes the chat: the users roster is known, so a
-    // prune runs — and must leave the linked admin in place.
+    // prune runs — and must leave the linked ambassador in place.
     setProjectionHostForTests(hs);
     const trust = createTrustCache(B.pk, SECRET, 0);
     const alice = deriveTelegramNostrKey(1, SECRET).publicKey;
@@ -124,10 +124,10 @@ describe('createTrustCache with a linked dashboard holon', () => {
       )
     ).toBe(true);
     expect((await holonMembers(hs, T)).get(P.pk)).toBe('admin');
-    // Not yet seated as admin of D: nothing bridged.
+    // Not yet seated as ambassador of D: nothing bridged.
     expect((await holonMembers(hs, D)).has(alice)).toBe(false);
 
-    // The screen confirms: the bot key becomes an admin of D…
+    // The screen confirms: the bot key becomes an ambassador of D…
     await hs.login(P.sk);
     const accept = await readLinkAccept(hs, { holon: D, id, chat: T });
     await completeTelegramLink(hs, {

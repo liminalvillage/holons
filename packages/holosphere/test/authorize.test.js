@@ -1,9 +1,9 @@
 /**
  * Phase 2: authorized read-collapse with an as-of-time membership log.
  *
- * Timeline (TS = base seconds), holon founded by admin A:
+ * Timeline (TS = base seconds), holon founded by ambassador A:
  *   TS-5  A writes t0            -> authorized (the anchor counts at every instant)
- *   TS    A: genesis (admin)
+ *   TS    A: genesis (ambassador)
  *   TS+1  A writes t1            -> authorized
  *   TS    (raw) t-unsigned       -> pending (no signature)
  *   TS+2  B writes t3            -> pending (B not yet a member)
@@ -42,7 +42,7 @@ describe('authorized read — membership mode (holon authority)', () => {
     await sphere.enableSigning({ relays: [], enforce: 'membership' });
 
     await writeAs(Ask, { id: 't0', title: 'A before founding' }, TS - 5);
-    await sphere.foundHolon(HOLON, { at: TS });           // A = genesis admin
+    await sphere.foundHolon(HOLON, { at: TS });           // A = genesis ambassador
     await writeAs(Ask, { id: 't1', title: 'A task' }, TS + 1);
     await sphere.put(HOLON, LENS, { id: 't-unsigned', title: 'forged' }, null, { _skipSign: true });
     await writeAs(Bsk, { id: 't3', title: 'B before join' }, TS + 2);
@@ -61,7 +61,7 @@ describe('authorized read — membership mode (holon authority)', () => {
 
   test('enforce read returns only authorized items (as-of-time)', async () => {
     const view = await sphere.getAll(HOLON, LENS);
-    // t0 (the founder, before founding), t1 (admin), t4 (B while member).
+    // t0 (the founder, before founding), t1 (ambassador), t4 (B while member).
     // NOT t3 (pre-join), t5 (post-removal), t-unsigned.
     expect(ids(view)).toEqual(['t0', 't1', 't4']);
   });

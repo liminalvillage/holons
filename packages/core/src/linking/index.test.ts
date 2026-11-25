@@ -19,7 +19,7 @@ import {
   linkId,
   linkPayload,
   linkToken,
-  linkedAdmins,
+  linkedAmbassadors,
   linkedHolons,
   linkedTelegramChats,
   nextLinkState,
@@ -32,7 +32,7 @@ import {
   type LinkRecord,
 } from './index.js';
 
-const P = testKey(); // the dashboard admin
+const P = testKey(); // the dashboard ambassador
 const B = testKey(); // the bot
 const M = testKey(); // a mere member of D
 const S = testKey(); // a stranger
@@ -99,11 +99,11 @@ describe('the handshake, on one shared store', () => {
     await foundHolon(hs, D, { name: 'Orto' });
     await addHolonMember(hs, D, M.pk, 'member');
 
-    // Only an admin offers.
+    // Only an ambassador offers.
     await hs.login(hex(M));
-    await expect(offerTelegramLink(hs, D)).rejects.toThrow(/admin/);
+    await expect(offerTelegramLink(hs, D)).rejects.toThrow(/ambassador/);
     await hs.login(hex(S));
-    await expect(offerTelegramLink(hs, D)).rejects.toThrow(/admin/);
+    await expect(offerTelegramLink(hs, D)).rejects.toThrow(/ambassador/);
     await hs.login(hex(P));
     const offer = await offerTelegramLink(hs, D);
     expect(offer.id).toBe(linkId(offer.token));
@@ -118,7 +118,7 @@ describe('the handshake, on one shared store', () => {
     await hs.login(hex(P));
     await offerTelegramLink(hs, D, { token: staleToken, now: Date.now() - 7 * 60 * 60 * 1000 });
 
-    // The bot judges D from the relay: only an admin-at-time offer counts.
+    // The bot judges D from the relay: only an ambassador-at-time offer counts.
     await hs.login(hex(B));
     expect(await readLinkOffer(hs, D, planted.id)).toBeNull();
     expect((await readLinkOffer(hs, D, offer.id))!.author).toBe(P.pk);
@@ -134,7 +134,7 @@ describe('the handshake, on one shared store', () => {
     expect(accepted.record).toMatchObject({ status: 'accepted', peer: D, peerAnchor: P.pk, by: '42', chat: { id: T, kind: 'group', title: 'Orto chat' } });
     const tMembers = await holonMembers(hs, T);
     expect(tMembers.get(B.pk)).toBe('admin'); // founded by the bot
-    expect(tMembers.get(P.pk)).toBe('admin'); // the dashboard admin, seated
+    expect(tMembers.get(P.pk)).toBe('admin'); // the dashboard ambassador, seated
     expect(await hs.get(T, 'settings', T)).toMatchObject({ holonPubkey: B.pk });
     expect((await readHolonClaim(hs, offer.id))!.holon).toBe(T);
     // Single use: the same link in another chat is refused.
@@ -142,7 +142,7 @@ describe('the handshake, on one shared store', () => {
     // The bridge does nothing before the screen seats the bot in D.
     expect(await bridgeTelegramRoster(hs, T, [m1.pk, m2.pk])).toEqual([]);
     expect((await holonMembers(hs, D)).has(m1.pk)).toBe(false);
-    expect((await linkedAdmins(hs, T)).get(P.pk)).toBe('admin');
+    expect((await linkedAmbassadors(hs, T)).get(P.pk)).toBe('admin');
 
     // The screen believes only what T's anchor signed.
     await hs.login(hex(S));
@@ -155,9 +155,9 @@ describe('the handshake, on one shared store', () => {
     expect(accept).toMatchObject({ chat: T, anchor: B.pk });
     expect(accept!.record.status).toBe('accepted');
 
-    // A member cannot complete; the admin can, and it seats the bot key.
+    // A member cannot complete; the ambassador can, and it seats the bot key.
     await hs.login(hex(M));
-    await expect(completeTelegramLink(hs, { holon: D, id: offer.id, chat: T, anchor: B.pk })).rejects.toThrow(/admin/);
+    await expect(completeTelegramLink(hs, { holon: D, id: offer.id, chat: T, anchor: B.pk })).rejects.toThrow(/ambassador/);
     await hs.login(hex(P));
     const linked = await completeTelegramLink(hs, { holon: D, id: offer.id, chat: T, anchor: B.pk, name: 'Orto chat' });
     expect(linked).toMatchObject({ status: 'linked', peer: T, peerAnchor: B.pk, name: 'Orto chat' });

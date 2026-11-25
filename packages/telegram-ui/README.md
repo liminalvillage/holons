@@ -82,7 +82,7 @@ Comprehensive holon customization:
 - `/settings` - Interactive settings menu
 - Language selection (en, it, es, fr, ru, de)
 - Theme (light/dark)
-- Admin management
+- Ambassador (`/setambassador`): whoever adds the bot to a group becomes the holon's ambassador
 - Custom values and domains
 
 ## Architecture

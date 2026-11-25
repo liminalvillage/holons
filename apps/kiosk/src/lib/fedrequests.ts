@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Federation requests waiting for this board's admins. A link has two
-// halves, each its own holon's admins' word: when another holon's admin
+// Federation requests waiting for this board's ambassadors. A link has two
+// halves, each its own holon's ambassadors' word: when another holon's ambassador
 // links to this one, this holon is ASKED (core `@holons/core/federation`
 // requests). This module keeps the list current for the bound board — read
 // on bind, on `kiosk:federation-changed`, and live off the `fedrequests`

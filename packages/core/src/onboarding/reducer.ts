@@ -10,7 +10,7 @@ import { DEFAULT_PROFILE_FIELDS, profileComplete, type OnboardingProfile } from 
 /** A card's name within one holon's onboarding: `<step>/<card>`. */
 export const cardKey = (step: string, card: string): string => `${step}/${card}`;
 
-/** What the holon noted: the step the person is on, the cards an admin vouched for. */
+/** What the holon noted: the step the person is on, the cards an ambassador vouched for. */
 export interface OnboardingProgress {
   step?: string;
   confirmed?: readonly string[];
@@ -65,7 +65,7 @@ export function advance(config: OnboardingConfig, progress: OnboardingProgress, 
   return { step, passed, finished: step === null, changed: step !== (progress.step ?? null) };
 }
 
-/** Can `card` of `step` be vouched for by an admin? Only admin cards can. */
+/** Can `card` of `step` be vouched for by an ambassador? Only ambassador cards can. */
 export function confirmable(config: OnboardingConfig, step: string, card: string): boolean {
   return config.steps.some((s) => s.id === step && s.cards.some((c) => c.id === card && c.confirm === 'admin'));
 }

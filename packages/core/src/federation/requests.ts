@@ -5,18 +5,18 @@
 //
 // A federation link has two halves. Each holon's record says which lenses IT
 // receives from a partner and sends to it, and that record counts only when
-// one of the holon's admins signed it (capabilities.js, `federation`). So an
-// admin of A can set A's half, never B's: B's half is B's admins' word.
+// one of the holon's ambassadors signed it (capabilities.js, `federation`). So an
+// ambassador of A can set A's half, never B's: B's half is B's ambassadors' word.
 //
-// When A's admin links A ↔ B and cannot speak for B, A's half is written and
+// When A's ambassador links A ↔ B and cannot speak for B, A's half is written and
 // B is ASKED: a record in B's `fedrequests` lens, id = A, carrying the
 // directions B is asked to adopt, from B's point of view (`kind: 'link'`), or
-// asking B to drop its half because A ended the link (`kind: 'unlink'`). B's admins see it on every surface —
+// asking B to drop its half because A ended the link (`kind: 'unlink'`). B's ambassadors see it on every surface —
 // the bot posts it in B's group with Accept / Decline, the kiosk and the web
 // list it — and answering writes B's own record (`answerFederationRequest`).
 //
-// Who counts: the record is written by A's admins (pending, cancelled) and
-// B's admins (announced, accepted, declined); a record signed by anyone else
+// Who counts: the record is written by A's ambassadors (pending, cancelled) and
+// B's ambassadors (announced, accepted, declined); a record signed by anyone else
 // is ignored, so nobody can ask on A's behalf. The newest counting record
 // wins. A request B already satisfies is not pending, whatever it says.
 
@@ -119,7 +119,7 @@ function federationVoice(hs: HoloSphere, holon: string): (pubkey: string, at: nu
 
 /**
  * The requests that count in `holon`, by asking holon: for each, the newest
- * record signed by an admin of the asker or of `holon` (as of its time).
+ * record signed by an ambassador of the asker or of `holon` (as of its time).
  */
 export async function federationRequestRecords(hs: HoloSphere, holon: string): Promise<Map<string, FederationRequest>> {
   const host = hs as StoreHost;
@@ -174,7 +174,7 @@ async function satisfied(hs: HoloSphere, request: FederationRequest): Promise<bo
   return current !== null && sameDirections(current, request);
 }
 
-/** The requests waiting for `holon`'s admins, newest first. Requests it already satisfies are left out. */
+/** The requests waiting for `holon`'s ambassadors, newest first. Requests it already satisfies are left out. */
 export async function pendingFederationRequests(hs: HoloSphere, holon: string): Promise<FederationRequest[]> {
   const out: FederationRequest[] = [];
   for (const r of (await federationRequestRecords(hs, holon)).values()) {
@@ -195,7 +195,7 @@ export interface AskFederationInput {
   now?: () => number;
 }
 
-/** Ask `to`'s admins to adopt a half of the link with `from`. Counts only from an admin of `from`. */
+/** Ask `to`'s ambassadors to adopt a half of the link with `from`. Counts only from an ambassador of `from`. */
 export async function askFederation(hs: HoloSphere, from: string, to: string, input: AskFederationInput): Promise<FederationRequest> {
   const at = (input.now ?? nowSec)();
   const record: FederationRequest = {
@@ -229,7 +229,7 @@ export async function cancelFederationRequest(hs: HoloSphere, from: string, to: 
   return rewrite(hs, cur, { status: 'cancelled' }, opts.now);
 }
 
-/** Remember where a surface announced a request (an admin of the asked holon writes it). */
+/** Remember where a surface announced a request (an ambassador of the asked holon writes it). */
 export async function markFederationRequestAnnounced(
   hs: HoloSphere,
   to: string,
@@ -277,7 +277,7 @@ export async function removeOwnSide(hs: HoloSphere, holon: string, partner: stri
 // ── Answering ──────────────────────────────────────────────────────────────
 
 export interface AnswerFederationOptions {
-  /** Adopt these directions instead of the asked ones (an admin trimming lenses). */
+  /** Adopt these directions instead of the asked ones (an ambassador trimming lenses). */
   directions?: Partial<FederationLensDirections>;
   /** Who answered, in the surface's own terms. */
   by?: string | number;
@@ -287,7 +287,7 @@ export interface AnswerFederationOptions {
 /**
  * Accept or decline the request `from` made of `holon`. Accepting writes
  * `holon`'s own half (or drops it, for an unlink); the asker's half is
- * already theirs. Needs an admin of `holon`. Null when no request is held.
+ * already theirs. Needs an ambassador of `holon`. Null when no request is held.
  */
 export async function answerFederationRequest(
   hs: HoloSphere,
@@ -313,8 +313,8 @@ export async function answerFederationRequest(
 /**
  * Accept the pending requests this key asked of `holon` itself: the signer
  * spoke for the asking holon then and speaks for `holon` now, so both halves
- * are already its word — usually a link made before it was `holon`'s admin.
- * Only a request THIS key signed: another admin's ask still waits for a
+ * are already its word — usually a link made before it was `holon`'s ambassador.
+ * Only a request THIS key signed: another ambassador's ask still waits for a
  * person. A service key that asks on purpose (the bot's `askPartner`) must
  * not call this. Returns the requests it accepted.
  */
@@ -350,7 +350,7 @@ export interface FederationLinkState {
   theirs: FederationLensDirections | null;
   /** `holon`'s request still waiting in the partner. */
   outgoing: FederationRequest | null;
-  /** The partner's request waiting for `holon`'s admins. */
+  /** The partner's request waiting for `holon`'s ambassadors. */
   incoming: FederationRequest | null;
 }
 

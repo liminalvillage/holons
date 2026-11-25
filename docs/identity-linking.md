@@ -10,7 +10,7 @@ members, and how a Telegram chat is tied to such a holon. The rules live in
 | Thing | Identity | Who speaks for it |
 | --- | --- | --- |
 | A person | a Nostr key; their holon id is the pubkey hex | the key itself, plus keys it linked in its own signed `users` record |
-| A holon founded from a screen | `holon_…` (the first ones were minted as `hub_…`, still recognised) | the signed `_members` log: the founder's key is genesis, admins seat and unseat keys |
+| A holon founded from a screen | `holon_…` (the first ones were minted as `hub_…`, still recognised) | the signed `_members` log: the founder's key is genesis, ambassadors seat and unseat keys |
 | A Telegram chat | the chat id | the bot key that founded it |
 
 Sign-in ends in a Nostr key on every surface: the person's own key (pasted or
@@ -23,24 +23,28 @@ list appears on every device they sign in on.
 
 ## Founding and members (NIP-29 shaped)
 
+**Ambassador**: whoever introduces the holon — adds the bot to its Telegram
+group, or creates a keyed holon. On the wire the role is still stored as
+`admin` (signed `_members` logs and `settings.admin`).
+
 `createHolon` mints an id and signs the genesis of its `_members` log; the
-founder is the first admin. Membership is by key:
+founder is the first ambassador. Membership is by key:
 
 - a person asks with a kind-9021 join request carrying their display name
-  (`requestToJoin`); admins see them live (`watchJoinRequests`) and seat the
+  (`requestToJoin`); ambassadors see them live (`watchJoinRequests`) and seat the
   key (`approveJoin` = a signed `_members` add + a kind-9000 put-user + the
   refreshed group state), or unseat it (`removeSeat` = remove + kind-9001);
-- a member says goodbye with kind-9022 (`leaveHolon`); an admin removes the seat.
+- a member says goodbye with kind-9022 (`leaveHolon`); an ambassador removes the seat.
 
 The same ask works on a hub born in Telegram: its bot founds the `_members`
 log (genesis = the bot key) and seats every member's derived key, the keys
-they linked with `/key`, and the chat admin's keys — derived and linked — as
-admins. A person on their own key therefore needs no Telegram at all: they
+they linked with `/key`, and the chat admins' keys — derived and linked — as
+ambassadors. A person on their own key therefore needs no Telegram at all: they
 ask from Settings (kiosk or web, shown there whenever the signed-in key is
 not seated; the request is signed by the key, which is the whole proof), and
-an admin on a screen seats them. The bot's roster sync prunes only the seats
+an ambassador on a screen seats them. The bot's roster sync prunes only the seats
 it granted itself (`syncMembersLog` → `seatAuthors`), so a seat another
-admin granted survives its next refresh. Without a seat a key's writes reach
+ambassador granted survives its next refresh. Without a seat a key's writes reach
 the relays but no enforced reader shows them (`writeAcceptance` = `held`).
 
 The Telegram group hears the ask too (`packages/telegram-ui/src/JoinRequests.js`;
@@ -51,7 +55,7 @@ one relay filter for every chat, `watchAllJoinRequests`):
   only a claim, and `describeApplicant` proves it: the key a Telegram login
   derives from that id is the key that signed the request. Telegram says
   whether the user is in the chat; if so the bot writes their `users` record
-  and seats the key. No admin step.
+  and seats the key. No ambassador step.
 - **Anyone else is announced in the group**, once: a person on their own
   Nostr key (named by the request, else their kind 0, else the short npub),
   or a proven Telegram user who is not in the group (named with their
@@ -61,8 +65,8 @@ one relay filter for every chat, `watchAllJoinRequests`):
 What was announced and decided is the holon's `joinrequests` lens (one record
 per asking key: `pending`, `approved`, `declined`). It stops a restart or a
 replayed event from posting twice, and `approvedJoinKeys` is what the bot's
-roster sync adds to its desired set, so a key the bot seated on an admin's
-word is not pruned. A record counts only when an admin of the holon signed it
+roster sync adds to its desired set, so a key the bot seated on an ambassador's
+word is not pruned. A record counts only when an ambassador of the holon signed it
 (the `members` capability) — a member writing `approved` seats nobody — and
 `removeSeat` withdraws the approval, so an unseated key stays unseated.
 `JOIN_NOTICES=off` silences the service on one of two bots sharing a
@@ -70,15 +74,15 @@ namespace.
 
 On screen the whole story is told with one word, **link**: a Telegram chat
 is linked to the hub (a hub born in a chat stays linked to it by default), a
-person's key is linked to the hub directly or through that chat, admins link
+person's key is linked to the hub directly or through that chat, ambassadors link
 and unlink keys, a person asks to be linked. "Seat", "roster", "founded" and
 "accepted" are model words for the code and these docs, never for the UI
 (Settings → Members on kiosk and web).
 
-The relay (strfry) does not implement NIP-29, so the holon's **admins play the
-relay's role**: they sign the 39000 metadata, 39001 admins and 39002 members
-events from the log (`publishGroupState`, published only when the content
-changed). A real NIP-29 relay can take over unchanged.
+The relay (strfry) does not implement NIP-29, so the holon's **ambassadors
+play the relay's role**: they sign the 39000 metadata, 39001 admins (NIP-29's
+word for ambassadors) and 39002 members events from the log
+(`publishGroupState`, published only when the content changed). A real NIP-29 relay can take over unchanged.
 
 Membership is as-of-time: a record signed before its author was seated never
 counts. A join request therefore carries the name, and the person's `users`
@@ -111,22 +115,22 @@ a note signed by the key being linked. Two ways in, both in
 
 ## Linking a Telegram chat
 
-Two holons take part: **D**, founded from a screen (its admins are keys in its
+Two holons take part: **D**, founded from a screen (its ambassadors are keys in its
 log), and **T**, a Telegram chat (its anchor is the bot key **B**). Neither
 can write into the other, so the link is a pair of signed records in each
 holon's `links` lens, keyed by the same id, each counting only when its own
-authority signed it. Afterwards the two seat each other's admin key.
+authority signed it. Afterwards the two seat each other's ambassador key.
 
 ```
-kiosk/web (admin P of D)              Telegram (bot B, chat T, admin U)
+kiosk/web (ambassador P of D)         Telegram (bot B, chat T, chat admin U)
 ──────────────────────────            ──────────────────────────────────
 1 OFFER   D/links/H = offered, by P
           H = sha256(τ)[:32]
           deep link  link_<D>_<τ>  ─────▶  2 ACCEPT  U taps /start link_…
                                             U must be creator/admin of T
                                             read D/links/H: signed by an
-                                              ADMIN of D at that time?
-                                            found T if new; seat P as admin
+                                              AMBASSADOR of D at that time?
+                                            found T if new; seat P as ambassador
                                             T/links/H = accepted, peer D  (by B)
                                             hubclaims/claims/H → T (so the
 3 COMPLETE watch the claim  ◀───────────     screen learns which chat)
@@ -134,22 +138,22 @@ kiosk/web (admin P of D)              Telegram (bot B, chat T, admin U)
             anchor, names D?
           human confirms the chat title
           D/links/H = linked, peer T
-          seat B as admin of D
+          seat B as ambassador of D
           federate D ⇄ T on every lens
 4 UNLINK  either side alone: its record → unlinked, the other's key unseated
 ```
 
 Consequences of a link:
 
-- D's admins edit T from the dashboard (P counts in T);
+- D's ambassadors edit T from the dashboard (P counts in T);
 - the bot brings T's members into D (`bridgeTelegramRoster`, adding only, and
-  only while B is seated as admin of D — never founding a screen's holon);
-- the bot's roster sync keeps P seated in T (`linkedAdmins`) through prunes;
+  only while B is seated as ambassador of D — never founding a screen's holon);
+- the bot's roster sync keeps P seated in T (`linkedAmbassadors`) through prunes;
 - every board lens federates both ways (`federateLinkedChat`).
 
 Threat model:
 
-- only an **admin-at-time** of D can author an offer that counts — the bot
+- only an **ambassador-at-time** of D can author an offer that counts — the bot
   reads the envelopes and checks the role at the envelope's time, never the
   plain last-writer-wins read;
 - only **T's anchor** (B) can author an acceptance the screen believes — the
@@ -158,7 +162,7 @@ Threat model:
   (the claim record marks the first tap) and expires after six hours;
 - the person tapping must **admin the chat** (Telegram's own membership);
 - a human confirms the chat's title before B is seated in D — a rogue bot key
-  never becomes an admin of D on its own;
+  never becomes an ambassador of D on its own;
 - unlinking is unilateral and as-of-time: nothing already written is lost.
 
 ## Names
@@ -211,7 +215,7 @@ beside the ids in `holon_members`, `holon_join_requests`, `flow_claims_state`,
   kiosk, web and MCP trust a holon's seated keys (`membersTrustedAuthors`),
   and reverse-sync reaches a hub record keyed by the pubkey when the Telegram
   id has none there.
-- An admin seating a join request writes the joiner's record with the name on
+- An ambassador seating a join request writes the joiner's record with the name on
   the request (once, never over the joiner's own write), so the roster names
   them from the first moment.
 - A digits-only handle (the bot's default username) is not a name: it never

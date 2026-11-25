@@ -183,7 +183,7 @@ async function main() {
       const doer = t.assignee;
       const hd = await hs(doer);
       const fresh = (await hd.get(holonOfTask(t), 'quests', q.id)) ?? q;
-      const done = applyTaskCompletion(fresh, pk[doer], { isAdmin: true } as any);
+      const done = applyTaskCompletion(fresh, pk[doer], { isAmbassador: true } as any);
       if (!done.ok) { log(`  complete ${t.id}: ${done.reason}`); continue; }
       const eq = HOLONS.find((x) => x.id === t.holon)!.equation;
       const plan = planTaskCompletion(done.task, eq, { holonId: holonOfTask(t) });

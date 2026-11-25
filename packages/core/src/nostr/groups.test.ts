@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import {
-  GROUP_ADMINS_KIND, GROUP_JOIN_REQUEST_KIND, GROUP_MEMBERS_KIND, GROUP_METADATA_KIND, GROUP_PUT_USER_KIND, GROUP_REMOVE_USER_KIND,
+  GROUP_AMBASSADORS_KIND, GROUP_JOIN_REQUEST_KIND, GROUP_MEMBERS_KIND, GROUP_METADATA_KIND, GROUP_PUT_USER_KIND, GROUP_REMOVE_USER_KIND,
   PROJECTION_CODECS, buildGroupState, groupStateHash, parseGroupMembers, wrapDirectMessage, unwrapDirectMessage, directMessageFilter,
   type ProjectionCtx,
 } from './index.js';
@@ -17,15 +17,15 @@ const ctx: ProjectionCtx = {
 const tag = (t: string[][], n: string) => t.find((x) => x[0] === n);
 
 describe('NIP-29 group state (holon-authored)', () => {
-  it('builds metadata, admins and members with a stable hash', () => {
-    const [meta, admins, members] = buildGroupState(ctx, HOLON, { id: HOLON, name: 'Liminal', purpose: ['Grow', 'Share'], admin: '@bob', picture: 'https://x/p.png' }, [42, 7, 'nobody', 42]);
+  it('builds metadata, ambassadors and members with a stable hash', () => {
+    const [meta, ambassadors, members] = buildGroupState(ctx, HOLON, { id: HOLON, name: 'Liminal', purpose: ['Grow', 'Share'], admin: '@bob', picture: 'https://x/p.png' }, [42, 7, 'nobody', 42]);
     expect(meta.kind).toBe(GROUP_METADATA_KIND);
     expect(tag(meta.tags, 'd')![1]).toBe(HOLON);
     expect(tag(meta.tags, 'name')![1]).toBe('Liminal');
     expect(tag(meta.tags, 'about')![1]).toBe('Grow\nShare');
     expect(meta.tags).toEqual(expect.arrayContaining([['public'], ['closed'], ['picture', 'https://x/p.png']]));
-    expect(admins.kind).toBe(GROUP_ADMINS_KIND);
-    expect(admins.tags.filter((t) => t[0] === 'p')).toEqual([[ 'p', PUB, 'admin' ], ['p', BOB, 'admin']]);
+    expect(ambassadors.kind).toBe(GROUP_AMBASSADORS_KIND);
+    expect(ambassadors.tags.filter((t) => t[0] === 'p')).toEqual([[ 'p', PUB, 'admin' ], ['p', BOB, 'admin']]);
     expect(members.kind).toBe(GROUP_MEMBERS_KIND);
     expect(members.tags.filter((t) => t[0] === 'p').map((t) => t[1])).toEqual([ALICE, BOB]);
     expect(parseGroupMembers(members)).toEqual([ALICE, BOB]);
@@ -53,7 +53,7 @@ describe('NIP-29 group state (holon-authored)', () => {
     expect(settings.project(HOLON, { id: 'other', name: 'x' }, ctx)).toBeNull();
     const out = settings.project(HOLON, { id: HOLON, name: 'Liminal', admin: '42' }, ctx)!;
     expect(out.primary.kind).toBe(GROUP_METADATA_KIND);
-    expect(out.companions![0].template.kind).toBe(GROUP_ADMINS_KIND);
+    expect(out.companions![0].template.kind).toBe(GROUP_AMBASSADORS_KIND);
     const r = settings.parse!({ kind: GROUP_METADATA_KIND, pubkey: PUB, created_at: 1, content: '', tags: [['d', HOLON], ['name', 'Liminal Village'], ['about', 'Grow\nShare']] }, ctx)!;
     expect(r).toMatchObject({ lens: 'settings', holon: HOLON, id: HOLON });
     const next = settings.merge!({ id: HOLON, name: 'Liminal', purpose: ['Old'] }, r, ctx)!;

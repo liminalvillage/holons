@@ -145,7 +145,7 @@ export function createPrivacy(holo) {
     //
     // The vault obeys the one capability table (capabilities.js): a vault
     // record counts from a member of the holon, and a tombstone over another
-    // key's vault counts only from an admin. The role comes synchronously
+    // key's vault counts only from an ambassador. The role comes synchronously
     // from what the instance holds — an app plugs the same rule its reads
     // use through `config.privacy.roleOf(holo, holon, pubkey)`; the default
     // reads the holon's own signed `_members` log (authority.js).
@@ -202,8 +202,8 @@ export function createPrivacy(holo) {
     /**
      * The live vault record (own plaintext, someone else's stub) at a scope,
      * or null when the scope is public. Resolved by role, not by who wrote
-     * last: the newest vault a MEMBER or admin signed stands, and only a
-     * tombstone by its own author or by an ADMIN retires it — a stranger can
+     * last: the newest vault a MEMBER or ambassador signed stands, and only a
+     * tombstone by its own author or by an AMBASSADOR retires it — a stranger can
      * neither lock a holon's lens nor flip a locked one back to plaintext.
      * A holon nobody speaks for keeps the plain record.
      */
@@ -357,7 +357,7 @@ export function createPrivacy(holo) {
         const off = store().watch(holon, VAULT_LENS, (item, id, meta) => {
             if (meta.replay) return;
             if (meta.tombstone && typeof id === 'string') {
-                // An admin unlocked a scope this identity locked: it is public
+                // An ambassador unlocked a scope this identity locked: it is public
                 // now for everyone, this instance included.
                 const scope = scopeOfVaultId(holon, id);
                 if (scope && vaults.has(sk2(scope)) && !vaultRecord(scope)) {
@@ -567,7 +567,7 @@ export function createPrivacy(holo) {
         await ensureKeys(scope.holon, scope.lens);
         if (!ownVault(scope)) {
             if (!vaultRecord(scope)) throw new Error(`privacy: ${scope.holon}/${vaultId(scope)} is not a private scope you own`);
-            if (!may(scope.holon, 'privacy.override')) throw new Error(`privacy: ${scope.holon}/${vaultId(scope)} is not a private scope you own — only an admin of the holon can unlock it`);
+            if (!may(scope.holon, 'privacy.override')) throw new Error(`privacy: ${scope.holon}/${vaultId(scope)} is not a private scope you own — only an ambassador of the holon can unlock it`);
             if (!currentKey(scope)) throw new Error(`privacy: you hold no key for ${scope.holon}/${vaultId(scope)} — have it shared with you first`);
         }
         await tombstoneVault(scope);
@@ -757,7 +757,7 @@ export function createPrivacy(holo) {
         owned, ownedScopes,
         /** Does this identity hold a usable key for the scope (as owner or reader)? */
         holdsKey: (scope) => !!currentKey(normScope(scope)),
-        /** Could this identity unlock or take over the scope: it owns it, or it is an admin holding the key. */
+        /** Could this identity unlock or take over the scope: it owns it, or it is an ambassador holding the key. */
         canManage: (scope) => { const s = normScope(scope); return !!ownVault(s) || (may(s.holon, 'privacy.override') && !!currentKey(s)); },
         roleOf, may,
         lock, unlock, audienceGet, audienceSet, sentGet, sentSet,

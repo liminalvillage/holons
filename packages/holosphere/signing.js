@@ -11,7 +11,7 @@
 //                   a key that was authorized at the claim's signing time;
 //                   everything else is `pending`. Authority is either the
 //                   reader's federation read-list (default) or the holon's
-//                   signed `_members` log (genesis + admin-gated add/remove,
+//                   signed `_members` log (genesis + ambassador-gated add/remove,
 //                   as-of-time).
 //
 // The signer is network-free: envelopes are read from the store's `events`
@@ -41,7 +41,7 @@ function freshReport() {
  * Fold a set of signed membership events into an as-of-time authorization
  * oracle. Genesis is the trust anchor (pinned, or TOFU = earliest self-signed
  * `genesis` event). An add/remove op only takes effect if its author was an
- * admin at that point in the fold. Revocation is as-of-time: a data event signed
+ * ambassador at that point in the fold. Revocation is as-of-time: a data event signed
  * before a key was removed stays authorized.
  *
  * The anchor itself is not as-of-time: the genesis key speaks for the holon
@@ -71,7 +71,7 @@ export function buildTimeline(events, pinnedGenesis) {
     roles.set(genesis.author, 'admin');
     for (const op of ops) {
       if (op.at > t) break;
-      if (roles.get(op.author) !== 'admin') continue; // only admins mutate membership
+      if (roles.get(op.author) !== 'admin') continue; // only ambassadors mutate membership
       if (op.op === 'add') roles.set(op.pubkey, op.role === 'admin' ? 'admin' : 'member');
       else if (op.op === 'remove') roles.delete(op.pubkey);
     }
@@ -107,7 +107,7 @@ export function createSigner({
   //      federation list (holo._allowedAuthors) plus your own key. Reader-scoped,
   //      current-list (Nostr follow model).
   //   'membership' — holon-scoped authority via the signed `_members` log
-  //      (genesis + admin add/remove, as-of-time). Opt-in.
+  //      (genesis + ambassador add/remove, as-of-time). Opt-in.
   //   'authority' — holon-scoped authority decided by the `authority(holo,
   //      holon)` hook: it returns an `(pubkey, created_at) => boolean`
   //      predicate, or null when nothing signed says who speaks for the
@@ -256,9 +256,9 @@ export function createSigner({
   }
 
   /**
-   * The guarded fields of a settings record, taken from admins' envelopes.
+   * The guarded fields of a settings record, taken from ambassadors' envelopes.
    * `events` are the counted envelopes at this address, newest first; a
-   * field no admin ever wrote is dropped. Lenses other than settings, and
+   * field no ambassador ever wrote is dropped. Lenses other than settings, and
    * authorities that do not know roles, pass through untouched.
    */
   function guardSettings(holo, holon, lens, id, item, events, isAuth) {
@@ -407,10 +407,10 @@ export function createSigner({
 
     /**
      * A GLOBAL record owned by a holon — the `federation` table is keyed by
-     * the holon it describes — resolved to the newest claim by an ADMIN of
+     * the holon it describes — resolved to the newest claim by an AMBASSADOR of
      * that holon (an accepted key when the authority knows no roles).
      * `undefined` when nobody speaks for the holon (the caller keeps its
-     * plain read), null when no admin ever wrote one, or the newest is a
+     * plain read), null when no ambassador ever wrote one, or the newest is a
      * tombstone.
      */
     async resolveOwned(holo, owner, lens, id, { role = 'admin' } = {}) {

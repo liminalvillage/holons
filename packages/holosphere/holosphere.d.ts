@@ -143,7 +143,7 @@ interface Privacy {
   ownedScopes(holon: string): Scope[];
   /** Does this identity hold a usable key for the scope, as owner or reader? Synchronous after `ensureKeys`. */
   holdsKey(scope: Scope): boolean;
-  /** Could this identity unlock or take over the scope: it owns it, or it is an admin of the holon holding the key. */
+  /** Could this identity unlock or take over the scope: it owns it, or it is an ambassador of the holon holding the key. */
   canManage(scope: Scope): boolean;
   /** The role a key holds in a holon now: 'admin' | 'member' | null (stranger) | undefined (nobody defined, open). */
   roleOf(holon: string, pubkey: string): 'admin' | 'member' | null | undefined;
@@ -329,7 +329,7 @@ export interface PrivacyOptions {
    * The role `pubkey` holds in `holon` right now, SYNCHRONOUSLY from what the
    * instance holds: 'admin' | 'member' | null (a stranger) | undefined
    * (nobody speaks for the holon — it is open). Decides whose vault record
-   * counts (a member's) and who may tombstone another key's (an admin).
+   * counts (a member's) and who may tombstone another key's (an ambassador).
    * Default: the holon's own signed `_members` log (see authority.js).
    */
   roleOf?: (holo: HoloSphere, holon: string, pubkey: string) => 'admin' | 'member' | null | undefined;
@@ -601,7 +601,7 @@ declare class HoloSphere {
 
     subscribeFederation(holonId: string, password: string | null, callback: (data: any, federatedSpace?: string, lens?: string) => void, options?: { lenses?: string[], throttle?: number }): Promise<{ unsubscribe: () => void, getSubscriptionCount: () => number }>;
     getFederation(holonId: string, password?: string | null): Promise<FederationInfo | null>;
-    /** The federation record with its standing: what counts, the raw record, and whether an admin signed what counts. */
+    /** The federation record with its standing: what counts, the raw record, and whether an ambassador signed what counts. */
     getFederationStanding(holonId: string, password?: string | null): Promise<{ record: FederationInfo | null; raw: FederationInfo | null; endorsed: boolean }>;
     getFederatedConfig(holonId: string, targetHolonId: string, password?: string | null): Promise<{ inbound: string[], outbound: string[] } | null>;
     removeNotify(holonId1: string, holonId2: string, password1?: string | null): Promise<boolean>;

@@ -27,7 +27,7 @@ function attest(k: { sk: Uint8Array }, target: string, verdict: 'attest' | 'disp
   return signedEntry({ sk: k.sk, item: a.item as unknown as Body, refs: a.refs, created_at: at });
 }
 
-const actors = (): AcceptedActors => bootstrapActors({ members: [alice.pk, bob.pk], admins: [clara.pk] });
+const actors = (): AcceptedActors => bootstrapActors({ members: [alice.pk, bob.pk], ambassadors: [clara.pk] });
 
 describe('collapse', () => {
   it('folds only accepted signers, and is independent of arrival order', () => {
@@ -90,13 +90,13 @@ describe('collapse', () => {
 
   it("an attester's own action carries their attestation", () => {
     const byMember = entry(alice, 1, T0);
-    const byAdmin = entry(clara, 2, T0 + 1);
-    const r = collapse<Body, number>({ entries: [byMember, byAdmin], actors: actors(), policy: { quorum: 1 }, ...sum });
+    const byAmbassador = entry(clara, 2, T0 + 1);
+    const r = collapse<Body, number>({ entries: [byMember, byAmbassador], actors: actors(), policy: { quorum: 1 }, ...sum });
     expect(r.state).toBe(2);
-    expect(r.judged.get(byAdmin.id)).toMatchObject({ status: 'accepted', attests: 1 });
+    expect(r.judged.get(byAmbassador.id)).toMatchObject({ status: 'accepted', attests: 1 });
     expect(r.judged.get(byMember.id)).toMatchObject({ status: 'pending', attests: 0 });
-    // Under quorum 2 the admin still needs a second word.
-    expect(collapse<Body, number>({ entries: [byMember, byAdmin], actors: actors(), policy: { quorum: 2 }, ...sum }).state).toBe(0);
+    // Under quorum 2 the ambassador still needs a second word.
+    expect(collapse<Body, number>({ entries: [byMember, byAmbassador], actors: actors(), policy: { quorum: 2 }, ...sum }).state).toBe(0);
   });
 
   it('a second consumer of the same basis is a conflict: earliest wins or a human decides', () => {

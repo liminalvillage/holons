@@ -26,9 +26,9 @@ Five rules say all of it:
    publish it as the owner's own.
    **The vault obeys the one capability table** (`capabilities.js`): a vault
    record counts from a *member* of the holon, and only a tombstone by its
-   own author or by an *admin* retires it. A stranger can neither lock a
+   own author or by an *ambassador* retires it. A stranger can neither lock a
    holon's lens nor flip a locked one back to plaintext by writing last.
-   An admin who holds the key (a member shared with) may `unlock` what
+   An ambassador who holds the key (a member shared with) may `unlock` what
    another key locked, or take it over (`@holons/core/privacy` `takeOver`:
    unlock, then lock under their own vault); the role comes from
    `config.privacy.roleOf` — core wires the same rule its reads use.

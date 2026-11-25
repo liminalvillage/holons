@@ -70,12 +70,12 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
 
 /** One sentence on what a link edit did to each half. */
 function linkNote(o: FederationLinkOutcome): string {
-  if (o.self === 'held') return 'Nothing written: this key is not an admin of the holon, so its federation record would not count.';
+  if (o.self === 'held') return 'Nothing written: this key is not an ambassador of the holon, so its federation record would not count.';
   const own = o.self === 'removed' ? 'This holon no longer links the partner.' : 'This holon\'s half of the link is saved.';
   const partner = {
-    linked: 'The partner\'s half was written too (this key is also its admin).',
-    removed: 'The partner\'s half was removed too (this key is also its admin).',
-    requested: 'The partner\'s admins were asked to match it; until they accept, their half is unchanged.',
+    linked: 'The partner\'s half was written too (this key is also its ambassador).',
+    removed: 'The partner\'s half was removed too (this key is also its ambassador).',
+    requested: 'The partner\'s ambassadors were asked to match it; until they accept, their half is unchanged.',
     unchanged: 'The partner\'s half already matches.',
     skipped: '',
   }[o.partner];
@@ -157,7 +157,7 @@ export function registerSettingsTools(server: McpServer, deps: ToolDeps): void {
     'federation_link_add',
     {
       description:
-        'Link (or update) a federation partner on the native federation record — the single federation store, honored by federated reads and publishing — via @holons/core/federation setFederationPartner. Writes THIS holon\'s half; the partner\'s half is written too only when this key is also its admin, otherwise the partner\'s admins are sent a federation request (outcome.partner = "requested"; see federation_requests). Linking hands out no key: locked outbound lenses the partner cannot read are listed in `lockedUnshared` — offer privacy_share for them. The `target` JSON must include { targetId }; optional { targetName, inbound, outbound } set the display name and the FULL directional lens arrays (defaults: no lenses flowing yet).',
+        'Link (or update) a federation partner on the native federation record — the single federation store, honored by federated reads and publishing — via @holons/core/federation setFederationPartner. Writes THIS holon\'s half; the partner\'s half is written too only when this key is also its ambassador, otherwise the partner\'s ambassadors are sent a federation request (outcome.partner = "requested"; see federation_requests). Linking hands out no key: locked outbound lenses the partner cannot read are listed in `lockedUnshared` — offer privacy_share for them. The `target` JSON must include { targetId }; optional { targetName, inbound, outbound } set the display name and the FULL directional lens arrays (defaults: no lenses flowing yet).',
       inputSchema: {
         holon: z.string(),
         target: z
@@ -212,7 +212,7 @@ export function registerSettingsTools(server: McpServer, deps: ToolDeps): void {
     'federation_link_remove',
     {
       description:
-        'Unlink a federation partner from the holon’s native federation record via @holons/core/federation removeFederationPartner. Drops this holon\'s half; the partner\'s admins are asked to drop theirs unless this key speaks for the partner too.',
+        'Unlink a federation partner from the holon’s native federation record via @holons/core/federation removeFederationPartner. Drops this holon\'s half; the partner\'s ambassadors are asked to drop theirs unless this key speaks for the partner too.',
       inputSchema: {
         holon: z.string(),
         target: z.string().describe('Target holon id to unlink.'),

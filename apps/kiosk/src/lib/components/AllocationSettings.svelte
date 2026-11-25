@@ -94,7 +94,7 @@
     close: void;
     saved: void;
     draft: AllocationDraft;
-    /** The Rules tab's word: an admin-signed policy record for the claims log. */
+    /** The Rules tab's word: an ambassador-signed policy record for the claims log. */
     policy: Partial<Policy>;
   }>();
 
@@ -132,7 +132,7 @@
 
   // ── Rules (the claims policy) ───────────────────────────────────────────
   // A draft of the rule in force; "Set the rules" appends it to the policy
-  // log signed as the logged-in person — an admin's entry counts, anyone
+  // log signed as the logged-in person — an ambassador's entry counts, anyone
   // else's is recorded and ignored, which the tab says up front.
   const inForce = () => normalizePolicy(policy);
   let ruleAuthors: Role[] = inForce().authors;
@@ -149,7 +149,7 @@
   } satisfies Partial<Policy>;
   $: rulesUnchanged = samePolicy(ruleDraft, policy);
   $: rulesCanSign = policySignable && policyRole === "admin";
-  // The split, like every guarded settings field, counts from an admin's
+  // The split, like every guarded settings field, counts from an ambassador's
   // signature only (`may(standing, 'settings.guarded')`): the Save button
   // says so instead of saving into silence.
   $: canEditSplit = may($standing, "settings.guarded");
@@ -494,7 +494,7 @@
     }
   }
 
-  // Every change saves itself a moment later (admins only — the split is a
+  // Every change saves itself a moment later (ambassadors only — the split is a
   // guarded setting). The edit is snapshotted when the write falls due.
   let savedSlug = collectiveSlug;
   const autosave = createAutosave<SplitEdit>(
@@ -573,7 +573,7 @@
   >
     {#if tab === "split"}
       <!-- ── How much goes to each side ─────────────────────────────────── -->
-      <!-- The split is a guarded setting: a non-admin reads it, and the
+      <!-- The split is a guarded setting: a non-ambassador reads it, and the
            controls are locked rather than taking an edit that never saves. -->
       <fieldset class="lock" disabled={!canEditSplit}>
         <div class="control">
@@ -969,7 +969,7 @@
       {#if !policySignable}
         <p class="sub warn">{$t("alloc.rulesNoSigner")}</p>
       {:else if policyRole !== "admin"}
-        <p class="sub warn">{$t("alloc.rulesNotAdmin")}</p>
+        <p class="sub warn">{$t("alloc.rulesNotAmbassador")}</p>
       {/if}
 
       <div class="control">
@@ -1161,7 +1161,9 @@
         </button>
       {:else}
         {#if !canEditSplit}
-          <span class="sub warn foot-note">{$t("alloc.splitNotAdmin")}</span>
+          <span class="sub warn foot-note"
+            >{$t("alloc.splitNotAmbassador")}</span
+          >
         {/if}
         <button class="primary" on:click={close}>{$t("common.done")}</button>
       {/if}
@@ -1171,7 +1173,7 @@
 
 <style>
   /* A locked group of split controls: no frame of its own, dimmed while
-     only an admin may change it. */
+     only an ambassador may change it. */
   .lock {
     border: 0;
     margin: 0;

@@ -11,7 +11,7 @@
  * this key's signature count for that?
  *
  *   member  content, ordinary settings fields, making a scope private
- *   admin   seating keys, the guarded settings fields (money, trust, the
+ *   ambassador   seating keys, the guarded settings fields (money, trust, the
  *           value equation), the rules of a log, the federation record,
  *           overriding a member's vault, another member's library booking
  *
@@ -56,6 +56,6 @@ export function whyNot(standing: WriteStanding | null | undefined, action: Capab
   if (may(standing, action)) return null;
   if (standing.status === 'held') return 'Your key is not linked to this holon yet, so your changes would not count.';
   return requiredRole(action) === 'admin'
-    ? 'Only an admin of this holon can change this; your change would be recorded but not counted.'
+    ? 'Only an ambassador of this holon can change this; your change would be recorded but not counted.'
     : 'Only a member of this holon can change this.';
 }

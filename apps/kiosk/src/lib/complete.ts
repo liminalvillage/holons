@@ -65,11 +65,11 @@ export async function recordCompletion(
   task: Quest,
   completerId: string | number,
 ): Promise<CompletionRecord> {
-  // `isAdmin` skips core's initiator/participant check: the confirm dialog
+  // `isAmbassador` skips core's initiator/participant check: the confirm dialog
   // already established who took part, and the completer need not be one of
   // them. The status guards still run.
   const applied: CompleteTaskResult = applyTaskCompletion(task, completerId, {
-    isAdmin: true,
+    isAmbassador: true,
   });
   if (!applied.ok) return { ok: false, actions: 0, expenses: 0 };
   const completedTask = applied.task;
@@ -136,7 +136,7 @@ export async function recordOccurrenceCompletion(
     task,
     occurrence,
     completerId,
-    { isAdmin: true },
+    { isAmbassador: true },
   );
   if (!applied.ok) return { ok: false, actions: 0, expenses: 0 };
   const store = await getReaStore();

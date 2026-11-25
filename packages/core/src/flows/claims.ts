@@ -15,7 +15,7 @@
  * money and splitting it with the holon) and from the collective's expense
  * queue, and the two knowingly double-counted (`usage.ts`). Here a claim is
  * a record of its own: a member appends `claim`, attesters (the policy's
- * roles; admins by default) attest or dispute it, and an attester's `payout`
+ * roles; ambassadors by default) attest or dispute it, and an attester's `payout`
  * consumes it. A `transfer` is the give. Every reader folds the same log to
  * the same statement; nothing is ever overwritten.
  *

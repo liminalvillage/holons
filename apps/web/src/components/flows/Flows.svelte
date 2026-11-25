@@ -409,7 +409,7 @@
 
   // ── The claims policy ───────────────────────────────────────────────────
   // A draft of the rule in force; "Set the rules" appends it to the policy
-  // log. This instance signs with the member's derived key: an admin's entry
+  // log. This instance signs with the member's derived key: an ambassador's entry
   // counts, anyone else's is recorded and ignored — said up front.
   let rulesOpen = false;
   let ruleAuthors: Role[] = [];
@@ -2082,7 +2082,7 @@
               {#each claimsCtx.folded.imports as im, i (im.holon)}{i ? ", " : ""}{partyName(im.holon)} ({im.accepted} accepted{im.source === "bootstrap" ? ", key only" : ""}){/each}.
             </p>
           {/if}
-          <!-- The rules: an admin's signed word in the policy log, folded as-of-time. -->
+          <!-- The rules: an ambassador's signed word in the policy log, folded as-of-time. -->
           <details class="rules" bind:open={rulesOpen} on:toggle={() => rulesOpen && void loadPartnerKeys()}>
             <summary>
               Rules · quorum {claimsCtx?.policy.quorum ?? 0}, {claimsCtx?.policy.conflict === "quorum" ? "a human decides" : "the first wins"}
@@ -2090,10 +2090,10 @@
             </summary>
             <p class="note">
               How claims are judged: who may raise one, who attests, how many attestations count, and what
-              happens when two draw on the same thing. An admin's signed entry of the {words.holon}'s policy log.
+              happens when two draw on the same thing. An ambassador's signed entry of the {words.holon}'s policy log.
             </p>
             {#if !rulesCanSign}
-              <p class="note warn">Only an admin's signature sets the rules; yours would be recorded but not counted.</p>
+              <p class="note warn">Only an ambassador's signature sets the rules; yours would be recorded but not counted.</p>
             {/if}
             <div class="rule-row">
               <span>Who may claim</span>

@@ -159,7 +159,7 @@ cache (`packages/holosphere/STORE.md`).
   their personal holon id. Telegram sessions are namespaced by Telegram user
   id instead (they sign with a per-user key derived server-side).
 - A holon founded from a screen is `holon_…` (the first ones `hub_…`): its
-  founder's key signs the genesis of its `_members` log and admins seat keys;
+  founder's key signs the genesis of its `_members` log and ambassadors seat keys;
   a Telegram chat's holon is its chat id, founded by the bot key. The kiosk
   and web accept a holon id, a pubkey hex or an `npub` (normalised to hex) in
   the URL. See [`identity-linking.md`](./identity-linking.md).
@@ -206,8 +206,8 @@ legacy `federation[]`/`lensConfig` settings fields were removed):
 Federation needs no Telegram: two holons founded from screens link the same
 way, and a Telegram chat linked to a holon (`@holons/core/linking`) is
 federated on every board lens as part of the link. The federation record is
-an admin's word: under enforced reads it resolves to the newest record an
-admin of the holon signed (`getFederationStanding` says whether one did), and
+an ambassador's word: under enforced reads it resolves to the newest record an
+ambassador of the holon signed (`getFederationStanding` says whether one did), and
 a partner's items still show only when its own authority signed them.
 
 UI-side concerns (Svelte stores, identity resolution, toast notifications)
@@ -222,16 +222,18 @@ Nothing is refused at write time — relays take every signed event — and
 every reader applies the same rule, so two honest clients see the same
 holon. The rule has two parts, both in `@holons/core/holosphere`:
 
-1. **Who counts**: a holon's admins and members come from its signed
+1. **Who counts**: a holon's ambassadors and members come from its signed
    `_members` log (else its anchored records); a holon nobody speaks for is
    open. `writeAcceptance(hs, holon)` says where a key stands and which role
    it holds.
 2. **Which role an action needs** — one table, `CAPABILITIES`:
    *members* make content, ordinary settings and private scopes (the locker
-   owns the lock); *admins* make the trust decisions — who is seated, the
+   owns the lock); *ambassadors* make the trust decisions — who is seated, the
    guarded settings fields (the value equation, the split, the pot, the
    payout, the treasury), the rules of a log, the federation record, and
-   overriding a member's lock.
+   overriding a member's lock. The ambassador is whoever introduced the
+   holon (added the bot to its Telegram group, or created a keyed holon); the
+   role is still stored as `admin` on the wire.
 
 The data layer enforces the table (the signer on `settings` and the
 `federation` table, the privacy layer on `_vault`); every surface asks

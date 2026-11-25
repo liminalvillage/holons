@@ -153,7 +153,7 @@ class H3 {
 
         // Federate the chat's holon with the hex cell through the one
         // write path: the record counts because the bot's key is the
-        // holon's anchor (an admin, see @holons/core/holosphere CAPABILITIES).
+        // holon's anchor (an ambassador, see @holons/core/holosphere CAPABILITIES).
         // A hex cell is open (nobody speaks for it): both halves are written.
         await linkHolons(this.db, holonId, hex, {
           lensConfig: {

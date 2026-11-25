@@ -125,7 +125,7 @@ const ctxFor = (userId, text) => {
 describe('FundClaims under the ceiling', () => {
   it('refuses a claim past what is left of the right without writing, records one within it', async () => {
     const db = fakeDb();
-    // 100 L in the fund, minted by the holon key (the bootstrap admin, an attester).
+    // 100 L in the fund, minted by the holon key (the bootstrap ambassador, an attester).
     const mint = buildMint({ amount: 100, unit: 'L', at: 1_760_000_000_000 });
     await db.append(HOLON, 'flow_mints', mint.item, { refs: mint.refs });
     const claims = new FundClaims(null, db, {

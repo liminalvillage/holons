@@ -872,9 +872,9 @@ export const it: Record<MessageKey, Msg> = {
     "Il tuo accesso Telegram non ha portato una chiave, quindi nulla ti collega a quest{@g:o|a} {@holon}. Chi gestisce questo schermo deve configurare la derivazione delle chiavi (NOSTR_DERIVATION_SECRET).",
   "members.linkMe": "Collega la mia chiave",
   "members.asked":
-    "Richiesta inviata — un admin collega la tua chiave; questa pagina si aggiorna quando lo fa.",
+    "Richiesta inviata — un ambasciatore collega la tua chiave; questa pagina si aggiorna quando lo fa.",
   "members.askedTelegram":
-    "Richiesta inviata — gli admin sono stati avvisati nel gruppo Telegram; questa pagina si aggiorna quando la tua chiave è collegata.",
+    "Richiesta inviata — gli ambasciatori sono stati avvisati nel gruppo Telegram; questa pagina si aggiorna quando la tua chiave è collegata.",
   "members.signIn": "Entra con una chiave",
   "members.chat": "Chat Telegram",
   "members.chatBorn":
@@ -888,12 +888,12 @@ export const it: Record<MessageKey, Msg> = {
   "members.pending": "{n} chiedono di essere collegati",
   "members.approve": "Collega",
   "members.decline": "Ignora",
-  "members.roleAdmin": "admin",
+  "members.roleAmbassador": "ambasciatore",
   "members.roleMember": "membro",
   "members.you": "tu",
   "members.addPlaceholder": "npub o chiave pubblica hex",
   "members.add": "Collega una chiave",
-  "members.addAdmin": "Collega come admin",
+  "members.addAmbassador": "Collega come ambasciatore",
   "members.remove": "Scollega {key}",
   "members.failed": "Impossibile cambiare quel collegamento — {reason}",
   "members.invite": "Invita persone con il link di quest{@g:o|a} {@holon}:",
@@ -903,7 +903,7 @@ export const it: Record<MessageKey, Msg> = {
   "members.noKeyBot":
     "Quest{@g:o|a} {@holon} è nat{@g:o|a} in Telegram; il suo bot {@g:gli|le} dà una chiave la prima volta che gira con la firma attiva. Fino ad allora nulla può esservi collegato.",
   "members.noKeyOpen":
-    "Quest{@g:o|a} {@holon} non ha ancora una chiave propria. Avvial{@g:o|a} con la tua: diventi il primo admin.",
+    "Quest{@g:o|a} {@holon} non ha ancora una chiave propria. Avvial{@g:o|a} con la tua: diventi il primo ambasciatore.",
   "members.noKeyNeedsKey":
     "Quest{@g:o|a} {@holon} non ha ancora una chiave propria. Entra con la tua chiave (nsec, passkey o wallet) per avviarl{@g:o|a}.",
   "members.start": "Avvia quest{@g:o|a} {@holon} con la mia chiave",
@@ -916,14 +916,14 @@ export const it: Record<MessageKey, Msg> = {
     "Non collegata — la tua chiave non è ancora collegata a quest{@g:o|a} {@holon}, quindi solo questo schermo vede le tue modifiche",
   "menu.linkMe": "Collega la mia chiave a quest{@g:o|a} {@holon}",
   "menu.linkAsked":
-    "Richiesta inviata. Un admin {@of_the_holon} collega la tua chiave.",
+    "Richiesta inviata. Un ambasciatore {@of_the_holon} collega la tua chiave.",
   "menu.unlinkMe": "Scollega la mia chiave da quest{@g:o|a} {@holon}",
   "menu.unlinked":
-    "Hai detto {@to_the_holon} che te ne vai. Un admin scollega la tua chiave.",
+    "Hai detto {@to_the_holon} che te ne vai. Un ambasciatore scollega la tua chiave.",
   "layout.notLinked":
-    "La tua chiave non è ancora collegata a quest{@g:o|a} {@holon} — le tue modifiche restano su questo schermo finché un admin non la collega (Impostazioni → Membri).",
+    "La tua chiave non è ancora collegata a quest{@g:o|a} {@holon} — le tue modifiche restano su questo schermo finché un ambasciatore non la collega (Impostazioni → Membri).",
   "tglink.confirmBody":
-    "I membri della chat vengono collegati qui, la chiave del bot diventa admin di quest{@g:o|a} {@holon}, ed entrambe le bacheche mostrano gli elementi dell’altra.",
+    "I membri della chat vengono collegati qui, la chiave del bot diventa ambasciatrice di quest{@g:o|a} {@holon}, ed entrambe le bacheche mostrano gli elementi dell’altra.",
   "tglink.done":
     "Collegata. I membri della chat compaiono man mano che il bot li sincronizza.",
   "audience.locked": "Privata",
@@ -940,8 +940,8 @@ export const it: Record<MessageKey, Msg> = {
   "audience.searchPlaceholder": "Nome o id {@of_the_holon}",
   "audience.noHits": "Nessun{@g:|a} {@holon} con quel nome.",
   "audience.remove": "Smetti di condividere con {name}",
-  "audience.adminCanUnlock":
-    "Bloccato da un'altra chiave. Come admin puoi renderlo pubblico, oppure prenderlo in carico e condividerlo tu.",
+  "audience.ambassadorCanUnlock":
+    "Bloccato da un'altra chiave. Come ambasciatore puoi renderlo pubblico, oppure prenderlo in carico e condividerlo tu.",
   "audience.takeOver": "Prendi in carico",
   "audience.notOwner":
     "Bloccata da un'altra chiave — solo chi la possiede cambia chi legge.",
@@ -989,8 +989,8 @@ export const it: Record<MessageKey, Msg> = {
   // Federation lens editor (the dock's intersection popup)
   "fed.loading": "Caricamento…",
   "fed.loadError": "Impossibile caricare la federazione — riprova.",
-  "fed.adminOnly":
-    "Solo un admin di quest{@g:o|a} {@holon} cambia con chi federa e quali lenti scorrono; i tuoi tocchi qui non conterebbero.",
+  "fed.ambassadorOnly":
+    "Solo un ambasciatore di quest{@g:o|a} {@holon} cambia con chi federa e quali lenti scorrono; i tuoi tocchi qui non conterebbero.",
   "fed.arrowHint":
     "Tocca la freccia verso {@the_holon} in cui devono viaggiare gli elementi. Toccala di nuovo per chiudere quella direzione.",
   "fed.notLinked":
@@ -1020,14 +1020,14 @@ export const it: Record<MessageKey, Msg> = {
     "Una lente con il lucchetto è privata: la freccia apre il flusso, la chiave condivide il contenuto.",
   "fed.unlinkError": "Lo scollegamento non è stato salvato — riprova.",
   "fed.askedPartner":
-    "Chiesto agli admin di {name} — questi flussi contano dal loro lato quando accettano.",
+    "Chiesto agli ambasciatori di {name} — questi flussi contano dal loro lato quando accettano.",
   "fed.askedUnlink":
-    "Scollegato qui. Agli admin di {name} è stato chiesto di togliere anche il loro lato.",
+    "Scollegato qui. Agli ambasciatori di {name} è stato chiesto di togliere anche il loro lato.",
   "fed.laneWaiting": "in attesa che {name} accetti",
   "fed.laneOffered": "{name} lo offre — tocca per accettarlo",
   "fed.waitingFor": {
-    one: "{n} flusso attende che gli admin di {name} accettino.",
-    other: "{n} flussi attendono che gli admin di {name} accettino.",
+    one: "{n} flusso attende che gli ambasciatori di {name} accettino.",
+    other: "{n} flussi attendono che gli ambasciatori di {name} accettino.",
   },
   "fed.offeredBy": {
     one: "{name} offre {n} flusso che non hai preso — la freccia tenue.",
@@ -1048,7 +1048,7 @@ export const it: Record<MessageKey, Msg> = {
   "fed.openPair": "Apri i flussi",
   "fed.requestsTitle": "Richieste di federazione",
   "fed.requestsSub":
-    "{@g:Altri|Altre} {@holons} chiedono di collegarsi. Accettare imposta il lato di quest{@g:o|a} {@holon}; gli admin di ogni lato decidono il proprio.",
+    "{@g:Altri|Altre} {@holons} chiedono di collegarsi. Accettare imposta il lato di quest{@g:o|a} {@holon}; gli ambasciatori di ogni lato decidono il proprio.",
   "fed.requestsBadge": {
     one: "{n} richiesta di federazione",
     other: "{n} richieste di federazione",
@@ -1156,7 +1156,7 @@ export const it: Record<MessageKey, Msg> = {
   "detail.changeDates": "Cambia date",
   "detail.saveDates": "Salva date",
   "detail.onlyBorrowerChange":
-    "Solo chi l'ha in prestito o un admin può cambiare queste date.",
+    "Solo chi l'ha in prestito o un ambasciatore può cambiare queste date.",
   "detail.onLoanTo": "In prestito a {who}",
   "detail.bookAhead": "Prenota in anticipo",
   "detail.edit": "Modifica",
@@ -1416,7 +1416,7 @@ export const it: Record<MessageKey, Msg> = {
   "hub.hereTitle": "Avvia {@a_holon} qui",
   "hub.hereBody": "Senza Telegram: {@g:lo|la} avvia la tua chiave, adesso.",
   "hub.hereLead":
-    "{@A_holon} tutt{@g:o|a} tu{@g:o|a}, avviat{@g:o|a} con la tua chiave: sei il primo admin, e colleghi gli altri con la loro chiave pubblica.",
+    "{@A_holon} tutt{@g:o|a} tu{@g:o|a}, avviat{@g:o|a} con la tua chiave: sei il primo ambasciatore, e colleghi gli altri con la loro chiave pubblica.",
   "hub.hereName": "Nome",
   "hub.hereNamePlaceholder": "Come si chiama quest{@g:o|a} {@holon}?",
   "hub.hereCreate": "Avvial{@g:o|a}",
@@ -1840,14 +1840,14 @@ export const it: Record<MessageKey, Msg> = {
   "alloc.tabRules": "Regole",
   "alloc.tabRulesSummary": "quorum {quorum}",
   "alloc.rulesAbout":
-    "Come si giudicano le richieste sul fondo: chi può farne una, chi attesta, quante attestazioni contano e cosa succede se due attingono alla stessa cosa. La parola firmata di un admin, conservata nel registro delle regole {@of_the_holon}.",
+    "Come si giudicano le richieste sul fondo: chi può farne una, chi attesta, quante attestazioni contano e cosa succede se due attingono alla stessa cosa. La parola firmata di un ambasciatore, conservata nel registro delle regole {@of_the_holon}.",
   "alloc.rulesAuthors": "Chi può richiedere",
   "alloc.rulesAttesters": "Chi attesta",
   "alloc.rulesQuorum": "Attestazioni necessarie",
   "alloc.rulesConflict": "Due sulla stessa base",
   "alloc.rulesConflictEarliest": "vince la prima",
   "alloc.rulesConflictQuorum": "decide una persona",
-  "alloc.rulesRole.admin": "admin",
+  "alloc.rulesRole.admin": "ambasciatori",
   "alloc.rulesRole.member": "membri",
   "alloc.rulesPartners": "Partner le cui richieste contano",
   "alloc.rulesPartnersAbout":
@@ -1857,10 +1857,10 @@ export const it: Record<MessageKey, Msg> = {
   "alloc.rulesPartnerNoKey": "nessuna chiave pubblicata",
   "alloc.rulesSave": "Imposta le regole",
   "alloc.rulesSaved": "Regole registrate.",
-  "alloc.splitNotAdmin":
-    "Solo un admin può cambiare la ripartizione. Qui puoi consultarla.",
-  "alloc.rulesNotAdmin":
-    "Solo la firma di un admin imposta le regole; la tua verrebbe registrata ma non contata.",
+  "alloc.splitNotAmbassador":
+    "Solo un ambasciatore può cambiare la ripartizione. Qui puoi consultarla.",
+  "alloc.rulesNotAmbassador":
+    "Solo la firma di un ambasciatore imposta le regole; la tua verrebbe registrata ma non contata.",
   "alloc.rulesNoSigner":
     "La firma non è configurata per questo accesso, quindi qui non si possono impostare le regole.",
   "alloc.rulesUnchanged": "Queste sono già le regole in vigore.",
@@ -2247,7 +2247,8 @@ export const it: Record<MessageKey, Msg> = {
   "onb.linked": "La tua chiave è collegata a {holon}. Ti diamo il benvenuto!",
   "onb.tick": "Fatto",
   "onb.tickFailed": "Impossibile salvare: {reason}",
-  "onb.adminTicks": "Qualcuno {@of_the_holon} la spunta quando è avvenuta.",
+  "onb.ambassadorTicks":
+    "Qualcuno {@of_the_holon} la spunta quando è avvenuta.",
   "onb.tickInTelegram": "Spuntala nella chat con il bot.",
   "onb.profileSave": "Salva profilo",
   "onb.profileSaved": "Profilo salvato.",
@@ -2275,11 +2276,11 @@ export const it: Record<MessageKey, Msg> = {
   "onb.link": "Link",
   "onb.who": "Chi la spunta",
   "onb.whoSelf": "Chi arriva",
-  "onb.whoAdmin": "Un admin",
+  "onb.whoAmbassador": "Un ambasciatore",
   "onb.whoProfile": "Profilo",
   "onb.whoSelfHint": "La spunta la persona che arriva.",
-  "onb.whoAdminHint":
-    "La spunta un admin quando è avvenuto, come una call o l’incontro con il buddy.",
+  "onb.whoAmbassadorHint":
+    "La spunta un ambasciatore quando è avvenuto, come una call o l’incontro con il buddy.",
   "onb.moveUp": "Sposta su",
   "onb.moveDown": "Sposta giù",
   "onb.removeStep": "Rimuovi passo",

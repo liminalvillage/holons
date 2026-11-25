@@ -4,7 +4,7 @@
 	import { Check, X } from 'svelte-feathers';
 
 	// One partner's federation request (core `@holons/core/federation`): it
-	// linked from its side and asks this holon's admins for our half, or it
+	// linked from its side and asks this holon's ambassadors for our half, or it
 	// ended the link and asks us to drop ours (`kind: 'unlink'`).
 	export let id: string;
 	export let senderPubKey: string;

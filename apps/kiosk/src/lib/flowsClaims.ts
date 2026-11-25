@@ -111,7 +111,7 @@ export function watchLogLens(
     emit();
   });
   // Which partners to import is the policy's word, as folded by whoever is
-  // an admin here — so the partner read follows the policy, not the raw log.
+  // an ambassador here — so the partner read follows the policy, not the raw log.
   let importsFor = "";
   const refreshImports = async () => {
     const actors = resolveAcceptedActors({
@@ -119,7 +119,7 @@ export function watchLogLens(
       genesis: null,
       bootstrap: {
         members: [],
-        admins: adminKeys,
+        ambassadors: ambassadorKeys,
         genesis: null,
       },
     });
@@ -144,9 +144,9 @@ export function watchLogLens(
   });
   // The membership log and the identity directory are read, not watched:
   // both change rarely, and a re-read on the next claim is soon enough.
-  // Before the holon is founded, the policy log has no admin to fold by;
+  // Before the holon is founded, the policy log has no ambassador to fold by;
   // the holon's own key (settings.holonPubkey) stands in, as the fold does.
-  let adminKeys: string[] = [];
+  let ambassadorKeys: string[] = [];
   const refreshMembers = async () => {
     try {
       await hs.getAll(holon, MEMBERS_LENS); // catches the lens up from the relays
@@ -159,9 +159,9 @@ export function watchLogLens(
         holonPubkey?: unknown;
       } | null;
       const key = String(doc?.holonPubkey ?? "");
-      adminKeys = /^[0-9a-f]{64}$/i.test(key) ? [key.toLowerCase()] : [];
+      ambassadorKeys = /^[0-9a-f]{64}$/i.test(key) ? [key.toLowerCase()] : [];
     } catch {
-      adminKeys = [];
+      ambassadorKeys = [];
     }
     try {
       const dir = (await hs.getAllGlobal(SHIFT_IDENTITY_LENS)) as never[];
@@ -315,8 +315,8 @@ export function recordVerdict(
   );
 }
 /**
- * Set a lens's rule: an admin-signed entry of the `_policy` log. Signed as
- * the logged-in person; it counts only if they are an admin as of now.
+ * Set a lens's rule: an ambassador-signed entry of the `_policy` log. Signed as
+ * the logged-in person; it counts only if they are an ambassador as of now.
  */
 export function recordPolicy(
   hs: HoloSphere,

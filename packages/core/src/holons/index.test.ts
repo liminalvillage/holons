@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { bytesToHex } from '@noble/hashes/utils';
 import { createHoloSphere } from '../holosphere/factory.js';
 import { signerFromSecretKey } from '../holosphere/signers.js';
-import { GROUP_ADMINS_KIND, GROUP_JOIN_REQUEST_KIND, GROUP_MEMBERS_KIND, GROUP_PUT_USER_KIND, GROUP_REMOVE_USER_KIND } from '../nostr/groups.js';
+import { GROUP_AMBASSADORS_KIND, GROUP_JOIN_REQUEST_KIND, GROUP_MEMBERS_KIND, GROUP_PUT_USER_KIND, GROUP_REMOVE_USER_KIND } from '../nostr/groups.js';
 import type { NostrEventLike } from '../nostr/types.js';
 import { holonMembers, isHolonId } from '../protocol/founding.js';
 import { testKey } from '../protocol/testing.js';
@@ -100,7 +100,7 @@ describe('seating and group state', () => {
     const { hs, published } = instance();
     const { holon: H, anchor } = await createHolon(hs, signer(founder.sk), { appName: APP, name: 'Orto' });
     expect(anchor).toBe(founder.pk);
-    expect(published.map((e) => e.kind).sort()).toEqual([GROUP_ADMINS_KIND, GROUP_MEMBERS_KIND, 39000].sort());
+    expect(published.map((e) => e.kind).sort()).toEqual([GROUP_AMBASSADORS_KIND, GROUP_MEMBERS_KIND, 39000].sort());
     published.length = 0;
 
     expect(await approveJoin(hs, H, alice.pk, signer(founder.sk), { appName: APP })).toBe(alice.pk);
@@ -109,12 +109,12 @@ describe('seating and group state', () => {
     expect(ptags(put)).toEqual([['p', alice.pk, 'member']]);
     const members = published.find((e) => e.kind === GROUP_MEMBERS_KIND)!;
     expect(ptags(members).map((t) => t[1]).sort()).toEqual([founder.pk, alice.pk].sort());
-    expect(published.some((e) => e.kind === GROUP_ADMINS_KIND)).toBe(false); // admins unchanged
+    expect(published.some((e) => e.kind === GROUP_AMBASSADORS_KIND)).toBe(false); // ambassadors unchanged
     published.length = 0;
 
     await approveJoin(hs, H, bob.pk, signer(founder.sk), { appName: APP, role: 'admin' });
-    const admins = published.find((e) => e.kind === GROUP_ADMINS_KIND)!;
-    expect(ptags(admins)).toEqual([['p', founder.pk, 'admin'], ['p', bob.pk, 'admin']]);
+    const ambassadors = published.find((e) => e.kind === GROUP_AMBASSADORS_KIND)!;
+    expect(ptags(ambassadors)).toEqual([['p', founder.pk, 'admin'], ['p', bob.pk, 'admin']]);
     published.length = 0;
 
     expect(await publishGroupState(hs, H, signer(founder.sk), { appName: APP })).toEqual([]); // nothing changed
@@ -136,7 +136,7 @@ describe('seating and group state', () => {
     const { holon: H } = await createHolon(hs, signer(founder.sk), { appName: APP });
     await approveJoin(hs, H, alice.pk, signer(founder.sk), { appName: APP });
     await hs.login(bytesToHex(alice.sk));
-    await expect(approveJoin(hs, H, bob.pk, signer(alice.sk), { appName: APP })).rejects.toThrow(/admin/);
+    await expect(approveJoin(hs, H, bob.pk, signer(alice.sk), { appName: APP })).rejects.toThrow(/ambassador/);
     await hs.close();
   });
 });

@@ -601,7 +601,7 @@
 
         // isAdmin=true mirrors web pre-unify behaviour — the modal already
         // gates this UI on having access.
-        const result = applyTaskCompletion(questToComplete, completerId, { isAdmin: true });
+        const result = applyTaskCompletion(questToComplete, completerId, { isAmbassador: true });
         if (!result.ok) {
             console.warn('[TaskModal] applyTaskCompletion blocked:', result.reason);
             return;
@@ -638,7 +638,7 @@
      */
     async function recordOccurrenceCompletion(participants: any[]) {
         if (!occurrenceWhen) return;
-        const result = applyOccurrenceCompletion(quest, occurrenceWhen, currentUserId(), { isAdmin: true });
+        const result = applyOccurrenceCompletion(quest, occurrenceWhen, currentUserId(), { isAmbassador: true });
         if (!result.ok) {
             console.warn('[TaskModal] applyOccurrenceCompletion blocked:', result.reason);
             return;

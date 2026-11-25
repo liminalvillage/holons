@@ -72,10 +72,10 @@ Three ideas carry the whole thing:
 
 One grove per location, plus the **Collector's guild** (`-5468909450`,
 a Telegram group with @HolonsBot). A grove can be either kind of holon:
-a Telegram group with the bot (id = chat id; the group's admins are its
-attesters, and `/fundmint` works in the chat) or a key-founded holon
-(kiosk "+" → new, or MCP `holon_create`; the founding key is the first
-admin and attester, no chat needed). Both work on every surface. Liminal
+a Telegram group with the bot (id = chat id; the group's Telegram admins,
+seated as its ambassadors, are its attesters, and `/fundmint` works in the
+chat) or a key-founded holon (kiosk "+" → new, or MCP `holon_create`; the founding key is the first
+ambassador and attester, no chat needed). Both work on every surface. Liminal
 (`-1003864542239`) and Casa Selva (`-1002964866719`) already exist and
 change nothing.
 
@@ -123,7 +123,7 @@ share).
 **Rules** (kiosk Rules tab, web Rules, `/fundpolicy`): in each grove, pin
 the location and the Collectors so their claims fold into the grove's
 statement (`/fundpolicy pin <holon id>`, once each). The claims log and
-the mints log each take their own policy; admins attest both by default.
+the mints log each take their own policy; ambassadors attest both by default.
 
 ### 4. The Collectors' split
 
@@ -156,7 +156,7 @@ will do with the oil, because the cascade follows them:
 - Liminal today keeps 56 % for its contributors by equation and sends the
   rest to rings that hold Casa Selva (ring 2), Lunation (ring 4) and five
   people. Part of Liminal's oil therefore reaches Casa Selva and Lunation.
-  If the house should keep its oil, Liminal's admins set Contributors to
+  If the house should keep its oil, Liminal's ambassadors set Contributors to
   100 % or a custom split naming the house.
 - Casa Selva keeps 86 % for its contributors and places nobody: it keeps the
   rest ("retained" in the diagram).
@@ -191,7 +191,7 @@ The cascade stops three hops below the root and never goes round a loop.
    An attester attests if the rules ask for it and records `/fundpaid <id>`
    when the oil is handed over. The Collectors as a whole, and each location,
    claim their half from the grove in the same way, in their own log; the
-   grove's admins mark it paid when the oil moves. A picker who wants a
+   grove's ambassadors mark it paid when the oil moves. A picker who wants a
    neighbour to collect for them gives part of their access instead
    (`/fundgive 5 L @neighbour`, or _Give_ beside _Claim_ on the kiosk and
    the web): their access drops by five litres, the neighbour's rises by five,

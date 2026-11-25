@@ -14,7 +14,7 @@ describe('bootstrapFromLenses', () => {
     provider: K('9'), identifier, platform: 'telegram', platformId: identifier.slice(9), pubkeys, createdAt: 100, id,
   });
 
-  it('assembles members, admins and the party map from settings, users and attestations', () => {
+  it('assembles members, ambassadors and the party map from settings, users and attestations', () => {
     const b = bootstrapFromLenses({
       holonId: '-100',
       settings: { holonPubkey: K('e'), admin: '7', nostrTrustedPubkeys: [K('f'), 'junk'], identityProviders: [K('9')] },
@@ -24,7 +24,7 @@ describe('bootstrapFromLenses', () => {
     });
     expect(b.holonPubkey).toBe(K('e'));
     expect(new Set(b.actors.members)).toEqual(new Set([K('a'), K('b'), K('c'), K('e'), K('f')]));
-    expect(new Set(b.actors.admins)).toEqual(new Set([K('e'), K('a'), K('c')]));
+    expect(new Set(b.actors.ambassadors)).toEqual(new Set([K('e'), K('a'), K('c')]));
     expect(b.actors.genesis).toBe(K('e'));
 
     const actors = bootstrapActors(b.actors);
@@ -48,7 +48,7 @@ describe('bootstrapFromLenses', () => {
       attestations: [att('telegram:7', [K('a')], 'a1')],
     });
     expect(new Set(b.actors.members)).toEqual(new Set([K('a'), K('e')]));
-    expect(new Set(b.actors.admins)).toEqual(new Set([K('e'), K('a')]));
+    expect(new Set(b.actors.ambassadors)).toEqual(new Set([K('e'), K('a')]));
     const parties = createPartyResolver({ keyToParty: b.keyToParty, linkedKeys: b.linkedKeys, holonPubkey: b.holonPubkey, holonId: '-100' });
     expect(parties.partyOf(K('c'))).toBeNull();
     expect(parties.partyOf(K('d'))).toBeNull();
@@ -72,7 +72,7 @@ describe('bootstrapFromLenses', () => {
 
   it('is empty but well-formed with nothing to go on', () => {
     const b = bootstrapFromLenses({ holonId: 'x' });
-    expect(b.actors).toEqual({ members: [], admins: [], genesis: null });
+    expect(b.actors).toEqual({ members: [], ambassadors: [], genesis: null });
     expect(b.holonPubkey).toBeNull();
   });
 });

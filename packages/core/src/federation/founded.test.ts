@@ -23,9 +23,9 @@ describe('two key-founded holons', () => {
     await hs.login(bytesToHex(q.sk));
     await foundHolon(hs, B, { name: 'Forno' });
 
-    // The federation record is an admin's word: each half is set by an
-    // admin of its own holon. q (B's admin) links B↔A: B's half is written
-    // and A is ASKED; p (A's admin) accepts, which writes A's half.
+    // The federation record is an ambassador's word: each half is set by an
+    // ambassador of its own holon. q (B's ambassador) links B↔A: B's half is written
+    // and A is ASKED; p (A's ambassador) accepts, which writes A's half.
     expect(await setFederationPartner(hs, B, A, { inbound: ['quests', 'library'], outbound: ['quests'], partnerName: 'Orto', holonName: 'Forno' }))
       .toEqual({ self: 'linked', partner: 'requested' });
     expect((await getFederationSnapshot(hs, A)).federated).not.toContain(B);

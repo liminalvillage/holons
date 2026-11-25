@@ -70,7 +70,7 @@ const titles = async (hs: ReturnType<typeof createHoloSphere>, holon: string, le
 describe('a private holon', () => {
   const founder = testKey();
   const alice = testKey();
-  const partnerAdmin = testKey();
+  const partnerAmbassador = testKey();
   const bob = testKey();
   const carol = testKey();
 
@@ -131,12 +131,12 @@ describe('a private holon', () => {
     expect(await eventually(async () => (await writeAcceptance(a, H)).status === 'accepted')).toBe(true);
     expect(await eventually(async () => (await titles(a, H)).includes('secret plan'))).toBe(true);
 
-    // ── A partner holon: its admin seats Bob. Carol is nobody's member.
-    const g = await person(partnerAdmin.sk);
-    const { holon: P } = await createHolon(g, signer(partnerAdmin.sk), {
+    // ── A partner holon: its ambassador seats Bob. Carol is nobody's member.
+    const g = await person(partnerAmbassador.sk);
+    const { holon: P } = await createHolon(g, signer(partnerAmbassador.sk), {
       appName: APP,
     });
-    await approveJoin(g, P, bob.pk, signer(partnerAdmin.sk), { appName: APP });
+    await approveJoin(g, P, bob.pk, signer(partnerAmbassador.sk), { appName: APP });
     const b = await person(bob.sk);
     const c = await person(carol.sk);
 

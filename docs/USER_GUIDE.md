@@ -368,7 +368,7 @@ Direct view of HoloSphere data for administrative purposes.
 ### Lost my private key
 - Unfortunately, keys cannot be recovered
 - Create a new identity
-- Contact holon administrators to be re-added to holons
+- Contact a holon's ambassadors to be re-added to holons
 
 ### Federation not working
 - Ensure both holons have approved the federation

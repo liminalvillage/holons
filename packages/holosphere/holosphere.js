@@ -842,7 +842,7 @@ class HoloSphere {
     /**
      * The federation record with its standing: what counts (`record`), the
      * plain last-writer-wins record (`raw`) and whether `record` is an
-     * admin's (`endorsed`). See federation.js `federationStanding`.
+     * ambassador's (`endorsed`). See federation.js `federationStanding`.
      */
     async getFederationStanding(holonId, password = null) {
         return Federation.federationStanding(this, holonId, password);
@@ -1195,7 +1195,7 @@ class HoloSphere {
         this._signer.pinGenesis(holon, pubkey);
     }
 
-    /** Found a holon: self-signed genesis making the local key the first admin. */
+    /** Found a holon: self-signed genesis making the local key the first ambassador. */
     async foundHolon(holon, opts = {}) {
         if (!this._signer) throw new Error('foundHolon: signing not enabled');
         await this._awaitBackend();
@@ -1205,7 +1205,7 @@ class HoloSphere {
         return this._signer.pubkey;
     }
 
-    /** Add a member (only effective if the local key is an admin of the holon). */
+    /** Add a member (only effective if the local key is an ambassador of the holon). */
     async addMember(holon, pubkey, role = 'member', opts = {}) {
         if (!this._signer) throw new Error('addMember: signing not enabled');
         await this._awaitBackend();
@@ -1213,7 +1213,7 @@ class HoloSphere {
         await this._signer.signAndStore(this, holon, '_members', { id: `add:${pubkey}:${at ?? Date.now()}`, op: 'add', pubkey, role }, { at });
     }
 
-    /** Remove a member (only effective if the local key is an admin). */
+    /** Remove a member (only effective if the local key is an ambassador). */
     async removeMember(holon, pubkey, opts = {}) {
         if (!this._signer) throw new Error('removeMember: signing not enabled');
         await this._awaitBackend();

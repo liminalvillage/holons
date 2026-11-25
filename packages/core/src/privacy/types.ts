@@ -44,7 +44,7 @@ export interface Audience {
   owned: boolean;
   /**
    * Could this identity make the scope public or take it over: it owns the
-   * vault, or it is an admin of the holon holding the key (see
+   * vault, or it is an ambassador of the holon holding the key (see
    * `may(standing, 'privacy.override')`). Always true when owned.
    */
   canManage: boolean;

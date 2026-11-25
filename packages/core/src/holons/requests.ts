@@ -15,10 +15,10 @@
 //                   holon with an onboarding walks them through it, where
 //                   they are (`@holons/core/onboarding`). It is the memory
 //                   that stops a second announcement, and `approvedJoinKeys`
-//                   is the list of keys an admin let in, which a roster sync
+//                   is the list of keys an ambassador let in, which a roster sync
 //                   must keep seated.
 //
-// An approval is a seating decision, so a record counts only when an ADMIN
+// An approval is a seating decision, so a record counts only when an AMBASSADOR
 // (as of its time) signed it — the `members` capability. The lens itself is
 // last-writer-wins for any member; read through `joinRequestRecords`, a
 // member's own "approved" is ignored.
@@ -55,7 +55,7 @@ export interface JoinRequestRecord {
    * Onboarding progress (`@holons/core/onboarding`), present while the holon
    * walks this key through its onboarding. `home` is the holon the person's
    * onboarding cards live in, `step` the step they are on, `confirmed` the
-   * cards an admin vouched for. Admin-signed like the rest of the record, so
+   * cards an ambassador vouched for. Ambassador-signed like the rest of the record, so
    * nobody advances themselves.
    */
   home?: string;
@@ -75,7 +75,7 @@ const nowSec = (): number => Math.floor(Date.now() / 1000);
 
 /**
  * The records that count, by asking key: for each, the newest one signed by
- * a key that was an admin of the holon at that moment. A holon nobody speaks
+ * a key that was an ambassador of the holon at that moment. A holon nobody speaks
  * for has no seats to grant, so it has none.
  */
 export async function joinRequestRecords(hs: HoloSphere, holon: string): Promise<Map<string, JoinRequestRecord>> {
@@ -103,7 +103,7 @@ export async function joinRequestRecords(hs: HoloSphere, holon: string): Promise
   return out;
 }
 
-/** The keys an admin approved and nobody has declined since — a roster sync keeps these seated. */
+/** The keys an ambassador approved and nobody has declined since — a roster sync keeps these seated. */
 export async function approvedJoinKeys(hs: HoloSphere, holon: string): Promise<string[]> {
   return [...(await joinRequestRecords(hs, holon)).values()].filter((r) => r.status === 'approved').map((r) => r.id);
 }
@@ -118,7 +118,7 @@ export interface RecordJoinRequestInput {
   now?: () => number;
 }
 
-/** Note a request as announced (or already settled). Counts only from an admin's key. */
+/** Note a request as announced (or already settled). Counts only from an ambassador's key. */
 export async function recordJoinRequest(hs: HoloSphere, holon: string, request: JoinRequest, input: RecordJoinRequestInput = {}): Promise<JoinRequestRecord> {
   const record: JoinRequestRecord = {
     id: request.pubkey,

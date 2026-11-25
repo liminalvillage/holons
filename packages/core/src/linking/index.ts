@@ -3,32 +3,32 @@
 //
 // @holons/core/linking — tying a key-founded holon to a Telegram chat.
 //
-// Two holons take part: D, founded from a screen (its admins are keys seated
+// Two holons take part: D, founded from a screen (its ambassadors are keys seated
 // in its `_members` log), and T, a Telegram chat (its anchor is the bot key
 // that founded it). Neither side can write into the other, so the link is a
 // pair of signed records that name each other, one in each holon's `links`
 // lens, both keyed by the same id — and each side's record counts only when
-// its own authority signed it. Afterwards the two seat each other's admin
-// key, so a dashboard admin edits the chat's holon and the bot brings the
+// its own authority signed it. Afterwards the two seat each other's ambassador
+// key, so a dashboard ambassador edits the chat's holon and the bot brings the
 // chat's members into the dashboard holon.
 //
 // The handshake is a challenge–response around a one-time token τ that only
 // travels in a Telegram deep link:
 //
-//   1. OFFER   an admin of D writes D/links/H = {status:'offered'} where
+//   1. OFFER   an ambassador of D writes D/links/H = {status:'offered'} where
 //              H = hash(τ); the deep link carries `link_<D>_<τ>`.
 //   2. ACCEPT  the bot, on `/start link_…` from a chat admin, hashes τ, reads
-//              D/links/H — which counts only if an admin of D (at that time)
-//              signed it — founds T if needed, seats that admin in T, writes
+//              D/links/H — which counts only if an ambassador of D (at that time)
+//              signed it — founds T if needed, seats that ambassador in T, writes
 //              T/links/H = {status:'accepted', peer: D} and a claim record so
 //              the screen (which knows D and H, not T) learns T.
 //   3. COMPLETE the screen checks T/links/H is signed by T's anchor and names
 //              D, a human confirms the chat's title, and D/links/H becomes
-//              {status:'linked', peer: T}; the bot key is seated as admin of D.
+//              {status:'linked', peer: T}; the bot key is seated as ambassador of D.
 //   4. UNLINK  either side alone: its record → 'unlinked', the other's key
 //              unseated (as-of-time: nothing already written is lost).
 //
-// Nobody but D's admins can offer; nobody but T's anchor can accept; H never
+// Nobody but D's ambassadors can offer; nobody but T's anchor can accept; H never
 // reveals τ; τ is single-use and expires; a human confirms before the bot
 // key is seated. Pure helpers first, then the store-level steps.
 
@@ -112,9 +112,9 @@ export interface LinkRecord {
   status: LinkStatus;
   /** The other holon's id. */
   peer?: string;
-  /** The other holon's speaking key: D's offering admin, or T's anchor. */
+  /** The other holon's speaking key: D's offering ambassador, or T's anchor. */
   peerAnchor?: string;
-  /** Who wrote this: the admin's pubkey (D) or the Telegram user id (T). */
+  /** Who wrote this: the ambassador's pubkey (D) or the Telegram user id (T). */
   by?: string;
   /** The chat, as the bot saw it (T's record; copied into D's on completion as `name`). */
   chat?: LinkChat;
@@ -172,10 +172,10 @@ type Host = HoloSphere & {
 
 const me = (hs: HoloSphere) => String(hs.currentPubkey ?? '').toLowerCase();
 
-async function requireAdmin(hs: HoloSphere, holon: string): Promise<string> {
+async function requireAmbassador(hs: HoloSphere, holon: string): Promise<string> {
   const key = me(hs);
   if (!key || !hs.signingEnabled) throw new Error('Sign in with a key first.');
-  if ((await myHolonRole(hs, holon)) !== 'admin') throw new Error('Only an admin of this holon can link it.');
+  if ((await myHolonRole(hs, holon)) !== 'admin') throw new Error('Only an ambassador of this holon can link it.');
   return key;
 }
 
@@ -198,31 +198,31 @@ export interface OfferResult {
 }
 
 /**
- * Step 1, on the screen: an admin of `holon` offers a link. Writes the
- * `offered` record (signed by the admin) and returns the token — the only
+ * Step 1, on the screen: an ambassador of `holon` offers a link. Writes the
+ * `offered` record (signed by the ambassador) and returns the token — the only
  * copy; it must go out in the deep link and nowhere else.
  */
 export async function offerTelegramLink(hs: HoloSphere, holon: string, opts: { token?: string; now?: number } = {}): Promise<OfferResult> {
   const h = String(holon ?? '').trim();
   if (!isHolonId(h)) throw new Error('Only a key-founded holon can be linked to a Telegram chat.');
-  const admin = await requireAdmin(hs, h);
+  const ambassador = await requireAmbassador(hs, h);
   const token = opts.token ?? linkToken();
   const id = linkId(token);
-  const record: LinkRecord = { id, kind: 'telegram', status: 'offered', by: admin, at: opts.now ?? Date.now() };
+  const record: LinkRecord = { id, kind: 'telegram', status: 'offered', by: ambassador, at: opts.now ?? Date.now() };
   await hs.put(h, LINKS_LENS, record);
   return { token, id, record, payload: linkPayload(h, token) };
 }
 
 export interface LinkOffer {
   record: LinkRecord;
-  /** The admin who signed it. */
+  /** The ambassador who signed it. */
   author: string;
 }
 
 /**
- * The offer `id` in `holon`, as signed by a key that was an ADMIN of the
+ * The offer `id` in `holon`, as signed by a key that was an AMBASSADOR of the
  * holon at that moment — the newest such envelope. A plain read would hand
- * back the newest claim by any accepted member; only an admin may offer.
+ * back the newest claim by any accepted member; only an ambassador may offer.
  * Syncs the holon's log and lens first, so a bot that never saw the holon
  * can judge it.
  */
@@ -271,7 +271,7 @@ export type AcceptResult = { ok: true; holon: string; chat: string; id: string; 
 
 /**
  * Step 2, in the bot (signed by the chat's holon key): honour a link offer.
- * Founds the chat's holon when it is new, seats the offering admin in it,
+ * Founds the chat's holon when it is new, seats the offering ambassador in it,
  * writes the `accepted` record, and leaves a claim record so the screen
  * learns which chat answered. The caller checks the Telegram side (who
  * tapped, and that they admin the chat) before calling.
@@ -286,11 +286,11 @@ export async function acceptTelegramLink(hs: HoloSphere, input: AcceptInput): Pr
   const now = input.now ?? Date.now();
   if (!isFreshLink(offer.record, now)) return { ok: false, refused: 'stale' };
   // Single use: the same link tapped in a second chat must not seat the
-  // admin there too. The claim record is the mark the first tap leaves.
+  // ambassador there too. The claim record is the mark the first tap leaves.
   if (await readHolonClaim(hs, id, { now })) return { ok: false, refused: 'wrong-state' };
 
   const chat = String(input.chat.id ?? '').trim();
-  // Found T when it is new and seat the offering admin — ours to sign since
+  // Found T when it is new and seat the offering ambassador — ours to sign since
   // the bot key is (or becomes) T's genesis. Never unseats anyone.
   await syncMembersLog(hs, chat, new Map<string, Role>([[offer.author, 'admin']]), { prune: false });
   try {
@@ -356,12 +356,12 @@ export async function readLinkAccept(hs: HoloSphere, input: { holon: string; id:
 
 /**
  * Step 3b, on the screen, after a human confirmed the chat: mark the link
- * `linked` and seat the chat's anchor (the bot key) as an admin of the
+ * `linked` and seat the chat's anchor (the bot key) as an ambassador of the
  * holon. Idempotent for the same chat.
  */
 export async function completeTelegramLink(hs: HoloSphere, input: { holon: string; id: string; chat: string; anchor: string; name?: string; now?: number }): Promise<LinkRecord> {
   const holon = String(input.holon ?? '').trim();
-  await requireAdmin(hs, holon);
+  await requireAmbassador(hs, holon);
   if (!HEX64.test(input.anchor)) throw new Error('completeTelegramLink: the chat anchor must be a pubkey');
   const current = await readOwn(hs, holon, input.id);
   if (!current) throw new Error('No offer of ours to complete.');
@@ -378,7 +378,7 @@ export async function completeTelegramLink(hs: HoloSphere, input: { holon: strin
 /** Step 4, on the screen: drop the link and unseat the chat's key. */
 export async function unlinkTelegram(hs: HoloSphere, holon: string, id: string, now = Date.now()): Promise<LinkRecord | null> {
   const h = String(holon ?? '').trim();
-  await requireAdmin(hs, h);
+  await requireAmbassador(hs, h);
   const current = await readOwn(hs, h, id);
   if (!current || !nextLinkState(current.status, 'unlink')) return null;
   const record: LinkRecord = { ...current, status: 'unlinked', at: now };
@@ -393,7 +393,7 @@ export async function unlinkTelegram(hs: HoloSphere, holon: string, id: string, 
   return record;
 }
 
-/** Step 4, in the bot: drop the link from the chat's side and unseat the holon's admin. */
+/** Step 4, in the bot: drop the link from the chat's side and unseat the holon's ambassador. */
 export async function unlinkChat(hs: HoloSphere, chat: string, id: string, now = Date.now()): Promise<LinkRecord | null> {
   const c = String(chat ?? '').trim();
   const current = await readOwn(hs, c, id);
@@ -437,11 +437,11 @@ export async function linkedHolons(hs: HoloSphere, chat: string): Promise<LinkRe
 }
 
 /**
- * The keys a chat's links seat as admins (each accepted link's offering
- * admin), for the bot's roster sync: without them a prune would unseat
- * the dashboard admin on the next refresh.
+ * The keys a chat's links seat as ambassadors (each accepted link's offering
+ * ambassador), for the bot's roster sync: without them a prune would unseat
+ * the dashboard ambassador on the next refresh.
  */
-export async function linkedAdmins(hs: HoloSphere, chat: string): Promise<Map<string, Role>> {
+export async function linkedAmbassadors(hs: HoloSphere, chat: string): Promise<Map<string, Role>> {
   const out = new Map<string, Role>();
   for (const r of await linkedHolons(hs, chat)) if (r.peerAnchor) out.set(r.peerAnchor.toLowerCase(), 'admin');
   return out;
@@ -449,7 +449,7 @@ export async function linkedAdmins(hs: HoloSphere, chat: string): Promise<Map<st
 
 /**
  * Bring the chat's members into every holon it is linked to — only where
- * this key (the bot's) is already seated as an admin there, and never
+ * this key (the bot's) is already seated as an ambassador there, and never
  * founding or pruning. Returns the holons that were synced.
  */
 export async function bridgeTelegramRoster(hs: HoloSphere, chat: string, memberKeys: Iterable<string>): Promise<string[]> {
@@ -466,7 +466,7 @@ export async function bridgeTelegramRoster(hs: HoloSphere, chat: string, memberK
       continue;
     }
     if (seated.get(key) !== 'admin') continue;
-    // Keep the holon's own admins as they are: only add what is missing.
+    // Keep the holon's own ambassadors as they are: only add what is missing.
     const want = new Map<string, Role>();
     for (const [k, role] of seated) want.set(k, role === 'admin' ? 'admin' : 'member');
     for (const [k, role] of desired) if (!want.has(k)) want.set(k, role);

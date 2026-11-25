@@ -5,7 +5,7 @@
  * The ONE rule for "does this key count for this holon, at that moment".
  *
  * The answer is itself a fold over signed events: holosphere's `_members`
- * log (a genesis key, admins adding and removing keys, folded as-of-time so
+ * log (a genesis key, ambassadors adding and removing keys, folded as-of-time so
  * a removed key keeps the writes it signed while it was in). Core wraps that
  * fold — `buildTimeline` — and adds the two things holosphere leaves to the
  * app: what to do before a holon has been founded, and how the existing
@@ -43,8 +43,8 @@ export function actorsFromMembersLog(events: MembershipEnvelope[], genesis?: str
 export interface BootstrapInput {
   /** Keys that count as members (the holon key, members' derived keys, linked keys, trusted pubkeys). */
   members: Iterable<string>;
-  /** Keys that also count as admins (the holon key, `settings.admin` members). */
-  admins?: Iterable<string>;
+  /** Keys that also count as ambassadors (the holon key, `settings.admin` members). */
+  ambassadors?: Iterable<string>;
   /** The holon key, when known — reported as the anchor. */
   genesis?: string | null;
 }
@@ -55,16 +55,16 @@ export interface BootstrapInput {
  * (`source: 'bootstrap'`) — a UI says so.
  */
 export function bootstrapActors(input: BootstrapInput): AcceptedActors {
-  const admins = new Set([...(input.admins ?? [])].map((k) => k.toLowerCase()));
+  const ambassadors = new Set([...(input.ambassadors ?? [])].map((k) => k.toLowerCase()));
   const members = new Set([...(input.members ?? [])].map((k) => k.toLowerCase()));
-  for (const a of admins) members.add(a);
+  for (const a of ambassadors) members.add(a);
   return {
     source: 'bootstrap',
     genesis: input.genesis ?? null,
     isAcceptedAt: (pub) => members.has(String(pub).toLowerCase()),
     roleAt: (pub) => {
       const k = String(pub).toLowerCase();
-      return admins.has(k) ? 'admin' : members.has(k) ? 'member' : null;
+      return ambassadors.has(k) ? 'admin' : members.has(k) ? 'member' : null;
     },
   };
 }
@@ -113,7 +113,7 @@ export interface MembersSyncResult {
 export interface MembersSyncOptions {
   /**
    * Unseat keys that are in the log but not in `desired` (default true) —
-   * only the keys THIS instance seated: a seat another admin granted (a
+   * only the keys THIS instance seated: a seat another ambassador granted (a
    * person approved by key from a screen, say) is theirs to keep, and the
    * instance's roster never knew about it. Pass false when `desired` may be
    * incomplete — a roster read that came back empty on a cold start must
@@ -134,9 +134,9 @@ export interface MembersSyncOptions {
 /**
  * Bring a holon's signed `_members` log in line with `desired` (pubkey →
  * role), signing with the instance key. Founds the holon on first use (the
- * instance key becomes genesis admin), then adds, removes and re-roles the
+ * instance key becomes genesis ambassador), then adds, removes and re-roles the
  * difference. Idempotent: an unchanged roster issues nothing. The instance
- * must hold the holon key (or an admin key) for the ops to count.
+ * must hold the holon key (or an ambassador key) for the ops to count.
  */
 export async function syncMembersLog(hs: HoloSphere, holon: string, desired: Map<string, Role>, opts: MembersSyncOptions = {}): Promise<MembersSyncResult> {
   const result: MembersSyncResult = { founded: false, added: [], removed: [], changed: [] };
@@ -159,12 +159,12 @@ export async function syncMembersLog(hs: HoloSphere, holon: string, desired: Map
   // Ops are folded by (time, id): a remove and a re-add of one key in the
   // same second would sort `add` before `remove` and drop the key, so the
   // re-add is stamped one second later. For the same reason every op here is
-  // stamped AFTER the log's latest entry — a key seated as admin this very
+  // stamped AFTER the log's latest entry — a key seated as ambassador this very
   // second could otherwise see its own adds sort before its seat and count
   // for nothing.
   const now = await nextMembersAt(hs, h);
   for (const [pub, role] of want) {
-    if (pub === me) continue; // genesis is an admin by construction
+    if (pub === me) continue; // genesis is an ambassador by construction
     const have = current.get(pub);
     if (have === role) continue;
     if (have) {
@@ -188,7 +188,7 @@ export async function syncMembersLog(hs: HoloSphere, holon: string, desired: Map
 
 /**
  * Who seated each currently seated key: the author of the add that holds,
- * folded the way the timeline folds (genesis first, admin-gated, by time
+ * folded the way the timeline folds (genesis first, ambassador-gated, by time
  * then id). Lowercase keys.
  */
 export function seatAuthors(events: MembershipEnvelope[]): Map<string, string> {

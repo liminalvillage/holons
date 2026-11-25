@@ -121,8 +121,8 @@
 
     let toast: { kind: 'success' | 'error'; message: string } | null = null;
     // Both halves of each link, from this holon's side: a link has one half
-    // per holon, each its own admins' word (core federation/requests). A lane
-    // this holon opened waits until the partner's admins accept it.
+    // per holon, each its own ambassadors' word (core federation/requests). A lane
+    // this holon opened waits until the partner's ambassadors accept it.
     let linkStates: Record<string, FederationLinkState> = {};
     // Partners asking this holon to link (or to drop a link they ended).
     let incoming: FederationRequest[] = [];
@@ -136,7 +136,7 @@
     let keyBusy = '';
     let privacyBusy = '';
     // Where the signed-in key stands with this holon: the federation record
-    // is an admin's word, a lock a member's (`may(standing, …)`, the one
+    // is an ambassador's word, a lock a member's (`may(standing, …)`, the one
     // table every surface reads). Re-read on login and on holon change.
     let standing: WriteStanding | null = null;
     async function loadStanding() {
@@ -279,7 +279,7 @@
         }
     }
 
-    /** Each link's two halves, and the requests waiting for this holon's admins. */
+    /** Each link's two halves, and the requests waiting for this holon's ambassadors. */
     async function loadRequests(holons: FederatedHolon[]) {
         if (!holosphere || !currentHolonId) return;
         const holon = currentHolonId;
@@ -302,8 +302,8 @@
 
     /** What happened on the partner's side, in words. */
     function outcomeMessage(outcome: FederationLinkOutcome, partnerName: string, done: string): { kind: 'success' | 'error'; message: string } {
-        if (outcome.self === 'held') return { kind: 'error', message: nn('Only an admin of this {@holon} can change its federation') };
-        if (outcome.partner === 'requested') return { kind: 'success', message: `${done} — asked ${partnerName}'s admins to accept` };
+        if (outcome.self === 'held') return { kind: 'error', message: nn('Only an ambassador of this {@holon} can change its federation') };
+        if (outcome.partner === 'requested') return { kind: 'success', message: `${done} — asked ${partnerName}'s ambassadors to accept` };
         return { kind: 'success', message: done };
     }
 
@@ -424,7 +424,7 @@
             if (outcome.self !== 'held') await loadFederationData();
             const msg = outcomeMessage(outcome, resolvedName(holonId, $nameMap), 'Federation removed');
             showToast(msg.kind, outcome.partner === 'requested'
-                ? `Federation removed — asked ${resolvedName(holonId, $nameMap)}'s admins to drop their side`
+                ? `Federation removed — asked ${resolvedName(holonId, $nameMap)}'s ambassadors to drop their side`
                 : msg.message);
         } catch (err) {
             showToast('error', err instanceof Error ? err.message : 'Failed to remove federation');
@@ -445,11 +445,11 @@
                 holonName: holonName || undefined,
             });
             if (outcome.self === 'held') {
-                showToast('error', nn('Only an admin of this {@holon} can change its federation'));
+                showToast('error', nn('Only an ambassador of this {@holon} can change its federation'));
             } else {
                 await loadFederationData();
                 if (outcome.partner === 'requested') {
-                    showToast('success', `Asked ${holon ? displayNameOf(holon) : resolvedName(holonId, $nameMap)}'s admins to accept the change`);
+                    showToast('success', `Asked ${holon ? displayNameOf(holon) : resolvedName(holonId, $nameMap)}'s ambassadors to accept the change`);
                 }
             }
         } catch (err) {
@@ -557,8 +557,8 @@
     />
 
     {#if currentHolonId && viewMode === 'list' && !canEdit}
-        <p class="admin-note" role="status">
-            Only an admin of this {words.holon} changes who it federates with and which lenses flow; your changes here would be recorded but not counted.
+        <p class="ambassador-note" role="status">
+            Only an ambassador of this {words.holon} changes who it federates with and which lenses flow; your changes here would be recorded but not counted.
         </p>
     {/if}
     {#if currentHolonId && viewMode === 'list'}
@@ -601,7 +601,7 @@
 
     {#if currentHolonId && viewMode === 'list' && incoming.length && canEdit}
         <!-- A link has a half per holon; these partners linked from their
-             side and ask this holon's admins for ours. -->
+             side and ask this holon's ambassadors for ours. -->
         <section class="requests-card" aria-label="Federation requests" transition:slide>
             <div class="requests-card__title">Federation requests ({incoming.length})</div>
             {#each incoming as req (req.from)}
@@ -664,7 +664,7 @@
                 on:click={() => (showAddDialog = true)}
                 disabled={!canEdit}
                 aria-label="Add Federation"
-                title={canEdit ? 'Add Federation' : nn('Only an admin of this {@holon} can federate it')}
+                title={canEdit ? 'Add Federation' : nn('Only an ambassador of this {@holon} can federate it')}
             >
                 Add Federation
             </button>
@@ -699,7 +699,7 @@
                                 </button>
                                 <div class="fed-card__id" title={holon.id}>{shortId(holon.id)}</div>
                                 {#if linkStates[holon.id]?.outgoing}
-                                    <div class="fed-card__pending" role="status">Waiting for {name}'s admins to accept</div>
+                                    <div class="fed-card__pending" role="status">Waiting for {name}'s ambassadors to accept</div>
                                 {:else if linkStates[holon.id]?.incoming}
                                     <div class="fed-card__pending" role="status">{name} asks for a change — see requests above</div>
                                 {/if}
@@ -720,7 +720,7 @@
                                 type="button"
                                 class="icon-btn icon-btn--danger"
                                 on:click={() => removeFederation(holon.id)}
-                                title={canEdit ? 'Remove federation' : nn('Only an admin of this {@holon} can unlink a partner')}
+                                title={canEdit ? 'Remove federation' : nn('Only an ambassador of this {@holon} can unlink a partner')}
                                 aria-label="Remove federation with {name}"
                                 disabled={saving || !canEdit}
                             >
@@ -954,7 +954,7 @@
 {/if}
 
 <style>
-    .admin-note {
+    .ambassador-note {
         margin: 0 0 1rem;
         padding: 0.6rem 0.9rem;
         border-radius: 0.75rem;

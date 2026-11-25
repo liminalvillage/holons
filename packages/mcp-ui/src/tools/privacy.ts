@@ -58,7 +58,7 @@ export function registerPrivacyTools(server: McpServer, deps: ToolDeps): void {
   server.registerTool(
     'privacy_unlock',
     {
-      description: 'Make a private lens or item public again: its content is rewritten in the clear. The owner of the lock, or an admin of the holon who holds the key (a member shared with).',
+      description: 'Make a private lens or item public again: its content is rewritten in the clear. The owner of the lock, or an ambassador of the holon who holds the key (a member shared with).',
       inputSchema: SCOPE,
     },
     async (args) => {

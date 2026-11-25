@@ -40,7 +40,7 @@ function share(...spheres: Host[]): void {
   }
 }
 
-/** A: alice's holon; B: bob's holon; the bot is admin of both; eve of neither. */
+/** A: alice's holon; B: bob's holon; the bot is ambassador of both; eve of neither. */
 async function world(tag: string) {
   const alice = testKey(), bob = testKey(), bot = testKey(), eve = testKey();
   const A = `-1${tag}1`, B = `-1${tag}2`;
@@ -55,8 +55,8 @@ async function world(tag: string) {
   return { A, B, a, b, o, e, sync: () => share(...all) };
 }
 
-describe('linking across two holons with different admins', () => {
-  it("writes A's half and ASKS B; B's admin accepts and the flow is agreed", async () => {
+describe('linking across two holons with different ambassadors', () => {
+  it("writes A's half and ASKS B; B's ambassador accepts and the flow is agreed", async () => {
     const { A, B, a, b, sync } = await world('10');
     const out = await setFederationPartner(a, A, B, { inbound: ['library'], outbound: [], holonName: 'Lunation' });
     expect(out).toEqual({ self: 'linked', partner: 'requested' });
@@ -158,7 +158,7 @@ describe('who may decide', () => {
     expect((await federationRequestRecords(b, B)).size).toBe(0);
   });
 
-  it("B's admin may note where it announced a request; the request stays pending", async () => {
+  it("B's ambassador may note where it announced a request; the request stays pending", async () => {
     const { A, B, a, b, sync } = await world('23');
     await setFederationPartner(a, A, B, { inbound: ['library'], outbound: [] });
     sync();
@@ -177,7 +177,7 @@ describe('settling what this key asked itself', () => {
     const [req] = await pendingFederationRequests(b, B);
     expect(req.signer).toBe((a as unknown as { currentPubkey: string }).currentPubkey.toLowerCase());
 
-    // Not yet B's admin: nothing to settle.
+    // Not yet B's ambassador: nothing to settle.
     expect(await settleOwnFederationRequests(a, B)).toEqual([]);
     // Bob speaks for B but did not ask.
     expect(await settleOwnFederationRequests(b, B)).toEqual([]);

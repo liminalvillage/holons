@@ -22,8 +22,8 @@ export interface FederationLensDirections {
 
 export interface FederationSnapshot {
 	/**
-	 * Is this the record an admin of the holon signed? The federation record
-	 * is an admin's word (see `may(standing, 'federation')`): under enforced
+	 * Is this the record an ambassador of the holon signed? The federation record
+	 * is an ambassador's word (see `may(standing, 'federation')`): under enforced
 	 * reads a record nobody with that role signed does not count, and the
 	 * snapshot is empty. `false` also for a holon nobody speaks for, where
 	 * the plain record shows.

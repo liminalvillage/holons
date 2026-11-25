@@ -255,7 +255,7 @@
   // (its bot founds the signed log). A person's own holon and a cell seat nobody.
   const keyed = (id: string | null | undefined) => !!id && (isHolonId(id) || isTelegramChatId(id));
   // Where the signed-in key stands here — the rule every read applies. The way
-  // in by key alone is a signed ask (kind-9021) an admin answers; the
+  // in by key alone is a signed ask (kind-9021) an ambassador answers; the
   // signature is the proof of holding the key, nothing else is challenged.
   let standing: 'accepted' | 'held' | 'open' | null = null;
   let askBusy = false;
@@ -536,7 +536,7 @@
     saveSettings();
   }
 
-  function setAdmin(userId: string | number) {
+  function setAmbassador(userId: string | number) {
     if (userId === undefined || userId === null) return;
     settings = { ...settings, admin: userId.toString() };
     saveSettings();
@@ -857,14 +857,14 @@
             </h3>
 
             <div class="settings-field">
-              <label for="holon-admin" class="settings-field__label">Administrator</label>
+              <label for="holon-ambassador" class="settings-field__label">Ambassador</label>
               <select
-                id="holon-admin"
+                id="holon-ambassador"
                 class="input"
                 bind:value={settings.admin}
                 on:change={() => updateSetting('admin', settings.admin)}
               >
-                <option value="">Select admin</option>
+                <option value="">Select ambassador</option>
                 {#each realUsers as user}
                   <option value={user.id || user.username}>
                     {resolvedName(user.id ?? user.username, $nameMap, user)}
@@ -884,17 +884,17 @@
                         {resolvedName(user.id ?? user.username, $nameMap, user)}
                       </span>
                       {#if settings.admin === uid?.toString()}
-                        <span class="member__badge">Admin</span>
+                        <span class="member__badge">Ambassador</span>
                       {/if}
                     </div>
                     {#if settings.admin !== uid?.toString()}
                       <button
                         type="button"
                         class="btn btn--ghost btn--sm"
-                        on:click={() => setAdmin(uid)}
-                        title="Make admin"
+                        on:click={() => setAmbassador(uid)}
+                        title="Make ambassador"
                       >
-                        Make admin
+                        Make ambassador
                       </button>
                     {/if}
                   </li>
@@ -907,7 +907,7 @@
 
           <!-- Members: who is linked to this hub. One word for the whole story — a
                Telegram chat is linked to the hub (a hub born in a chat stays linked to
-               it), a person's key is linked directly or through that chat, admins link
+               it), a person's key is linked directly or through that chat, ambassadors link
                and unlink. Underneath: the signed `_members` log and kind-9021 asks. -->
           <section class="settings-section">
             <h3 class="settings-section__title">Members</h3>
@@ -923,8 +923,8 @@
                 {#if askedHere}
                   <p class="hub-key__note">
                     {isTelegramChatId(holonId) && String(holonId).startsWith('-')
-                      ? 'Asked — the admins were told in the Telegram group.'
-                      : 'Asked — an admin links your key.'}
+                      ? 'Asked — the ambassadors were told in the Telegram group.'
+                      : 'Asked — an ambassador links your key.'}
                   </p>
                 {:else}
                   <button type="button" class="btn btn--primary btn--sm" disabled={askBusy || !signer()} on:click={askSeat}>
@@ -948,7 +948,7 @@
               </p>
             {:else if founding?.kind === 'open'}
               <p class="hub-key__note hub-key__note--warn">
-                This {words.holon} has no key of its own yet. Start it with yours: you become its first admin.
+                This {words.holon} has no key of its own yet. Start it with yours: you become its first ambassador.
               </p>
               <button type="button" class="btn btn--primary btn--sm" disabled={foundBusy} on:click={foundThisHub}>
                 Start this {words.holon} with my key
@@ -1025,7 +1025,7 @@
                     Link
                   </button>
                   <button type="button" class="btn btn--ghost btn--sm" disabled={keyBusy || !keyDraft} on:click={() => addKey('admin')}>
-                    Link as admin
+                    Link as ambassador
                   </button>
                 </div>
               </div>
@@ -1048,7 +1048,7 @@
               {/each}
               {#if linkAccept}
                 <p class="hub-key__note">
-                  Link <strong>{linkAccept.record.chat?.title || linkAccept.chat}</strong>? The chat's members are linked here, the bot's key becomes an admin of this {words.holon}, and both boards show each other's items.
+                  Link <strong>{linkAccept.record.chat?.title || linkAccept.chat}</strong>? The chat's members are linked here, the bot's key becomes an ambassador of this {words.holon}, and both boards show each other's items.
                 </p>
                 <div class="hub-key__actions">
                   <button type="button" class="btn btn--primary btn--sm" disabled={linkBusy} on:click={confirmTelegramLink}>Link it</button>

@@ -93,7 +93,7 @@ export async function askToJoin(hub: string, name: string): Promise<boolean> {
   return true;
 }
 
-/** Say goodbye (a kind-9022); an admin takes the seat away. */
+/** Say goodbye (a kind-9022); an ambassador takes the seat away. */
 export async function leave(hub: string): Promise<boolean> {
   const signer = sessionSigner();
   if (!signer) return false;

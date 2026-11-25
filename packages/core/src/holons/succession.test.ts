@@ -20,7 +20,7 @@ import {
 } from './succession.js';
 
 const B = testKey(); // the bot: anchor of both chats
-const A = testKey(); // an admin seated in the old holon
+const A = testKey(); // an ambassador seated in the old holon
 const M = testKey(); // a member seated in the old holon
 const S = testKey(); // a stranger
 const hex = (k: { sk: Uint8Array }) => bytesToHex(k.sk);
@@ -207,13 +207,13 @@ describe('succeedHolon', () => {
     expect(await succeedHolon(hs, { from: OLD, to: B.pk })).toEqual({ ok: false, refused: 'not-holon' });
     expect(await succeedHolon(hs, { from: '', to: NEW })).toEqual({ ok: false, refused: 'not-holon' });
     // Nobody founded this one: there is nothing to speak for.
-    expect(await succeedHolon(hs, { from: '-555', to: NEW })).toEqual({ ok: false, refused: 'not-admin' });
+    expect(await succeedHolon(hs, { from: '-555', to: NEW })).toEqual({ ok: false, refused: 'not-ambassador' });
 
     // A member of the old holon, or a stranger, cannot move it.
     await hs.login(hex(M));
-    expect(await succeedHolon(hs, { from: OLD, to: NEW })).toEqual({ ok: false, refused: 'not-admin' });
+    expect(await succeedHolon(hs, { from: OLD, to: NEW })).toEqual({ ok: false, refused: 'not-ambassador' });
     await hs.login(hex(S));
-    expect(await succeedHolon(hs, { from: OLD, to: NEW })).toEqual({ ok: false, refused: 'not-admin' });
+    expect(await succeedHolon(hs, { from: OLD, to: NEW })).toEqual({ ok: false, refused: 'not-ambassador' });
 
     // A holon someone else already anchored is not a place to move into.
     await syncMembersLog(hs, '-1009', new Map<string, Role>(), { prune: false });
@@ -228,7 +228,7 @@ describe('succeedHolon', () => {
     expect(await succeedHolon(hs, { from: NEW, to: OLD })).toEqual({ ok: false, refused: 'cycle' });
   });
 
-  it('a successor counts only when admins of BOTH holons signed their half', async () => {
+  it('a successor counts only when ambassadors of BOTH holons signed their half', async () => {
     const hs = instance();
     await seedOld(hs);
     await syncMembersLog(hs, NEW, new Map<string, Role>(), { prune: false });
@@ -239,12 +239,12 @@ describe('succeedHolon', () => {
     await hs.login(hex(B));
     expect(await readSuccessor(hs, OLD)).toBeNull();
 
-    // The old holon's admin names a holon that never agreed.
+    // The old holon's ambassador names a holon that never agreed.
     await hs.put(OLD, SUCCESSION_LENS, { id: SUCCESSOR_ID, holon: NEW, at: Date.now(), by: B.pk });
     expect(await readSuccessor(hs, OLD)).toBeNull();
     expect(await resolveHolon(hs, OLD)).toBe(OLD);
 
-    // …until the new holon's admin signs the other half.
+    // …until the new holon's ambassador signs the other half.
     await hs.put(NEW, SUCCESSION_LENS, { id: `${PREDECESSOR_PREFIX}${OLD}`, holon: OLD, at: Date.now(), by: B.pk });
     expect(await readSuccessor(hs, OLD)).toBe(NEW);
   });

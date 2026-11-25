@@ -221,7 +221,7 @@
       <p class="intro">{$t("onb.intro", { holon: holonLabel })}</p>
       <OnboardingSteps steps={mine.view.steps} let:card>
         {#if card.confirm === "admin"}
-          <p class="hint">{$t("onb.adminTicks")}</p>
+          <p class="hint">{$t("onb.ambassadorTicks")}</p>
         {:else if card.confirm === "profile"}
           {#if mine.canTick}
             <form

@@ -9,7 +9,7 @@
  * holosphere/authority.js: the earliest self-consistent declaration is the
  * anchor every reader trusts). The bot does this for Telegram chats with the
  * holon key it holds. Nothing in that rule needs Telegram: any signed-in key
- * can found a holon it starts, become its first admin, and hand out membership
+ * can found a holon it starts, become its first ambassador, and hand out membership
  * by key — this module is that path, shared by the kiosk and the web.
  *
  * Who may found what is the one rule here (`foundingAuthority`):
@@ -17,7 +17,7 @@
  *   - a pubkey holon is its own key and needs no founding;
  *   - an h3 cell aggregates many holons and has no founder;
  *   - a Telegram chat id is the bot's to found (a person founding it from a
- *     screen would lock the bot out as admin);
+ *     screen would lock the bot out as ambassador);
  *   - a holon someone already anchored is theirs;
  *   - anything else is open — the first signed genesis wins, so a holon minted
  *     here (`newHolonId`) is founded in the same breath it is created.
@@ -215,34 +215,34 @@ export async function myHolonRole(hs: HoloSphere, holon: string): Promise<Role |
   return (await holonMembers(hs, holon)).get(me) ?? null;
 }
 
-async function requireAdmin(hs: HoloSphere, h: string): Promise<string> {
+async function requireAmbassador(hs: HoloSphere, h: string): Promise<string> {
   const me = String(hs.currentPubkey ?? '').toLowerCase();
   if (!me || !hs.signingEnabled) throw new Error('Sign in with a key first.');
-  if ((await myHolonRole(hs, h)) !== 'admin') throw new Error('Only an admin of this holon can change its keys.');
+  if ((await myHolonRole(hs, h)) !== 'admin') throw new Error('Only an ambassador of this holon can change its keys.');
   return me;
 }
 
 /**
  * Seat a key (hex or npub) in the holon, signed by this instance — which must
- * be an admin of the log for the entry to count.
+ * be an ambassador of the log for the entry to count.
  */
 export async function addHolonMember(hs: HoloSphere, holon: string, key: string, role: Role = 'member'): Promise<string> {
   const h = String(holon ?? '').trim();
   const pub = normalizePubkey(key);
   if (!pub || !HEX64.test(pub)) throw new Error('That is not a Nostr public key (hex or npub).');
-  const me = await requireAdmin(hs, h);
+  const me = await requireAmbassador(hs, h);
   if (pub === me) return pub;
   await hs.addMember(h, pub, role === 'admin' ? 'admin' : 'member', { at: await nextMembersAt(hs, h) });
   (hs as AuthorityHost)._readAuthority?.invalidate?.(h);
   return pub;
 }
 
-/** Unseat a key from the holon (admins only; never the caller's own key). */
+/** Unseat a key from the holon (ambassadors only; never the caller's own key). */
 export async function removeHolonMember(hs: HoloSphere, holon: string, key: string): Promise<string> {
   const h = String(holon ?? '').trim();
   const pub = normalizePubkey(key);
   if (!pub) throw new Error('That is not a Nostr public key (hex or npub).');
-  const me = await requireAdmin(hs, h);
+  const me = await requireAmbassador(hs, h);
   if (pub === me) throw new Error('You cannot remove your own key.');
   await hs.removeMember(h, pub, { at: await nextMembersAt(hs, h) });
   (hs as AuthorityHost)._readAuthority?.invalidate?.(h);

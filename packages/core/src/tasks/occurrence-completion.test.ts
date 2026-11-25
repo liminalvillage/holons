@@ -54,7 +54,7 @@ describe('applyOccurrenceCompletion', () => {
       ok: false,
       reason: 'forbidden',
     });
-    expect(applyOccurrenceCompletion(series, '2026-09-08', 'zed', { isAdmin: true }).ok).toBe(
+    expect(applyOccurrenceCompletion(series, '2026-09-08', 'zed', { isAmbassador: true }).ok).toBe(
       true,
     );
     expect(

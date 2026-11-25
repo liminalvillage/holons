@@ -12,7 +12,7 @@
  *   Membership   — holosphere's own signed `_members` log (genesis, add,
  *                  remove). Not a log lens: the shape is holosphere's and the
  *                  fold is `buildTimeline`; core wraps it in membership.ts.
- *   Policy       — the holon's rule for a lens, admin-signed, as-of-time.
+ *   Policy       — the holon's rule for a lens, ambassador-signed, as-of-time.
  *   Checkpoint   — a merkle root over the accepted entries of a lens in one
  *                  epoch, so readers can compare their fold with a signer's.
  */
@@ -56,7 +56,7 @@ export function logTemplate<T extends Record<string, unknown>>(input: LogTemplat
 
 /** Holosphere's signed membership log (replaceable envelope, not a log lens). */
 export const MEMBERS_LENS = '_members';
-/** Admin-signed policy records, one log lens per holon. */
+/** Ambassador-signed policy records, one log lens per holon. */
 export const POLICY_LENS = '_policy';
 /** Checkpoints over every log lens of the holon. */
 export const CHECKPOINTS_LENS = '_checkpoints';

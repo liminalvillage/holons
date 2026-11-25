@@ -1126,7 +1126,7 @@
   // stamp the previous holon's name on the new board — the id changes a tick
   // before the async bind clears the name, and a holon that resolves no name
   // of its own would then keep that borrowed one forever.
-  // Federation requests waiting for this board's admins: followed only while
+  // Federation requests waiting for this board's ambassadors: followed only while
   // this key could answer them, so nobody else is shown a badge.
   $: if (mounted)
     bindFedRequests(

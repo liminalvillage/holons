@@ -244,7 +244,7 @@
     }
 
     // Where the signed-in key stands with each holon an item is WRITTEN to
-    // (this holon, or a federated item's owner): an admin there may return,
+    // (this holon, or a federated item's owner): an ambassador there may return,
     // reschedule or cancel someone else's booking (`library.manage`, the one
     // capability table). Re-read on login change; one lookup per holon.
     let standings: Record<string, WriteStanding | null> = {};
@@ -608,7 +608,7 @@
                         `(${formatReturnDate(res.conflict.start)} → ${formatReturnDate(res.conflict.end)}).`
                     );
                 } else if (res.reason === 'forbidden') {
-                    alert('Only the booking\'s borrower or an admin can change its dates.');
+                    alert('Only the booking\'s borrower or an ambassador can change its dates.');
                 } else {
                     alert('Could not save the booking.');
                 }
@@ -651,7 +651,7 @@
             const res = await coreReturnItem(holosphere, holon, key, actor, { manage });
             if (!res.ok) {
                 if (res.reason === 'forbidden') {
-                    alert(`Only ${holding?.borrower || 'the borrower'} or an admin can return this item.`);
+                    alert(`Only ${holding?.borrower || 'the borrower'} or an ambassador can return this item.`);
                 } else if (res.reason === 'not_borrowed') {
                     alert('This item is not currently borrowed.');
                 } else {
@@ -661,7 +661,7 @@
             }
 
             // Refund the borrow charge (skipped by core for owners/valueless
-            // items) — to the BORROWER, also when an admin returned for them.
+            // items) — to the BORROWER, also when an ambassador returned for them.
             if (res.item && !res.isOwner) {
                 await recordReturnAccounting({ db: holosphere }, holon, res.borrower ?? actor, res.item);
             }
@@ -684,7 +684,7 @@
         const mine = isMyBooking(booking, myBorrowerIds, myBorrowerNames);
         const manage = canManageItem(item, standings);
         if (!mine && !manage) {
-            alert(`Only ${booking.borrower || 'the borrower'} or an admin can cancel this booking.`);
+            alert(`Only ${booking.borrower || 'the borrower'} or an ambassador can cancel this booking.`);
             return;
         }
         if (!confirm(
@@ -699,13 +699,13 @@
             const res = await coreCancelBooking(holosphere, holon, key, booking.id, actor, { manage });
             if (!res.ok) {
                 alert(res.reason === 'forbidden'
-                    ? `Only ${booking.borrower || 'the borrower'} or an admin can cancel this booking.`
+                    ? `Only ${booking.borrower || 'the borrower'} or an ambassador can cancel this booking.`
                     : 'Could not cancel the booking.');
                 return;
             }
 
             // Refund the charge taken when the booking was created — to the
-            // borrower, also when an admin cancelled it for them.
+            // borrower, also when an ambassador cancelled it for them.
             if (res.item) {
                 await recordReturnAccounting({ db: holosphere }, holon, res.borrower ?? actor, res.item);
             }
@@ -1164,7 +1164,7 @@
                                         </button>
                                     {/if}
                                     {#if holding && !holdingMine && manageable}
-                                        <!-- Admin: end a booking someone else holds (e.g. late, never returned). -->
+                                        <!-- Ambassador: end a booking someone else holds (e.g. late, never returned). -->
                                         <button
                                             on:click|stopPropagation={() => handleReturn(item)}
                                             class="px-4 py-2 rounded-lg bg-emerald-700/60 hover:bg-emerald-700 text-white text-sm font-medium transition-colors border border-emerald-500/40"
@@ -1641,7 +1641,7 @@
                                                     on:click={() => openEditBooking(selectedItem!, booking)}
                                                     class="px-2 py-0.5 rounded bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 text-xs font-medium transition-colors border border-indigo-600/30"
                                                     aria-label={mine ? 'Change this booking' : `Change ${booking.borrower || 'this'}'s booking`}
-                                                    title={mine ? undefined : nn('As an admin of this {@holon}')}
+                                                    title={mine ? undefined : nn('As an ambassador of this {@holon}')}
                                                 >
                                                     Change
                                                 </button>
@@ -1650,7 +1650,7 @@
                                                     on:click={() => cancelBooking(selectedItem!, booking)}
                                                     class="px-2 py-0.5 rounded bg-red-600/20 hover:bg-red-600/40 text-red-300 text-xs font-medium transition-colors border border-red-600/30"
                                                     aria-label={mine ? 'Cancel this booking' : `Cancel ${booking.borrower || 'this'}'s booking`}
-                                                    title={mine ? undefined : nn('As an admin of this {@holon}')}
+                                                    title={mine ? undefined : nn('As an ambassador of this {@holon}')}
                                                 >
                                                     Cancel
                                                 </button>

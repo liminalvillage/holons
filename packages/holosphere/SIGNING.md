@@ -161,7 +161,7 @@ const tasks   = await sphere.getAll(holon, 'tasks');    // only keys you trust
 const dropped = await sphere.getPending(holon, 'tasks');// unsigned / untrusted / invalid
 ```
 
-No genesis, no admins, no per-holon setup — each reader curates their own trust.
+No genesis, no ambassadors, no per-holon setup — each reader curates their own trust.
 
 ### Holon-defined authority (`enforce: 'authority'`) — what the apps run
 
@@ -200,7 +200,7 @@ key the bot has not yet attested or synced into `_members`) is visible to its
 author and waits in `getPending` for everyone else until the bot founds the
 holon and syncs the roster. Membership is as-of-time, so a record signed
 BEFORE its author was seated never counts — a person's profile in a
-key-founded holon is written after the admin's approval, and a link offer is
+key-founded holon is written after the ambassador's approval, and a link offer is
 judged by the author's role at the envelope's time (`@holons/core/holons`,
 `@holons/core/linking`, `docs/identity-linking.md`).
 
@@ -208,26 +208,27 @@ judged by the author's role at the envelope's time (`@holons/core/holons`,
 
 Nothing is refused at write time; what a write is *worth* is decided on
 read, by everyone, with one table (`capabilities.js`, re-exported by
-`@holons/core/holosphere`):
+`@holons/core/holosphere`). The ambassador role is stored as `admin` in
+the `_members` log (kept on the wire for existing signed logs):
 
 | action | role whose signature counts |
 | --- | --- |
 | content, ordinary settings fields | member |
 | making a lens or card private (the locker owns its vault) | member |
-| seating keys (`_members`) | admin |
-| the guarded settings fields: `holonPubkey`, `admin`, `nostrTrustedPubkeys`, `identityProviders`, `valueEquation`/`equation`, `allocation`, `pot`, `payout`, `bundle`, `treasury` | admin |
-| a log's rule (`_policy`) | admin |
-| the federation record — partners, and which lenses flow each way | admin |
-| unlocking or taking over a scope another key locked | admin |
+| seating keys (`_members`) | ambassador |
+| the guarded settings fields: `holonPubkey`, `admin`, `nostrTrustedPubkeys`, `identityProviders`, `valueEquation`/`equation`, `allocation`, `pot`, `payout`, `bundle`, `treasury` | ambassador |
+| a log's rule (`_policy`) | ambassador |
+| the federation record — partners, and which lenses flow each way | ambassador |
+| unlocking or taking over a scope another key locked | ambassador |
 
 The signer applies it twice. On `settings`, each guarded field is taken from
-the newest envelope an **admin** (as of its time) signed; a member's settings
+the newest envelope an **ambassador** (as of its time) signed; a member's settings
 write still counts for every other field (`GUARDED_SETTINGS_FIELDS`). On the
 global `federation` table — keyed by the holon a record describes — the
-record is the newest an admin of *that holon* signed
+record is the newest an ambassador of *that holon* signed
 (`signer.resolveOwned`, `getFederation` / `getFederationStanding`); a holon
-nobody speaks for keeps the plain record, and a legacy record no admin ever
-signed is adopted by the first admin write. The privacy layer applies it to
+nobody speaks for keeps the plain record, and a legacy record no ambassador ever
+signed is adopted by the first ambassador write. The privacy layer applies it to
 the vault (PRIVACY.md). Every surface asks the same question before a write
 — `may(await writeAcceptance(hs, holon), action)` — and greys the control out
 with the reason instead of saving into silence.
@@ -236,13 +237,13 @@ with the reason instead of saving into silence.
 
 When the *space* should define who may write (a shared treasury, a formal org) rather
 than each reader choosing, use the signed `_members` log: a genesis key founds the
-holon and admins add/remove members, folded **as-of-time** (a key's past writes stay
+holon and ambassadors add/remove members, folded **as-of-time** (a key's past writes stay
 valid after it's removed).
 
 ```js
 await sphere.enableSigning({ relays: ['wss://relay'], enforce: 'membership' });
-await sphere.foundHolon(holon);                 // your key becomes genesis admin
-await sphere.addMember(holon, theirPubkey);     // or role 'admin'
+await sphere.foundHolon(holon);                 // your key becomes genesis ambassador
+await sphere.addMember(holon, theirPubkey);     // or role 'admin' (the ambassador)
 await sphere.removeMember(holon, theirPubkey);
 await sphere.getMembers(holon);                 // Map(pubkey -> 'admin' | 'member')
 // sphere.setGenesis(holon, pubkey) to pin a trust anchor you were given (else TOFU)
@@ -288,7 +289,7 @@ signer), not its self-reported fields.
 | `await sphere.aggregate(holon, lens, subject?)` | Per-author records (latest per trusted actor; `_owner`/`_subject`) for signed collaborative state |
 | `sphere.setPerActorLens(lens)` (or `enableSigning({ perActorLenses })`) | Mark a lens per-author → enforce `getAll` aggregates it |
 | `await sphere.getPending(holon, lens)` | Items hidden by enforce-mode (unsigned/untrusted/invalid) |
-| `await sphere.foundHolon(holon)` | *(membership mode)* Self-sign the genesis event (you become admin) |
+| `await sphere.foundHolon(holon)` | *(membership mode)* Self-sign the genesis event (you become ambassador) |
 | `await sphere.addMember(holon, pubkey, role?)` / `removeMember(...)` / `getMembers(holon)` / `setGenesis(holon, pubkey)` | *(membership mode)* Manage the signed `_members` log |
 | `sphere.disableSigning()` | Stop signing, close relay connections |
 | `sphere.signingEnabled` | Boolean |

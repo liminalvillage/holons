@@ -2,9 +2,9 @@
 /**
  * Federation partner management — THE write path for federation links.
  *
- * A link has two halves, one per holon, each its own admins' word. An edit
+ * A link has two halves, one per holon, each its own ambassadors' word. An edit
  * writes this side and either writes the partner's (this key speaks for it
- * too) or asks the partner's admins (./requests.ts).
+ * too) or asks the partner's ambassadors (./requests.ts).
  *
  * The native holosphere federation record (`getFederation` / `federateHolon`)
  * is the single store: `subscribeFederated` reads it, `publishToFederation`
@@ -94,13 +94,13 @@ export function sanitizeLenses(lenses: string[]): string[] {
 /** What happened on each side of a link edit. */
 export interface FederationLinkOutcome {
 	/**
-	 * `holon`'s own half: written by an admin (`linked`/`removed`), or `held` —
+	 * `holon`'s own half: written by an ambassador (`linked`/`removed`), or `held` —
 	 * this key does not speak for `holon`, so nothing was written at all.
 	 */
 	self: 'linked' | 'removed' | 'held';
 	/**
 	 * The partner's half: written directly because this key speaks for it
-	 * too (`linked`/`removed`), its admins ASKED (`requested`), or already as
+	 * too (`linked`/`removed`), its ambassadors ASKED (`requested`), or already as
 	 * wanted (`unchanged`). `skipped` when `self` is held.
 	 */
 	partner: 'linked' | 'removed' | 'requested' | 'unchanged' | 'skipped';
@@ -108,8 +108,8 @@ export interface FederationLinkOutcome {
 
 export interface LinkSideOptions {
 	/**
-	 * Ask the partner's admins even when this key could write its half — a
-	 * service key that is admin everywhere (the bot) must not decide for a
+	 * Ask the partner's ambassadors even when this key could write its half — a
+	 * service key that is ambassador everywhere (the bot) must not decide for a
 	 * holon whose people did not ask.
 	 */
 	askPartner?: boolean;
@@ -130,7 +130,7 @@ async function speaksFor(holosphere: HoloSphere, holon: string): Promise<boolean
  *
  * Writes `holonId`'s half — FULLY REPLACING its per-partner lens config, so
  * always pass the complete inbound/outbound arrays. The partner's half is its
- * admins' word: written here only when this key is one of them (and the
+ * ambassadors' word: written here only when this key is one of them (and the
  * caller did not ask to ask); otherwise the partner is sent a federation
  * request (see ./requests.ts) unless its half already matches. Writes config
  * only: no data propagation, no holograms.
@@ -168,7 +168,7 @@ export async function setFederationPartner(
 /**
  * Remove a federation partner: `holonId`'s half always (when this key speaks
  * for it); the partner's half directly when this key speaks for it too,
- * otherwise its admins are asked to drop it — or a request still waiting is
+ * otherwise its ambassadors are asked to drop it — or a request still waiting is
  * withdrawn.
  */
 export async function removeFederationPartner(

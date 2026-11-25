@@ -1615,7 +1615,7 @@
     });
     saving = false;
     if (res.ok) {
-      // Refund whoever borrowed it — an admin returning for them is not
+      // Refund whoever borrowed it — an ambassador returning for them is not
       // the one who paid.
       if (res.item)
         await recordReturnAccounting(
@@ -1642,10 +1642,10 @@
     returnableBooking(item, borrowActor() ?? { id: "" }, clock)
   );
 
-  // An admin of the item's holon may return or move SOMEONE ELSE'S booking —
+  // An ambassador of the item's holon may return or move SOMEONE ELSE'S booking —
   // the borrower who never pressed Return (core `library.manage`). Our
   // standing is this holon's, so a federated item (owned elsewhere) is left
-  // to its own holon's admins.
+  // to its own holon's ambassadors.
   $: ownHolonItem = !!(
     sel &&
     sel.kind === "thing" &&
@@ -1654,7 +1654,7 @@
   $: canManage = ownHolonItem && may($standing, "library.manage");
   $: canReturnFor =
     !canReturn && canManage && status.state !== "available" && !!activeBooking;
-  // The held booking's dates: its borrower, or an admin, may move them
+  // The held booking's dates: its borrower, or an ambassador, may move them
   // (e.g. give a late borrower more time).
   $: canChangeDates = !!(
     activeBooking &&

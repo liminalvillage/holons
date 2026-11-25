@@ -42,7 +42,10 @@ import {
 } from '@holons/core/linking';
 import { federationLinkState, laneState } from '@holons/core/federation';
 import { linkContext, outcomeText } from './federationLinks.js';
-import { initiatorAdmin } from './initiatorAdmin.js';
+import {
+  initiatorAmbassador,
+  resolveAmbassadorId,
+} from './initiatorAmbassador.js';
 import { ONBOARDING_DEEPLINK, startFromDeeplink } from '../scenes/flow.js';
 import { askArgs, askMissing } from './AskMissing.js';
 import { holonText } from '../utils/holonNoun.js';
@@ -153,7 +156,7 @@ const ALL_AVAILABLE_LENSES: readonly string[] = ALL_AVAILABLE_LENSES_CORE;
  * Settings management class for configuring holon behavior and preferences.
  *
  * @class Settings
- * @description Manages all holon settings including language, theme, admin configuration,
+ * @description Manages all holon settings including language, theme, ambassador configuration,
  * federation setup, notification preferences, and quest display modes. Provides both
  * command-based and menu-based configuration interfaces.
  *
@@ -210,8 +213,8 @@ export default class Settings {
     this.scenes.addUserToDatabase = this.addUserToDatabase.bind(this);
     this.scenes.cleanupSceneMessages = this.cleanupSceneMessages.bind(this);
 
-    // Register admin selection callback at bot level instead of scene level
-    this.bot.action(/admin_select_(.+)/, async ctx => {
+    // Register ambassador selection callback at bot level instead of scene level
+    this.bot.action(/ambassador_select_(.+)/, async ctx => {
       await ctx.answerCbQuery().catch();
       const userId = ctx.match[1];
       const holonId = ctx.callbackQuery.message.chat.id;
@@ -228,7 +231,7 @@ export default class Settings {
         return;
       }
 
-      // Set as admin
+      // Set as ambassador
       let settings = await this.getSettings(holonId);
       settings.admin = user.id.toString();
       await this.setSettings(settings);
@@ -238,14 +241,14 @@ export default class Settings {
         ? '@' + user.username
         : user.first_name || user.id.toString();
       await ctx.answerCbQuery(
-        i18next.t('settings_admin_updated', {
+        i18next.t('settings_ambassador_updated', {
           lng: language,
-          admin: displayName,
+          ambassador: displayName,
         })
       );
 
-      // Show updated admin selection menu
-      await this.showAdminSelectionMenu(ctx, true);
+      // Show updated ambassador selection menu
+      await this.showAmbassadorSelectionMenu(ctx, true);
     });
 
     // Handle noop callbacks for header-only buttons (do nothing, just acknowledge)
@@ -426,35 +429,18 @@ export default class Settings {
           // named after the chat when it has no name yet.
           const settings = await this.getSettings(holonId);
           const title = (update.chat as { title?: string }).title?.trim();
-          // Whoever brought the bot in (the chat's creator or a Telegram
-          // admin) becomes the holon's admin when it has none, so their key
-          // is seated as admin and can federate etc. from a screen.
-          let initiatorStatus: string | undefined;
-          if (
-            update.from &&
-            !update.from.is_bot &&
-            !String(settings.admin ?? '').trim()
-          ) {
-            try {
-              initiatorStatus = (
-                await ctx.telegram.getChatMember(holonId, update.from.id)
-              ).status;
-            } catch (e) {
-              console.warn(
-                `[settings] ${holonId}: could not read the initiator's chat status:`,
-                (e as Error)?.message
-              );
-            }
-          }
-          const admin = initiatorAdmin(settings, update.from, initiatorStatus);
+          // Whoever brought the bot in introduced the holon: they become its
+          // ambassador when it has none, so their key is seated in the
+          // `_members` log and can federate etc. from a screen.
+          const ambassador = initiatorAmbassador(settings, update.from);
           await this.db.put(holonId.toString(), 'settings', {
             ...settings,
             ...(!settings.name && title ? { name: title } : {}),
-            ...(admin ? { admin } : {}),
+            ...(ambassador ? { admin: ambassador } : {}),
           });
-          if (admin)
+          if (ambassador)
             console.log(
-              `[settings] ${holonId}: ${admin} added the bot — holon admin`
+              `[settings] ${holonId}: ${ambassador} added the bot — holon ambassador`
             );
           this._settingsCache.delete(holonId);
           const language = settings.language;
@@ -994,8 +980,8 @@ export default class Settings {
       else ctx.reply('Only a chat admin can perform this action');
     });
 
-    this.bot.command('setadmin', async ctx => {
-      if (await utils.isAdmin(ctx)) await this.setAdmin(ctx);
+    this.bot.command('setambassador', async ctx => {
+      if (await utils.isAdmin(ctx)) await this.setAmbassador(ctx);
       else ctx.reply('Only a chat admin can perform this action');
     });
 
@@ -1256,12 +1242,12 @@ export default class Settings {
             })
             .catch(e => console.log('Error in level menu:', e));
           break;
-        case 'admin':
-          // Store the original message ID in scene state before entering admin scene
+        case 'ambassador':
+          // Store the original message ID in scene state before entering ambassador scene
           ctx.scene.state = {
             originalMessageId: ctx.callbackQuery.message.message_id,
           };
-          await this.showAdminSelectionMenu(ctx, true);
+          await this.showAmbassadorSelectionMenu(ctx, true);
           break;
         case 'users':
           // Enter users management scene
@@ -1327,7 +1313,7 @@ export default class Settings {
                 '👥 Roles & Responsibilities:\n' +
                 '• Assign roles to members\n' +
                 '• Track contributions and participation\n' +
-                '• Manage administrative access\n\n' +
+                "• Choose your {@holon}'s ambassador\n\n" +
                 '⚖️ Value System:\n' +
                 '• Configure value equation weights\n' +
                 '• Track member contributions\n' +
@@ -1337,7 +1323,7 @@ export default class Settings {
                 '• Customize language and theme\n' +
                 '• Set your timezone for coordination\n\n' +
                 'To get started:\n' +
-                '1. Set an admin using the Admin setting\n' +
+                '1. Set an ambassador using the Ambassador setting\n' +
                 "2. Define your {@holon}'s purpose\n" +
                 '3. Add your core values\n' +
                 '4. Define accountability domains\n' +
@@ -3235,31 +3221,50 @@ export default class Settings {
     ctx.reply('Level changed to ' + level);
   }
 
-  async setAdmin(ctx) {
+  async setAmbassador(ctx) {
     const holonId = ctx.message.chat.id;
-    const admin = ctx.message.text.split(' ')[1];
-    if (admin === undefined || admin === null) {
+    const ambassador = ctx.message.text.split(' ')[1];
+    if (ambassador === undefined || ambassador === null) {
       return this.askFor(
         ctx,
         [
           {
-            key: 'admin',
-            ask: 'ask_setadmin_admin',
+            key: 'ambassador',
+            ask: 'ask_setambassador_ambassador',
             question:
-              'Who should be the admin of this holon? Send their @username.',
+              'Who should be the ambassador of this holon? Send their @username.',
             validate: oneWord,
-            error: 'ask_err_setadmin_admin',
+            error: 'ask_err_setambassador_ambassador',
             errorText: 'Please send one @username, without spaces.',
           },
         ],
-        ctx => this.setAdmin(ctx),
-        'Please specify the admin. Example: /setAdmin @admin'
+        ctx => this.setAmbassador(ctx),
+        'Please specify the ambassador. Example: /setambassador @username'
       );
     }
+    // Store the Telegram user id: the membership sync derives the ambassador's
+    // key from it, so an @username would seat a key nobody holds.
+    const users = await this.db.getAll(holonId.toString(), 'users');
+    const mention = (ctx.message.entities ?? []).find(
+      e => e.type === 'text_mention'
+    )?.user;
+    const ambassadorId = resolveAmbassadorId(ambassador, users, mention);
+    if (!ambassadorId) {
+      ctx.reply(
+        `I don't know ${ambassador} in this group yet. They need to write here once, then try again — or pick them from Settings → Ambassador.`
+      );
+      return;
+    }
     let settings = await this.getSettings(holonId);
-    settings.admin = admin;
-    await this.db.put(holonId.toString(), 'settings', settings);
-    ctx.reply('Admin changed to ' + admin);
+    settings.admin = ambassadorId;
+    await this.setSettings(settings);
+    const chosen = users.find(u => String(u.id) === ambassadorId);
+    ctx.reply(
+      'Ambassador changed to ' +
+        (chosen?.username
+          ? '@' + chosen.username
+          : chosen?.first_name || ambassadorId)
+    );
   }
 
   async federate(ctx) {
@@ -3727,7 +3732,7 @@ export default class Settings {
   //         [{ text: 'Language:'}], [{ text: 'IT', setLanguage(holonId, 'it') }],[{ text: 'EN', setLanguage(ctx, 'en') }]
   //         [{ text: 'Theme' }],
   //         [{ text: 'Level', callback_data: 'level' }],
-  //         [{ text: 'Admin', callback_data: 'admin' }],
+  //         [{ text: 'Ambassador', callback_data: 'ambassador' }],
   //         [{ text: 'Roles', callback_data: 'roles' }]
   //     ]
   // }
@@ -3824,11 +3829,11 @@ export default class Settings {
               callback_data: 'settings_users',
             },
           ],
-          // 4. Admin | Federation
+          // 4. Ambassador | Federation
           [
             {
-              text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin', { lng: language })}: ${settings.admin ? '✓' : i18next.t('settings_not_set', { lng: language })}`,
-              callback_data: 'settings_admin',
+              text: `${this.getSettingIcon('ambassador')} ${i18next.t('settings_ambassador', { lng: language })}: ${settings.admin ? '✓' : i18next.t('settings_not_set', { lng: language })}`,
+              callback_data: 'settings_ambassador',
             },
             {
               text: `${this.getSettingIcon('federation')} ${i18next.t('settings_federation', { lng: language })}: ${federationCount}`,
@@ -4329,7 +4334,7 @@ export default class Settings {
         return '🎨';
       case 'timezone':
         return '🕒';
-      case 'admin':
+      case 'ambassador':
         return '👑';
       case 'users':
         return '👪';
@@ -4404,10 +4409,10 @@ export default class Settings {
     await this.showArraySettingMenu(ctx, 'purpose', false);
   }
 
-  async getAdminKeyboard(holonId) {
+  async getAmbassadorKeyboard(holonId) {
     let settings = await this.getSettings(holonId);
     const language = settings.language;
-    const admin =
+    const ambassador =
       settings.admin || i18next.t('settings_not_set', { lng: language });
 
     // Simplify the keyboard since we no longer need the edit button
@@ -4415,7 +4420,7 @@ export default class Settings {
       inline_keyboard: [
         [
           {
-            text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin', { lng: language })}`,
+            text: `${this.getSettingIcon('ambassador')} ${i18next.t('settings_ambassador', { lng: language })}`,
             callback_data: 'noop',
           },
         ],
@@ -4423,7 +4428,7 @@ export default class Settings {
           {
             text: i18next.t('settings_current', {
               lng: language,
-              value: admin,
+              value: ambassador,
             }),
             callback_data: 'noop',
           },
@@ -4469,7 +4474,7 @@ export default class Settings {
     };
   }
 
-  async showAdminSelectionMenu(ctx, edit = false) {
+  async showAmbassadorSelectionMenu(ctx, edit = false) {
     const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
     if (!holonId) {
       console.error('Could not determine holon ID');
@@ -4478,7 +4483,7 @@ export default class Settings {
 
     let settings = await this.getSettings(holonId);
     const language = settings.language;
-    const currentAdmin = settings.admin || '';
+    const currentAmbassador = settings.admin || '';
 
     // Get all users from the chat
     let users = [];
@@ -4495,7 +4500,7 @@ export default class Settings {
     // Add header
     keyboard.inline_keyboard.push([
       {
-        text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin', { lng: language })}`,
+        text: `${this.getSettingIcon('ambassador')} ${i18next.t('settings_ambassador', { lng: language })}`,
         callback_data: 'noop',
       },
     ]);
@@ -4511,16 +4516,16 @@ export default class Settings {
           ? '@' + user.username
           : user.first_name || user.id.toString();
 
-        // Add crown emoji if this is the current admin
-        const isAdmin =
-          currentAdmin === user.id.toString() ||
-          currentAdmin === user.username ||
-          currentAdmin === '@' + user.username;
+        // Add crown emoji if this is the current ambassador
+        const isAmbassador =
+          currentAmbassador === user.id.toString() ||
+          currentAmbassador === user.username ||
+          currentAmbassador === '@' + user.username;
 
         keyboard.inline_keyboard.push([
           {
-            text: `${isAdmin ? '👑 ' : ''}${displayName}`,
-            callback_data: `admin_select_${user.id}`,
+            text: `${isAmbassador ? '👑 ' : ''}${displayName}`,
+            callback_data: `ambassador_select_${user.id}`,
           },
         ]);
       }
@@ -4545,18 +4550,18 @@ export default class Settings {
     try {
       if (edit && ctx.callbackQuery) {
         await ctx.editMessageText(
-          i18next.t('settings_select_admin', { lng: language }),
+          i18next.t('settings_select_ambassador', { lng: language }),
           {
             reply_markup: keyboard,
           }
         );
       } else {
-        await ctx.reply(i18next.t('settings_select_admin', { lng: language }), {
+        await ctx.reply(i18next.t('settings_select_ambassador', { lng: language }), {
           reply_markup: keyboard,
         });
       }
     } catch (e) {
-      console.log('Error showing admin selection menu:', e);
+      console.log('Error showing ambassador selection menu:', e);
     }
   }
 
@@ -4752,15 +4757,15 @@ export default class Settings {
           ? '@' + user.username
           : user.first_name || user.id.toString();
 
-        // Check if user is admin
-        const isAdmin =
+        // Check if user is the ambassador
+        const isAmbassador =
           settings.admin === user.id.toString() ||
           settings.admin === user.username ||
           settings.admin === '@' + user.username;
 
-        // In remove mode, show delete button except for admin
+        // In remove mode, show delete button except for the ambassador
         if (removeMode) {
-          if (!isAdmin) {
+          if (!isAmbassador) {
             keyboard.inline_keyboard.push([
               {
                 text: `❌ ${displayName}`,
@@ -4770,7 +4775,7 @@ export default class Settings {
           } else {
             keyboard.inline_keyboard.push([
               {
-                text: `👑 ${displayName} (admin)`,
+                text: `👑 ${displayName} (ambassador)`,
                 callback_data: 'noop',
               },
             ]);
@@ -4779,7 +4784,7 @@ export default class Settings {
           // In normal mode, show user info button
           keyboard.inline_keyboard.push([
             {
-              text: `${isAdmin ? '👑 ' : ''}${displayName}`,
+              text: `${isAmbassador ? '👑 ' : ''}${displayName}`,
               callback_data: `user_info_${user.id}`,
             },
           ]);
@@ -4891,7 +4896,7 @@ export default class Settings {
         ? `${user.first_name} ${user.last_name}`
         : user.first_name || '';
 
-    const isAdmin =
+    const isAmbassador =
       settings.admin === user.id.toString() ||
       settings.admin === user.username ||
       settings.admin === '@' + user.username;
@@ -4901,7 +4906,7 @@ export default class Settings {
     userInfo += `ID: \`${user.id}\`\n`;
     userInfo += `Username: ${user.username ? '@' + user.username : 'Not set'}\n`;
     userInfo += `Name: ${fullName || 'Not available'}\n`;
-    userInfo += `Role: ${isAdmin ? 'Admin' : 'Member'}\n`;
+    userInfo += `Role: ${isAmbassador ? 'Ambassador' : 'Member'}\n`;
 
     // Add back button
     const keyboard = {

@@ -31,16 +31,16 @@ derive the same state. Checkpoints let them check that they did.
 - **Attestation** — a signer's verdict on one action, `attests` or
   `disputes` on the `e` tag. Quorum and disputes are counted at reduce time;
   an attester's own action carries their attestation.
-- **Membership** — holosphere's signed `_members` log: a genesis key, admins
+- **Membership** — holosphere's signed `_members` log: a genesis key, ambassadors
   adding and removing keys, folded **as-of-time** (a removed key keeps the
   writes it signed while it was in). `buildTimeline` is the fold; core wraps
   it in `acceptedActors`.
-- **Policy** — the holon's rule for a lens, an admin-signed entry of the
+- **Policy** — the holon's rule for a lens, an ambassador-signed entry of the
   `_policy` log: which roles author, which attest, the quorum, whether the
   first consumer of a basis wins (`earliest`) or a human decides (`quorum`),
   and the **partners** it imports, each pinned to its genesis pubkey.
   `DEFAULT_POLICY` when none. Edited in the kiosk's Rules tab, the web fund
-  panel's Rules, MCP `protocol_policy_set`, bot `/fundpolicy`; a non-admin's
+  panel's Rules, MCP `protocol_policy_set`, bot `/fundpolicy`; a non-ambassador's
   entry is recorded and shown, never applied.
 - **Checkpoint** — a merkle root over the accepted entries of a lens in one
   epoch (a lunar cycle, `lunationAt().index`), signed by a recognized key
@@ -169,7 +169,7 @@ adopted key; the web instance already holds the member's derived key.
 
 Founding needs no bot. `@holons/core/protocol` `foundHolon` lets a signed-in
 key sign the genesis itself and declare itself in `settings.holonPubkey`,
-becoming the hub's first admin; `addHolonMember` / `removeHolonMember` then seat
+becoming the hub's first ambassador; `addHolonMember` / `removeHolonMember` then seat
 people by public key. `foundingAuthority` is the one rule for who may: a
 pubkey holon is its own key, an h3 cell has no founder, a Telegram chat id is
 its bot's (a person founding it from a screen would lock the bot out), an
@@ -193,7 +193,7 @@ and every replaceable lens keeps its last-writer-wins.
 
 Open after Phase 4: policy for lenses other than `flow_claims` is set through
 MCP/bot only (the kiosk Rules tab edits the claims rule; `flow_mints` takes
-the default policy until an admin sets one); proposals have no
+the default policy until an ambassador sets one); proposals have no
 close time yet, so `late` is only a fold option; a partner's genesis is
 pinned by hand (its `settings.holonPubkey`), not discovered.
 

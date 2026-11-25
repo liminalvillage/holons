@@ -4,11 +4,11 @@
 // (@holons/core/linking owns the handshake; this is the wait, the links and
 // the local memory around it — the same shape as hubclaim.ts):
 //
-//   offer   an admin's key writes the offer; the token leaves in a deep link
+//   offer   an ambassador's key writes the offer; the token leaves in a deep link
 //   wait    the bot answers with a claim record naming the chat; the chat's
 //           own signed acceptance is what the screen believes
 //   confirm a human reads the chat's title and says yes; the bot key is
-//           seated as an admin here and the two holons federate
+//           seated as an ambassador here and the two holons federate
 //
 // The pending offer lives in localStorage so a return from Telegram — or a
 // reload — picks the wait back up instead of starting over.
@@ -92,7 +92,7 @@ export function telegramLinkUrls(
 }
 
 /**
- * Offer the link (an admin's signed record in the hub) and remember the
+ * Offer the link (an ambassador's signed record in the hub) and remember the
  * token here — the only copy, for the deep links.
  */
 export async function beginTelegramLink(
@@ -144,7 +144,7 @@ export function watchTelegramLink(
 }
 
 /**
- * A human said yes: mark the hub linked, seat the chat's key as admin,
+ * A human said yes: mark the hub linked, seat the chat's key as ambassador,
  * federate every board lens both ways, and dock the chat beside the hub.
  */
 export async function confirmTelegramLink(

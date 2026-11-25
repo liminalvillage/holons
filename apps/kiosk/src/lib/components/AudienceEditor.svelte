@@ -148,7 +148,7 @@
     : scope.item
       ? "audience.whenLockCard"
       : "audience.whenLockLens";
-  // The lock is the owner's — or an admin's, who may make it public or take
+  // The lock is the owner's — or an ambassador's, who may make it public or take
   // it over (`may(standing, 'privacy.override')`, core's `canManage`).
   $: frozen =
     loading ||
@@ -220,7 +220,7 @@
   {#if scope.item && lensLocked}
     <p class="note">{$t("audience.lensLocked")}</p>
   {:else if aud?.locked && !aud.owned && aud.canManage && $isLoggedIn}
-    <p class="note">{$t("audience.adminCanUnlock")}</p>
+    <p class="note">{$t("audience.ambassadorCanUnlock")}</p>
     <button
       type="button"
       class="takeover"

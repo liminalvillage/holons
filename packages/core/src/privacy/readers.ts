@@ -4,7 +4,7 @@
 // Who reads on behalf of a holon. A personal holon (its id is a pubkey) reads
 // through that key and the keys its own signed `users` record links. A group
 // holon reads through its NIP-29 state — the `p` tags of its kind-39001
-// admins and kind-39002 members — signed by its anchor (the genesis of its
+// ambassadors and kind-39002 members — signed by its anchor (the genesis of its
 // `_members` log, else the earliest self-signed `holonPubkey`), which is the
 // same state `publishGroupState` keeps current. Nothing else is consulted:
 // a holon with no signed state has no readers yet, and that is an answer.
@@ -13,7 +13,7 @@ import type { HoloSphere } from 'holosphere';
 import { holonAnchor, membersEvents } from 'holosphere/authority.js';
 import { verifyEvent } from 'nostr-tools/pure';
 import { personalReaderKeys } from '../holosphere/authority.js';
-import { GROUP_ADMINS_KIND, GROUP_MEMBERS_KIND } from '../nostr/groups.js';
+import { GROUP_AMBASSADORS_KIND, GROUP_MEMBERS_KIND } from '../nostr/groups.js';
 import { buildTimeline } from 'holosphere/signing.js';
 import { isPubkeyHolonId } from './scope.js';
 import type { HolonReaders } from './types.js';
@@ -50,7 +50,7 @@ async function groupState(hs: ReaderHost, holon: string, anchor: string, windowM
     const timer = setTimeout(finish, windowMs);
     try {
       close = hs.subscribeNostr(
-        { kinds: [GROUP_ADMINS_KIND, GROUP_MEMBERS_KIND], '#d': [holon], authors: [anchor] },
+        { kinds: [GROUP_AMBASSADORS_KIND, GROUP_MEMBERS_KIND], '#d': [holon], authors: [anchor] },
         (event: StateEvent) => {
           if (!event || String(event.pubkey).toLowerCase() !== anchor) return;
           if (!event.tags?.some((t) => t[0] === 'd' && t[1] === holon)) return;

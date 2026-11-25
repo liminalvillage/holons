@@ -36,7 +36,7 @@
 
   export let holonId = "";
   export let holosphere: HoloSphere | null = null;
-  /** The split is a guarded settings field: an admin's signature counts, anyone else's is recorded and ignored. */
+  /** The split is a guarded settings field: an ambassador's signature counts, anyone else's is recorded and ignored. */
   export let canEdit = true;
   /** The live draft. Bound, so the diagram above moves with the sliders. */
   export let interiorPercent = 50;
@@ -627,12 +627,12 @@
             class="btn"
             on:click={save}
             disabled={!changed || busy || !holosphere || !canEdit}
-            title={canEdit ? "Save the split; every surface reads it" : "Only an admin's signature sets the split"}
+            title={canEdit ? "Save the split; every surface reads it" : "Only an ambassador's signature sets the split"}
             >Save</button
           >
         </div>
         {#if !canEdit}
-          <p class="note warn">Only an admin's signature sets the split; yours would be recorded but not counted.</p>
+          <p class="note warn">Only an ambassador's signature sets the split; yours would be recorded but not counted.</p>
         {/if}
       </div>
 

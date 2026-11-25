@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 //
-// Editing a holon's onboarding steps, as an admin's screen does it: pure
+// Editing a holon's onboarding steps, as an ambassador's screen does it: pure
 // operations on a draft. Two rules:
 //
 //   • An id is given once, when the step or card is made, and never derived

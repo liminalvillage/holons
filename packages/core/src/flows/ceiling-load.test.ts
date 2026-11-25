@@ -51,7 +51,7 @@ const T0 = 1_760_000_000;
 const holon = testKey();
 const pia = testKey();
 const partyOf = (pk: string) => (pk === pia.pk ? PICKER : null);
-const actors = () => bootstrapActors({ members: [pia.pk], admins: [holon.pk], genesis: holon.pk });
+const actors = () => bootstrapActors({ members: [pia.pk], ambassadors: [holon.pk], genesis: holon.pk });
 
 describe('loadAllocationInputs', () => {
   it('reads one holon the way the boards read it, and says when nothing was stored', async () => {

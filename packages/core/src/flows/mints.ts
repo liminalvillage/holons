@@ -8,7 +8,7 @@
  * balance and nothing else could be a fund. But a harvest is a pot too, in
  * litres, and so is a case of wine or a stack of firewood — anything a holon
  * holds and means to divide by its allocation. A MINT is the record that it
- * exists: an attester (the policy's roles; admins by default) appends `mint`
+ * exists: an attester (the policy's roles; ambassadors by default) appends `mint`
  * to the `flow_mints` log with an amount and a unit, and from then on the
  * allocation divides it, the cascade carries it down, and every party's share
  * of it is a right they draw on with a `claim` (`claims.ts`), in that unit.

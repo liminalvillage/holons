@@ -676,12 +676,12 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
     'task_complete',
     {
       description:
-        'Mark a task/quest as completed. Permission rule: completer must be initiator OR participant (or pass isAdmin:true if the caller has verified admin rights). Refuses if the task is already completed or stopped. Also records REA events (quest:initiated/completed, appreciation pairs, quest:time_logged) and time-tracking expenses derived from the holon\'s value equation.',
+        'Mark a task/quest as completed. Permission rule: completer must be initiator OR participant (or pass isAmbassador:true if the caller has verified it is an ambassador of the holon). Refuses if the task is already completed or stopped. Also records REA events (quest:initiated/completed, appreciation pairs, quest:time_logged) and time-tracking expenses derived from the holon\'s value equation.',
       inputSchema: toZod(TASK_COMPLETE, {
-        isAdmin: z
+        isAmbassador: z
           .boolean()
           .optional()
-          .describe('Set true to bypass initiator/participant check (caller has resolved admin rights elsewhere).'),
+          .describe('Set true to bypass initiator/participant check (caller has resolved ambassador rights elsewhere).'),
       }),
     },
     async (args) => {
@@ -704,7 +704,7 @@ export function registerTasksTools(server: McpServer, deps: ToolDeps): void {
           return fail('Task not found.', { holon: args.holon, taskId });
         }
         const result = applyTaskCompletion(existing as Quest, completerId, {
-          isAdmin: args.isAdmin,
+          isAmbassador: args.isAmbassador,
         });
         if (!result.ok) {
           return fail(`Cannot complete task: ${result.reason}.`, {

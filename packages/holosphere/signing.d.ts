@@ -22,7 +22,7 @@ export interface MembershipEnvelope {
 
 /**
  * Fold `_members` envelopes into an as-of-time oracle. Genesis is pinned or
- * TOFU (earliest self-signed genesis); only admins mutate membership; a key
+ * TOFU (earliest self-signed genesis); only ambassadors mutate membership; a key
  * removed later keeps the writes it signed before.
  */
 export function buildTimeline(events: MembershipEnvelope[], pinnedGenesis?: string | null): MembershipTimeline;

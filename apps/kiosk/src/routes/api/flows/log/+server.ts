@@ -19,7 +19,7 @@
 // equation proposal that names the session user as the party, a verdict, a
 // payout, or a policy record.
 // Whether any of them COUNTS is the reducer's call, from the holon's policy
-// and signer set, not this route's — a policy signed by a non-admin is a
+// and signer set, not this route's — a policy signed by a non-ambassador is a
 // visible entry that changes nothing.
 
 import { json } from "@sveltejs/kit";

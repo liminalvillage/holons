@@ -119,7 +119,7 @@ export function applyOp(base: Quest | null, op: ChangeOp): Quest {
       return { ...(base ?? { id: '' }) } as Quest;
     case 'complete': {
       const q = creditedForCompletion(base as Quest, op.completer);
-      const r = applyTaskCompletion(q, String(op.completer.id ?? ''), { isAdmin: true });
+      const r = applyTaskCompletion(q, String(op.completer.id ?? ''), { isAmbassador: true });
       return r.ok ? r.task : q;
     }
   }

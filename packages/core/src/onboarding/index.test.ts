@@ -150,7 +150,7 @@ describe('advance', () => {
     expect(at).toMatchObject({ step: 'arrival', passed: ['profile', 'call'], changed: true });
   });
 
-  it('an admin card listens to admins only: the person ticking it does not count', () => {
+  it('an ambassador card listens to ambassadors only: the person ticking it does not count', () => {
     const at = advance(config, { step: 'call' }, { completed: new Set([cardKey('call', 'call')]), profile: ready });
     expect(at.step).toBe('call');
   });
@@ -190,7 +190,7 @@ const complete = async (hs: ReturnType<typeof instance>, home: string, id: strin
 };
 
 describe('onboarding into a holon', () => {
-  it('reads back what an admin saved', async () => {
+  it('reads back what an ambassador saved', async () => {
     const { hs, holon } = await setup();
     expect(await readOnboarding(hs, holon)).toEqual(config);
     await hs.close();
@@ -217,10 +217,10 @@ describe('onboarding into a holon', () => {
     expect(afterProfile).toMatchObject({ passed: ['profile'], dealt: [onboardingCardId(holon, 'call', 'call')] });
     expect(afterProfile.view.step).toBe('call');
 
-    // Ticking the admin card herself moves nothing.
+    // Ticking the ambassador card herself moves nothing.
     await complete(hs, home, onboardingCardId(holon, 'call', 'call'));
     expect((await refreshOnboarding(hs, holon, alice.pk, opts))!.view.step).toBe('call');
-    // A self card is not something an admin vouches for.
+    // A self card is not something an ambassador vouches for.
     expect(await confirmCard(hs, holon, alice.pk, 'arrival', 'dates', opts)).toBeNull();
 
     const afterCall = (await confirmCard(hs, holon, alice.pk, 'call', 'call', opts))!;

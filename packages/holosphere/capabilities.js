@@ -5,15 +5,15 @@
 //
 // Nothing is refused at write time: relays take every signed event. What a
 // write is worth is decided on READ, by everyone, with the same rule: a
-// holon's admins and members come from its signed `_members` log (or its
+// holon's ambassadors and members come from its signed `_members` log (or its
 // anchored records), and this table says which role an action needs.
 //
-//   member  content and the ordinary settings fields; making a scope
-//           private (the locker owns its vault)
-//   admin   the trust decisions: who is seated, the money and trust fields
-//           of settings, the rules of a log, the federation record (which
-//           partners, which lenses flow), overriding a member's vault, and
-//           returning or moving another member's library booking
+//   member      content and the ordinary settings fields; making a scope
+//               private (the locker owns its vault)
+//   ambassador  the trust decisions: who is seated, the money and trust fields
+//               of settings, the rules of a log, the federation record (which
+//               partners, which lenses flow), overriding a member's vault, and
+//               returning or moving another member's library booking
 //
 // A holon nobody speaks for (no log, no anchored records, an H3 cell) is
 // open: every claim shows and nothing here applies. The signer reads this
@@ -21,7 +21,10 @@
 // vault, core re-exports it for every surface to grey out what would not
 // count.
 
-/** The roles a holon knows, strongest first. */
+/**
+ * The roles a holon knows, strongest first. The stored value `admin` is the
+ * ambassador role (kept on the wire for existing signed logs).
+ */
 export const ROLES = Object.freeze(['admin', 'member']);
 
 /** Action → the weakest role whose signature counts for it. */
@@ -49,12 +52,12 @@ export const CAPABILITIES = Object.freeze({
 });
 
 /**
- * Settings fields that decide money and trust: who the holon's key and admin
+ * Settings fields that decide money and trust: who the holon's key and ambassador
  * are, which keys it trusts, who vouches for identities, how value is
  * scored and the pot split, and where it is paid. Under an authorized read
- * these come from the newest envelope an ADMIN (as of its time) signed —
+ * these come from the newest envelope an AMBASSADOR (as of its time) signed —
  * never from a plain member's, whose settings write still counts for every
- * other field. Without this a member could seat themselves as admin, weigh
+ * other field. Without this a member could seat themselves as ambassador, weigh
  * the equation or the split in their favour, or point the payout at their
  * own wallet, since the lens is last-writer-wins. `onboarding` is the path
  * a newcomer walks before their key is linked: a member who could rewrite it
@@ -69,16 +72,16 @@ export const GUARDED_SETTINGS_FIELDS = Object.freeze([
 
 /**
  * Global tables whose records belong to the holon named by their id: such a
- * record counts only from an admin of that holon.
+ * record counts only from an ambassador of that holon.
  */
 export const HOLON_OWNED_GLOBAL_TABLES = Object.freeze(['federation']);
 
-/** The weakest role an action needs; unknown actions need an admin. */
+/** The weakest role an action needs; unknown actions need an ambassador. */
 export function requiredRole(action) {
   return CAPABILITIES[action] || 'admin';
 }
 
-/** Does `role` (admin | member | null) satisfy `action`? */
+/** Does `role` (ambassador | member | null) satisfy `action`? */
 export function roleSatisfies(role, action) {
   const need = requiredRole(action);
   if (role === 'admin') return true;

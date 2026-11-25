@@ -6,7 +6,7 @@ import { bootstrapActors } from './membership.js';
 import { DEFAULT_POLICY, foldPolicies, normalizePolicy, policyFor, policyRecord, samePolicy } from './policy.js';
 import { shuffled, signedEntry, testKey } from './testing.js';
 
-const admin = testKey();
+const ambassador = testKey();
 const member = testKey();
 const T0 = 1_760_000_000;
 
@@ -28,19 +28,19 @@ describe('policy', () => {
     expect(samePolicy({ authors: ['member', 'admin'] }, { authors: ['admin', 'member'] })).toBe(true);
   });
 
-  it('folds the latest admin-signed record per lens; a member cannot set policy', () => {
-    const actors = bootstrapActors({ members: [member.pk], admins: [admin.pk] });
+  it('folds the latest ambassador-signed record per lens; a member cannot set policy', () => {
+    const actors = bootstrapActors({ members: [member.pk], ambassadors: [ambassador.pk] });
     const log = [
-      signedEntry({ sk: admin.sk, item: policyRecord('flow_claims', { quorum: 1 }).item as unknown as Record<string, unknown>, created_at: T0 }),
-      signedEntry({ sk: admin.sk, item: policyRecord('flow_claims', { quorum: 2 }).item as unknown as Record<string, unknown>, created_at: T0 + 1 }),
+      signedEntry({ sk: ambassador.sk, item: policyRecord('flow_claims', { quorum: 1 }).item as unknown as Record<string, unknown>, created_at: T0 }),
+      signedEntry({ sk: ambassador.sk, item: policyRecord('flow_claims', { quorum: 2 }).item as unknown as Record<string, unknown>, created_at: T0 + 1 }),
       signedEntry({ sk: member.sk, item: policyRecord('flow_claims', { quorum: 9 }).item as unknown as Record<string, unknown>, created_at: T0 + 2 }),
-      signedEntry({ sk: admin.sk, item: policyRecord('votes', { conflict: 'quorum' }).item as unknown as Record<string, unknown>, created_at: T0 + 3 }),
+      signedEntry({ sk: ambassador.sk, item: policyRecord('votes', { conflict: 'quorum' }).item as unknown as Record<string, unknown>, created_at: T0 + 3 }),
     ];
     const policies = foldPolicies(shuffled(log), actors);
     expect(policyFor(policies, 'flow_claims').quorum).toBe(2);
     expect(policyFor(policies, 'votes').conflict).toBe('quorum');
     expect(policyFor(policies, 'unknown')).toEqual(DEFAULT_POLICY);
-    // The fund logs need an attester's word by default; an admin's own entry self-attests.
+    // The fund logs need an attester's word by default; an ambassador's own entry self-attests.
     expect(policyFor(null, 'flow_claims').quorum).toBe(1);
     expect(policyFor(null, 'flow_mints').quorum).toBe(1);
     expect(policyFor(null, 'governance_votes').quorum).toBe(0);

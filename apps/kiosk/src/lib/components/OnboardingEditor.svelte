@@ -1,7 +1,7 @@
 <script lang="ts">
   // SPDX-License-Identifier: AGPL-3.0-or-later
   //
-  // An admin edits the holon's onboarding steps: the path a newcomer walks
+  // An ambassador edits the holon's onboarding steps: the path a newcomer walks
   // before their key is linked. The steps read top to bottom as a journey —
   // a numbered stop per step, its cards under it — and each card says who
   // ticks it. Nothing to save: every change is written a moment later
@@ -169,8 +169,8 @@
     {
       id: "admin",
       icon: "crown",
-      label: "onb.whoAdmin",
-      hint: "onb.whoAdminHint",
+      label: "onb.whoAmbassador",
+      hint: "onb.whoAmbassadorHint",
     },
     {
       id: "profile",
@@ -608,7 +608,7 @@
             {#if card.confirm === "self"}
               <span class="faux">{$t("onb.tick")}</span>
             {:else if card.confirm === "admin"}
-              <p class="hint">{$t("onb.adminTicks")}</p>
+              <p class="hint">{$t("onb.ambassadorTicks")}</p>
             {:else}
               <ul class="faux-fields">
                 {#each card.fields ?? DEFAULT_PROFILE_FIELDS as f (f.key)}

@@ -11,14 +11,14 @@
 // holon — the rules here are the same for every holon a key can found.
 //
 // NIP-29 reading: the relay (relay.holons.io, strfry) does not implement
-// groups, so the holon's ADMINS play the relay's role — they sign the
+// groups, so the holon's AMBASSADORS play the relay's role — they sign the
 // 39000/39001/39002 state and the 9000/9001 moderation events; members send
 // their own 9021 join / 9022 leave requests. A real NIP-29 relay can take
 // over unchanged. Everything that publishes takes a `NostrSigner`: holosphere
 // only carries already-signed events (`publishNostrEvents`).
 //
 // One consequence of as-of-time membership shapes the join flow: a record a
-// person signs BEFORE an admin seats them never counts, so a join request
+// person signs BEFORE an ambassador seats them never counts, so a join request
 // carries its own display name and the person's `users` profile is written
 // only once they are seated (`ensureProfile`).
 
@@ -95,7 +95,7 @@ export interface CreateHolonResult {
 }
 
 /**
- * Mint an id, found it with this instance's key (genesis admin), publish the
+ * Mint an id, found it with this instance's key (genesis ambassador), publish the
  * group state and, when given, the founder's profile.
  */
 export async function createHolon(hs: HoloSphere, signer: NostrSigner, opts: CreateHolonOptions = {}): Promise<CreateHolonResult> {
@@ -162,7 +162,7 @@ export interface JoinOptions extends HolonPublishOptions {
   /**
    * The person's Telegram id, when they signed in with Telegram. The bot of
    * a Telegram-born holon proves it from the key and links a group member
-   * without asking an admin.
+   * without asking an ambassador.
    */
   telegramId?: string | number;
 }
@@ -175,7 +175,7 @@ export function requestToJoin(hs: HoloSphere, holon: string, signer: NostrSigner
   return event;
 }
 
-/** Leave: a kind-9022 signed by the person. An admin unseats the key (`removeSeat`). */
+/** Leave: a kind-9022 signed by the person. An ambassador unseats the key (`removeSeat`). */
 export function leaveHolon(hs: HoloSphere, holon: string, signer: NostrSigner, opts: HolonPublishOptions = {}): SignedEvent {
   const ctx = holonProjectionCtx(hs, holon, opts);
   const event = signer.sign(groupLeaveRequestTemplate(ctx, holon));
@@ -263,7 +263,7 @@ export interface SeatOptions extends HolonPublishOptions {
   role?: Role;
   /**
    * The name the person gave on their join request. Written as their `users`
-   * record by the admin when they have none yet, so the roster names them
+   * record by the ambassador when they have none yet, so the roster names them
    * from the first moment; their own later write replaces it.
    */
   name?: string;
@@ -271,7 +271,7 @@ export interface SeatOptions extends HolonPublishOptions {
 
 /**
  * Seat a key (hex or npub): the signed `_members` add, a kind-9000 put-user,
- * and the refreshed group state. The instance key must be an admin.
+ * and the refreshed group state. The instance key must be an ambassador.
  */
 export async function approveJoin(hs: HoloSphere, holon: string, pubkey: string, signer: NostrSigner, opts: SeatOptions = {}): Promise<string> {
   const role: Role = opts.role === 'admin' ? 'admin' : 'member';
@@ -297,7 +297,7 @@ async function seedProfile(hs: HoloSphere, holon: string, pub: string, name: str
   }
 }
 
-/** Unseat a key: the signed `_members` remove, a kind-9001, and the refreshed state. Admins only. */
+/** Unseat a key: the signed `_members` remove, a kind-9001, and the refreshed state. Ambassadors only. */
 export async function removeSeat(hs: HoloSphere, holon: string, pubkey: string, signer: NostrSigner, opts: HolonPublishOptions = {}): Promise<string> {
   const pub = await removeHolonMember(hs, holon, pubkey);
   const ctx = holonProjectionCtx(hs, holon, opts);
@@ -336,7 +336,7 @@ const published = new WeakMap<object, Map<string, string[]>>();
  */
 export async function publishGroupState(hs: HoloSphere, holon: string, signer: NostrSigner, opts: HolonPublishOptions = {}): Promise<EventTemplate[]> {
   const members = await holonMembers(hs, holon);
-  const admins = [...members].filter(([, role]) => role === 'admin').map(([pub]) => pub);
+  const ambassadors = [...members].filter(([, role]) => role === 'admin').map(([pub]) => pub);
   const ctx = holonProjectionCtx(hs, holon, opts);
   let settings: Record<string, unknown> = {};
   try {
@@ -345,7 +345,7 @@ export async function publishGroupState(hs: HoloSphere, holon: string, signer: N
   } catch {
     /* no settings yet */
   }
-  const templates = buildGroupState(ctx, holon, settings, [...members.keys()], admins);
+  const templates = buildGroupState(ctx, holon, settings, [...members.keys()], ambassadors);
   const hashes = templates.map(groupStateHash);
   let perHolon = published.get(hs);
   if (!perHolon) published.set(hs, (perHolon = new Map()));

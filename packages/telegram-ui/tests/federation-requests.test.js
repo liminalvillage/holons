@@ -245,7 +245,7 @@ describe('who decides for the partner', () => {
     ).toMatch(/remove it on their side/);
     expect(
       outcomeText({ self: 'held', partner: 'skipped' }, 'Liminal')
-    ).toMatch(/not an admin/);
+    ).toMatch(/not an ambassador/);
     expect(
       outcomeText({ self: 'linked', partner: 'linked' }, 'Liminal')
     ).toMatch(/both sides/);

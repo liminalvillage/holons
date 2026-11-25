@@ -11,7 +11,7 @@
  *   - a holon nobody founded is bootstrapped from its own records — but only
  *     the ones its ANCHOR signed (the earliest self-signed `holonPubkey`
  *     declaration; see holosphere/authority.js): the members' linked keys,
- *     the trusted pubkeys, the admin — plus the identity directory
+ *     the trusted pubkeys, the ambassador — plus the identity directory
  *     (kind 31926), which is provider-signed;
  *   - an h3 cell (a scale-space aggregate of many holons) and a holon with
  *     nothing signed about it have nobody defined: they read unenforced.
@@ -68,7 +68,7 @@ export function personalReaderKeys(hs: HoloSphere, pubkey: string): string[] {
 /** Personal holon: the key itself and what it linked, signed by itself. */
 function personalActors(hs: AuthorityHost, holon: string): AcceptedActors {
   const key = holon.toLowerCase();
-  return bootstrapActors({ members: new Set(personalReaderKeys(hs, key)), admins: [key], genesis: key });
+  return bootstrapActors({ members: new Set(personalReaderKeys(hs, key)), ambassadors: [key], genesis: key });
 }
 
 /**
@@ -241,7 +241,7 @@ export function namesHolon(item: Record<string, any> | null | undefined, holon: 
  * only linked from its side has not been let in.
  */
 function receivesFrom(hs: AuthorityHost, holon: string, source: string, lens: string, accepted: AuthorityPredicate): boolean {
-  // The federation record is an admin's word (capabilities.js): a member's
+  // The federation record is an ambassador's word (capabilities.js): a member's
   // or a stranger's copy of it lets nobody in.
   const counts = (pub: string, at: number) => (accepted.roleAt ? accepted.roleAt(pub, at) === 'admin' : accepted(pub, at));
   const events = hs.store.getEvents(null, 'federation', holon)

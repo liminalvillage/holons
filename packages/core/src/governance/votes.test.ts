@@ -15,12 +15,12 @@ const holon = testKey();
 const ada = testKey();
 const adaPhone = testKey();
 const bob = testKey();
-const admin = testKey();
+const ambassador = testKey();
 const stranger = testKey();
 
-const parties = new Map<string, string>([[ada.pk, 'ada'], [adaPhone.pk, 'ada'], [bob.pk, 'bob'], [admin.pk, 'adm']]);
+const parties = new Map<string, string>([[ada.pk, 'ada'], [adaPhone.pk, 'ada'], [bob.pk, 'bob'], [ambassador.pk, 'adm']]);
 const partyOf = (pk: string) => parties.get(pk) ?? null;
-const actors = () => bootstrapActors({ members: [ada.pk, adaPhone.pk, bob.pk], admins: [admin.pk, holon.pk], genesis: holon.pk });
+const actors = () => bootstrapActors({ members: [ada.pk, adaPhone.pk, bob.pk], ambassadors: [ambassador.pk, holon.pk], genesis: holon.pk });
 
 const entry = (sk: Uint8Array, a: { item: unknown; refs?: Record<string, string | string[]> }, at: number, holonId = 'H') =>
   signedEntry({ sk, item: a.item as Record<string, unknown>, refs: a.refs as never, created_at: at, holon: holonId, lens: 'governance_votes' });
@@ -76,12 +76,12 @@ describe('foldVotes', () => {
   it('a dispute by an attester holds the vote; the earlier vote counts again meanwhile', () => {
     const v1 = entry(ada.sk, buildVote({ proposal: 'p1', choice: 'yes', party: 'ada' }), T0);
     const v2 = entry(ada.sk, buildVote({ proposal: 'p1', choice: 'no', party: 'ada' }), T0 + 1);
-    const dispute = entry(admin.sk, buildVoteVerdict(v2.id, 'dispute', 'coerced'), T0 + 2);
+    const dispute = entry(ambassador.sk, buildVoteVerdict(v2.id, 'dispute', 'coerced'), T0 + 2);
     const memberWord = entry(bob.sk, buildVoteVerdict(v1.id, 'dispute'), T0 + 3); // a member is not an attester
     const f = foldVotes({ entries: [v1, v2, dispute, memberWord], actors: actors(), partyOf });
     expect(f.votes.map((v) => [v.choice, v.status])).toEqual([['yes', 'counted'], ['no', 'disputed']]);
     expect(f.ballots).toEqual({ p1: { ada: 'yes' } });
-    const withdrawn = entry(admin.sk, buildVoteVerdict(v2.id, 'attest'), T0 + 4);
+    const withdrawn = entry(ambassador.sk, buildVoteVerdict(v2.id, 'attest'), T0 + 4);
     expect(foldVotes({ entries: [v1, v2, dispute, withdrawn], actors: actors(), partyOf }).ballots).toEqual({ p1: { ada: 'no' } });
   });
 
@@ -89,7 +89,7 @@ describe('foldVotes', () => {
     const v = entry(ada.sk, buildVote({ proposal: 'p1', choice: 'yes', party: 'ada' }), T0);
     const base = { actors: actors(), partyOf, policy: { quorum: 1 } };
     expect(foldVotes({ entries: [v], ...base }).votes[0]).toMatchObject({ status: 'pending', reason: 'quorum' });
-    const ok = entry(admin.sk, buildVoteVerdict(v.id, 'attest'), T0 + 1);
+    const ok = entry(ambassador.sk, buildVoteVerdict(v.id, 'attest'), T0 + 1);
     expect(foldVotes({ entries: [v, ok], ...base }).ballots).toEqual({ p1: { ada: 'yes' } });
   });
 

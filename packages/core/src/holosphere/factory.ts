@@ -207,7 +207,7 @@ export function createHoloSphere(
         privacy: {
           acceptGrantFrom: (holo: HoloSphere, holon: string, lens: string, sender: string) => authority.acceptGrantFrom(holo, holon, lens, sender),
           // The vault obeys the same table as every read: a member's vault
-          // counts, only an admin retires another key's.
+          // counts, only an ambassador retires another key's.
           roleOf: (holo: HoloSphere, holon: string, pubkey: string) => roleOfSync(holo, holon, pubkey),
         },
       }

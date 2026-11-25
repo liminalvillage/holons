@@ -35,24 +35,24 @@ The bidirectional parameter is largely unused in the current implementation sinc
 ## Who may federate
 
 A holon's federation record — its partners, and which lenses flow each way —
-is an **admin's word**, like every trust decision (`capabilities.js`,
+is an **ambassador's word**, like every trust decision (`capabilities.js`,
 SIGNING.md "Who may do what"). The record lives in the global `federation`
 table keyed by the holon it describes; under an authorized read
 (`getFederation`, and everything built on it: `subscribeFederated`,
-`propagate`, the hex mirror) it resolves to the newest record an admin of
+`propagate`, the hex mirror) it resolves to the newest record an ambassador of
 that holon signed. A member's or a stranger's newer write is recorded on the
 relays and ignored.
 
 - `federate(A, B)` writes both records; each counts on its own side only if
-  the signer is an admin *there*. A bot founding both chats is; a person
-  linking from a screen links their own side, and B's admin lets A in from
+  the signer is an ambassador *there*. A bot founding both chats is; a person
+  linking from a screen links their own side, and B's ambassador lets A in from
   B's. A holon nobody speaks for (no log, no anchored records, an H3 cell)
   is open and takes any record.
 - `getFederationStanding(holon)` returns `{ record, raw, endorsed }`: what
-  counts, the plain last-writer-wins record, and whether an admin signed
-  what counts. A record no admin ever signed (written before the rule
-  existed, or by a stranger) is not counted, but the first admin write
-  starts from it — a legacy link survives the day its admin touches
+  counts, the plain last-writer-wins record, and whether an ambassador signed
+  what counts. A record no ambassador ever signed (written before the rule
+  existed, or by a stranger) is not counted, but the first ambassador write
+  starts from it — a legacy link survives the day its ambassador touches
   federation.
 - Surfaces ask `may(await writeAcceptance(hs, holon), 'federation')` before
   offering the controls.

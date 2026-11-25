@@ -8,7 +8,7 @@
  *
  * @class SettingsScenes
  * @description Provides scene-based interfaces for setting purpose, name, domains, values,
- * roles, users, administrators, federations, and hex identifiers. Works in conjunction
+ * roles, users, the ambassador, federations, and hex identifiers. Works in conjunction
  * with the Settings class.
  *
  * @property {DB} db - Database instance
@@ -22,6 +22,7 @@
 import i18next from 'i18next';
 import { linkContext, outcomeText } from './federationLinks.js';
 import { Scenes } from 'telegraf';
+import { resolveAmbassadorId } from './initiatorAmbassador.js';
 
 export default class SettingsScenes {
   /**
@@ -41,7 +42,7 @@ export default class SettingsScenes {
     // These are now handled via ctx.scene.enter('input_scene', {...}) in Settings.js
 
     // Remaining scenes that cannot be migrated to InputScene
-    this.adminScene = new Scenes.BaseScene('admin_scene');
+    this.ambassadorScene = new Scenes.BaseScene('ambassador_scene');
     this.federationScene = new Scenes.BaseScene('federation_scene');
     this.usersScene = new Scenes.BaseScene('users_scene');
     this.addUserScene = new Scenes.BaseScene('add_user_scene');
@@ -53,15 +54,15 @@ export default class SettingsScenes {
   setupScenes() {
     // Migrated to InputScene: purpose, name, domains, values, roles, hex, text_input, array_input
     // Remaining scenes that require custom logic:
-    this.setupAdminScene();
+    this.setupAmbassadorScene();
     this.setupFederationScene();
     this.setupUsersScene();
     this.setupAddUserScene();
     this.setupListPickerScene();
   }
 
-  setupAdminScene() {
-    this.adminScene.enter(async ctx => {
+  setupAmbassadorScene() {
+    this.ambassadorScene.enter(async ctx => {
       // Store original message ID if coming from a callback query
       if (ctx.callbackQuery) {
         ctx.scene.state.originalMessageId =
@@ -71,17 +72,30 @@ export default class SettingsScenes {
       const holonId = ctx.chat.id;
       const language = await this.getLanguage(holonId);
       await ctx.reply(
-        i18next.t('settings_enter_admin_username', { lng: language })
+        i18next.t('settings_enter_ambassador_username', { lng: language })
       );
     });
 
-    this.adminScene.on('text', async ctx => {
+    this.ambassadorScene.on('text', async ctx => {
       // For backward compatibility, also handle text input
       const holonId = ctx.message.chat.id;
-      const admin = ctx.message.text.trim();
+      const typed = ctx.message.text.trim();
+      // An id, not the typed @username: the membership sync derives the
+      // ambassador's key from it.
+      const users = await this.db.getAll(holonId.toString(), 'users');
+      const mention = (ctx.message.entities ?? []).find(
+        e => e.type === 'text_mention'
+      )?.user;
+      const ambassador = resolveAmbassadorId(typed, users, mention);
+      if (!ambassador) {
+        await ctx.reply(
+          `I don't know ${typed} in this group yet. They need to write here once, then try again.`
+        );
+        return;
+      }
       const settings = await this.getSettings(holonId);
 
-      settings.admin = admin;
+      settings.admin = ambassador;
       await this.setSettings(settings);
 
       // Store message IDs for cleanup
@@ -97,12 +111,12 @@ export default class SettingsScenes {
       await this.showSettingsMenu(ctx, false);
     });
 
-    this.adminScene.on('message', ctx => {
+    this.ambassadorScene.on('message', ctx => {
       const holonId = ctx.message.chat.id;
       this.getLanguage(holonId).then(language => {
         ctx
           .reply(i18next.t('settings_send_text_only', { lng: language }))
-          .catch(e => console.log('Error in admin scene message:', e));
+          .catch(e => console.log('Error in ambassador scene message:', e));
       });
     });
   }
@@ -274,16 +288,16 @@ export default class SettingsScenes {
           return;
         }
 
-        // Check if user is admin
+        // Check if user is the ambassador
         const settings = await this.getSettings(holonId);
         const user = users[userIndex];
-        const isAdmin =
+        const isAmbassador =
           settings.admin === user.id.toString() ||
           settings.admin === user.username ||
           settings.admin === '@' + user.username;
 
-        if (isAdmin) {
-          await ctx.reply('Cannot remove admin user');
+        if (isAmbassador) {
+          await ctx.reply('Cannot remove the ambassador');
           return;
         }
 
@@ -506,7 +520,7 @@ export default class SettingsScenes {
   // Migrated scenes (now using InputScene): purpose, name, domains, values, roles, hex,
   // text_input, array_input, add_array_item, test, add_test
   registerScenes(stage) {
-    stage.register(this.adminScene);
+    stage.register(this.ambassadorScene);
     stage.register(this.federationScene);
     stage.register(this.usersScene);
     stage.register(this.addUserScene);

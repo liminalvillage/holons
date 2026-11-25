@@ -21,7 +21,7 @@ const stranger = testKey();
 
 const parties = new Map<string, string>([[ada.pk, 'ada'], [adaPhone.pk, 'ada'], [bob.pk, 'bob'], [treasurer.pk, 'tre']]);
 const partyOf = (pk: string) => parties.get(pk) ?? null;
-const actors = () => bootstrapActors({ members: [ada.pk, adaPhone.pk, bob.pk], admins: [treasurer.pk, holon.pk], genesis: holon.pk });
+const actors = () => bootstrapActors({ members: [ada.pk, adaPhone.pk, bob.pk], ambassadors: [treasurer.pk, holon.pk], genesis: holon.pk });
 const rights = { ada: { EUR: 100 }, bob: { EUR: 50 } };
 
 const entry = <T extends Record<string, unknown>>(sk: Uint8Array, a: { item: T; refs?: Record<string, string | string[]> }, at: number) =>
@@ -55,7 +55,7 @@ describe('foldClaims', () => {
 
   it('a key-only member acts for their own pubkey; a key the holon does not seat is still nobody', () => {
     const kim = testKey(); // signed in with her own key: no attestation, no linkedKeys — her party id IS her pubkey
-    const members = bootstrapActors({ members: [ada.pk, bob.pk, kim.pk], admins: [treasurer.pk, holon.pk], genesis: holon.pk });
+    const members = bootstrapActors({ members: [ada.pk, bob.pk, kim.pk], ambassadors: [treasurer.pk, holon.pk], genesis: holon.pk });
     const own = entry(kim.sk, buildClaim({ party: kim.pk, amount: 10, unit: 'eur', at: T0 * 1000 }) as never, T0);
     const forAda = entry(kim.sk, buildClaim({ party: 'ada', amount: 5, unit: 'eur', at: T0 * 1000 }) as never, T0 + 1);
     const outsider = entry(stranger.sk, buildClaim({ party: stranger.pk, amount: 5, unit: 'eur', at: T0 * 1000 }) as never, T0 + 2);
@@ -71,7 +71,7 @@ describe('foldClaims', () => {
   it('under a lookup, a party with no seat or a unit with no pot has a right of zero: nothing to claim, nothing to give', () => {
     const carl = testKey();
     const partyOfAll = (pk: string) => (pk === carl.pk ? 'carl' : partyOf(pk));
-    const members = bootstrapActors({ members: [ada.pk, bob.pk, carl.pk], admins: [treasurer.pk, holon.pk], genesis: holon.pk });
+    const members = bootstrapActors({ members: [ada.pk, bob.pk, carl.pk], ambassadors: [treasurer.pk, holon.pk], genesis: holon.pk });
     const noSeat = entry(carl.sk, buildClaim({ party: 'carl', amount: 1_000_000, unit: 'eur', at: T0 * 1000 }) as never, T0);
     const noPot = entry(ada.sk, buildClaim({ party: 'ada', amount: 1, unit: 'btc', at: T0 * 1000 }) as never, T0 + 1);
     const phantomGive = entry(carl.sk, buildTransfer({ party: 'carl', to: 'ada', amount: 500, unit: 'eur', at: T0 * 1000 }) as never, T0 + 2);
@@ -299,7 +299,7 @@ describe('foldClaims with partner imports', () => {
     const tooMuch = pEntry(pam.sk, buildClaim({ party: 'P', amount: 30, unit: 'eur', at: T0 * 1000 }), T0 + 2);
     const forAda = pEntry(pam.sk, buildClaim({ party: 'ada', amount: 1, unit: 'eur', at: T0 * 1000 }), T0 + 3);
     const theirPayout = pEntry(partnerKey.sk, buildPayout({ claimId: theirs.id, party: 'P', amount: 30, unit: 'eur' }) as never, T0 + 4);
-    // The partner's own admin attests its members' entries (its log's default quorum is 1).
+    // The partner's own ambassador attests its members' entries (its log's default quorum is 1).
     const theirWord = [theirs, tooMuch, forAda].map((e, i) => pEntry(partnerKey.sk, buildClaimVerdict(e.id, 'attest'), T0 + 10 + i));
     const f = foldClaims({
       entries: [own],
@@ -339,7 +339,7 @@ describe('foldClaims with partner imports', () => {
   it('foldClaimsFromLenses passes imports through', () => {
     const theirs = pEntry(pam.sk, buildClaim({ party: 'P', amount: 5, unit: 'eur', at: T0 * 1000 }), T0);
     const theirWord = pEntry(partnerKey.sk, buildClaimVerdict(theirs.id, 'attest'), T0 + 1);
-    // Our side needs an attester's word too: the holon key is the admin here.
+    // Our side needs an attester's word too: the holon key is the ambassador here.
     const ourWord = entry(holon.sk, buildClaimVerdict(theirs.id, 'attest') as never, T0 + 2);
     const ctx = foldClaimsFromLenses({
       holonId: 'H',

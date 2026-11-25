@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: Roberto Valenti and the Holons contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// library_return on someone else's booking: only an admin of the holon
+// library_return on someone else's booking: only an ambassador of the holon
 // (`library.manage`) may end it, and the result names the borrower — the one
-// to refund — not the admin who pressed Return.
+// to refund — not the ambassador who pressed Return.
 import { describe, expect, it } from 'vitest';
 import { createHoloSphere, signerFromSecretKey } from '@holons/core/holosphere';
 import { registerLibraryTools } from './library.js';
@@ -60,7 +60,7 @@ const ymd = (offset: number) => {
 };
 
 describe('library_return on behalf', () => {
-  it("an admin returns a member's overdue item; a plain member is refused", async () => {
+  it("an ambassador returns a member's overdue item; a plain member is refused", async () => {
     const alice = key(), mia = key(), bot = key();
     const mk = (sk: string) =>
       createHoloSphere({ appName: 'mcp-libret-test', privateKey: sk, store: { adapter: 'memory' } }) as Host;
@@ -81,18 +81,18 @@ describe('library_return on behalf', () => {
     });
     share(a, m, o);
 
-    // Not her booking, no admin claim: core refuses.
+    // Not her booking, no ambassador claim: core refuses.
     const plain = payload(await toolsFor(m, 'mia').get('library_return')!({ holon: H, itemId: 'drill' }));
     expect(plain).toMatchObject({ success: false, error: 'forbidden' });
 
-    // Claiming admin without being one: the gate refuses before any write.
+    // Claiming ambassador without being one: the gate refuses before any write.
     const claimed = payload(
       await toolsFor(m, 'mia').get('library_return')!({ holon: H, itemId: 'drill', onBehalf: true }),
     );
     expect(claimed.success).toBe(false);
-    expect(claimed.error).toMatch(/admin/);
+    expect(claimed.error).toMatch(/ambassador/);
 
-    // The admin ends Ana's booking; the refund belongs to Ana.
+    // The ambassador ends Ana's booking; the refund belongs to Ana.
     const done = payload(
       await toolsFor(a, 'alice').get('library_return')!({ holon: H, itemId: 'drill', onBehalf: true }),
     );

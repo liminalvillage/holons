@@ -4,8 +4,8 @@
 /**
  * A holon's rules, as signed records.
  *
- * A policy is itself an entry of the `_policy` log: an admin appends one per
- * lens, the newest by an admin-at-the-time wins, and a holon that never
+ * A policy is itself an entry of the `_policy` log: an ambassador appends one per
+ * lens, the newest by an ambassador-at-the-time wins, and a holon that never
  * wrote one behaves by `DEFAULT_POLICY`. Same event universe, different
  * validity functions — the rule is data the reader folds, not code.
  */
@@ -15,7 +15,7 @@ import { byLogOrder, type AcceptedActors, type Appendable, type LogEvent, type P
 
 const ROLES: readonly Role[] = ['admin', 'member'];
 
-/** Members act, admins attest, nothing needs a quorum, the first spend wins, nothing is imported. */
+/** Members act, ambassadors attest, nothing needs a quorum, the first spend wins, nothing is imported. */
 export const DEFAULT_POLICY: Policy = Object.freeze({
   authors: ['admin', 'member'],
   attesters: ['admin'],
@@ -59,13 +59,13 @@ export function normalizePolicy(partial?: Partial<Policy> | null): Policy {
   };
 }
 
-/** The record an admin appends to `_policy` to set a lens's rule. */
+/** The record an ambassador appends to `_policy` to set a lens's rule. */
 export function policyRecord(lens: string, partial?: Partial<Policy> | null): Appendable<PolicyRecord> {
   return { item: { t: 'policy', lens: String(lens), ...normalizePolicy(partial) } };
 }
 
 /**
- * Fold `_policy` entries into one rule per lens: only an admin as of the
+ * Fold `_policy` entries into one rule per lens: only an ambassador as of the
  * entry's time may set it, and the latest such entry wins.
  */
 export function foldPolicies(entries: Iterable<LogEvent<unknown>>, actors: AcceptedActors): Map<string, Policy> {
@@ -80,7 +80,7 @@ export function foldPolicies(entries: Iterable<LogEvent<unknown>>, actors: Accep
 }
 
 /**
- * What a lens behaves by when no admin has set its rule. The fund logs are
+ * What a lens behaves by when no ambassador has set its rule. The fund logs are
  * the exception to "nothing needs a quorum": a claim, a give or a mint moves
  * value, so a member's word alone does not count — an attester's does (an
  * attester's own action self-attests, so a treasurer still works alone).

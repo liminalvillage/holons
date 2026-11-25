@@ -127,7 +127,7 @@ describe('the join-request ledger', () => {
     await hs.close();
   });
 
-  it("a member's own approval never counts: only an admin's record does", async () => {
+  it("a member's own approval never counts: only an ambassador's record does", async () => {
     const { hs } = instance();
     const { holon: H } = await createHolon(hs, signer(founder.sk), { appName: APP });
     await approveJoin(hs, H, alice.pk, signer(founder.sk), { appName: APP });

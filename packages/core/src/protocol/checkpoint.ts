@@ -5,7 +5,7 @@
  * Checkpoints: a signer's word on what a lens folded to.
  *
  * A reader derives a lens's accepted entries on their own; a checkpoint lets
- * them compare that with what a recognized signer (the holon key, an admin)
+ * them compare that with what a recognized signer (the holon key, an ambassador)
  * derived at the close of an epoch — one lunar cycle, the same `lunationAt`
  * the flows use, so an epoch has one name everywhere. Agreement is a merkle
  * root over the accepted entry ids. A mismatch is surfaced, never silently
@@ -88,7 +88,7 @@ export function verifyCheckpoint(checkpoint: CheckpointRecord, accepted: Iterabl
 
 /**
  * The latest checkpoint per (lens, epoch) from signers the holon recognizes
- * (`signers` roles; default admins), keyed `lens|epoch`.
+ * (`signers` roles; default ambassadors), keyed `lens|epoch`.
  */
 export function foldCheckpoints(
   entries: Iterable<LogEvent<unknown>>,

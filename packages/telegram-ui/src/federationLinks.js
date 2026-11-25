@@ -3,12 +3,12 @@
 //
 // Linking two holons from Telegram — the one path every bot command takes.
 //
-// A link has two halves, each its own holon's admins' word (see
-// @holons/core/federation requests.ts). The bot's key is admin of every
+// A link has two halves, each its own holon's ambassadors' word (see
+// @holons/core/federation requests.ts). The bot's key is ambassador of every
 // chat it set up, so it COULD write both halves; it must not decide for a
 // group whose people did not ask. So the partner's half is written directly
 // only when the person running the command is a creator/administrator of
-// the partner chat too; otherwise the partner's admins are asked
+// the partner chat too; otherwise the partner chat's admins are asked
 // (FederationRequests.js posts the request in their group).
 
 import i18next from 'i18next';
@@ -17,7 +17,7 @@ import {
   setFederationPartner,
 } from '@holons/core/federation';
 
-const ADMIN = new Set(['creator', 'administrator']);
+const CHAT_ADMIN = new Set(['creator', 'administrator']);
 
 /** A translated line with an inline default (see Settings.ts `translated`). */
 export function translated(language, key, defaultValue, vars = {}) {
@@ -38,7 +38,7 @@ export async function shouldAskPartner(telegram, target, userId) {
   if (!/^-\d+$/.test(t) || !telegram || userId == null) return true;
   try {
     const member = await telegram.getChatMember(t, Number(userId));
-    return !ADMIN.has(member?.status);
+    return !CHAT_ADMIN.has(member?.status);
   } catch {
     return true;
   }
@@ -106,7 +106,7 @@ export function outcomeText(outcome, partnerName, language = 'en') {
     return translated(
       language,
       'fedHeld',
-      "⚠️ The bot can't change this holon's federation: its key is not an admin here."
+      "⚠️ The bot can't change this holon's federation: its key is not an ambassador here."
     );
   switch (outcome.partner) {
     case 'linked':

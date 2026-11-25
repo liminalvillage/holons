@@ -18,10 +18,10 @@ describe('actorsFromMembersLog', () => {
     membershipOp({ sk: holon.sk, op: 'add', pubkey: alice.pk, role: 'member', created_at: T0 + 10 }),
     membershipOp({ sk: holon.sk, op: 'add', pubkey: bob.pk, role: 'admin', created_at: T0 + 20 }),
     membershipOp({ sk: bob.sk, op: 'remove', pubkey: alice.pk, created_at: T0 + 30 }),
-    membershipOp({ sk: alice.sk, op: 'add', pubkey: alice.pk, role: 'admin', created_at: T0 + 40 }), // not an admin: no effect
+    membershipOp({ sk: alice.sk, op: 'add', pubkey: alice.pk, role: 'admin', created_at: T0 + 40 }), // not an ambassador: no effect
   ];
 
-  it('folds genesis + admin-gated ops, as of time', () => {
+  it('folds genesis + ambassador-gated ops, as of time', () => {
     const actors = actorsFromMembersLog(shuffled(log), holon.pk)!;
     expect(actors.source).toBe('log');
     expect(actors.genesis).toBe(holon.pk);
@@ -33,7 +33,7 @@ describe('actorsFromMembersLog', () => {
     expect(actors.isAcceptedAt(holon.pk, T0 - 100)).toBe(true);
     expect(actors.roleAt(holon.pk, T0 - 100)).toBe('admin');
     expect(actors.isAcceptedAt(bob.pk, T0 + 15)).toBe(false); // everyone else waits for their add
-    expect(actors.isAcceptedAt(alice.pk, T0 + 35)).toBe(false); // removed by bob, an admin
+    expect(actors.isAcceptedAt(alice.pk, T0 + 35)).toBe(false); // removed by bob, an ambassador
     expect(actors.isAcceptedAt(alice.pk, T0 + 45)).toBe(false); // her own re-add does not count
     expect(actors.roleAt(bob.pk, T0 + 25)).toBe('admin');
     expect(actors.roleAt(holon.pk, T0)).toBe('admin');
@@ -50,7 +50,7 @@ describe('actorsFromMembersLog', () => {
 
 describe('bootstrap + resolve', () => {
   it('a bootstrap list is time-blind and provisional', () => {
-    const a = bootstrapActors({ members: [alice.pk], admins: [holon.pk], genesis: holon.pk });
+    const a = bootstrapActors({ members: [alice.pk], ambassadors: [holon.pk], genesis: holon.pk });
     expect(a.source).toBe('bootstrap');
     expect(a.isAcceptedAt(alice.pk, 0)).toBe(true);
     expect(a.roleAt(alice.pk, 0)).toBe('member');
@@ -111,12 +111,12 @@ describe('syncMembersLog', () => {
   });
 });
 
-describe('syncMembersLog and seats another admin granted', () => {
-  it('prunes only the keys this instance seated; a screen admin\'s seat survives the bot\'s refresh', async () => {
+describe('syncMembersLog and seats another ambassador granted', () => {
+  it('prunes only the keys this instance seated; a screen ambassador\'s seat survives the bot\'s refresh', async () => {
     const carol = testKey();
     const hs = createHoloSphere({ appName: 'members-others-test', privateKey: bytesToHex(holon.sk), store: { adapter: 'memory' } });
     const H = 'h-others';
-    // The holon key founds and seats alice as an admin (a linked dashboard admin, say).
+    // The holon key founds and seats alice as an ambassador (a linked dashboard ambassador, say).
     await syncMembersLog(hs, H, new Map([[alice.pk, 'admin'], [bob.pk, 'member']]));
     // Alice, from her screen, approves carol by key.
     await hs.login(bytesToHex(alice.sk));

@@ -10,7 +10,7 @@
  * fold, and as whom:
  *
  *   1. trust is data — the importer's policy pins the partner's genesis
- *      pubkey (`policy.partners[holon]`, an admin-signed `_policy` entry).
+ *      pubkey (`policy.partners[holon]`, an ambassador-signed `_policy` entry).
  *      A partner whose membership log was not founded by that key folds
  *      with the pinned key alone, and the result says so (`bootstrap`);
  *   2. the partner's own rules decide what it ACCEPTED — its signers as of
@@ -73,7 +73,7 @@ export function importPartnerLog(partner: PartnerLog, lens: string): PartnerImpo
   const actors = resolveAcceptedActors({
     membersLog: partner.membersLog,
     genesis,
-    bootstrap: { members: [genesis], admins: [genesis], genesis },
+    bootstrap: { members: [genesis], ambassadors: [genesis], genesis },
   });
   const policy = policyFor(foldPolicies(partner.policyEntries ?? [], actors), lens);
   const result = collapse<unknown, null>({
@@ -106,7 +106,7 @@ export interface FederatedActors extends AcceptedActors {
 /**
  * One signer set over the importer's own actors and its partners': the
  * importer's word wins for a key it knows; a key a partner accepts counts as
- * a `member` acting for that partner — a partner admin does not attest the
+ * a `member` acting for that partner — a partner ambassador does not attest the
  * importer's entries, whatever the importer's policy names as attesters.
  */
 export function federatedActors(own: AcceptedActors, imports: Iterable<Pick<PartnerImport, 'holon' | 'actors'>>): FederatedActors {
@@ -180,5 +180,5 @@ export async function importPartnerLogs(hs: HoloSphere, lens: string, policy: Pa
 /** A time-blind partner from a bare key, for callers without its membership log. */
 export function partnerFromKey(holon: string, genesis: string): Pick<PartnerImport, 'holon' | 'actors'> {
   const g = String(genesis).toLowerCase();
-  return { holon: String(holon), actors: bootstrapActors({ members: [g], admins: [g], genesis: g }) };
+  return { holon: String(holon), actors: bootstrapActors({ members: [g], ambassadors: [g], genesis: g }) };
 }
