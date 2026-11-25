@@ -295,12 +295,13 @@ export const flowsViewMode = writable<FlowsViewMode>("graph");
 export const flowsUnit = writable<string>(resolveFlowsUnit());
 export const flowsWindowChoice =
   writable<FlowsWindowChoice>(resolveFlowsWindow());
-/** The units the board can draw right now — published by the Flows view. */
 /** Opens the holon's currency list from the unit row's ✎ chip — set by the
  *  Flows view while it is on screen, null otherwise. */
 export const flowsEditUnits = writable<(() => void) | null>(null);
+/** The units the board can draw right now — published by the Flows view.
+ *  `disabled`: nothing on the open tab is kept in that unit. */
 export const flowsUnitOptions = writable<
-  { id: string; label: string; colour?: string }[]
+  { id: string; label: string; colour?: string; disabled?: boolean }[]
 >([]);
 
 export function pickFlowsUnit(id: string): void {

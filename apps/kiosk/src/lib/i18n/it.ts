@@ -1777,7 +1777,6 @@ export const it: Record<MessageKey, Msg> = {
   "alloc.tabFundEmpty": "non collegato",
   "flows.potMinted": "Emesso",
   "flows.potInbound": "Da monte",
-  "flows.potUnit": "Unità",
   "flows.walletTitle": "I tuoi saldi",
   "flows.walletAbout":
     "Ogni unità sulla sua riga — niente viene convertito. Toccane una per leggerla.",

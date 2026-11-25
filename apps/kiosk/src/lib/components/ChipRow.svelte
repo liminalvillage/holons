@@ -9,7 +9,13 @@
   // Used for the Flows board's unit and period strip and for the currency
   // row of the add-expense sheet, so a unit looks the same wherever it is
   // chosen.
-  export let options: { id: string; label: string; colour?: string }[] = [];
+  export let options: {
+    id: string;
+    label: string;
+    colour?: string;
+    /** Shown, not pickable: nothing here is kept in it. */
+    disabled?: boolean;
+  }[] = [];
   export let value: string | null = null;
   export let onPick: (id: string) => void = () => {};
   /** Id of the element naming the group, or a label of its own. */
@@ -33,6 +39,7 @@
       style:--u={o.colour}
       class:on={value === o.id}
       aria-checked={value === o.id}
+      disabled={o.disabled && value !== o.id}
       on:click={() => onPick(o.id)}
       >{#if o.colour}<i class="dot"></i>{/if}{o.label}</button
     >
@@ -77,6 +84,13 @@
     transition:
       background 0.18s ease,
       transform 0.1s ease;
+  }
+  .chip:disabled {
+    opacity: 0.38;
+    cursor: default;
+  }
+  .chip:disabled:active {
+    transform: none;
   }
   .chip:active {
     transform: scale(0.95);

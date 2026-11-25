@@ -1370,11 +1370,35 @@
         );
     return out;
   })();
+  // A unit the open tab keeps nothing in stays on the row, greyed: the
+  // balances are kept in currencies, the graph in what moved or the fund's
+  // units, My balance in the wallet's units.
+  $: usableOn = (() => {
+    const lc = (u: string) => normalizeCurrency(u).toLowerCase();
+    const money = new Set(currencies.map(lc));
+    const pot = new Set(potUnitList.map(lc));
+    const mine = new Set([...money, ...wallet.map((l) => lc(l.unit))]);
+    const drawn = new Set([
+      ...tracks.map(trackKey),
+      ...peopleTracks.map(peopleKey),
+    ]);
+    return (id: string) => {
+      if (id === ALL_TRACKS) return true;
+      const code = id.startsWith("money:") ? lc(id.slice(6)) : "";
+      if ($flowsViewMode === "balances") return money.has(code);
+      if ($flowsViewMode === "mine") return mine.has(code) || pot.has(code);
+      return drawn.has(id) || pot.has(code);
+    };
+  })();
   // The pickers (above the graph, in the Filters sheet) offer these.
   $: flowsUnitOptions.set(
     unitOptions.map((o) => {
       const lane = laneOf.get(o.id);
-      return { ...o, colour: lane ? unitHue(lane) : undefined };
+      return {
+        ...o,
+        colour: lane ? unitHue(lane) : undefined,
+        disabled: !usableOn(o.id),
+      };
     }),
   );
 
@@ -2880,31 +2904,6 @@
         </section>
       {/if}
 
-      <!-- Between people: who gave what to whom. -->
-      {#if peopleTracks.length}
-        <section>
-          <header class="head">
-            <div class="titles">
-              <h2>{$t("flows.peopleTitle")}</h2>
-              <p class="sub">{$t("flows.peopleAbout")}</p>
-            </div>
-          </header>
-
-          {#if activePeople?.id === "combined"}
-            <p class="unit-caption">{$t("flows.allAbout")}</p>
-          {/if}
-          <ChordChart
-            {ribbonDetails}
-            track={activePeople}
-            format={formatPeople}
-            labels={chordLabels}
-            onSelect={(g) => (selectedParty = g)}
-          >
-            <p slot="empty" class="empty">{$t("flows.emptyPeople")}</p>
-          </ChordChart>
-        </section>
-      {/if}
-
       <!-- Allocation. The header is always there, and its settings sit in
            the pills band's gear: somebody has to be able to place the first
            partner or name the collective. -->
@@ -2921,24 +2920,6 @@
                     })
                   : $t("flows.allocationAboutShares")}
             </p>
-            {#if potUnitList.length > 1}
-              <div
-                class="pot-units"
-                role="radiogroup"
-                aria-label={$t("flows.potUnit")}
-              >
-                {#each potUnitList as u (u)}
-                  <button
-                    type="button"
-                    role="radio"
-                    class="chip pick"
-                    class:on={u === potUnit}
-                    aria-checked={u === potUnit}
-                    on:click={() => pickWalletUnit(u)}>{u.toUpperCase()}</button
-                  >
-                {/each}
-              </div>
-            {/if}
           </div>
         </header>
         {#if hasAllocation}
@@ -3022,6 +3003,31 @@
           <p class="empty">{$t("flows.emptyAllocation")}</p>
         {/if}
       </section>
+
+      <!-- Between people: who gave what to whom. -->
+      {#if peopleTracks.length}
+        <section>
+          <header class="head">
+            <div class="titles">
+              <h2>{$t("flows.peopleTitle")}</h2>
+              <p class="sub">{$t("flows.peopleAbout")}</p>
+            </div>
+          </header>
+
+          {#if activePeople?.id === "combined"}
+            <p class="unit-caption">{$t("flows.allAbout")}</p>
+          {/if}
+          <ChordChart
+            {ribbonDetails}
+            track={activePeople}
+            format={formatPeople}
+            labels={chordLabels}
+            onSelect={(g) => (selectedParty = g)}
+          >
+            <p slot="empty" class="empty">{$t("flows.emptyPeople")}</p>
+          </ChordChart>
+        </section>
+      {/if}
 
       {#if collectiveError}
         <p class="note">{collectiveError}</p>
@@ -3621,28 +3627,6 @@
     margin: 0.4rem 0 0.2rem;
     font-size: 0.82rem;
     color: var(--caution);
-  }
-
-  .pot-units {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-    margin: 0 0 0.6rem;
-  }
-  .chip.pick {
-    min-height: 44px;
-    padding: 0 0.9rem;
-    border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
-    background: transparent;
-    color: var(--ink-soft);
-    font: inherit;
-    font-size: 0.82rem;
-    cursor: pointer;
-  }
-  .chip.pick.on {
-    background: var(--ink);
-    color: var(--paper);
-    border-color: var(--ink);
   }
 
   .chip {

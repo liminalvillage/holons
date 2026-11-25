@@ -1739,7 +1739,6 @@ export const en = {
   "alloc.tabFundEmpty": "not linked",
   "flows.potMinted": "Issued",
   "flows.potInbound": "From upstream",
-  "flows.potUnit": "Unit",
   "flows.walletTitle": "Your balances",
   "flows.walletAbout":
     "Each unit on its own line — nothing is converted. Tap one to read it.",
