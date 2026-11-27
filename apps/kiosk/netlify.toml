@@ -66,6 +66,19 @@
 [functions]
   directory = ".netlify/functions-internal"
 
+# Passkeys: hubs.network is the relying party the KronOS and KairOS iOS apps
+# sign in against (webcredentials:hubs.network). Apple and WebAuthn related
+# origins both read these files, which must be served as JSON, unredirected.
+[[headers]]
+  for = "/.well-known/apple-app-site-association"
+  [headers.values]
+    Content-Type = "application/json"
+
+[[headers]]
+  for = "/.well-known/webauthn"
+  [headers.values]
+    Content-Type = "application/json"
+
 # Long-cache the content-hashed build assets; never cache the HTML shell.
 [[headers]]
   for = "/_app/immutable/*"
